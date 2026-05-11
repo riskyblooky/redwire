@@ -1,0 +1,244 @@
+#!/bin/bash
+set -e
+
+# Deployment Script for RedWire Platform
+#
+# Usage:
+#   ./deploy_server.sh                # online: docker compose build (pulls + builds)
+#   ./deploy_server.sh --offline      # offline: docker load redwire_images.tar, no build
+
+# Parse flags
+OFFLINE=0
+for arg in "$@"; do
+    case "$arg" in
+        --offline) OFFLINE=1 ;;
+        -h|--help)
+            sed -n '4,9p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}=== RedWire Platform Deployment ===${NC}"
+if [ "$OFFLINE" -eq 1 ]; then
+    echo -e "${BLUE}Mode: OFFLINE (loading images from redwire_images.tar, no build)${NC}"
+fi
+
+# 1. Prerequisites Check
+echo -e "\n${BLUE}[1/8] Checking Prerequisites...${NC}"
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}Error: Docker is not installed and/or available in PATH.${NC}"
+    echo "Please install Docker manually (e.g., curl -fsSL https://get.docker.com | sh) and try again."
+    exit 1
+fi
+echo "Docker is installed."
+
+# 2. Environment Setup
+echo -e "\n${BLUE}[2/8] Configuring Environment...${NC}"
+
+if [ -f .env ]; then
+    echo ".env file already exists. Loading configuration..."
+    export $(grep -v '^#' .env | xargs)
+else
+    echo "This script will help you create a secure configuration."
+    
+    read -p "Enter Domain Name (e.g., app.example.com): " DOMAIN_NAME
+    
+    read -p "Admin email [admin@redwire.local]: " ADMIN_EMAIL
+    ADMIN_EMAIL=${ADMIN_EMAIL:-admin@redwire.local}
+    read -sp "Admin password (leave blank for random): " ADMIN_PASSWORD
+    echo
+    ADMIN_PASSWORD=${ADMIN_PASSWORD:-$(openssl rand -hex 16)}
+    read -p "Admin username [admin]: " ADMIN_USERNAME
+    ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+    
+    echo "Generating secure passwords..."
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    REDIS_PASSWORD=$(openssl rand -hex 32)
+    MINIO_PASSWORD=$(openssl rand -hex 32)
+    JWT_SECRET=$(openssl rand -hex 32)
+    VAULT_ENCRYPTION_KEY=$(openssl rand -hex 32)
+    MCP_API_TOKEN=$(openssl rand -hex 32)
+    
+    # Save formatted .env
+    cat <<EOF > .env
+DOMAIN_NAME=${DOMAIN_NAME}
+POSTGRES_USER=redwire
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=redwire
+REDIS_PASSWORD=${REDIS_PASSWORD}
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+JWT_SECRET=${JWT_SECRET}
+NEXT_PUBLIC_API_URL=https://${DOMAIN_NAME}/api
+CORS_ORIGINS=https://${DOMAIN_NAME}
+ADMIN_EMAIL=${ADMIN_EMAIL}
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
+ADMIN_USERNAME=${ADMIN_USERNAME}
+VAULT_ENCRYPTION_KEY=${VAULT_ENCRYPTION_KEY}
+MCP_API_TOKEN=${MCP_API_TOKEN}
+EOF
+
+    # Save credentials for the user
+    cat <<EOF > credentials_DO_NOT_SHARE.txt
+=== RedWire Platform Credentials ===
+Domain: ${DOMAIN_NAME}
+Date: $(date)
+
+Admin Username:       ${ADMIN_USERNAME}
+Admin Email:          ${ADMIN_EMAIL}
+Admin Password:       ${ADMIN_PASSWORD}
+
+Postgres DB Password: ${POSTGRES_PASSWORD}
+Redis Password:       ${REDIS_PASSWORD}
+MinIO Root Password:  ${MINIO_PASSWORD}
+JWT Secret:           ${JWT_SECRET}
+Vault Encryption Key: ${VAULT_ENCRYPTION_KEY}
+MCP API Token:        ${MCP_API_TOKEN}
+
+KEEP THIS FILE SAFE!
+EOF
+
+    echo -e "${GREEN}.env file created successfully!${NC}"
+    echo -e "${GREEN}Credentials saved to 'credentials_DO_NOT_SHARE.txt'.${NC}"
+fi
+
+# 3. Clean stale source files
+# unzip overlays new files but never removes old ones that were deleted locally.
+# Wipe source dirs so the Docker build context is clean.
+echo -e "\n${BLUE}[3/8] Cleaning stale source files...${NC}"
+for dir in frontend/src frontend/public backend/app backend/alembic; do
+    if [ -d "$dir" ]; then
+        echo "  Removing old $dir/"
+        rm -rf "$dir"
+    fi
+done
+# Also remove stale config files that were migrated
+for f in frontend/tailwind.config.ts frontend/tailwind.config.js; do
+    if [ -f "$f" ]; then
+        echo "  Removing stale $f"
+        rm -f "$f"
+    fi
+done
+echo -e "${GREEN}Source directories cleaned.${NC}"
+
+# 4. Re-extract fresh source from zip
+# Handle Windows-created zips that may contain backslash path separators.
+echo -e "\n${BLUE}[4/8] Re-extracting fresh source...${NC}"
+python3 -c "
+import zipfile, os
+z = zipfile.ZipFile('redwire_migration_package.zip')
+for info in z.infolist():
+    # Fix Windows backslash paths
+    info.filename = info.filename.replace(chr(92), '/')
+    if info.filename.startswith('.env'):
+        continue
+    z.extract(info, '.')
+z.close()
+"
+echo -e "${GREEN}Source files extracted.${NC}"
+
+# 5. SSL Bootstrap
+echo -e "\n${BLUE}[5/8] Preparing SSL Certificates...${NC}"
+mkdir -p nginx/certbot/conf/live/${DOMAIN_NAME}
+mkdir -p nginx/certbot/www
+chmod -R 755 nginx/certbot/www
+
+if [ ! -f nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem ]; then
+    echo "Generating temporary self-signed certificate for Nginx..."
+    openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+        -keyout nginx/certbot/conf/live/${DOMAIN_NAME}/privkey.pem \
+        -out nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem \
+        -subj "/CN=${DOMAIN_NAME}"
+fi
+
+# 6. Start Services
+echo -e "\n${BLUE}[6/8] Starting Services...${NC}"
+if [ "$OFFLINE" -eq 1 ]; then
+    if [ ! -f redwire_images.tar ]; then
+        echo -e "${RED}Error: --offline requires redwire_images.tar in the working directory.${NC}"
+        echo "Generate one on a connected machine via:  ./export_system.ps1 -IncludeImages"
+        exit 1
+    fi
+    echo "Loading Docker images from redwire_images.tar..."
+    docker load -i redwire_images.tar
+    echo "Bringing services up (no build)..."
+    docker compose -f docker-compose.prod.yml up -d --no-build
+else
+    echo "Building images (requires internet)..."
+    docker compose -f docker-compose.prod.yml build
+    docker compose -f docker-compose.prod.yml up -d
+fi
+
+echo "Waiting for services to be healthy..."
+sleep 15 # Give DB time to initialize
+
+# 7. Database Migration (Safe)
+echo -e "\n${BLUE}[7/8] Running Database Migrations...${NC}"
+echo "Applying alembic migrations to update schema without data loss..."
+docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+echo -e "${GREEN}Migrations applied successfully!${NC}"
+
+# Legacy Import Check (Skipped by default for safety as requested)
+if [ -f redwire_backup.sql ]; then
+    echo -e "\n${BLUE}[NOTICE] redwire_backup.sql found but SKIPPING auto-import.${NC}"
+    echo "To import and OVERWRITE data, run: cat redwire_backup.sql | docker exec -i redwire-db psql -U redwire -d redwire"
+fi
+
+# 8. SSL Certification (Certbot)
+echo -e "\n${BLUE}[8/8] SSL Certificate Configuration${NC}"
+if [ "$OFFLINE" -eq 1 ]; then
+    echo "  Offline mode - Let's Encrypt requires internet, so the temporary self-signed"
+    echo "  certificate will be retained. Browsers will show a warning until you replace"
+    echo "  it with an internal CA-signed cert at nginx/certbot/conf/live/${DOMAIN_NAME}/."
+    SETUP_CERTBOT=n
+else
+    echo ""
+    echo "  Your platform is currently running with a temporary self-signed certificate."
+    echo "  If this server is publicly accessible with DNS pointing to it, you can request"
+    echo "  a free Let's Encrypt certificate now."
+    echo ""
+    echo "  For on-prem / internal deployments, skip this step - the self-signed cert will"
+    echo "  keep HTTPS working (browsers will show a warning, which you can accept)."
+    echo ""
+    read -p "Request a Let's Encrypt certificate? (y/N): " SETUP_CERTBOT
+    SETUP_CERTBOT=${SETUP_CERTBOT:-n}
+fi
+
+if [[ "$SETUP_CERTBOT" =~ ^[Yy]$ ]]; then
+    read -p "Email for Let's Encrypt notifications [admin@${DOMAIN_NAME}]: " CERTBOT_EMAIL
+    CERTBOT_EMAIL=${CERTBOT_EMAIL:-admin@${DOMAIN_NAME}}
+
+    echo "Requesting certificate for $DOMAIN_NAME..."
+
+    # Register account (if needed)
+    docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot certbot register \
+        --email "$CERTBOT_EMAIL" --agree-tos --no-eff-email --non-interactive || true
+
+    # Request cert (using webroot)
+    docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot certbot certonly \
+        --webroot --webroot-path /var/www/certbot -d "$DOMAIN_NAME" --non-interactive --force-renewal
+
+    echo "Reloading Nginx with new certificate..."
+    docker compose -f docker-compose.prod.yml restart nginx
+    echo -e "${GREEN}Let's Encrypt certificate installed!${NC}"
+else
+    echo -e "${BLUE}Skipping Certbot - using self-signed certificate.${NC}"
+    echo "You can request a certificate later by running:"
+    echo "  docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot certbot certonly \\"
+    echo "    --webroot --webroot-path /var/www/certbot -d $DOMAIN_NAME --non-interactive"
+    echo "  docker compose -f docker-compose.prod.yml restart nginx"
+fi
+
+echo -e "\n${GREEN}=== Deployment Complete! ===${NC}"
+echo -e "Access your platform at: https://${DOMAIN_NAME}"

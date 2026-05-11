@@ -1,0 +1,50 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\risky\OneDrive\Documents\code\redwire2\backend
+plugins: anyio-4.8.0
+collected 0 items / 2 errors
+
+=================================== ERRORS ====================================
+______________________ ERROR collecting test_db_hash.py _______________________
+ImportError while importing test module 'C:\Users\risky\OneDrive\Documents\code\redwire2\backend\test_db_hash.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\risky\AppData\Local\Programs\Python\Python311\Lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test_db_hash.py:3: in <module>
+    from database import get_db
+database.py:9: in <module>
+    engine = create_async_engine(
+C:\Users\risky\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\ext\asyncio\engine.py:120: in create_async_engine
+    sync_engine = _create_engine(url, **kw)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\risky\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\util\deprecations.py:281: in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^
+C:\Users\risky\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\create.py:617: in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\risky\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py:1094: in import_dbapi
+    return AsyncAdapt_asyncpg_dbapi(__import__("asyncpg"))
+                                    ^^^^^^^^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'asyncpg'
+________________________ ERROR collecting test_hash.py ________________________
+ImportError while importing test module 'C:\Users\risky\OneDrive\Documents\code\redwire2\backend\test_hash.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\risky\AppData\Local\Programs\Python\Python311\Lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test_hash.py:1: in <module>
+    from auth.password import verify_password, get_password_hash
+auth\__init__.py:2: in <module>
+    from auth.jwt import create_access_token, create_refresh_token, decode_token, blacklist_token, is_token_blacklisted
+auth\jwt.py:3: in <module>
+    from jose import JWTError, jwt
+E   ModuleNotFoundError: No module named 'jose'
+=========================== short test summary info ===========================
+ERROR test_db_hash.py
+ERROR test_hash.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!
+==================== no tests collected, 2 errors in 0.59s ====================

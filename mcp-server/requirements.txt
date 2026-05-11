@@ -1,0 +1,12 @@
+# MCP SDK with SSE transport
+mcp[cli]>=1.0.0
+
+# HTTP client for RedWire API
+httpx>=0.26.0
+
+# Data validation
+pydantic>=2.5.0
+
+# ASGI server for SSE transport
+uvicorn[standard]>=0.27.0
+starlette>=0.35.0

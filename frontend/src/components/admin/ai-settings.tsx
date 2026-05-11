@@ -1,0 +1,357 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAiSettings, useUpdateAiSettings, useFetchAiModels } from '@/lib/hooks/use-admin';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug } from 'lucide-react';
+import { toast } from 'sonner';
+
+export function AiSettingsManagement() {
+    const { data: settings, isLoading } = useAiSettings();
+    const updateSettings = useUpdateAiSettings();
+    const fetchModels = useFetchAiModels();
+
+    // API config state
+    const [apiUrl, setApiUrl] = useState('https://api.openai.com/v1');
+    const [apiKey, setApiKey] = useState('');
+    const [model, setModel] = useState('');
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
+    const [apiHasChanges, setApiHasChanges] = useState(false);
+
+    // Feature toggles
+    const [editorEnabled, setEditorEnabled] = useState(false);
+    const [chatbotEnabled, setChatbotEnabled] = useState(false);
+    const [mcpEnabled, setMcpEnabled] = useState(false);
+
+
+
+    useEffect(() => {
+        if (settings) {
+            setApiUrl(settings.ai_api_url || 'https://api.openai.com/v1');
+            setModel(settings.ai_default_model || '');
+            setEditorEnabled(settings.ai_enabled === 'true');
+            setChatbotEnabled(settings.chatbot_enabled === 'true');
+            setMcpEnabled(settings.mcp_enabled === 'true');
+
+            if (!apiKey) {
+                setApiKey(settings.ai_api_key || '');
+            }
+        }
+    }, [settings]);
+
+    // ── Save: API config ────────────────────────────────────────────────
+    const handleSaveApiConfig = async () => {
+        try {
+            const payload: Record<string, string> = {
+                ai_api_url: apiUrl,
+                ai_default_model: model,
+            };
+            if (apiKey && !apiKey.includes('...') && !apiKey.includes('***')) {
+                payload.ai_api_key = apiKey;
+            }
+            await updateSettings.mutateAsync(payload);
+            toast.success('API configuration saved');
+            setApiHasChanges(false);
+        } catch {
+            toast.error('Failed to save API settings');
+        }
+    };
+
+    // ── Save: Feature toggle (instant) ──────────────────────────────────
+    const toggleFeature = async (key: string, value: boolean, label: string) => {
+        try {
+            await updateSettings.mutateAsync({ [key]: value ? 'true' : 'false' });
+            toast.success(`${label} ${value ? 'enabled' : 'disabled'}`);
+        } catch {
+            toast.error(`Failed to update ${label}`);
+        }
+    };
+
+
+
+    const handleFetchModels = async () => {
+        try {
+            const result = await fetchModels.mutateAsync();
+            setAvailableModels(result.models);
+            toast.success(`Found ${result.models.length} model(s)`);
+        } catch (error: any) {
+            toast.error(error?.response?.data?.detail || 'Failed to fetch models');
+        }
+    };
+
+    const markApiChanged = () => setApiHasChanges(true);
+
+    if (isLoading) {
+        return (
+            <Card className="border-slate-800 bg-slate-900/50">
+                <CardContent className="p-8">
+                    <p className="text-slate-400 text-center">Loading AI settings...</p>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+
+            {/* ═══════════════════════════════════════════════════════════
+                SECTION 1: API Configuration
+            ═══════════════════════════════════════════════════════════ */}
+            <Card className="border-slate-800 bg-slate-900/50">
+                <CardHeader>
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                            <Globe className="h-4 w-4 text-blue-400" />
+                        </div>
+                        API Configuration
+                    </CardTitle>
+                    <CardDescription>
+                        Connect to any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM, etc.)
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                    {/* API URL */}
+                    <div className="space-y-2">
+                        <Label className="text-slate-300 flex items-center gap-1.5">
+                            <Globe className="h-3.5 w-3.5 text-blue-400" />
+                            API Base URL
+                        </Label>
+                        <Input
+                            value={apiUrl}
+                            onChange={(e) => { setApiUrl(e.target.value); markApiChanged(); }}
+                            placeholder="https://api.openai.com/v1"
+                            className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 font-mono text-sm"
+                        />
+                        <p className="text-[11px] text-slate-500">
+                            e.g. <code className="text-violet-400/70">https://api.openai.com/v1</code> or <code className="text-violet-400/70">http://host.docker.internal:11434/v1</code> for Ollama
+                        </p>
+                    </div>
+
+                    {/* API Key */}
+                    <div className="space-y-2">
+                        <Label className="text-slate-300 flex items-center gap-1.5">
+                            <Key className="h-3.5 w-3.5 text-amber-400" />
+                            API Key
+                        </Label>
+                        <Input
+                            type="password"
+                            value={apiKey}
+                            onChange={(e) => { setApiKey(e.target.value); markApiChanged(); }}
+                            placeholder="sk-..."
+                            className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 font-mono text-sm"
+                        />
+                        <p className="text-[11px] text-slate-500">
+                            Stored securely. Leave empty for local APIs that don't require authentication.
+                        </p>
+                    </div>
+
+                    <Separator className="bg-slate-800" />
+
+                    {/* Model Selection */}
+                    <div className="space-y-2">
+                        <Label className="text-slate-300 flex items-center gap-1.5">
+                            <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+                            Default Model
+                        </Label>
+                        <div className="flex gap-2">
+                            {availableModels.length > 0 ? (
+                                <Select value={model} onValueChange={(v) => { setModel(v); markApiChanged(); }}>
+                                    <SelectTrigger className="bg-slate-950 border-slate-700 text-white flex-1">
+                                        <SelectValue placeholder="Select a model..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-slate-950 border-slate-800 max-h-[300px]">
+                                        {availableModels.map((m) => (
+                                            <SelectItem key={m} value={m} className="text-slate-200 focus:bg-slate-800 focus:text-white">
+                                                {m}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            ) : (
+                                <Input
+                                    value={model}
+                                    onChange={(e) => { setModel(e.target.value); markApiChanged(); }}
+                                    placeholder="gpt-4o, llama3, etc."
+                                    className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 font-mono text-sm flex-1"
+                                />
+                            )}
+                            <Button
+                                variant="outline"
+                                onClick={handleFetchModels}
+                                disabled={fetchModels.isPending || !apiUrl}
+                                className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1.5 shrink-0"
+                            >
+                                <RefreshCw className={`h-3.5 w-3.5 ${fetchModels.isPending ? 'animate-spin' : ''}`} />
+                                Fetch Models
+                            </Button>
+                        </div>
+                        {availableModels.length > 0 && (
+                            <p className="text-[11px] text-slate-500">
+                                {availableModels.length} model(s) available.{' '}
+                                <button
+                                    className="text-violet-400 hover:underline"
+                                    onClick={() => setAvailableModels([])}
+                                >
+                                    Switch to manual entry
+                                </button>
+                            </p>
+                        )}
+                    </div>
+
+                    <Separator className="bg-slate-800" />
+
+                    {/* Save */}
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm">
+                            {apiHasChanges ? (
+                                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 gap-1">
+                                    <AlertTriangle className="h-3 w-3" /> Unsaved changes
+                                </Badge>
+                            ) : (
+                                <Badge className="bg-green-500/10 text-green-400 border-green-500/20 gap-1">
+                                    <CheckCircle2 className="h-3 w-3" /> Saved
+                                </Badge>
+                            )}
+                        </div>
+                        <Button
+                            onClick={handleSaveApiConfig}
+                            disabled={updateSettings.isPending || !apiHasChanges}
+                            className="bg-blue-600 hover:bg-blue-500 text-white gap-1.5"
+                        >
+                            <Save className="h-3.5 w-3.5" />
+                            Save API Config
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* ═══════════════════════════════════════════════════════════
+                SECTION 2: Feature Toggles
+            ═══════════════════════════════════════════════════════════ */}
+            <Card className="border-slate-800 bg-slate-900/50">
+                <CardHeader>
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                            <Brain className="h-4 w-4 text-violet-400" />
+                        </div>
+                        AI Features
+                    </CardTitle>
+                    <CardDescription>
+                        Enable or disable individual AI-powered features. Changes take effect immediately.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-0">
+                    {/* Editor AI Assistant */}
+                    <div className="flex items-center justify-between py-4 border-b border-slate-800/60">
+                        <div className="flex items-center gap-3">
+                            <div className="p-1.5 rounded-lg bg-violet-500/10">
+                                <Sparkles className="h-4 w-4 text-violet-400" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-white">Editor AI Assistant</p>
+                                <p className="text-xs text-slate-500">AI assistant bar appears in all rich text editor fields</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Badge className={editorEnabled
+                                ? "bg-green-500/10 text-green-400 border-green-500/20 text-[10px]"
+                                : "bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px]"
+                            }>
+                                {editorEnabled ? 'On' : 'Off'}
+                            </Badge>
+                            <Switch
+                                checked={editorEnabled}
+                                onCheckedChange={(v) => {
+                                    setEditorEnabled(v);
+                                    toggleFeature('ai_enabled', v, 'Editor AI');
+                                }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Chatbot */}
+                    <div className="flex items-center justify-between py-4 border-b border-slate-800/60">
+                        <div className="flex items-center gap-3">
+                            <div className="p-1.5 rounded-lg bg-emerald-500/10">
+                                <MessageCircle className="h-4 w-4 text-emerald-400" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-white">Site-Wide Chatbot</p>
+                                <p className="text-xs text-slate-500">Floating AI chatbot accessible from every page</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Badge className={chatbotEnabled
+                                ? "bg-green-500/10 text-green-400 border-green-500/20 text-[10px]"
+                                : "bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px]"
+                            }>
+                                {chatbotEnabled ? 'On' : 'Off'}
+                            </Badge>
+                            <Switch
+                                checked={chatbotEnabled}
+                                onCheckedChange={(v) => {
+                                    setChatbotEnabled(v);
+                                    toggleFeature('chatbot_enabled', v, 'Chatbot');
+                                }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* MCP Server */}
+                    <div className="flex items-center justify-between py-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-1.5 rounded-lg bg-cyan-500/10">
+                                <Unplug className="h-4 w-4 text-cyan-400" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-white">RedWire MCP Server</p>
+                                <p className="text-xs text-slate-500">Allow AI to query RedWire data (engagements, findings, assets)</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Badge className={mcpEnabled
+                                ? "bg-green-500/10 text-green-400 border-green-500/20 text-[10px]"
+                                : "bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px]"
+                            }>
+                                {mcpEnabled ? 'On' : 'Off'}
+                            </Badge>
+                            <Switch
+                                checked={mcpEnabled}
+                                onCheckedChange={(v) => {
+                                    setMcpEnabled(v);
+                                    toggleFeature('mcp_enabled', v, 'MCP Server');
+                                }}
+                            />
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+
+            {/* Info footer */}
+            <Card className="border-slate-800 bg-slate-900/30">
+                <CardContent className="p-4">
+                    <div className="flex items-start gap-3 text-sm">
+                        <Sparkles className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
+                        <div className="text-slate-400 space-y-1">
+                            <p>All AI features require a configured API endpoint above. API requests are proxied through the server — keys are never exposed to the browser.</p>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+    );
+}

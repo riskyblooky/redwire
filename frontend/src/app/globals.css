@@ -1,0 +1,667 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+  @media (width >= --theme(--breakpoint-sm)) {
+    max-width: none;
+  }
+  @media (width >= 1400px) {
+    max-width: 1400px;
+  }
+}
+
+@theme {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  /* Themable slate scale — utility classes (bg-slate-900 etc.) read from
+     these variables, so per-theme overrides below can swap surface colors
+     site-wide without touching component code. */
+  --color-slate-50:  hsl(var(--slate-50));
+  --color-slate-100: hsl(var(--slate-100));
+  --color-slate-200: hsl(var(--slate-200));
+  --color-slate-300: hsl(var(--slate-300));
+  --color-slate-400: hsl(var(--slate-400));
+  --color-slate-500: hsl(var(--slate-500));
+  --color-slate-600: hsl(var(--slate-600));
+  --color-slate-700: hsl(var(--slate-700));
+  --color-slate-800: hsl(var(--slate-800));
+  --color-slate-900: hsl(var(--slate-900));
+  --color-slate-950: hsl(var(--slate-950));
+
+  /* Themable "white"/"black" so text-white/bg-white can invert under
+     the light palette. Default keeps them literal; light palette
+     overrides them to dark slate / off-white. */
+  --color-white: hsl(var(--app-white));
+  --color-black: hsl(var(--app-black));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* ─── Slate scale (default = standard Tailwind values) ─────────────
+       Used by every bg-slate-N / text-slate-N / border-slate-N class.
+       Themed overrides further down replace these to swap surface
+       colors site-wide without touching any component code. */
+    --slate-50:  210 40% 98%;
+    --slate-100: 210 40% 96%;
+    --slate-200: 214 32% 91%;
+    --slate-300: 213 27% 84%;
+    --slate-400: 215 20% 65%;
+    --slate-500: 215 16% 47%;
+    --slate-600: 215 19% 35%;
+    --slate-700: 215 25% 27%;
+    --slate-800: 217 33% 18%;
+    --slate-900: 222 47% 11%;
+    --slate-950: 230 84% 5%;
+
+    /* Default white/black — kept literal */
+    --app-white: 0 0% 100%;
+    --app-black: 0 0% 0%;
+
+    /* Deep navy-black backgrounds for better contrast */
+    --background: 222 47% 4%;
+    --foreground: 210 40% 92%;
+
+    /* Card/Surface hierarchy */
+    --card: 220 39% 11%;
+    --card-foreground: 210 40% 92%;
+
+    /* Popover/Dropdown */
+    --popover: 220 39% 11%;
+    --popover-foreground: 210 40% 92%;
+
+    /* Primary action color — Aurora (default theme). Overrides below
+       swap this and the surface tokens per data-theme attribute. */
+    --primary: 263 70% 55%;            /* indigo-purple */
+    --primary-foreground: 210 40% 98%;
+    --primary-soft: 263 70% 55%;
+
+    /* Secondary/muted elements */
+    --secondary: 215 25% 17%;
+    --secondary-foreground: 210 40% 92%;
+
+    /* Muted text and backgrounds */
+    --muted: 215 25% 17%;
+    --muted-foreground: 215 16% 59%;
+
+    /* Accent for hover states */
+    --accent: 215 20% 25%;
+    --accent-foreground: 210 40% 92%;
+
+    /* Destructive/error states */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Borders and inputs */
+    --border: 215 25% 17%;
+    --input: 215 25% 17%;
+    --ring: 263 70% 55%;
+  }
+
+  /* ─── Theme: two independent axes ──────────────────────────────────
+     - data-palette  → surface colors (background, card, slate scale)
+     - data-accent   → primary action color (--primary, --ring; and
+                       destructive shift when accent clashes with red)
+
+     Defaults: palette=aurora (above), accent=purple (above). Pickers
+     in the profile page set these attributes on <html>. The two axes
+     compose freely — e.g. operator palette + emerald accent. */
+
+  /* ── Palette: Operator (login-inspired full surface swap) ── */
+  .dark[data-palette="operator"] {
+    /* Slate scale: warm-tinted near-black with neutral mid-grays.
+       Hue 240 on the deepest surfaces matches login bg #060608/#0c0c10.
+       Slight red tint on hover surfaces (slate-700/800) gives a subtle
+       warmth without compromising text readability. */
+    --slate-50:  0 0% 96%;
+    --slate-100: 0 0% 92%;
+    --slate-200: 0 0% 86%;
+    --slate-300: 0 0% 76%;
+    --slate-400: 0 0% 62%;
+    --slate-500: 0 0% 48%;
+    --slate-600: 0 0% 36%;
+    --slate-700: 0 12% 20%;
+    --slate-800: 0 14% 13%;
+    --slate-900: 240 13% 6%;          /* #0c0c10 — login window bg */
+    --slate-950: 240 14% 3%;          /* #060608 — login page bg */
+
+    --background: 240 14% 3%;
+    --foreground: 0 0% 95%;
+
+    --card: 240 13% 6%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 240 13% 6%;
+    --popover-foreground: 0 0% 95%;
+
+    --secondary: 0 14% 13%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 0 14% 13%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 0 25% 18%;
+    --accent-foreground: 0 0% 95%;
+
+    --border: 0 14% 14%;
+    --input: 0 14% 13%;
+  }
+
+  /* ── Palette: Half Dark (Windows Terminal "One Half Dark" inspired) ──
+     Iconic editor look — desaturated indigo background (#282c34) with
+     slightly darker recessed cards. Cooler/calmer than Aurora. */
+  .dark[data-palette="half-dark"] {
+    --slate-50:  220 14% 94%;
+    --slate-100: 220 14% 90%;
+    --slate-200: 220 14% 86%;        /* foreground-ish (#dcdfe4) */
+    --slate-300: 220 13% 78%;
+    --slate-400: 220 12% 68%;
+    --slate-500: 220 10% 55%;
+    --slate-600: 220 11% 40%;
+    --slate-700: 220 12% 30%;
+    --slate-800: 220 13% 23%;
+    --slate-900: 220 13% 18%;        /* #282c34 — main bg */
+    --slate-950: 220 13% 14%;        /* sidebar / status bar */
+
+    --background: 220 13% 18%;
+    --foreground: 220 14% 88%;
+
+    --card: 220 13% 14%;
+    --card-foreground: 220 14% 88%;
+
+    --popover: 220 13% 14%;
+    --popover-foreground: 220 14% 88%;
+
+    --secondary: 220 13% 23%;
+    --secondary-foreground: 220 14% 88%;
+
+    --muted: 220 13% 23%;
+    --muted-foreground: 220 10% 65%;
+
+    --accent: 220 13% 28%;
+    --accent-foreground: 220 14% 88%;
+
+    --border: 220 13% 25%;
+    --input: 220 13% 23%;
+  }
+
+  /* ── Palette: Light ──
+     Standard light mode. Inverts the slate scale so existing
+     bg-slate-N / text-slate-N classes flip lightness. The --app-white
+     override flips text-white / bg-white to dark slate so heading text
+     stays readable on the new white surfaces. */
+  .dark[data-palette="light"] {
+    --slate-50:  230 84% 5%;          /* deepest text */
+    --slate-100: 222 47% 11%;
+    --slate-200: 217 33% 18%;
+    --slate-300: 215 25% 27%;
+    --slate-400: 215 19% 35%;
+    --slate-500: 215 16% 47%;
+    --slate-600: 215 20% 65%;
+    --slate-700: 213 27% 84%;         /* borders */
+    --slate-800: 214 32% 91%;         /* hover surfaces */
+    --slate-900: 210 40% 98%;         /* card bg */
+    --slate-950: 0 0% 100%;           /* page bg */
+
+    /* Flip white/black so text-white renders dark and bg-black light */
+    --app-white: 222 47% 11%;
+    --app-black: 0 0% 100%;
+
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 92%;
+    --accent-foreground: 222 47% 11%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+  }
+
+  /* ── Accents (override --primary, --ring) ──────────────────────────
+     Crimson also shifts --destructive to amber to stay distinct from
+     the red primary. Other accents leave destructive as default red. */
+
+  .dark[data-accent="crimson"] {
+    --primary: 0 84% 54%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 0 84% 54%;
+    --ring: 0 84% 54%;
+
+    --destructive: 28 95% 55%;
+    --destructive-foreground: 0 0% 100%;
+  }
+
+  .dark[data-accent="blue"] {
+    /* Tailwind blue-500 — vivid, accessible, classic */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 217 91% 60%;
+    --ring: 217 91% 60%;
+  }
+
+  .dark[data-accent="emerald"] {
+    --primary: 160 64% 42%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 160 64% 42%;
+    --ring: 160 64% 42%;
+  }
+
+  .dark[data-accent="amber"] {
+    --primary: 38 92% 50%;
+    --primary-foreground: 0 0% 5%;       /* dark text on bright amber */
+    --primary-soft: 38 92% 50%;
+    --ring: 38 92% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Dark-themed scrollbars */
+.dark {
+  /* Firefox */
+  scrollbar-color: #334155 transparent;
+  scrollbar-width: thin;
+}
+
+.dark *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.dark *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: #334155;
+  border-radius: 3px;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: #475569;
+}
+
+/* Mention tag styling (global) */
+.mention-tag {
+  background: rgba(20, 184, 166, 0.15);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  color: #2dd4bf;
+  font-weight: 500;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.mention-tag.mention-self {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+/* ─── Y.js Collaborative Cursor Styles ────────────────────────────── */
+
+/* Remote user cursor caret */
+.collaboration-cursor__caret {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid;
+  border-color: inherit;
+  word-break: normal;
+  pointer-events: none;
+}
+
+/* Remote user cursor label */
+.collaboration-cursor__label {
+  position: absolute;
+  top: -1.5em;
+  left: -1px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: #0f172a;
+  padding: 1px 6px 2px;
+  border-radius: 4px 4px 4px 0;
+  user-select: none;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+/* Remote user selection highlight */
+.ProseMirror .selection {
+  display: inline;
+}
+
+/* TipTap tables — rendered both in the editor and in MarkdownPreview */
+.ProseMirror table,
+.prose table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  overflow: hidden;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.ProseMirror th,
+.ProseMirror td,
+.prose th,
+.prose td {
+  border: 1px solid hsl(var(--border));
+  padding: 6px 10px;
+  vertical-align: top;
+  position: relative;
+}
+
+.ProseMirror th,
+.prose th {
+  background: hsl(var(--muted) / 0.4);
+  font-weight: 600;
+  text-align: left;
+}
+
+.ProseMirror .selectedCell:after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: hsl(var(--primary) / 0.18);
+  pointer-events: none;
+}
+
+/* Column resize handle */
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: hsl(var(--primary));
+  pointer-events: none;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Pulse animation for connecting state */
+@keyframes collab-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.collab-connecting {
+  animation: collab-pulse 1.5s infinite;
+}
+
+/* ─── react-grid-layout base styles (inlined to avoid dynamic CSS import issues) ── */
+
+.react-grid-layout {
+  position: relative;
+  transition: height 200ms ease;
+}
+
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top, width, height;
+}
+
+.react-grid-item.cssTransforms {
+  transition-property: transform, width, height;
+}
+
+.react-grid-item.react-draggable-dragging {
+  transition: none;
+  z-index: 3;
+  will-change: transform;
+}
+
+.react-grid-item.resizing {
+  z-index: 3;
+  will-change: width, height;
+}
+
+.react-grid-placeholder {
+  background: hsl(var(--primary) / 0.08);
+  border-radius: 0.75rem;
+  opacity: 0.8;
+  transition-duration: 100ms;
+  z-index: 2;
+  user-select: none;
+}
+
+/* react-resizable base handle */
+.react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+}
+
+.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+/* ─── react-grid-layout Dark Theme ────────────────────────────────── */
+
+/* Grid item base */
+.dashboard-grid .react-grid-item {
+  transition: all 200ms ease;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+/* Editing mode: allow overflow for resize handles, add border */
+.rgl-editing .react-grid-item {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  transition: all 200ms ease, box-shadow 200ms ease;
+  position: relative;
+  overflow: visible !important;
+}
+
+.rgl-editing .react-grid-item:hover {
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.1), 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* Drag placeholder (ghost cell) */
+.dashboard-grid .react-grid-placeholder {
+  background: hsl(var(--primary) / 0.06) !important;
+  border: 2px dashed hsl(var(--primary) / 0.4) !important;
+  border-radius: 0.75rem !important;
+  opacity: 1 !important;
+  transition: all 150ms ease !important;
+}
+
+/* Active dragging state */
+.dashboard-grid .react-grid-item.react-draggable-dragging {
+  z-index: 100 !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 2px hsl(var(--primary) / 0.3) !important;
+  border-color: hsl(var(--primary) / 0.4) !important;
+  opacity: 0.9;
+}
+
+/* ── Resize handle — always-visible corner grip in edit mode ── */
+.rgl-editing .react-resizable-handle {
+  position: absolute !important;
+  width: 24px !important;
+  height: 24px !important;
+  bottom: -2px !important;
+  right: -2px !important;
+  cursor: se-resize !important;
+  z-index: 20 !important;
+  background: transparent;
+}
+
+/* Triple-line corner grip mark */
+.rgl-editing .react-resizable-handle::after {
+  content: '' !important;
+  display: block !important;
+  position: absolute !important;
+  right: 4px !important;
+  bottom: 4px !important;
+  width: 12px !important;
+  height: 12px !important;
+  border-right: 2.5px solid hsl(var(--primary) / 0.5) !important;
+  border-bottom: 2.5px solid hsl(var(--primary) / 0.5) !important;
+  border-radius: 0 0 3px 0 !important;
+  transition: all 200ms ease !important;
+}
+
+/* Inner secondary grip line */
+.rgl-editing .react-resizable-handle::before {
+  content: '' !important;
+  display: block !important;
+  position: absolute !important;
+  right: 8px !important;
+  bottom: 8px !important;
+  width: 5px !important;
+  height: 5px !important;
+  border-right: 2px solid hsl(var(--primary) / 0.35) !important;
+  border-bottom: 2px solid hsl(var(--primary) / 0.35) !important;
+  border-radius: 0 0 2px 0 !important;
+  transition: all 200ms ease !important;
+}
+
+/* Hover → make grip brighter */
+.rgl-editing .react-grid-item:hover .react-resizable-handle::after {
+  border-color: hsl(var(--primary) / 0.9) !important;
+}
+
+.rgl-editing .react-grid-item:hover .react-resizable-handle::before {
+  border-color: hsl(var(--primary) / 0.7) !important;
+}
+
+/* Resizing state */
+.dashboard-grid .react-grid-item.resizing {
+  z-index: 100 !important;
+  border-color: hsl(var(--primary) / 0.5) !important;
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2) !important;
+}
+
+/* ─── Non-modal sheet: prevent body scroll lock ──────────────────── */
+/*
+ * Radix Dialog (@radix-ui/react-remove-scroll) sets overflow:hidden on
+ * the body even when modal={false}. When a non-modal side sheet is open
+ * we mark the body with data-nonmodal-sheet so we can override it here.
+ */
+body[data-nonmodal-sheet] {
+  overflow: auto !important;
+  overflow-x: hidden !important;
+}
+
+

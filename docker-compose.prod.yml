@@ -1,0 +1,171 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: redwire-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-redwire}
+      POSTGRES_USER: ${POSTGRES_USER:-redwire}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redwire}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - redwire-network
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: redwire-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
+
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - redwire-network
+    restart: always
+
+  minio:
+    image: minio/minio:latest
+    container_name: redwire-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - redwire-network
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: redwire-backend:latest
+    container_name: redwire-backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-redwire}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-redwire}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_HOURS: 24
+      MINIO_ENDPOINT: minio:9000
+      MINIO_EXTERNAL_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: redwire-evidence
+      MINIO_SECURE: "false"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      SQL_ECHO: "false"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@redwire.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:-}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    # No volume mount for source code in production
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+    networks:
+      - redwire-network
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: redwire-frontend:latest
+    container_name: redwire-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NODE_ENV: production
+
+    depends_on:
+      - backend
+    # No volume mounts - use the built image artifacts
+    networks:
+      - redwire-network
+    restart: always
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: redwire-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/templates:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - redwire-network
+    restart: always
+
+  certbot:
+    image: certbot/certbot
+    container_name: redwire-certbot
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - redwire-network
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    image: redwire-mcp-server:latest
+    container_name: redwire-mcp
+    environment:
+      REDWIRE_API_URL: http://backend:8000
+      REDWIRE_API_TOKEN: ${MCP_API_TOKEN:-}
+      MCP_PORT: "3001"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+
+    depends_on:
+      - backend
+    networks:
+      - redwire-network
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  redwire-network:
+    driver: bridge
