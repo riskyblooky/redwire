@@ -82,3 +82,26 @@ FEATURES.md
 GETTING_STARTED.md
 MIGRATION.md
 todo.md
+
+# Internal docs / scratch
+CLAUDE.md
+feature_analysis.md
+
+# Local-only auth testing setup
+auth-test/
+docker-compose.auth-test.yml
+
+# Generated / build caches
+frontend/next-env.d.ts
+*.tsbuildinfo
+
+# Local scratch (not part of the product)
+frontend/package-additions.json
+/package-lock.json
+restore_alembic.sql
+
+# Internal scripts (not shipped publicly)
+scripts/export_system.ps1
+scripts/seed_findings_only.sql
+scripts/seed_test_data.sql
+scripts/sync_templates.sh
