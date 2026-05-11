@@ -1,12 +1,20 @@
+<p align="center">
+  <img src="docs/images/logo.png" alt="RedWire" width="520">
+</p>
+
+<p align="center">
+  A self-hosted platform for red team operations management: engagements, findings, assets, evidence, credential vault, cleanup artifacts, runbooks, and professional reporting.
+</p>
+
+<p align="center">
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white" alt="Next.js"></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
+  <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL"></a>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"></a>
+</p>
+
 # RedWire
-
-A self-hosted platform for red team operations management: engagements, findings, assets, evidence, credential vault, cleanup artifacts, runbooks, and professional reporting.
-
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 
 ## Overview
 
@@ -83,20 +91,22 @@ RedWire centralizes the operational side of an engagement: who is doing what, wh
 
 4. **Start the platform**
    ```bash
-   docker compose up -d
+   docker compose -f docker-compose.prod.yml up -d
    ```
 
 5. **Wait for startup** (~30–60 seconds)
    ```bash
-   docker compose logs -f backend
+   docker compose -f docker-compose.prod.yml logs -f backend
    ```
    Wait for `Application startup complete`.
 
 6. **Access the platform**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API docs: http://localhost:8000/docs
-   - MinIO console: http://localhost:9001
+
+   The production Compose stack puts everything behind Nginx, so the application is served on a single port:
+   - Web UI: http://localhost
+   - API docs: http://localhost/api/docs
+
+   Internal services (PostgreSQL, Redis, MinIO, MCP server) are not exposed on the host by design. See the [Production deployment](#production-deployment) section for SSL setup and domain configuration.
 
 ### Default credentials
 
@@ -169,21 +179,23 @@ Migration files follow the convention `YYYY-MM-DD_<revid>_<desc>.py`.
 
 ### Common Docker commands
 
+All commands below target the production Compose file (`docker-compose.prod.yml`). For local development with hot-reload, swap `-f docker-compose.prod.yml` for `-f docker-compose.yml` or omit the flag entirely.
+
 ```bash
 # Start all services
-docker compose up -d
+docker compose -f docker-compose.prod.yml up -d
 
 # Follow logs
-docker compose logs -f
+docker compose -f docker-compose.prod.yml logs -f
 
 # Stop all services
-docker compose down
+docker compose -f docker-compose.prod.yml down
 
 # Rebuild containers
-docker compose up -d --build
+docker compose -f docker-compose.prod.yml up -d --build
 
 # Remove all data (destroys databases and volumes)
-docker compose down -v
+docker compose -f docker-compose.prod.yml down -v
 ```
 
 ## Project structure
