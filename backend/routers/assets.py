@@ -16,7 +16,7 @@ from models.permission import Permission
 import uuid
 import io
 import csv
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from utils.collaboration import create_activity_log, build_change_summary
 from models.discussion import ResourceType
 

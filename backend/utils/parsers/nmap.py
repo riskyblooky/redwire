@@ -7,7 +7,7 @@ assets + ports (no findings, since Nmap is a port scanner, not a vuln
 scanner). Extracts OS detection and script output as asset descriptions.
 """
 
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from utils.parsers import (
     ParsedImportData, ParsedAsset, ParsedPort,
 )
