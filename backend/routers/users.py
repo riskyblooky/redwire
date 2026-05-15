@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -8,7 +9,9 @@ from models.user import User, UserRole
 from schemas.user import UserResponse, UserCreate, UserUpdate, UserPasswordUpdate, ALLOWED_THEMES, ALLOWED_PALETTES
 from auth.dependencies import get_current_user
 from auth.password import get_password_hash
+from utils.paths import ensure_within
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("/me", response_model=UserResponse)
@@ -69,8 +72,11 @@ async def update_current_user(
     # Update fields (excluding role and is_active which are admin-only in UserUpdate)
     update_data = user_data.model_dump(exclude_unset=True)
 
-    # Restrict what current user can change through this endpoint
-    allowed_fields = {"email", "full_name", "profile_photo", "theme_preference", "theme_palette", "theme_accent_custom"}
+    # `profile_photo` is intentionally excluded — it is server-set by
+    # POST /users/me/photo. Allowing self-service writes here would
+    # turn the upload handler's pre-delete into an arbitrary-path
+    # os.remove primitive.
+    allowed_fields = {"email", "full_name", "theme_preference", "theme_palette", "theme_accent_custom"}
     if "theme_preference" in update_data:
         if update_data["theme_preference"] not in ALLOWED_THEMES:
             raise HTTPException(
@@ -169,13 +175,21 @@ async def upload_profile_photo(
     with open(file_path, "wb") as f:
         f.write(await file.read())
     
-    # Delete old photo if exists
+    # Delete old photo if it exists *and* resolves inside the uploads tree.
+    # A non-conforming value means either pre-patch corruption or a
+    # bypass attempt; log and skip rather than honouring it.
     if current_user.profile_photo and os.path.exists(current_user.profile_photo):
-        try:
-            os.remove(current_user.profile_photo)
-        except Exception as e:
-            print(f"Error removing old photo: {e}")
-            
+        if ensure_within(current_user.profile_photo, upload_dir):
+            try:
+                os.remove(current_user.profile_photo)
+            except Exception as e:
+                logger.warning("Error removing old profile photo: %s", e)
+        else:
+            logger.warning(
+                "Refusing to remove profile photo path outside upload dir: %s",
+                current_user.profile_photo,
+            )
+
     # Update user record
     current_user.profile_photo = file_path
     await db.commit()
