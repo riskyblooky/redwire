@@ -130,8 +130,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
 
     logout: () => {
-        // Capture token BEFORE clearing localStorage
+        // Capture tokens BEFORE clearing localStorage
         const token = localStorage.getItem('access_token');
+        const refreshToken = localStorage.getItem('refresh_token');
 
         // Clear local state immediately for responsive UX
         localStorage.removeItem('access_token');
@@ -143,7 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // Then blacklist the token on the backend (fire-and-forget)
         // We pass the token explicitly since localStorage is already cleared
         if (token) {
-            api.post('/auth/logout', {}, {
+            api.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : {}, {
                 headers: { Authorization: `Bearer ${token}` }
             }).catch(() => {
                 // Best-effort: if this fails, the token will still expire naturally

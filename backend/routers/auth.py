@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse, Response
@@ -397,6 +398,7 @@ async def refresh_token_endpoint(token_data: TokenRefresh, db: AsyncSession = De
 
 @router.post("/logout")
 async def logout(
+    token_data: Optional[TokenRefresh] = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ):
@@ -423,6 +425,10 @@ async def logout(
 
     # Blacklist the access token
     blacklist_token(access_token)
+    # Blacklist the paired refresh token so /auth/refresh cannot
+    # mint a new session after logout (GHSA fix)
+    if token_data and token_data.refresh_token:
+        blacklist_token(token_data.refresh_token)
     
     return {"message": "Successfully logged out"}
 
