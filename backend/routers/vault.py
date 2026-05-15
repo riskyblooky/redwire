@@ -194,10 +194,12 @@ async def update_vault_item(
         if item.item_type == "File" and item_update.item_type and item_update.item_type != "File":
             raise HTTPException(status_code=400, detail="Cannot change type of a file vault item")
 
-        # Update fields — encrypt sensitive values before persisting
+        # Update fields — encrypt sensitive values before persisting.
+        # NOTE: do not decrypt `item` here. build_change_summary redacts
+        # vault-encrypted fields, so the diff doesn't need plaintext; and an
+        # in-place decrypt mutates the SQLAlchemy attrs, which would persist
+        # un-edited credential fields back as plaintext on the next commit.
         update_data = item_update.model_dump(exclude_unset=True)
-        # Decrypt current fields so change summary compares plaintext
-        decrypt_vault_item(item)
         change_details = build_change_summary(item, update_data, label=f"Updated vault item '{item.name}'")
 
         encrypted_data = encrypt_vault_fields(update_data)
