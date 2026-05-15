@@ -33,7 +33,7 @@ router = APIRouter(prefix="/markdown-images", tags=["markdown-images"])
 
 _ALLOWED_TYPES = {
     "image/png", "image/jpeg", "image/gif", "image/webp",
-    "image/svg+xml", "image/bmp",
+    "image/bmp",
 }
 _MAX_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 _EXT_FALLBACK = {
@@ -41,7 +41,6 @@ _EXT_FALLBACK = {
     "image/jpeg": ".jpg",
     "image/gif": ".gif",
     "image/webp": ".webp",
-    "image/svg+xml": ".svg",
     "image/bmp": ".bmp",
 }
 
@@ -133,5 +132,7 @@ async def get_markdown_image(
         headers={
             "Cache-Control": "private, max-age=3600",
             "Content-Length": str(len(body)),
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "X-Content-Type-Options": "nosniff",
         },
     )
