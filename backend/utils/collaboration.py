@@ -156,6 +156,13 @@ _LONG_TEXT_FIELDS = {
     "references", "steps", "expected_result", "actual_result",
 }
 
+# Fields whose values must never appear in activity logs / reports. Sourced
+# from utils.vault_crypto so anything encrypted at rest is automatically
+# redacted from the diff stream — add new vault-sensitive columns there and
+# this set follows.
+from utils.vault_crypto import ENCRYPTED_FIELDS as _VAULT_ENCRYPTED_FIELDS
+_REDACTED_FIELDS = frozenset(_VAULT_ENCRYPTED_FIELDS)
+
 
 def build_change_summary(
     old_obj: Any,
@@ -168,11 +175,17 @@ def build_change_summary(
         'Updated status: planning → active, name: Old Name → New Name'
 
     Long text fields just say 'updated <field>' to avoid overwhelming logs.
+    Redacted (vault-sensitive) fields say '<field> (changed)' without values.
     Fields whose value did not actually change are omitted.
     """
     parts: list[str] = []
     for field, new_val in update_data.items():
         old_val = getattr(old_obj, field, None)
+        if field in _REDACTED_FIELDS:
+            # Don't render or compare values — old_val may be ciphertext and
+            # new_val is plaintext input; either way, neither must reach logs.
+            parts.append(f"{field.replace('_', ' ')} (changed)")
+            continue
         # Skip unchanged values
         if old_val == new_val:
             continue
