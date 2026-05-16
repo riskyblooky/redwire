@@ -6,6 +6,7 @@ from typing import Optional
 import threading
 import logging
 import os
+import re
 
 from database import get_db, AsyncSessionLocal
 from models.user import User, UserRole
@@ -16,6 +17,7 @@ from utils.hash_utils import (
     identify_hash_type,
     bloom_service,
 )
+from utils.paths import ensure_within
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/wordlist", tags=["wordlist"])
@@ -165,8 +167,11 @@ async def upload_wordlist(
             detail="Only admins can upload wordlists.",
         )
 
-    # Save file
-    safe_name = file.filename.replace("/", "_").replace("\\", "_") if file.filename else "wordlist.txt"
+    # Allow-list sanitiser — keep alphanumerics, dot, underscore, hyphen.
+    # Strip leading dots so a filename like ".bashrc" cannot land as a
+    # dotfile on disk. Empty result falls back to "wordlist.txt".
+    raw_name = file.filename or "wordlist.txt"
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", raw_name).lstrip(".") or "wordlist.txt"
     file_path = os.path.join(UPLOAD_DIR, f"{os.urandom(8).hex()}_{safe_name}")
     content = await file.read()
     with open(file_path, "wb") as f:
@@ -306,10 +311,16 @@ def _process_wordlist_sync(file_path: str, meta_id: str):
         except Exception:
             pass
     finally:
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
+        if ensure_within(file_path, UPLOAD_DIR):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        else:
+            logger.warning(
+                "Refusing to remove wordlist path outside upload dir: %s",
+                file_path,
+            )
         sync_engine.dispose()
 
 
