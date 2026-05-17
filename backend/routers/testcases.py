@@ -362,6 +362,17 @@ async def get_testcase_versions(
     if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
 
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, tc.engagement_id, Permission.TESTCASE_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'testcase_view' permission to view test cases.",
+            )
+
     versions = await db.execute(
         select(VersionHistory, User.username)
         .outerjoin(User, VersionHistory.changed_by == User.id)
@@ -391,6 +402,23 @@ async def get_testcase_version(
     current_user: User = Depends(get_current_user),
 ):
     """Get the full snapshot of a specific test case version."""
+    # Load the parent test case so we have an engagement_id to gate on.
+    tc_result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
+    tc = tc_result.scalar_one_or_none()
+    if not tc:
+        raise HTTPException(status_code=404, detail="Test case not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, tc.engagement_id, Permission.TESTCASE_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'testcase_view' permission to view test cases.",
+            )
+
     result = await db.execute(
         select(VersionHistory, User.username)
         .outerjoin(User, VersionHistory.changed_by == User.id)
