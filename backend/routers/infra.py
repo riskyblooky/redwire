@@ -225,6 +225,11 @@ async def link_infra_item(
     current_user: User = Depends(get_current_user),
 ):
     """Link an infra item to a finding, testcase, or note."""
+    from auth.rbac import check_engagement_permission
+    from models.finding import Finding as _F
+    from models.testcase import TestCase as _TC
+    from models.note import Note as _N
+
     await require_global_permission(Permission.INFRA_EDIT, current_user, db)
 
     # Verify item exists
@@ -232,11 +237,37 @@ async def link_infra_item(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Infra item not found")
 
+    # InfraItem is global (no engagement_id), so per-link the caller must
+    # have at least view permission on the target entity's engagement.
+    # Admins bypass.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+
+    async def _require_view(eng_id: str, perm: Permission, label: str):
+        if is_admin:
+            return
+        if not await check_engagement_permission(current_user.id, eng_id, perm.value, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions on this {label}'s engagement.",
+            )
+
     if data.entity_type == "finding":
+        f = (await db.execute(select(_F).where(_F.id == data.entity_id))).scalar_one_or_none()
+        if not f:
+            raise HTTPException(status_code=404, detail="Finding not found")
+        await _require_view(f.engagement_id, Permission.FINDING_VIEW, "finding")
         link = InfraItemFinding(infra_item_id=item_id, finding_id=data.entity_id)
     elif data.entity_type == "testcase":
+        tc = (await db.execute(select(_TC).where(_TC.id == data.entity_id))).scalar_one_or_none()
+        if not tc:
+            raise HTTPException(status_code=404, detail="Test case not found")
+        await _require_view(tc.engagement_id, Permission.TESTCASE_VIEW, "test case")
         link = InfraItemTestCase(infra_item_id=item_id, testcase_id=data.entity_id)
     elif data.entity_type == "note":
+        note = (await db.execute(select(_N).where(_N.id == data.entity_id))).scalar_one_or_none()
+        if not note:
+            raise HTTPException(status_code=404, detail="Note not found")
+        await _require_view(note.engagement_id, Permission.NOTE_VIEW, "note")
         link = InfraItemNote(infra_item_id=item_id, note_id=data.entity_id)
     else:
         raise HTTPException(status_code=400, detail="Invalid entity_type")

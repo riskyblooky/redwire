@@ -140,7 +140,36 @@ async def create_thread(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions. You need the 'discussion_create' permission to create threads."
             )
-    
+
+    # Verify the referenced resource lives in the same engagement as the
+    # thread. Without this an attacker could pin a thread (and its
+    # downstream WS broadcasts / resource_id metadata) to a foreign
+    # engagement's resource id.
+    _resource_models = {
+        "finding": "models.finding:Finding",
+        "testcase": "models.testcase:TestCase",
+        "asset": "models.asset:Asset",
+        "note": "models.note:Note",
+        "vault": "models.vault:VaultItem",
+        "cleanup_artifact": "models.cleanup_artifact:CleanupArtifact",
+        "evidence": "models.evidence:Evidence",
+    }
+    rt = thread_data.resource_type.value
+    if rt in _resource_models:
+        import importlib
+        mod_path, cls_name = _resource_models[rt].split(":")
+        _model = getattr(importlib.import_module(mod_path), cls_name)
+        _res = (await db.execute(
+            select(_model).where(_model.id == thread_data.resource_id)
+        )).scalar_one_or_none()
+        if not _res:
+            raise HTTPException(status_code=404, detail=f"{rt.capitalize()} not found")
+        if getattr(_res, "engagement_id", None) != thread_data.engagement_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{rt.capitalize()} belongs to a different engagement",
+            )
+
     new_thread = Thread(
         engagement_id=thread_data.engagement_id,
         resource_type=thread_data.resource_type.value,  # Use .value to get lowercase string

@@ -204,13 +204,31 @@ async def link_intel_item(
     current_user: User = Depends(get_current_user),
 ):
     """Link an intel item to a finding, testcase, or note."""
+    from auth.rbac import check_engagement_permission
     await require_global_permission(Permission.INTEL_EDIT, current_user, db)
     # Verify item exists
     result = await db.execute(select(IntelItem).where(IntelItem.id == item_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Intel item not found")
 
+    # IntelItem is global (no engagement_id), so per-link the caller must have
+    # at least view permission on the target entity's engagement. Admins bypass.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+
+    async def _require_view(eng_id: str, perm: Permission, label: str):
+        if is_admin:
+            return
+        if not await check_engagement_permission(current_user.id, eng_id, perm.value, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions on this {label}'s engagement.",
+            )
+
     if data.entity_type == "finding":
+        finding = (await db.execute(select(Finding).where(Finding.id == data.entity_id))).scalar_one_or_none()
+        if not finding:
+            raise HTTPException(status_code=404, detail="Finding not found")
+        await _require_view(finding.engagement_id, Permission.FINDING_VIEW, "finding")
         existing = await db.execute(
             select(IntelItemFinding).where(
                 IntelItemFinding.intel_item_id == item_id,
@@ -221,6 +239,10 @@ async def link_intel_item(
             raise HTTPException(status_code=409, detail="Already linked")
         db.add(IntelItemFinding(intel_item_id=item_id, finding_id=data.entity_id))
     elif data.entity_type == "testcase":
+        tc = (await db.execute(select(TestCase).where(TestCase.id == data.entity_id))).scalar_one_or_none()
+        if not tc:
+            raise HTTPException(status_code=404, detail="Test case not found")
+        await _require_view(tc.engagement_id, Permission.TESTCASE_VIEW, "test case")
         existing = await db.execute(
             select(IntelItemTestCase).where(
                 IntelItemTestCase.intel_item_id == item_id,
@@ -231,6 +253,10 @@ async def link_intel_item(
             raise HTTPException(status_code=409, detail="Already linked")
         db.add(IntelItemTestCase(intel_item_id=item_id, testcase_id=data.entity_id))
     elif data.entity_type == "note":
+        note = (await db.execute(select(Note).where(Note.id == data.entity_id))).scalar_one_or_none()
+        if not note:
+            raise HTTPException(status_code=404, detail="Note not found")
+        await _require_view(note.engagement_id, Permission.NOTE_VIEW, "note")
         existing = await db.execute(
             select(IntelItemNote).where(
                 IntelItemNote.intel_item_id == item_id,

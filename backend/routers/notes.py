@@ -474,9 +474,11 @@ async def link_note_to_finding(note_id: str, finding_id: str, db: AsyncSession =
     existing = await db.execute(select(NoteFinding).where(NoteFinding.note_id == note_id, NoteFinding.finding_id == finding_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    result = await db.execute(select(Finding).where(Finding.id == finding_id))
-    if not result.scalar_one_or_none():
+    finding = (await db.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none()
+    if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+    if finding.engagement_id != note.engagement_id:
+        raise HTTPException(status_code=400, detail="Finding belongs to a different engagement")
     db.add(NoteFinding(note_id=note_id, finding_id=finding_id))
     await db.commit()
 
@@ -502,9 +504,11 @@ async def link_note_to_testcase(note_id: str, testcase_id: str, db: AsyncSession
     existing = await db.execute(select(NoteTestCase).where(NoteTestCase.note_id == note_id, NoteTestCase.testcase_id == testcase_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
-    if not result.scalar_one_or_none():
+    tc = (await db.execute(select(TestCase).where(TestCase.id == testcase_id))).scalar_one_or_none()
+    if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
+    if tc.engagement_id != note.engagement_id:
+        raise HTTPException(status_code=400, detail="Test case belongs to a different engagement")
     db.add(NoteTestCase(note_id=note_id, testcase_id=testcase_id))
     await db.commit()
 
@@ -530,9 +534,11 @@ async def link_note_to_asset(note_id: str, asset_id: str, db: AsyncSession = Dep
     existing = await db.execute(select(NoteAsset).where(NoteAsset.note_id == note_id, NoteAsset.asset_id == asset_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
-    if not result.scalar_one_or_none():
+    asset = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
+    if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
+    if asset.engagement_id != note.engagement_id:
+        raise HTTPException(status_code=400, detail="Asset belongs to a different engagement")
     db.add(NoteAsset(note_id=note_id, asset_id=asset_id))
     await db.commit()
 
@@ -558,9 +564,11 @@ async def link_note_to_vault_item(note_id: str, vault_item_id: str, db: AsyncSes
     existing = await db.execute(select(NoteVaultItem).where(NoteVaultItem.note_id == note_id, NoteVaultItem.vault_item_id == vault_item_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    result = await db.execute(select(VaultItem).where(VaultItem.id == vault_item_id))
-    if not result.scalar_one_or_none():
+    item = (await db.execute(select(VaultItem).where(VaultItem.id == vault_item_id))).scalar_one_or_none()
+    if not item:
         raise HTTPException(status_code=404, detail="Vault item not found")
+    if item.engagement_id != note.engagement_id:
+        raise HTTPException(status_code=400, detail="Vault item belongs to a different engagement")
     db.add(NoteVaultItem(note_id=note_id, vault_item_id=vault_item_id))
     await db.commit()
 
@@ -586,9 +594,11 @@ async def link_note_to_cleanup_artifact(note_id: str, cleanup_artifact_id: str, 
     existing = await db.execute(select(NoteCleanupArtifact).where(NoteCleanupArtifact.note_id == note_id, NoteCleanupArtifact.cleanup_artifact_id == cleanup_artifact_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    result = await db.execute(select(CleanupArtifact).where(CleanupArtifact.id == cleanup_artifact_id))
-    if not result.scalar_one_or_none():
+    ca = (await db.execute(select(CleanupArtifact).where(CleanupArtifact.id == cleanup_artifact_id))).scalar_one_or_none()
+    if not ca:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    if ca.engagement_id != note.engagement_id:
+        raise HTTPException(status_code=400, detail="Cleanup artifact belongs to a different engagement")
     db.add(NoteCleanupArtifact(note_id=note_id, cleanup_artifact_id=cleanup_artifact_id))
     await db.commit()
 

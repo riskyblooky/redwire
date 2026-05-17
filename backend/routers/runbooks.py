@@ -398,6 +398,18 @@ async def apply_runbook_to_engagement(
         if not has_permission:
             raise HTTPException(status_code=403, detail="Insufficient permissions to create test cases")
 
+    # If nesting under an existing test case, verify it belongs to the
+    # target engagement. Otherwise an attacker could parent the new test
+    # cases under a foreign engagement's testcase tree.
+    if parent_testcase_id:
+        parent_tc = (await db.execute(
+            select(TestCase).where(TestCase.id == parent_testcase_id)
+        )).scalar_one_or_none()
+        if not parent_tc:
+            raise HTTPException(status_code=404, detail="Parent test case not found")
+        if parent_tc.engagement_id != engagement_id:
+            raise HTTPException(status_code=400, detail="Parent test case belongs to a different engagement")
+
     # Build test cases from runbook items, preserving tree structure
     runbook_item_id_to_testcase_id = {}
     created_testcases = []
