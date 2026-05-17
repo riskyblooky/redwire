@@ -81,6 +81,62 @@ async def check_engagement_permission(user_id: str, engagement_id: str, required
     # Check if the required permission is in the user's role permissions
     return required_permission in permissions
 
+_ADMIN_ROLES = (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
+
+
+async def resolve_engagement_scope(
+    engagement_id: Optional[str],
+    db: AsyncSession,
+    current_user,
+):
+    """Resolve the engagement-scoping context for an aggregate-read endpoint.
+
+    Returns ``(is_admin, allowed_eng_subq)``:
+      - ``is_admin`` — True for ADMIN / READ_ONLY_ADMIN / TEAM_LEAD; those
+        callers bypass engagement scoping entirely.
+      - ``allowed_eng_subq`` — a SQLAlchemy scalar subquery yielding the
+        engagement ids the caller is assigned to. Use with
+        ``column.in_(allowed_eng_subq)`` via ``scope_to_assignments``.
+
+    If ``engagement_id`` is supplied by a non-admin caller, the caller's
+    membership on that engagement is verified; if absent, raises 403.
+    """
+    is_admin = current_user.role in _ADMIN_ROLES
+    allowed_eng_subq = (
+        select(EngagementAssignment.engagement_id)
+        .where(EngagementAssignment.user_id == current_user.id)
+        .scalar_subquery()
+    )
+    if engagement_id and not is_admin:
+        member = await db.execute(
+            select(EngagementAssignment.user_id).where(
+                EngagementAssignment.user_id == current_user.id,
+                EngagementAssignment.engagement_id == engagement_id,
+            )
+        )
+        if not member.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this engagement.",
+            )
+    return is_admin, allowed_eng_subq
+
+
+def scope_to_assignments(query, column, engagement_id, is_admin, allowed_eng_subq):
+    """Apply engagement scoping to an aggregate-read query.
+
+    Use after ``resolve_engagement_scope``:
+      - if ``engagement_id`` is supplied, filter the query to that engagement;
+      - else if the caller is non-admin, restrict to their assigned engagements;
+      - else (admin, no scope) return the query unchanged.
+    """
+    if engagement_id:
+        return query.where(column == engagement_id)
+    if not is_admin:
+        return query.where(column.in_(allowed_eng_subq))
+    return query
+
+
 def can_modify_resource(resource_owner_id: str, current_user, engagement_role: Optional[str] = None) -> bool:
     """Check if user can modify a resource."""
     # Admins and Team Leads can modify anything
