@@ -3,10 +3,12 @@ from typing import Optional
 from utils.collaboration import manager
 from auth import decode_token
 from auth.jwt import is_token_blacklisted
+from auth.rbac import check_engagement_permission
+from models.permission import Permission
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from models.user import User
+from models.user import User, UserRole
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,11 @@ async def get_ws_user(
     try:
         payload = decode_token(token)
         if not payload:
+            return None
+
+        # Reject non-access tokens (refresh / password_reset / etc.) so the
+        # WS path can't accept JWTs the REST dependency rejects.
+        if payload.get("type") != "access":
             return None
 
         # Reject revoked or 2FA-pending tokens
@@ -63,10 +70,16 @@ async def websocket_endpoint(
     Accepts first, then authenticates to avoid proxy timeout/handshake errors.
     """
     await websocket.accept()
-    
+
     # 1. Authenticate
     payload = decode_token(token)
     if not payload:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # Reject non-access tokens (refresh / password_reset / etc.) — the REST
+    # dependency does the same; WS must not be a softer door.
+    if payload.get("type") != "access":
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -74,15 +87,16 @@ async def websocket_endpoint(
     if is_token_blacklisted(token) or payload.get("2fa_pending"):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-        
+
     user_id = payload.get("sub")
     role = payload.get("role")
-    
-    # 2. Verify Resource Existence (Security & Validation)
+
+    # 2. Resolve resource and capture its owning engagement_id (where applicable).
     from models.engagement import Engagement
     from models.finding import Finding
-    
+
     resource_exists = False
+    engagement_id: Optional[str] = None
     try:
         from models.asset import Asset
         from models.testcase import TestCase
@@ -90,29 +104,43 @@ async def websocket_endpoint(
 
         if resource_type == "engagement":
             result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
+            obj = result.scalar_one_or_none()
+            resource_exists = obj is not None
+            engagement_id = obj.id if obj else None
         elif resource_type == "finding":
             result = await db.execute(select(Finding).where(Finding.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
+            obj = result.scalar_one_or_none()
+            resource_exists = obj is not None
+            engagement_id = getattr(obj, "engagement_id", None) if obj else None
         elif resource_type == "asset":
             result = await db.execute(select(Asset).where(Asset.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
+            obj = result.scalar_one_or_none()
+            resource_exists = obj is not None
+            engagement_id = getattr(obj, "engagement_id", None) if obj else None
         elif resource_type == "testcase":
             result = await db.execute(select(TestCase).where(TestCase.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
+            obj = result.scalar_one_or_none()
+            resource_exists = obj is not None
+            engagement_id = getattr(obj, "engagement_id", None) if obj else None
         elif resource_type == "evidence":
             result = await db.execute(select(Evidence).where(Evidence.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
+            obj = result.scalar_one_or_none()
+            resource_exists = obj is not None
+            engagement_id = getattr(obj, "engagement_id", None) if obj else None
         elif resource_type == "note":
             from models.note import Note
             result = await db.execute(select(Note).where(Note.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
+            obj = result.scalar_one_or_none()
+            resource_exists = obj is not None
+            engagement_id = getattr(obj, "engagement_id", None) if obj else None
         elif resource_type == "report":
             # Reports are virtual resources linked to engagement
             result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
+            obj = result.scalar_one_or_none()
+            resource_exists = obj is not None
+            engagement_id = obj.id if obj else None
         elif resource_type == "dashboard":
-            # Dashboard is a virtual global resource
+            # Dashboard is a virtual global resource — broadcast-only.
             resource_exists = resource_id == "global"
         elif resource_type == "user":
             # User-level notification channel
@@ -128,6 +156,21 @@ async def websocket_endpoint(
     if not resource_exists:
         await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
         return
+
+    # 2b. user channel: caller may only subscribe to their OWN id.
+    if resource_type == "user" and str(resource_id) != str(user_id):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # 2c. Engagement-scoped resources: require ENGAGEMENT_VIEW on the owning
+    # engagement. (dashboard:global is intentionally permissive here;
+    # broadcast-side scoping is tracked separately.)
+    if engagement_id is not None:
+        if not await check_engagement_permission(
+            user_id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+        ):
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
     # 3. Connect to manager
     user_info = {
@@ -193,6 +236,12 @@ async def yjs_websocket_endpoint(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
+    # Reject non-access tokens (refresh / password_reset / etc.) so the WS
+    # path can't accept JWTs the REST dependency rejects.
+    if payload.get("type") != "access":
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     # Reject revoked or 2FA-pending tokens
     if is_token_blacklisted(token) or payload.get("2fa_pending"):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -208,6 +257,33 @@ async def yjs_websocket_endpoint(
     if not note:
         await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
         return
+
+    # 2b. Authorize against the note's engagement. Mirrors routers/notes.py:
+    #   - view requires NOTE_VIEW
+    #   - edit requires NOTE_EDIT (owner) or NOTE_EDIT_ANY (non-owner);
+    #     admin / read-only-admin / team-lead bypass the edit check
+    # Without this, the WS path is a softer door than the REST one.
+    if not await check_engagement_permission(
+        user_id, note.engagement_id, Permission.NOTE_VIEW.value, db
+    ):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    is_admin = role in (
+        UserRole.ADMIN.value,
+        UserRole.READ_ONLY_ADMIN.value,
+        UserRole.TEAM_LEAD.value,
+    )
+    if is_admin:
+        can_edit = True
+    else:
+        is_owner = note.created_by == user_id
+        edit_perm = (
+            Permission.NOTE_EDIT.value if is_owner else Permission.NOTE_EDIT_ANY.value
+        )
+        can_edit = await check_engagement_permission(
+            user_id, note.engagement_id, edit_perm, db
+        )
 
     # 3. Join the Y.js room
     room = yjs_store.get_or_create_room(note_id)
@@ -233,8 +309,10 @@ async def yjs_websocket_endpoint(
             message = await websocket.receive()
 
             if "bytes" in message and message["bytes"]:
-                # Binary Y.js sync/awareness message — relay to other clients
-                await room.relay_binary(websocket, message["bytes"])
+                # Binary Y.js sync/awareness message — relay to other clients.
+                # Read-only viewers cannot broadcast CRDT updates.
+                if can_edit:
+                    await room.relay_binary(websocket, message["bytes"])
 
             elif "text" in message and message["text"]:
                 # JSON control message (save_content, register_client_id)
@@ -242,6 +320,8 @@ async def yjs_websocket_endpoint(
                     data = _json.loads(message["text"])
 
                     if data.get("type") == "save_content":
+                        if not can_edit:
+                            continue
                         content = data.get("content", "")
                         await save_note_content(note_id, content, user_id)
                     elif data.get("type") == "register_client_id":
