@@ -105,6 +105,9 @@ export default function ProfilePage() {
     const [disablePassword, setDisablePassword] = useState('');
     const [disableCode, setDisableCode] = useState('');
     const [showSecret, setShowSecret] = useState(false);
+    // Setup requires the current password (mirrors disable) — see GHSA-vm6w-9wm5-q367
+    const [showSetupPrompt, setShowSetupPrompt] = useState(false);
+    const [setupPassword, setSetupPassword] = useState('');
 
     // Wordlist check for new password
     const checkPassword = useCheckPassword();
@@ -193,8 +196,10 @@ export default function ProfilePage() {
     const handleTotpSetup = async () => {
         setTotpLoading(true);
         try {
-            const res = await api.post('/auth/totp/setup');
+            const res = await api.post('/auth/totp/setup', { password: setupPassword });
             setTotpSetup(res.data);
+            setShowSetupPrompt(false);
+            setSetupPassword('');
         } catch (error: any) {
             toast.error(error.response?.data?.detail || 'Failed to start 2FA setup');
         } finally {
@@ -639,6 +644,43 @@ export default function ProfilePage() {
                                             </Button>
                                         </div>
                                     </div>
+                                ) : user?.auth_provider && user.auth_provider !== 'local' ? (
+                                    /* SSO / LDAP — 2FA managed by the identity provider */
+                                    <div className="space-y-2 text-sm text-slate-400">
+                                        <p>Two-factor authentication is managed by your identity provider ({user.auth_provider.toUpperCase()}).</p>
+                                        <p>Configure MFA there to apply it to this account.</p>
+                                    </div>
+                                ) : showSetupPrompt ? (
+                                    /* Setup password prompt — gates /totp/setup so a stolen session alone can't bind 2FA */
+                                    <div className="space-y-3 p-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                                        <p className="text-sm text-slate-300">Enter your current password to begin 2FA setup:</p>
+                                        <Input
+                                            type="password"
+                                            placeholder="Current password"
+                                            value={setupPassword}
+                                            onChange={(e) => setSetupPassword(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' && setupPassword) handleTotpSetup(); }}
+                                            className="bg-slate-950/50 border-slate-700 text-white"
+                                            autoFocus
+                                        />
+                                        <div className="flex gap-2">
+                                            <Button
+                                                onClick={handleTotpSetup}
+                                                disabled={totpLoading || !setupPassword}
+                                                className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                                            >
+                                                {totpLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                                Continue
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                onClick={() => { setShowSetupPrompt(false); setSetupPassword(''); }}
+                                                className="text-slate-400"
+                                            >
+                                                Cancel
+                                            </Button>
+                                        </div>
+                                    </div>
                                 ) : (
                                     /* Not enabled, show setup button */
                                     <div className="space-y-3">
@@ -646,7 +688,7 @@ export default function ProfilePage() {
                                             Protect your account with time-based one-time passwords (TOTP). Compatible with Google Authenticator, Duo Mobile, Authy, and more.
                                         </p>
                                         <Button
-                                            onClick={handleTotpSetup}
+                                            onClick={() => setShowSetupPrompt(true)}
                                             disabled={totpLoading}
                                             className="bg-emerald-600 hover:bg-emerald-700"
                                         >
