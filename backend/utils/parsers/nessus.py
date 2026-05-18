@@ -6,7 +6,7 @@ Extracts hosts → assets+ports and plugin results → findings.
 Deduplicates findings by plugin ID (merges affected hosts).
 """
 
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from typing import Optional
 from utils.parsers import (
     ParsedImportData, ParsedAsset, ParsedFinding, ParsedPort,

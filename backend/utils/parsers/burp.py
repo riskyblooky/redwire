@@ -5,7 +5,7 @@ Parses Burp Suite XML issue export files.
 Extracts issues → findings and host/URL → assets.
 """
 
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 import html
 import re
 from typing import Optional

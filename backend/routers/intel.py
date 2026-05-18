@@ -500,7 +500,7 @@ async def refresh_feeds(
     """Fetch all enabled feeds and import new items."""
     await require_global_permission(Permission.INTEL_MANAGE_FEEDS, current_user, db)
     import httpx
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
     import json
     import uuid
 

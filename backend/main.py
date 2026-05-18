@@ -98,7 +98,7 @@ async def _refresh_intel_feeds_background():
     from models.intel_item import IntelItem
     from sqlalchemy import select
     import httpx
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
     import uuid
     import re
     from datetime import datetime
