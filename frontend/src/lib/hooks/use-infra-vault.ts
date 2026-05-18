@@ -27,6 +27,7 @@ export interface InfraVaultAccess {
     profile_photo?: string;
     granted_by?: string;
     granted_at: string;
+    can_manage: boolean;
 }
 
 export interface InfraVaultAccessCheck {
@@ -158,8 +159,16 @@ export function useDeleteInfraVaultItem() {
 export function useGrantInfraVaultAccess() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ infraItemId, userId }: { infraItemId: string; userId: string }) => {
-            await api.post(`/infra/items/${infraItemId}/vault/access?user_id=${userId}`);
+        mutationFn: async ({ infraItemId, userId, canManage = false }: {
+            infraItemId: string;
+            userId: string;
+            canManage?: boolean;
+        }) => {
+            const params = new URLSearchParams({
+                user_id: userId,
+                can_manage: canManage ? 'true' : 'false',
+            });
+            await api.post(`/infra/items/${infraItemId}/vault/access?${params.toString()}`);
         },
         onSuccess: (_, vars) => {
             queryClient.invalidateQueries({ queryKey: ['infra-vault-access', vars.infraItemId] });

@@ -21,6 +21,7 @@
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import api from '@/lib/api';
+import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -252,6 +253,11 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
 
     const hasAccess = accessCheck?.has_access ?? false;
     const canManage = accessCheck?.can_manage ?? false;
+    // Only admins/team-leads may delegate ACL management to others
+    // (backend gate at infra.py:grant_vault_access; GHSA-58q3-f33p-w84m).
+    const { user } = useAuthStore();
+    const canDelegateManage = user?.role === 'admin' || user?.role === 'team_lead';
+    const [grantAsManager, setGrantAsManager] = useState(false);
 
     const toggleReveal = (id: string) => {
         setRevealedPasswords(prev => {
@@ -830,11 +836,22 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                     <div className="space-y-1">
                                                         {vaultAccess.map(a => (
                                                             <div key={a.user_id} className="flex items-center justify-between text-xs bg-slate-900/50 rounded p-2">
-                                                                <span className="text-slate-300">{a.display_name || a.username}</span>
+                                                                <span className="text-slate-300 flex items-center gap-1.5">
+                                                                    {a.display_name || a.username}
+                                                                    {a.can_manage && (
+                                                                        <Badge className="text-[9px] py-0 px-1 bg-amber-500/15 text-amber-400 border-amber-500/30">
+                                                                            Manager
+                                                                        </Badge>
+                                                                    )}
+                                                                </span>
                                                                 <button
                                                                     onClick={async () => {
-                                                                        await revokeAccess.mutateAsync({ infraItemId: itemId, userId: a.user_id });
-                                                                        toast.success('Access revoked');
+                                                                        try {
+                                                                            await revokeAccess.mutateAsync({ infraItemId: itemId, userId: a.user_id });
+                                                                            toast.success('Access revoked');
+                                                                        } catch (err: any) {
+                                                                            toast.error(err.response?.data?.detail || 'Failed to revoke access');
+                                                                        }
                                                                     }}
                                                                     className="text-slate-600 hover:text-red-400 transition-colors"
                                                                 >
@@ -845,25 +862,39 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                     </div>
                                                 )}
                                                 {grantableUsers.length > 0 && (
-                                                    <Select onValueChange={async (userId) => {
-                                                        try {
-                                                            await grantAccess.mutateAsync({ infraItemId: itemId, userId });
-                                                            toast.success('Access granted');
-                                                        } catch (err: any) {
-                                                            toast.error(err.response?.data?.detail || 'Failed to grant access');
-                                                        }
-                                                    }}>
-                                                        <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 text-white">
-                                                            <SelectValue placeholder="Grant access to..." />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {grantableUsers.map((u: any) => (
-                                                                <SelectItem key={u.id} value={u.id}>
-                                                                    {u.display_name || u.username} <span className="text-slate-500 ml-1">@{u.username}</span>
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
+                                                    <div className="space-y-1.5">
+                                                        {canDelegateManage && (
+                                                            <label className="flex items-center gap-1.5 text-[10px] text-slate-400 cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={grantAsManager}
+                                                                    onChange={(e) => setGrantAsManager(e.target.checked)}
+                                                                    className="h-3 w-3 rounded bg-slate-900 border-slate-700"
+                                                                />
+                                                                Grant as manager (can also grant/revoke view-only access on this item)
+                                                            </label>
+                                                        )}
+                                                        <Select onValueChange={async (userId) => {
+                                                            try {
+                                                                await grantAccess.mutateAsync({ infraItemId: itemId, userId, canManage: grantAsManager });
+                                                                toast.success(grantAsManager ? 'Granted with manage' : 'Access granted');
+                                                                setGrantAsManager(false);
+                                                            } catch (err: any) {
+                                                                toast.error(err.response?.data?.detail || 'Failed to grant access');
+                                                            }
+                                                        }}>
+                                                            <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 text-white">
+                                                                <SelectValue placeholder="Grant access to..." />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {grantableUsers.map((u: any) => (
+                                                                    <SelectItem key={u.id} value={u.id}>
+                                                                        {u.display_name || u.username} <span className="text-slate-500 ml-1">@{u.username}</span>
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
                                                 )}
                                             </div>
                                         )}

@@ -44,11 +44,13 @@ async def _check_vault_access(
 ):
     """Check that current_user can access the vault for this infra item.
 
-    Admins/Team Leads always pass.  Otherwise, user needs:
-      - INFRA_VAULT_VIEW (or INFRA_VAULT_MANAGE) global permission, AND
-      - an entry in infra_vault_access for this item.
+    This is the CONTENT-access gate. Admins / Team Leads always pass;
+    other users need the INFRA_VAULT_VIEW (or INFRA_VAULT_MANAGE) global
+    permission AND any InfraVaultAccess row on this item.
 
-    If require_manage is True, INFRA_VAULT_MANAGE is required instead.
+    Membership management (grant / revoke ACL rows) uses the separate
+    _check_vault_membership_manage gate below — without that split,
+    every grantee was implicitly a granter (GHSA-58q3-f33p-w84m).
     """
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if is_admin:
@@ -68,6 +70,35 @@ async def _check_vault_access(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this infrastructure item's vault. Ask an admin to grant access.",
+        )
+
+
+async def _check_vault_membership_manage(
+    infra_item_id: str,
+    current_user: User,
+    db: AsyncSession,
+):
+    """Check that current_user can grant/revoke ACL rows on this item.
+
+    Admins and Team Leads always pass. Other users must hold an explicit
+    InfraVaultAccess row with can_manage=True on this item. A view-only
+    grantee (can_manage=False) cannot onboard or revoke other users.
+    Closes GHSA-58q3-f33p-w84m.
+    """
+    if current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
+        return
+
+    result = await db.execute(
+        select(InfraVaultAccess).where(
+            InfraVaultAccess.infra_item_id == infra_item_id,
+            InfraVaultAccess.user_id == current_user.id,
+            InfraVaultAccess.can_manage.is_(True),
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to manage access on this infrastructure item's vault.",
         )
 
 
@@ -438,6 +469,8 @@ async def list_vault_access(
     current_user: User = Depends(get_current_user),
 ):
     """List users who have access to this infra item's vault."""
+    # Reading the ACL is allowed for any vault-content viewer/manager —
+    # they need to see who else has access. It's NOT membership-manage.
     await _check_vault_access(item_id, current_user, db, require_manage=True)
 
     result = await db.execute(
@@ -456,6 +489,7 @@ async def list_vault_access(
                 profile_photo=user.profile_photo,
                 granted_by=g.granted_by,
                 granted_at=g.granted_at,
+                can_manage=g.can_manage,
             ))
     return responses
 
@@ -464,11 +498,28 @@ async def list_vault_access(
 async def grant_vault_access(
     item_id: str,
     user_id: str = Query(...),
+    can_manage: bool = Query(False, description="Delegate ACL management on this item to the grantee"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Grant a user access to this infra item's vault."""
-    await _check_vault_access(item_id, current_user, db, require_manage=True)
+    """Grant a user access to this infra item's vault.
+
+    Membership-management gate: only admins / team-leads, or grantees
+    who themselves hold can_manage=True on this item, may call this.
+    Only admins / team-leads may delegate `can_manage=True` to others;
+    a can_manage=True grantee can onboard view-only users but cannot
+    delegate further management.
+    """
+    await _check_vault_membership_manage(item_id, current_user, db)
+
+    # Only admins / team-leads can delegate ACL management itself.
+    # A can_manage=True grantee can grant view-only access but cannot
+    # propagate the can_manage flag — preventing transitive escalation.
+    if can_manage and current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an admin or team lead may delegate ACL management.",
+        )
 
     target_user = await db.get(User, user_id)
     if not target_user:
@@ -487,10 +538,11 @@ async def grant_vault_access(
         infra_item_id=item_id,
         user_id=user_id,
         granted_by=current_user.id,
+        can_manage=can_manage,
     )
     db.add(grant)
     await db.commit()
-    return {"status": "granted", "user_id": user_id}
+    return {"status": "granted", "user_id": user_id, "can_manage": can_manage}
 
 
 @router.get("/items/{item_id}/vault/check-access")
@@ -500,9 +552,13 @@ async def check_vault_access(
     current_user: User = Depends(get_current_user),
 ):
     """Check if the current user has vault access to this infra item."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if is_admin:
+    # Admin / Team-Lead always pass for both access and management.
+    # READ_ONLY_ADMIN can view but cannot manage ACL (the new
+    # membership gate excludes them).
+    if current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         return {"has_access": True, "can_manage": True}
+    if current_user.role == UserRole.READ_ONLY_ADMIN:
+        return {"has_access": True, "can_manage": False}
 
     result = await db.execute(
         select(InfraVaultAccess).where(
@@ -510,8 +566,12 @@ async def check_vault_access(
             InfraVaultAccess.user_id == current_user.id,
         )
     )
-    has_access = result.scalar_one_or_none() is not None
-    return {"has_access": has_access, "can_manage": has_access}
+    row = result.scalar_one_or_none()
+    has_access = row is not None
+    # can_manage is driven by the explicit per-grant flag — a view-only
+    # grantee never sees the manage UI (GHSA-58q3-f33p-w84m).
+    can_manage = bool(row and row.can_manage)
+    return {"has_access": has_access, "can_manage": can_manage}
 
 
 @router.delete("/items/{item_id}/vault/access/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -521,8 +581,12 @@ async def revoke_vault_access(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Revoke a user's access to this infra item's vault."""
-    await _check_vault_access(item_id, current_user, db, require_manage=True)
+    """Revoke a user's access to this infra item's vault.
+
+    Membership-management gate (GHSA-58q3-f33p-w84m): only admins /
+    team-leads, or grantees who hold can_manage=True on this item.
+    """
+    await _check_vault_membership_manage(item_id, current_user, db)
 
     result = await db.execute(
         select(InfraVaultAccess).where(
@@ -533,6 +597,15 @@ async def revoke_vault_access(
     grant = result.scalar_one_or_none()
     if not grant:
         raise HTTPException(status_code=404, detail="Access grant not found")
+
+    # A delegated manager (can_manage=True non-admin) may onboard view-only
+    # users but cannot remove an admin / team-lead's own row or revoke
+    # another manager — only admins / team-leads can adjust other managers.
+    if grant.can_manage and current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an admin or team lead may revoke a delegated manager.",
+        )
 
     await db.delete(grant)
     await db.commit()
