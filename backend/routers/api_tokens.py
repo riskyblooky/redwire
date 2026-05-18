@@ -79,7 +79,43 @@ async def create_own_token(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new API token for the current user. Raw token is returned once."""
+    """Create a new API token for the current user. Raw token is returned once.
+
+    Minting is a credential-issuance event, so for local-auth users we
+    require the current password (and TOTP if enabled) before issuing the
+    token — same step-up the password-change path already enforces. A
+    stolen session bearer alone is not sufficient to mint a long-lived
+    API token (GHSA-7rcx-8hqc-mm5f). SSO/LDAP users have no local
+    hashed_password to verify against and currently skip this step-up;
+    session-freshness-based step-up for them is tracked as a follow-up.
+    """
+    if current_user.auth_provider == "local":
+        from auth.password import verify_password
+        if not body.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password is required to mint an API token.",
+            )
+        if not verify_password(body.password, current_user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password",
+            )
+        if current_user.totp_enabled and current_user.totp_secret:
+            from auth.totp import verify_totp_code
+            from auth.crypto import decrypt_totp_secret
+            if not body.totp_code:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Two-factor authentication code required.",
+                )
+            decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
+            if not verify_totp_code(decrypted_secret, body.totp_code):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid two-factor authentication code.",
+                )
+
     raw_token, token_hash, token_prefix = _generate_token(body.permission)
 
     # Strip timezone info if present (DB uses naive timestamps)

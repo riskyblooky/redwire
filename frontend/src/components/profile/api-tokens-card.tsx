@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/auth-store';
 
 interface ApiToken {
     id: string;
@@ -21,12 +22,20 @@ interface ApiToken {
 }
 
 export function ApiTokensCard() {
+    const { user } = useAuthStore();
+    const isLocal = user?.auth_provider === undefined || user.auth_provider === 'local';
+    const totpEnabled = !!user?.totp_enabled;
+
     const [tokens, setTokens] = useState<ApiToken[]>([]);
     const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
     const [newName, setNewName] = useState('');
     const [newPerm, setNewPerm] = useState<'ro' | 'rw'>('ro');
     const [newExpiry, setNewExpiry] = useState('');
+    // Step-up auth on mint (GHSA-7rcx-8hqc-mm5f): local users must
+    // re-enter password (and TOTP if enabled) before minting a token.
+    const [newPassword, setNewPassword] = useState('');
+    const [newTotpCode, setNewTotpCode] = useState('');
     const [creating, setCreating] = useState(false);
     const [rawToken, setRawToken] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
@@ -51,10 +60,13 @@ export function ApiTokensCard() {
 
     const handleCreate = async () => {
         if (!newName.trim()) return;
+        if (isLocal && !newPassword) return;
         setCreating(true);
         try {
             const body: Record<string, unknown> = { name: newName, permission: newPerm };
             if (newExpiry) body.expires_at = new Date(newExpiry).toISOString();
+            if (isLocal) body.password = newPassword;
+            if (isLocal && totpEnabled && newTotpCode) body.totp_code = newTotpCode;
             const res = await fetch(`${API}/api-tokens`, {
                 method: 'POST',
                 headers: {
@@ -63,17 +75,23 @@ export function ApiTokensCard() {
                 },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error('Failed to create token');
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.detail || 'Failed to create token');
+            }
             const data = await res.json();
             setRawToken(data.raw_token);
             setShowCreate(false);
             setNewName('');
             setNewPerm('ro');
             setNewExpiry('');
+            setNewPassword('');
+            setNewTotpCode('');
             fetchTokens();
             toast.success('API token created');
-        } catch {
-            toast.error('Failed to create token');
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'Failed to create token';
+            toast.error(msg);
         } finally {
             setCreating(false);
         }
@@ -186,11 +204,43 @@ export function ApiTokensCard() {
                                 className="bg-slate-800 border-slate-600 text-white"
                             />
                         </div>
+                        {isLocal && (
+                            <div className="space-y-2 pt-2 border-t border-slate-700">
+                                <Label className="text-slate-200">Confirm with your password</Label>
+                                <Input
+                                    type="password"
+                                    placeholder="Current password"
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    className="bg-slate-800 border-slate-600 text-white"
+                                    autoComplete="current-password"
+                                />
+                                {totpEnabled && (
+                                    <Input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="6-digit 2FA code"
+                                        value={newTotpCode}
+                                        onChange={(e) => setNewTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                        maxLength={6}
+                                        className="bg-slate-800 border-slate-600 text-white font-mono tracking-widest"
+                                    />
+                                )}
+                                <p className="text-xs text-slate-500">
+                                    Minting an API token issues a long-lived credential. Re-confirm your identity so a stolen session can&apos;t mint one without your knowledge.
+                                </p>
+                            </div>
+                        )}
                         <div className="flex gap-2 justify-end">
-                            <Button size="sm" variant="ghost" onClick={() => setShowCreate(false)} className="text-slate-400">
+                            <Button size="sm" variant="ghost" onClick={() => { setShowCreate(false); setNewPassword(''); setNewTotpCode(''); }} className="text-slate-400">
                                 Cancel
                             </Button>
-                            <Button size="sm" onClick={handleCreate} disabled={creating || !newName.trim()} className="bg-primary hover:bg-primary/90">
+                            <Button
+                                size="sm"
+                                onClick={handleCreate}
+                                disabled={creating || !newName.trim() || (isLocal && !newPassword) || (isLocal && totpEnabled && newTotpCode.length !== 6)}
+                                className="bg-primary hover:bg-primary/90"
+                            >
                                 {creating ? 'Creating...' : 'Create Token'}
                             </Button>
                         </div>
