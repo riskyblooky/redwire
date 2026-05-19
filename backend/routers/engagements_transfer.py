@@ -629,10 +629,9 @@ async def import_engagement(
             mapped = manual_mapping[original_user_id]
             if mapped in valid_targets:
                 return mapped
-        # 2. Auto-match if user ID exists locally
-        if original_user_id in local_user_ids:
-            return original_user_id
-        # 3. Fallback
+        # 2. Fallback. Do NOT auto-trust user IDs from the archive
+        #    even if they exist locally — they are attacker-controlled
+        #    and would let the importer attribute records to anyone.
         return current_user.id
 
     # ── ID mapping: old_id → new_id ──────────────────────────────────
@@ -648,7 +647,10 @@ async def import_engagement(
     def remap(old_id: str | None) -> str | None:
         if not old_id:
             return None
-        return id_map.get(old_id, old_id)
+        # Only return IDs created in this import. An old_id never
+        # registered via new_id() points outside this bundle; falling
+        # through to the raw value allowed cross-engagement FK injection.
+        return id_map.get(old_id)
 
     def parse_dt(v):
         if not v:
@@ -726,9 +728,12 @@ async def import_engagement(
         # ── 3b. Asset Ports ──────────────────────────────────────────
         from models.asset_port import AssetPort
         for p in data.get("asset_ports", []):
+            asset_id = remap(p["asset_id"])
+            if asset_id is None:
+                continue
             db.add(AssetPort(
                 id=new_id(p["id"]),
-                asset_id=remap(p["asset_id"]),
+                asset_id=asset_id,
                 port_number=p["port_number"],
                 protocol=p.get("protocol", "TCP"),
                 service_name=p.get("service_name"),
@@ -874,7 +879,7 @@ async def import_engagement(
                 id=new_id(ev["id"]),
                 finding_id=remap(ev.get("finding_id")),
                 testcase_id=remap(ev.get("testcase_id")),
-                engagement_id=eng_new_id if ev.get("engagement_id") else None,
+                engagement_id=eng_new_id,
                 filename=new_storage_name,
                 original_filename=ev.get("original_filename", "unknown"),
                 file_path=new_storage_name,
@@ -1017,9 +1022,12 @@ async def import_engagement(
         await db.flush()
 
         for c in data.get("comments", []):
+            thread_id = remap(c["thread_id"])
+            if thread_id is None:
+                continue
             db.add(Comment(
                 id=new_id(c["id"]),
-                thread_id=remap(c["thread_id"]),
+                thread_id=thread_id,
                 content=c.get("content", ""),
                 is_resolvable=c.get("is_resolvable", False),
                 is_resolved=c.get("is_resolved", False),
@@ -1060,11 +1068,13 @@ async def import_engagement(
         await db.flush()
 
         for edge in data.get("attacker_node_edges", []):
-            target = remap(edge.get("target_node_id")) or edge.get("target_node_id", "")
+            attacker_node_id = remap(edge["attacker_node_id"])
+            if attacker_node_id is None:
+                continue
             db.add(AttackerNodeEdge(
                 id=new_id(edge["id"]),
-                attacker_node_id=remap(edge["attacker_node_id"]),
-                target_node_id=target,
+                attacker_node_id=attacker_node_id,
+                target_node_id=remap(edge.get("target_node_id")) or "",
                 target_node_type=edge.get("target_node_type", ""),
             ))
         await db.flush()
