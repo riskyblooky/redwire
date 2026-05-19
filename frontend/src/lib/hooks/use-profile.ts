@@ -10,6 +10,10 @@ export interface ProfileUpdate {
     theme_preference?: ThemePreference;
     theme_palette?: ThemePalette;
     theme_accent_custom?: string | null;
+    // Step-up auth — only required when changing `email`
+    // (GHSA-hc9w-hggj-r52w).
+    current_password?: string;
+    totp_code?: string;
 }
 
 export interface PasswordUpdate {

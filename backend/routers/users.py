@@ -60,17 +60,56 @@ async def update_current_user(
     current_user: User = Depends(get_current_user)
 ):
     """Update current user profile information."""
-    # Check email uniqueness if being changed
-    if user_data.email and user_data.email != current_user.email:
+    # Email is the password-reset identity (POST /auth/forgot-password
+    # mails the reset link to this address). Changing it with only a
+    # bearer token converts a stolen session into permanent account
+    # takeover (GHSA-hc9w-hggj-r52w). Require the current password and,
+    # if 2FA is enrolled, a TOTP code — mirroring PUT /me/password.
+    email_changing = bool(user_data.email and user_data.email != current_user.email)
+    if email_changing:
+        # SSO/LDAP accounts authenticate via the IdP and have no
+        # local hashed_password to verify against — and the IdP is
+        # the owner of that attribute anyway.
+        if current_user.auth_provider != "local":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email is managed by your identity provider.",
+            )
+        from auth.password import verify_password
+        if not user_data.current_password or not verify_password(
+            user_data.current_password, current_user.hashed_password
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current password required to change email.",
+            )
+        if current_user.totp_enabled and current_user.totp_secret:
+            from auth.totp import verify_totp_code
+            from auth.crypto import decrypt_totp_secret
+            if not user_data.totp_code:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Two-factor authentication code required.",
+                )
+            decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
+            if not verify_totp_code(decrypted_secret, user_data.totp_code):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid two-factor authentication code.",
+                )
         result = await db.execute(select(User).where(User.email == user_data.email))
         if result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
-    
-    # Update fields (excluding role and is_active which are admin-only in UserUpdate)
-    update_data = user_data.model_dump(exclude_unset=True)
+
+    # Update fields (excluding role and is_active which are admin-only in UserUpdate).
+    # current_password / totp_code are step-up inputs, never persisted.
+    update_data = user_data.model_dump(
+        exclude_unset=True,
+        exclude={"current_password", "totp_code"},
+    )
 
     # `profile_photo` is intentionally excluded — it is server-set by
     # POST /users/me/photo. Allowing self-service writes here would
@@ -106,6 +145,23 @@ async def update_current_user(
 
     await db.commit()
     await db.refresh(current_user)
+
+    if email_changing:
+        # Treat email change as a credential change — invalidate all
+        # outstanding sessions and long-lived API tokens so any other
+        # stolen bearer can't keep the attacker in (mirrors the
+        # /me/password path; GHSA-hc9w-hggj-r52w).
+        from auth.jwt import revoke_all_user_tokens
+        from sqlalchemy import update as _sa_update
+        from models.api_token import ApiToken
+        revoke_all_user_tokens(current_user.id)
+        await db.execute(
+            _sa_update(ApiToken)
+            .where(ApiToken.user_id == current_user.id)
+            .values(is_active=False)
+        )
+        await db.commit()
+
     return current_user
 
 @router.put("/me/password", status_code=status.HTTP_200_OK)

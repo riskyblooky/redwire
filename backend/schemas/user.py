@@ -28,6 +28,11 @@ class UserUpdate(BaseModel):
     theme_preference: Optional[str] = Field(None, max_length=32)
     theme_palette: Optional[str] = Field(None, max_length=32)
     theme_accent_custom: Optional[str] = Field(None, max_length=7)
+    # Required when changing `email` on the self-update endpoint
+    # (GHSA-hc9w-hggj-r52w): email is the password-reset identity,
+    # so a credential-class proof-of-possession is required.
+    current_password: Optional[str] = None
+    totp_code: Optional[str] = Field(None, min_length=6, max_length=6)
 
 class UserPasswordUpdate(BaseModel):
     old_password: str
