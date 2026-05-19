@@ -81,16 +81,20 @@ def build_saml_request_url(db_settings: Dict[str, str], return_to: str = "/") ->
     try:
         auth = OneLogin_Saml2_Auth(request_data, saml_settings)
         redirect_url = auth.login(return_to=return_to)
-        return redirect_url
+        # Caller stores this and passes it back to process_saml_response so
+        # python3-saml can validate InResponseTo. Without it the ACS accepts
+        # unsolicited / replayed Responses.
+        return redirect_url, auth.get_last_request_id()
     except Exception as e:
         logger.error(f"Failed to build SAML request: {e}")
-        return None
+        return None, None
 
 
 def process_saml_response(
     post_data: Dict[str, str],
     db_settings: Dict[str, str],
     request_url: str,
+    request_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Validate SAML response and extract user attributes.
@@ -109,7 +113,9 @@ def process_saml_response(
 
     try:
         auth = OneLogin_Saml2_Auth(request_data, saml_settings)
-        auth.process_response()
+        # Bind the Response to the AuthnRequest we issued. python3-saml
+        # validates InResponseTo against this and rejects a mismatch.
+        auth.process_response(request_id=request_id)
 
         errors = auth.get_errors()
         if errors:

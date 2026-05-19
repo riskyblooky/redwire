@@ -652,7 +652,7 @@ async def get_auth_providers(db: AsyncSession = Depends(get_db)):
     summary="SAML SSO login redirect",
     description="Builds a SAML AuthnRequest and redirects (302) to the IdP SSO URL.",
 )
-async def saml_login(db: AsyncSession = Depends(get_db)):
+async def saml_login(request: Request, db: AsyncSession = Depends(get_db)):
     """Redirect user to IdP for SAML SSO login."""
     settings_result = await db.execute(select(AuthSetting))
     cfg = {s.key: s.value or "" for s in settings_result.scalars().all()}
@@ -670,12 +670,30 @@ async def saml_login(db: AsyncSession = Depends(get_db)):
     }
 
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    redirect_url = build_saml_request_url(saml_cfg, return_to=frontend_url + "/dashboard")
+    redirect_url, request_id = build_saml_request_url(
+        saml_cfg, return_to=frontend_url + "/dashboard"
+    )
 
     if not redirect_url:
         raise HTTPException(status_code=500, detail="Failed to generate SAML login request")
 
-    return RedirectResponse(url=redirect_url)
+    response = RedirectResponse(url=redirect_url)
+    # Bind the upcoming ACS callback to *this* AuthnRequest. The cookie is a
+    # short-lived signed JWT so the request_id can't be forged or fixed by an
+    # attacker. ACS rejects any Response that doesn't carry it.
+    response.set_cookie(
+        "saml_request_id",
+        create_access_token(
+            data={"sub": "saml_request", "type": "saml_request",
+                  "saml_req": request_id},
+            expires_delta=timedelta(minutes=10),
+        ),
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+    )
+    return response
 
 
 @router.post(
@@ -695,6 +713,29 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     settings_result = await db.execute(select(AuthSetting))
     cfg = {s.key: s.value or "" for s in settings_result.scalars().all()}
 
+    if cfg.get("saml_enabled", "false").lower() != "true":
+        # Same gate as /saml/login. Without it the ACS will try to validate
+        # a Response against an empty IdP cert.
+        raise HTTPException(status_code=400, detail="SAML SSO is not enabled")
+
+    # The Response must answer an AuthnRequest *we* issued. /saml/login set
+    # a signed cookie carrying that request's ID; without it the Response is
+    # unsolicited (IdP-initiated, replayed, or CSRF-driven) and is refused.
+    request_id = None
+    cookie = request.cookies.get("saml_request_id")
+    if cookie:
+        payload = decode_token(cookie) or {}
+        if payload.get("type") == "saml_request":
+            request_id = payload.get("saml_req")
+    if not request_id:
+        logger.warning("SAML ACS: no/invalid saml_request_id cookie — "
+                       "unsolicited Response refused")
+        raise HTTPException(
+            status_code=400,
+            detail="SAML response is unsolicited or the login request has "
+                   "expired; start again at /auth/saml/login",
+        )
+
     saml_cfg = {
         "idp_entity_id": cfg.get("saml_idp_entity_id", ""),
         "idp_sso_url": cfg.get("saml_idp_sso_url", ""),
@@ -710,7 +751,8 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
     request_url = f"{backend_url}/auth/saml/acs"
     logger.info(f"SAML ACS: using request_url = {request_url}")
-    user_info = process_saml_response(post_data, saml_cfg, request_url)
+    user_info = process_saml_response(post_data, saml_cfg, request_url,
+                                       request_id=request_id)
 
     if not user_info:
         logger.error("SAML ACS: process_saml_response returned None — auth failed")
@@ -722,11 +764,24 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     if not email:
         raise HTTPException(status_code=400, detail="No email in SAML assertion")
 
-    # Find or create user
-    result = await db.execute(
-        select(User).where((User.email == email) | (User.username == username))
-    )
+    # Find or create user. Match on email only — including username here
+    # lets an assertion with username="admin" adopt an unrelated local row.
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
+
+    if user and (user.auth_provider or "local") != "saml":
+        # An existing local/LDAP user with the same email is a collision,
+        # not the same identity. Adopting the row would hand the assertion
+        # holder that user's role and silently flip their auth_provider.
+        logger.warning(
+            "SAML ACS: assertion email %r collides with existing "
+            "auth_provider=%r user — refusing",
+            email, user.auth_provider,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="A non-SAML account already exists for this email",
+        )
 
     if not user:
         # JIT provision
@@ -759,9 +814,6 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User account is disabled")
 
-    # Update auth provider + last login
-    if user.auth_provider != "saml":
-        user.auth_provider = "saml"
     user.last_login = datetime.utcnow()
     await db.commit()
 
@@ -774,7 +826,9 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             expires_delta=timedelta(minutes=5),
         )
         redirect_url = f"{frontend_url}/sso/callback#requires_2fa=true&access_token={partial_token}"
-        return RedirectResponse(url=redirect_url, status_code=302)
+        response = RedirectResponse(url=redirect_url, status_code=302)
+        response.delete_cookie("saml_request_id")
+        return response
 
     # No 2FA — issue full tokens
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
@@ -782,7 +836,9 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     # Redirect to frontend with tokens in URL fragment (hash)
     redirect_url = f"{frontend_url}/sso/callback#access_token={access_token}&refresh_token={refresh_token}"
-    return RedirectResponse(url=redirect_url, status_code=302)
+    response = RedirectResponse(url=redirect_url, status_code=302)
+    response.delete_cookie("saml_request_id")
+    return response
 
 
 @router.get(
