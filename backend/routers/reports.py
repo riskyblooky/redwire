@@ -42,11 +42,15 @@ async def generate_report(
     except HTTPException:
         raise
     except Exception as e:
+        # Don't leak the underlying exception text in the HTTP response —
+        # it was an error oracle in GHSA-vm9w-7vpv-2jpm (open/closed/non-image
+        # distinction → port scan + filesystem enumeration). The traceback
+        # stays in server logs for operators to investigate.
         logger.error(f"Report generation failed: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Report generation error: {str(e)}",
+            detail="Report generation failed. Check server logs for details.",
         )
 
 
