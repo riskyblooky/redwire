@@ -68,8 +68,7 @@ else
     MINIO_PASSWORD=$(openssl rand -hex 32)
     JWT_SECRET=$(openssl rand -hex 32)
     VAULT_ENCRYPTION_KEY=$(openssl rand -hex 32)
-    MCP_API_TOKEN=$(openssl rand -hex 32)
-    
+
     # Save formatted .env
     cat <<EOF > .env
 DOMAIN_NAME=${DOMAIN_NAME}
@@ -86,7 +85,6 @@ ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ADMIN_USERNAME=${ADMIN_USERNAME}
 VAULT_ENCRYPTION_KEY=${VAULT_ENCRYPTION_KEY}
-MCP_API_TOKEN=${MCP_API_TOKEN}
 EOF
 
     # Save credentials for the user
@@ -104,7 +102,6 @@ Redis Password:       ${REDIS_PASSWORD}
 MinIO Root Password:  ${MINIO_PASSWORD}
 JWT Secret:           ${JWT_SECRET}
 Vault Encryption Key: ${VAULT_ENCRYPTION_KEY}
-MCP API Token:        ${MCP_API_TOKEN}
 
 KEEP THIS FILE SAFE!
 EOF
