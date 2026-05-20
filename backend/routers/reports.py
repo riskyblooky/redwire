@@ -17,7 +17,7 @@ from models.finding import Finding, Tag
 from models.evidence import Evidence
 from models.testcase import TestCase
 from models.cleanup_artifact import CleanupArtifact
-from models.report_layout import ReportLayout, ReportSection
+from models.report_layout import ReportLayout, ReportSection, SectionType
 from models.report_theme import ReportTheme
 from schemas.report import ReportConfiguration, ReportFormat
 from auth.dependencies import get_current_user
@@ -190,7 +190,7 @@ async def _do_generate_report(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
-    elif config.report_format == ReportFormat.JSON_ZIP:
+    elif config.report_format in (ReportFormat.JSON_ZIP, ReportFormat.JSON_LAYOUT_ZIP):
         # Also fetch standalone engagement evidence (not tied to a finding)
         standalone_evidence_result = await db.execute(
             select(Evidence)
@@ -254,7 +254,7 @@ async def _do_generate_report(
                     "id": tc.id,
                     "parent_id": tc.parent_id,
                     "title": tc.title,
-                    "category": tc.category.value if tc.category else None,
+                    "category": tc.category,
                     "description": tc.description,
                     "steps": tc.steps,
                     "expected_result": tc.expected_result,
@@ -272,7 +272,7 @@ async def _do_generate_report(
                 {
                     "id": ca.id,
                     "title": ca.title,
-                    "artifact_type": ca.artifact_type.value if ca.artifact_type else None,
+                    "artifact_type": ca.artifact_type,
                     "status": ca.status.value if ca.status else None,
                     "location": ca.location,
                     "description": ca.description,
@@ -296,6 +296,28 @@ async def _do_generate_report(
                 for e in standalone_evidence
             ],
         }
+
+        # For JSON_LAYOUT_ZIP, also emit the layout structure so consumers
+        # can render in the same section order / TEXT-section content as the
+        # PDF and Markdown formats. Resource sections (findings/testcases/
+        # cleanup_artifacts) just signal the type — the actual records live
+        # in the top-level arrays above (which are already filtered by the
+        # frontend's per-resource selection).
+        if config.report_format == ReportFormat.JSON_LAYOUT_ZIP:
+            export_data["layout"] = {
+                "id": layout.id,
+                "name": layout.name,
+                "is_default": layout.is_default,
+                "sections": [
+                    {
+                        "type": s.section_type.value,
+                        "title": s.title,
+                        "sort_order": s.sort_order,
+                        "content": s.content if s.section_type == SectionType.TEXT else None,
+                    }
+                    for s in sections
+                ],
+            }
 
         # Create ZIP in memory
         zip_buffer = io.BytesIO()

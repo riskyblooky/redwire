@@ -4,7 +4,7 @@ import api from '../api';
 export interface ReportConfiguration {
     engagement_id: string;
     layout_id: string;
-    report_format: 'pdf' | 'markdown' | 'json_zip';
+    report_format: 'pdf' | 'markdown' | 'json_zip' | 'json_layout_zip';
     exclude_severities: string[];
     theme_id?: string;
     include_evidence?: boolean;
