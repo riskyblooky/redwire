@@ -10,6 +10,17 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image, HRFlowable, KeepTogether
 from reportlab.lib.units import inch, cm
 from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab import rl_config
+
+# Defence-in-depth: this module never asks ReportLab to fetch a URL — every
+# Image() flowable is built from a BytesIO we filled ourselves (MinIO download
+# or markdown-image resolver). Locking trustedSchemes/trustedHosts down means
+# that even if a future change lets unescaped user text reach Paragraph(), an
+# `<img src="http://…">` / `file://…` in that text cannot make the report
+# builder open a network connection or read a local file.
+rl_config.trustedSchemes = []
+rl_config.trustedHosts = []
+
 from datetime import datetime
 from models.engagement import Engagement
 from models.finding import Finding, Severity
@@ -136,10 +147,19 @@ def _v(val) -> str:
 # the Paragraph parser.
 
 def _escape_xml(text: str) -> str:
+    """Make `text` safe for ReportLab's Paragraph mini-markup, in both
+    element-content and attribute-value position. `"` and `'` matter because
+    several callers place the escaped string inside a double-quoted attribute
+    (e.g. the markdown link → `<link href="…">` substitution below)."""
+    if text is None:
+        return ""
     return (
-        text.replace('&', '&amp;')
+        str(text)
+            .replace('&', '&amp;')
             .replace('<', '&lt;')
             .replace('>', '&gt;')
+            .replace('"', '&quot;')
+            .replace("'", '&#39;')
     )
 
 
@@ -895,7 +915,7 @@ class PDFReportGenerator:
         toc_items = []
         for i, section in enumerate(self.sections, 1):
             row = [
-                Paragraph(f'{i}.  {section.title}', ParagraphStyle(
+                Paragraph(f'{i}.  {_escape_xml(section.title)}', ParagraphStyle(
                     name=f'TOC_{i}',
                     parent=self.styles['TOCEntry'],
                     fontName=font_b if i == 1 else font,
@@ -930,7 +950,7 @@ class PDFReportGenerator:
         font    = _t(self.theme, 'font_family')
         font_b  = f'{font}-Bold'
 
-        cell = Paragraph(title, self.styles['SectionTitle'])
+        cell = Paragraph(_escape_xml(title), self.styles['SectionTitle'])
         t = Table([[cell]], colWidths=[6.5 * inch])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(dark)),
@@ -1013,7 +1033,8 @@ class PDFReportGenerator:
 
         # -- Header row: number + title + severity badge
         title_text = Paragraph(
-            f'<font color="{sev_hex}">F{idx:02d}</font>  {finding.title}',
+            f'<font color="{sev_hex}">F{idx:02d}</font>  '
+            f'{_escape_xml(finding.title)}',
             ParagraphStyle(
                 name=f'FT_{idx}', parent=self.styles['FindingTitle'],
                 textColor=colors.white, fontSize=11, fontName=font_b, leading=15,
@@ -1059,7 +1080,7 @@ class PDFReportGenerator:
                 return
             body_rows.append([
                 _label_para(label),
-                Paragraph(str(value)[:800], ParagraphStyle(
+                Paragraph(_escape_xml(str(value)[:800]), ParagraphStyle(
                     name=f'V_{label}_{idx}', parent=self.styles['BodyText2'],
                     fontSize=9, textColor=colors.HexColor(body_c),
                 )),
@@ -1269,7 +1290,7 @@ class PDFReportGenerator:
             if ev.description:
                 caption_parts.append(ev.description)
             caption_parts.append(f'[{ev.original_filename}]')
-            caption_text = '  '.join(caption_parts)
+            caption_text = _escape_xml('  '.join(caption_parts))
 
             if mime in self._IMAGE_MIMES and self.storage:
                 file_bytes = self._fetch_file_bytes(ev.filename)
@@ -1337,7 +1358,7 @@ class PDFReportGenerator:
             executed = '✓' if tc.is_executed else '–'
             result   = '✓ Pass' if tc.is_successful else ('✗ Fail' if tc.is_successful is False else 'N/A')
             rows.append([
-                Paragraph(tc.title[:80], cell_style),
+                Paragraph(_escape_xml(tc.title[:80]), cell_style),
                 Paragraph(_v(tc.category).replace('_', ' ').title(), cell_style),
                 Paragraph(executed, cell_style),
                 Paragraph(result, cell_style),
@@ -1389,10 +1410,10 @@ class PDFReportGenerator:
         ]]
         for ca in self.cleanup_artifacts:
             rows.append([
-                Paragraph(ca.title[:60], cell_style),
+                Paragraph(_escape_xml(ca.title[:60]), cell_style),
                 Paragraph(_v(ca.artifact_type).replace('_', ' ').title(), cell_style),
                 Paragraph(_v(ca.status).replace('_', ' ').title(), cell_style),
-                Paragraph((ca.location or 'N/A')[:50], cell_style),
+                Paragraph(_escape_xml((ca.location or 'N/A')[:50]), cell_style),
             ])
 
         col_widths = [2.3 * inch, 1.3 * inch, 1.2 * inch, 1.7 * inch]
@@ -1427,7 +1448,7 @@ class PDFReportGenerator:
                     return
                 det_rows.append([
                     _label(label),
-                    Paragraph(str(val)[:600], ParagraphStyle(
+                    Paragraph(_escape_xml(str(val)[:600]), ParagraphStyle(
                         name=f'CAV_{idx}_{label}', parent=self.styles['BodyText2'],
                         fontSize=9,
                     )),
@@ -1462,7 +1483,7 @@ class PDFReportGenerator:
 
             if det_rows:
                 header = Table(
-                    [[Paragraph(f'{idx}. {ca.title}', ParagraphStyle(
+                    [[Paragraph(f'{idx}. {_escape_xml(ca.title)}', ParagraphStyle(
                         name=f'CATitle_{idx}', parent=self.styles['FindingTitle'],
                         fontSize=10,
                     ))]],
