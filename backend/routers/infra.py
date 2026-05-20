@@ -205,12 +205,40 @@ async def delete_infra_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete an infra item."""
+    """Delete an infra item.
+
+    Enumerates child vault items first and removes any MinIO-backed
+    file objects associated with FILE-type vault entries. Without this,
+    the DB cascade drops the vault-item rows but the underlying file
+    payloads orphan in MinIO indefinitely (RDW-115, follow-up to
+    GHSA-58q3-f33p-w84m).
+    """
     await require_global_permission(Permission.INFRA_DELETE, current_user, db)
     result = await db.execute(select(InfraItem).where(InfraItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Infra item not found")
+
+    # Best-effort cleanup of any vault-item files in MinIO before the
+    # DB cascade drops the rows. Failures are logged but don't block
+    # the delete — the DB rows are the source of truth.
+    child_files = await db.execute(
+        select(InfraVaultItem.file_path).where(
+            InfraVaultItem.infra_item_id == item_id,
+            InfraVaultItem.file_path.isnot(None),
+        )
+    )
+    for (file_path,) in child_files.all():
+        if not file_path:
+            continue
+        try:
+            await storage_service.delete_file(file_path)
+        except Exception:
+            # Non-fatal — DB rows are the source of truth, MinIO orphan
+            # cleanup can be retried offline. Matches the sibling pattern
+            # in delete_infra_vault_item.
+            pass
+
     await db.delete(item)
     await db.commit()
 
