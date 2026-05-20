@@ -657,6 +657,146 @@ async def list_tools() -> list[Tool]:
             },
         ),
 
+        # ── Delete Operations ────────────────────────────────────────
+        Tool(
+            name="delete_finding",
+            description="Permanently delete a finding from an engagement. Irreversible.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "finding_id": {"type": "string", "description": "The finding UUID"},
+                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
+                },
+                "required": ["finding_id", "engagement_id"],
+            },
+        ),
+        Tool(
+            name="delete_asset",
+            description="Permanently delete an asset from an engagement. Irreversible.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string", "description": "The asset UUID"},
+                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
+                },
+                "required": ["asset_id", "engagement_id"],
+            },
+        ),
+        Tool(
+            name="delete_testcase",
+            description="Permanently delete a test case from an engagement. Optionally cascade to child test cases.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "testcase_id": {"type": "string", "description": "The test case UUID"},
+                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
+                    "cascade": {"type": "boolean", "description": "If true, also delete all child test cases recursively (default false)"},
+                },
+                "required": ["testcase_id", "engagement_id"],
+            },
+        ),
+        Tool(
+            name="delete_note",
+            description="Permanently delete a note. Irreversible.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_id": {"type": "string", "description": "The note UUID"},
+                },
+                "required": ["note_id"],
+            },
+        ),
+        Tool(
+            name="get_vault_item",
+            description="Get a single vault item by ID. The backend has no individual GET, so this lists items for the engagement and filters by item_id.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "The vault item UUID"},
+                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
+                },
+                "required": ["item_id", "engagement_id"],
+            },
+        ),
+        Tool(
+            name="delete_vault_item",
+            description="Permanently delete a vault item from an engagement. Irreversible — credential cannot be recovered.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "The vault item UUID"},
+                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
+                },
+                "required": ["item_id", "engagement_id"],
+            },
+        ),
+        Tool(
+            name="delete_cleanup_artifact",
+            description="Permanently delete a cleanup artifact from an engagement. Irreversible.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "artifact_id": {"type": "string", "description": "The cleanup artifact UUID"},
+                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
+                },
+                "required": ["artifact_id", "engagement_id"],
+            },
+        ),
+
+        # ── Threat Intelligence (read-only) ──────────────────────────
+        Tool(
+            name="list_intel_items",
+            description="List threat intelligence items (CVEs, advisories, blog posts, news). Supports search across title/CVE/content, type and severity filters, sorting, and pagination.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {"type": "string", "description": "Search across title, CVE ID, and content"},
+                    "item_type": {"type": "string", "description": "Filter by item type (e.g. cve, advisory, blog, news)"},
+                    "severity": {"type": "string", "description": "Filter by severity (critical, high, medium, low, informational)"},
+                    "sort_by": {
+                        "type": "string",
+                        "enum": ["title", "created_at", "published_at", "item_type", "severity", "source"],
+                        "description": "Sort column (default created_at)",
+                    },
+                    "sort_dir": {"type": "string", "enum": ["asc", "desc"], "description": "Sort direction (default desc)"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Page size (default 50, max 500)"},
+                    "offset": {"type": "integer", "minimum": 0, "description": "Page offset (default 0)"},
+                },
+            },
+        ),
+        Tool(
+            name="get_intel_item",
+            description="Get full details of a single threat-intel item, including attachments and linked findings/assets/test cases.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "The intel item UUID"},
+                },
+                "required": ["item_id"],
+            },
+        ),
+        Tool(
+            name="list_intel_for_entity",
+            description="List all threat-intel items that have been linked to a specific finding, test case, or note in RedWire. For free-form lookups like 'is there intel about CVE-2023-12345?' use list_intel_items with a search query instead.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entity_type": {
+                        "type": "string",
+                        "enum": ["finding", "testcase", "note"],
+                        "description": "Which kind of RedWire resource the intel is linked to",
+                    },
+                    "entity_id": {"type": "string", "description": "The UUID of the finding / test case / note"},
+                },
+                "required": ["entity_type", "entity_id"],
+            },
+        ),
+        Tool(
+            name="list_intel_feeds",
+            description="List configured threat-intel feed sources (RSS, CVE feeds, etc.) with their refresh status.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+
         # ── AI ────────────────────────────────────────────────────
         Tool(
             name="ai_chat",
@@ -850,6 +990,57 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
 
     elif name == "get_global_stats":
         return await _api_get("/stats/global")
+
+    # ── Delete Operations ────────────────────────────────────────────
+    # The DELETE endpoints don't read engagement_id from the URL — the
+    # row's own engagement_id drives the backend's permission check — but
+    # we keep it in the tool schema as scope confirmation for the LLM.
+    elif name == "delete_finding":
+        return await _api_delete(f"/findings/{args['finding_id']}")
+
+    elif name == "delete_asset":
+        return await _api_delete(f"/assets/{args['asset_id']}")
+
+    elif name == "delete_testcase":
+        path = f"/testcases/{args['testcase_id']}"
+        if args.get("cascade"):
+            path += "?cascade=true"
+        return await _api_delete(path)
+
+    elif name == "delete_note":
+        return await _api_delete(f"/notes/{args['note_id']}")
+
+    elif name == "get_vault_item":
+        # Backend has no individual GET; list and filter client-side.
+        items = await _api_get("/vault", params={"engagement_id": args["engagement_id"]})
+        if isinstance(items, list):
+            for it in items:
+                if str(it.get("id")) == args["item_id"]:
+                    return it
+        return {"error": f"vault item {args['item_id']} not found in engagement {args['engagement_id']}"}
+
+    elif name == "delete_vault_item":
+        return await _api_delete(f"/vault/{args['item_id']}")
+
+    elif name == "delete_cleanup_artifact":
+        return await _api_delete(f"/cleanup-artifacts/{args['artifact_id']}")
+
+    # ── Threat Intelligence (read-only) ──────────────────────────────
+    elif name == "list_intel_items":
+        params = {k: v for k, v in args.items() if v is not None}
+        return await _api_get("/intel/items", params=params)
+
+    elif name == "get_intel_item":
+        return await _api_get(f"/intel/items/{args['item_id']}")
+
+    elif name == "list_intel_for_entity":
+        return await _api_get(
+            "/intel/by-entity",
+            params={"entity_type": args["entity_type"], "entity_id": args["entity_id"]},
+        )
+
+    elif name == "list_intel_feeds":
+        return await _api_get("/intel/feeds")
 
     # ── AI ────────────────────────────────────────────────────────────
     elif name == "ai_chat":
