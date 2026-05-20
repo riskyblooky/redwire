@@ -18,7 +18,13 @@ from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
 from utils.collaboration import create_activity_log, build_change_summary
-from utils.vault_crypto import encrypt_vault_fields, decrypt_vault_item, encrypt_field
+from utils.vault_crypto import (
+    encrypt_vault_fields,
+    decrypt_vault_item,
+    encrypt_field,
+    encrypt_bytes,
+    decrypt_bytes,
+)
 from utils.storage import storage_service
 from sqlalchemy.orm import selectinload
 
@@ -121,11 +127,20 @@ async def upload_vault_file(
                 detail="Insufficient permissions. You need the 'vault_create' permission to upload files to the vault."
             )
 
-    # Upload file to MinIO
+    # Upload file to MinIO. Encrypt the content with the vault Fernet key
+    # so files in object storage are protected at rest the same way the
+    # username/password/note fields are protected in Postgres (RDW-057).
+    # Force application/octet-stream + .enc suffix so any future direct
+    # bucket access doesn't misadvertise a content type for the
+    # ciphertext blob.
     content = await file.read()
-    file_ext = os.path.splitext(file.filename)[1] if file.filename else ""
-    storage_key = f"vault/{uuid.uuid4()}{file_ext}"
-    await storage_service.upload_file(content, storage_key, content_type=file.content_type)
+    encrypted_content = encrypt_bytes(content)
+    storage_key = f"vault/{uuid.uuid4()}.enc"
+    await storage_service.upload_file(
+        encrypted_content,
+        storage_key,
+        content_type="application/octet-stream",
+    )
 
     db_item = VaultItem(
         engagement_id=engagement_id,
@@ -336,11 +351,15 @@ async def download_vault_file(
         details=f"Downloaded vault file: {item.filename}"
     )
 
-    # Stream from MinIO
+    # Stream from MinIO. decrypt_bytes falls back to the raw payload
+    # if the stored blob isn't Fernet-shaped — covers legacy plaintext
+    # files uploaded before RDW-057 shipped.
     try:
         file_bytes = await storage_service.download_file(item.file_path)
     except Exception:
         raise HTTPException(status_code=404, detail="File content missing in storage")
+
+    file_bytes = decrypt_bytes(file_bytes)
 
     return Response(
         content=file_bytes,

@@ -66,6 +66,32 @@ def decrypt_field(value: Optional[str]) -> Optional[str]:
         return value
 
 
+def encrypt_bytes(data: bytes) -> bytes:
+    """Encrypt arbitrary binary content for storage (e.g. vault file uploads).
+
+    Returns base64-url Fernet ciphertext as bytes. Use ``decrypt_bytes`` on
+    read; it falls back to the raw input for legacy plaintext files that
+    were stored before vault-file encryption shipped (RDW-057).
+    """
+    if data is None:
+        return data
+    f = _get_fernet()
+    return f.encrypt(data)
+
+
+def decrypt_bytes(data: bytes) -> bytes:
+    """Decrypt vault file bytes. Falls back to the raw input for legacy
+    plaintext files (any file uploaded before RDW-057 shipped). Without
+    the fallback every pre-fix download would 500."""
+    if data is None:
+        return data
+    try:
+        f = _get_fernet()
+        return f.decrypt(data)
+    except (InvalidToken, Exception):
+        return data
+
+
 # ---------------------------------------------------------------------------
 # Convenience wrappers for encrypting / decrypting the three vault fields
 # on a dict (used by the router layer).
