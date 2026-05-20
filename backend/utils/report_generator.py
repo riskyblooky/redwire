@@ -114,15 +114,6 @@ def _severity_rank(severity) -> int:
     return _SEVERITY_RANK.get(key, 0)
 
 
-def _strip_html(text: str) -> str:
-    if not text:
-        return ""
-    clean = re.sub(r'<(?!/?(?:b|i|u|br|br/)>)[^>]+>', '', text)
-    clean = clean.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-    clean = clean.replace('&nbsp;', ' ')
-    return clean
-
-
 def _v(val) -> str:
     if val is None:
         return 'N/A'
@@ -134,7 +125,7 @@ def _v(val) -> str:
 # The frontend's MarkdownEditor stores fields (finding description, impact,
 # steps_to_reproduce, mitigations, references, text-section content,
 # cleanup description / notes) as raw markdown. The PDF generator used to
-# call _strip_html on those fields, which is a no-op for markdown — so
+# strip HTML tags from those fields, which is a no-op for markdown — so
 # `**bold**` and `# heading` rendered literally in the PDF.
 #
 # `_md_inline_to_rl` converts inline markdown (bold/italic/code/link) into
