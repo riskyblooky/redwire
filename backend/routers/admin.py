@@ -188,7 +188,21 @@ async def reset_password(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
+    # SSO/LDAP-bound accounts authenticate against their IdP — planting
+    # a hashed_password here would create a permanent IdP bypass for
+    # them via the login path (GHSA-39x9-f79h-rh4r precondition).
+    # Mirrors the existing guard at auth.py:894 on /auth/reset-password.
+    if user.auth_provider != "local":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Cannot reset password for users authenticated via "
+                f"{user.auth_provider.upper()}. They authenticate via "
+                "their identity provider."
+            ),
+        )
+
     # Generate temporary password
     alphabet = string.ascii_letters + string.digits
     temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
