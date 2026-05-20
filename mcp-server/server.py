@@ -4,9 +4,11 @@ RedWire MCP Server
 Exposes RedWire platform operations as MCP tools for LLM integration.
 Uses SSE transport so both external clients and the webapp can connect.
 
-Security: Per-session auth — the user's JWT is extracted from the SSE URL
-query param and forwarded on every backend API call, so the backend's
-existing RBAC enforces permissions.
+Security: Per-session auth — the client must send `Authorization: Bearer`
+on the SSE request. The bearer is validated against the backend at connect
+time and then forwarded on every backend API call, so the backend's existing
+RBAC enforces permissions. There is no ambient/service token; an
+unauthenticated `/sse` is refused.
 """
 
 import os
@@ -14,7 +16,6 @@ import json
 import logging
 import contextvars
 from typing import Any
-from urllib.parse import parse_qs
 
 import httpx
 from mcp.server import Server
@@ -23,7 +24,7 @@ from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 
@@ -33,14 +34,14 @@ logger = logging.getLogger("redwire-mcp")
 # ── Configuration ────────────────────────────────────────────────────────────
 
 REDWIRE_API_URL = os.getenv("REDWIRE_API_URL", "http://backend:8000")
-REDWIRE_API_TOKEN = os.getenv("REDWIRE_API_TOKEN", "")
 MCP_PORT = int(os.getenv("MCP_PORT", "3001"))
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS = [o for o in os.getenv("CORS_ORIGINS", "").split(",") if o]
 
 # ── Per-Session Auth ─────────────────────────────────────────────────────────
-# When a user connects from the webapp, their JWT is passed via ?token=<jwt>
-# on the SSE URL and stored in this ContextVar for the duration of the session.
-# External clients (Claude Desktop, etc.) use REDWIRE_API_TOKEN instead.
+# Each SSE connection MUST present its own bearer (JWT or API token) in the
+# Authorization header. It's validated at connect time and stored per-session;
+# every backend call forwards it. There is no shared/service token — an MCP
+# session has exactly the authority of whoever opened it.
 
 _session_token: contextvars.ContextVar[str] = contextvars.ContextVar(
     "session_token", default=""
@@ -48,12 +49,40 @@ _session_token: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 
 def _headers() -> dict:
-    """Build auth headers — uses session token if available, else env token."""
+    """Build auth headers from the per-session bearer set at SSE connect."""
     h = {"Content-Type": "application/json"}
-    token = _session_token.get("") or REDWIRE_API_TOKEN
+    token = _session_token.get("")
     if token:
         h["Authorization"] = f"Bearer {token}"
     return h
+
+
+def _bearer_from(request: Request) -> str:
+    """Extract a Bearer token from the Authorization header. Query-string
+    tokens are deliberately NOT accepted — a long-lived bearer in the URL ends
+    up in access logs, browser history and Referer (CWE-598)."""
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return ""
+
+
+async def _validate_bearer(token: str) -> bool:
+    """Confirm the bearer is currently valid by asking the backend who it
+    belongs to. We don't decode the JWT locally because the backend is the
+    authority on revocation, expiry and `ro_`/`rw_` API-token resolution."""
+    if not token:
+        return False
+    try:
+        async with httpx.AsyncClient(base_url=REDWIRE_API_URL,
+                                     timeout=10) as client:
+            resp = await client.get(
+                "/users/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            return resp.status_code == 200
+    except httpx.HTTPError:
+        return False
 
 
 # ── HTTP Client ──────────────────────────────────────────────────────────────
@@ -863,17 +892,28 @@ sse = SseServerTransport("/messages/")
 async def handle_sse(request: Request):
     """Handle SSE connection from MCP clients.
 
-    Per-session auth: if ?token=<jwt> is present in the URL, store it in
-    a ContextVar so all API calls in this session use the user's identity.
+    The client MUST send `Authorization: Bearer <jwt-or-api-token>`. The
+    bearer is validated against the backend at connect time; an absent or
+    invalid bearer is a 401 before the SSE stream opens. The validated
+    bearer is forwarded on every backend call for the life of the session.
     """
-    # Extract token from query string
-    token = request.query_params.get("token", "")
-    if token:
-        _session_token.set(token)
-        logger.info("SSE session connected with user JWT")
-    else:
-        _session_token.set("")
-        logger.info("SSE session connected (using env API token)")
+    token = _bearer_from(request)
+    if not token or not await _validate_bearer(token):
+        logger.warning(
+            "SSE connect refused: %s bearer (remote=%s)",
+            "missing" if not token else "invalid",
+            request.client.host if request.client else "?",
+        )
+        return Response(
+            '{"detail":"Missing or invalid Authorization bearer"}',
+            status_code=401,
+            media_type="application/json",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    _session_token.set(token)
+    logger.info("SSE session connected (remote=%s)",
+                request.client.host if request.client else "?")
 
     async with sse.connect_sse(
         request.scope, request.receive, request._send
@@ -898,10 +938,13 @@ app = Starlette(
     middleware=[
         Middleware(
             CORSMiddleware,
-            allow_origins=CORS_ORIGINS if CORS_ORIGINS != ["*"] else ["*"],
-            allow_credentials=True,
+            # Never reflect "*" — that plus allow_credentials lets any web
+            # page drive this server from a victim's browser. If CORS_ORIGINS
+            # is unset, no cross-origin browser access is granted.
+            allow_origins=CORS_ORIGINS,
+            allow_credentials=False,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["*"],
+            allow_headers=["Authorization", "Content-Type"],
         ),
     ],
 )
@@ -913,8 +956,7 @@ if __name__ == "__main__":
     logger.info(f"🚀 RedWire MCP Server starting on port {MCP_PORT}")
     logger.info(f"   API URL: {REDWIRE_API_URL}")
     logger.info(f"   SSE endpoint: http://0.0.0.0:{MCP_PORT}/sse")
-
-    if not REDWIRE_API_TOKEN:
-        logger.warning("⚠️  REDWIRE_API_TOKEN not set — external clients will need to pass ?token=")
+    logger.info("   Auth: every client must send Authorization: Bearer "
+                "<jwt-or-api-token>")
 
     uvicorn.run(app, host="0.0.0.0", port=MCP_PORT)
