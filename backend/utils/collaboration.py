@@ -265,7 +265,10 @@ async def create_activity_log(
             "details": details,
         }
         await manager.broadcast_to_resource("engagement", engagement_id, event_payload)
-        await manager.broadcast_to_resource("dashboard", "global", event_payload)
+        # dashboard:global is open to any authenticated subscriber, so pass
+        # db down — broadcast_to_resource will filter recipients by
+        # ENGAGEMENT_VIEW membership against this event's engagement_id.
+        await manager.broadcast_to_resource("dashboard", "global", event_payload, db=db)
         await manager.broadcast_to_resource("dashboard", engagement_id, event_payload)
     except Exception as e:
         print(f"[ActivityLog] Broadcast error (non-fatal): {e}")
@@ -370,7 +373,13 @@ class ConnectionManager:
         # but in FastAPI disconnects are typically handled in the endpoint loop.
         return user_info
 
-    async def broadcast_to_resource(self, resource_type: str, resource_id: str, message: dict):
+    async def broadcast_to_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+        message: dict,
+        db: Optional[AsyncSession] = None,
+    ):
         if resource_type in self.active_connections:
             if resource_id in self.active_connections[resource_type]:
                 # Get current active users for this resource to include in presence updates
@@ -387,9 +396,47 @@ class ConnectionManager:
                     active_users.sort(key=lambda u: u.get('id', ''))
                     message["active_users"] = active_users
 
+                # dashboard:global is the cross-engagement notification stream.
+                # Subscribers are any authenticated user; the membership gate
+                # has to be applied per-recipient at broadcast time so a
+                # subscriber only receives events for engagements they can see.
+                # Other channels (engagement:X, dashboard:X, note:X) are scoped
+                # at subscribe time and need no per-recipient filter.
+                gating_engagement: Optional[str] = None
+                if (
+                    resource_type == "dashboard"
+                    and resource_id == "global"
+                    and db is not None
+                ):
+                    gating_engagement = message.get("engagement_id")
+
                 encoded_message = json.dumps(message)
                 dead_connections = []
                 for connection in self.active_connections[resource_type][resource_id]:
+                    if gating_engagement is not None:
+                        info = self.connection_info.get(connection) or {}
+                        recipient_id = info.get("id")
+                        if not recipient_id:
+                            # Fail closed: don't deliver to unidentified connections
+                            continue
+                        try:
+                            from auth.rbac import check_engagement_permission
+                            from models.permission import Permission
+                            allowed = await check_engagement_permission(
+                                recipient_id,
+                                gating_engagement,
+                                Permission.ENGAGEMENT_VIEW.value,
+                                db,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"dashboard:global membership check failed for "
+                                f"user {recipient_id} on engagement "
+                                f"{gating_engagement}: {e}"
+                            )
+                            allowed = False
+                        if not allowed:
+                            continue
                     try:
                         await connection.send_text(encoded_message)
                     except:

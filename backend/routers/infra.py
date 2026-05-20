@@ -28,7 +28,7 @@ from schemas.infra_vault import (
     InfraVaultItemCreate, InfraVaultItemUpdate, InfraVaultItemResponse,
     InfraVaultAccessResponse,
 )
-from utils.vault_crypto import encrypt_vault_fields, decrypt_vault_item
+from utils.vault_crypto import encrypt_vault_fields, decrypt_vault_item, encrypt_bytes, decrypt_bytes
 from utils.storage import storage_service
 
 router = APIRouter(prefix="/infra", tags=["infrastructure"])
@@ -205,12 +205,40 @@ async def delete_infra_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete an infra item."""
+    """Delete an infra item.
+
+    Enumerates child vault items first and removes any MinIO-backed
+    file objects associated with FILE-type vault entries. Without this,
+    the DB cascade drops the vault-item rows but the underlying file
+    payloads orphan in MinIO indefinitely (RDW-115, follow-up to
+    GHSA-58q3-f33p-w84m).
+    """
     await require_global_permission(Permission.INFRA_DELETE, current_user, db)
     result = await db.execute(select(InfraItem).where(InfraItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Infra item not found")
+
+    # Best-effort cleanup of any vault-item files in MinIO before the
+    # DB cascade drops the rows. Failures are logged but don't block
+    # the delete — the DB rows are the source of truth.
+    child_files = await db.execute(
+        select(InfraVaultItem.file_path).where(
+            InfraVaultItem.infra_item_id == item_id,
+            InfraVaultItem.file_path.isnot(None),
+        )
+    )
+    for (file_path,) in child_files.all():
+        if not file_path:
+            continue
+        try:
+            await storage_service.delete_file(file_path)
+        except Exception:
+            # Non-fatal — DB rows are the source of truth, MinIO orphan
+            # cleanup can be retried offline. Matches the sibling pattern
+            # in delete_infra_vault_item.
+            pass
+
     await db.delete(item)
     await db.commit()
 
@@ -411,10 +439,18 @@ async def upload_infra_vault_file(
     if not infra:
         raise HTTPException(status_code=404, detail="Infra item not found")
 
+    # Fernet-encrypt before upload so files in MinIO are protected at
+    # rest the same way other vault columns are protected in Postgres
+    # (RDW-057). Force application/octet-stream + .enc suffix so the
+    # ciphertext blob isn't mis-advertised by a downstream content-type.
     content = await file.read()
-    file_ext = os.path.splitext(file.filename)[1] if file.filename else ""
-    storage_key = f"infra-vault/{uuid.uuid4()}{file_ext}"
-    await storage_service.upload_file(content, storage_key, content_type=file.content_type)
+    encrypted_content = encrypt_bytes(content)
+    storage_key = f"infra-vault/{uuid.uuid4()}.enc"
+    await storage_service.upload_file(
+        encrypted_content,
+        storage_key,
+        content_type="application/octet-stream",
+    )
 
     db_item = InfraVaultItem(
         infra_item_id=item_id,
@@ -624,7 +660,11 @@ async def download_infra_vault_file(
     if not vi or vi.item_type != "FILE" or not vi.file_path:
         raise HTTPException(status_code=404, detail="File not found")
 
+    # decrypt_bytes falls back to the raw payload if the stored blob
+    # isn't Fernet-shaped — covers legacy plaintext files uploaded
+    # before RDW-057 shipped.
     file_data = await storage_service.download_file(vi.file_path)
+    file_data = decrypt_bytes(file_data)
     return StreamingResponse(
         io.BytesIO(file_data),
         media_type="application/octet-stream",

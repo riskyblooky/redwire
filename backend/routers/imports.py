@@ -119,6 +119,16 @@ async def preview_import(
     Returns parsed assets and findings with duplicate indicators.
     No database writes.
     """
+    # If the caller scopes the preview to a specific engagement, they
+    # need permission on that engagement — otherwise the response leaks
+    # the foreign engagement's asset identifiers and finding titles via
+    # the dedup pass below (RDW-100, follow-up to GHSA-ghw9-87v2-9453).
+    # When no engagement_id is supplied, the parse is still gated to
+    # authenticated callers and writes no DB rows; the underlying
+    # XML-bomb risk it ran against is closed by defusedxml.
+    if engagement_id:
+        await _check_import_permission(current_user, engagement_id, db)
+
     content = await file.read()
     filename = file.filename or "unknown"
 
