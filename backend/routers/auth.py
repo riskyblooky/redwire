@@ -964,9 +964,16 @@ async def reset_password(
     if len(req.new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
-    # Update password
+    # Update password. Also clear TOTP — the email-reset flow is the
+    # last-resort recovery path, and if 2FA was bound to an attacker
+    # (e.g. via a stolen session before GHSA-vm6w-9wm5-q367 shipped),
+    # the legitimate owner needs to be able to recover via email
+    # without being blocked at the TOTP prompt forever.
     user.hashed_password = get_password_hash(req.new_password)
     user.must_change_password = False
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.totp_verified_at = None
     await db.commit()
     
     # Blacklist the reset token so it cannot be replayed
