@@ -185,13 +185,21 @@ class InfraItemNote(Base):
 
 
 class InfraVaultAccess(Base):
-    """Per-infra-item vault access grant. Admins/Team Leads bypass this."""
+    """Per-infra-item vault access grant. Admins/Team Leads bypass this.
+
+    can_manage=True is the per-grant marker for "this grantee may
+    grant/revoke ACL rows on this item." A grantee with can_manage=False
+    can use the vault content (depending on their global INFRA_VAULT_*
+    permissions) but cannot onboard or remove other users. This avoids
+    the "every grantee is a granter" trap (GHSA-58q3-f33p-w84m).
+    """
     __tablename__ = "infra_vault_access"
 
     infra_item_id = Column(String, ForeignKey("infra_items.id", ondelete="CASCADE"), primary_key=True)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     granted_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    can_manage = Column(Boolean, default=False, server_default="false", nullable=False)
 
 
 class FindingAttackTechnique(Base):

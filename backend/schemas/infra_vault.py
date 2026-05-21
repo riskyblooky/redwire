@@ -48,6 +48,14 @@ class InfraVaultAccessResponse(BaseModel):
     profile_photo: Optional[str] = None
     granted_by: Optional[str] = None
     granted_at: datetime
+    can_manage: bool = False
 
     class Config:
         from_attributes = True
+
+
+class InfraVaultAccessGrant(BaseModel):
+    """Body for POST /infra/items/{id}/vault/access. user_id can also be
+    passed as a query param for back-compat with the existing clients."""
+    user_id: Optional[str] = None
+    can_manage: bool = False
