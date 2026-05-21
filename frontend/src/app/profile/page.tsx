@@ -75,6 +75,9 @@ export default function ProfilePage() {
         full_name: '',
         email: '',
     });
+    // Step-up state for the email-change gate (GHSA-hc9w-hggj-r52w).
+    const [emailChangePassword, setEmailChangePassword] = useState('');
+    const [emailChangeTotpCode, setEmailChangeTotpCode] = useState('');
 
     // Populate form when user data loads
     useEffect(() => {
@@ -85,6 +88,9 @@ export default function ProfilePage() {
             });
         }
     }, [user]);
+
+    const emailChanged = !!user && profileData.email !== (user.email || '');
+    const isLocalUser = !user?.auth_provider || user.auth_provider === 'local';
 
     // Password change state
     const [passwordData, setPasswordData] = useState({
@@ -138,10 +144,32 @@ export default function ProfilePage() {
         e.preventDefault();
         setProfileMessage(null);
         try {
-            await updateProfile.mutateAsync(profileData);
+            // Email change requires a credential-class step-up (GHSA-hc9w-hggj-r52w).
+            // Only send the step-up fields when the email actually changed,
+            // so unrelated profile edits don't ping the user for a password.
+            const payload: typeof profileData & { current_password?: string; totp_code?: string } = { ...profileData };
+            if (emailChanged && isLocalUser) {
+                payload.current_password = emailChangePassword;
+                if (user?.totp_enabled) payload.totp_code = emailChangeTotpCode;
+            }
+            await updateProfile.mutateAsync(payload);
             setProfileMessage({ type: 'success', text: 'Profile updated successfully!' });
+            setEmailChangePassword('');
+            setEmailChangeTotpCode('');
+            // Email change revokes all sessions server-side — bounce to login.
+            if (emailChanged) {
+                setProfileMessage({ type: 'success', text: 'Email updated. Signing you out…' });
+                setTimeout(() => {
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
+                    window.location.href = '/login';
+                }, 1200);
+            }
         } catch (error: any) {
             setProfileMessage({ type: 'error', text: error.response?.data?.detail || 'Failed to update profile' });
+            setEmailChangePassword('');
+            setEmailChangeTotpCode('');
         }
     };
 
@@ -370,14 +398,51 @@ export default function ProfilePage() {
                                                     className="bg-slate-950/50 border-slate-700 pl-10 text-white focus:border-purple-500 transition-colors"
                                                     placeholder="your@email.com"
                                                     required
+                                                    disabled={!isLocalUser}
                                                 />
                                             </div>
+                                            {!isLocalUser && (
+                                                <p className="text-xs text-slate-500">
+                                                    Email is managed by your identity provider ({user?.auth_provider?.toUpperCase()}).
+                                                </p>
+                                            )}
                                         </div>
+
+                                        {emailChanged && isLocalUser && (
+                                            <div className="space-y-2 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                                                <p className="text-xs text-amber-300">
+                                                    Email is your password-reset address. Re-confirm your identity to change it — all sessions will be revoked.
+                                                </p>
+                                                <Input
+                                                    type="password"
+                                                    placeholder="Current password"
+                                                    value={emailChangePassword}
+                                                    onChange={(e) => setEmailChangePassword(e.target.value)}
+                                                    className="bg-slate-950/50 border-slate-700 text-white"
+                                                    autoComplete="current-password"
+                                                />
+                                                {user?.totp_enabled && (
+                                                    <Input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        placeholder="6-digit 2FA code"
+                                                        value={emailChangeTotpCode}
+                                                        onChange={(e) => setEmailChangeTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                        maxLength={6}
+                                                        className="bg-slate-950/50 border-slate-700 text-white font-mono tracking-widest"
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
 
                                         <Button
                                             type="submit"
                                             className="w-full bg-primary hover:bg-primary/90"
-                                            disabled={updateProfile.isPending}
+                                            disabled={
+                                                updateProfile.isPending ||
+                                                (emailChanged && isLocalUser && !emailChangePassword) ||
+                                                (emailChanged && isLocalUser && !!user?.totp_enabled && emailChangeTotpCode.length !== 6)
+                                            }
                                         >
                                             {updateProfile.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                                             Save Changes
