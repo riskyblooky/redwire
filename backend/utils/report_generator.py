@@ -114,15 +114,6 @@ def _severity_rank(severity) -> int:
     return _SEVERITY_RANK.get(key, 0)
 
 
-def _strip_html(text: str) -> str:
-    if not text:
-        return ""
-    clean = re.sub(r'<(?!/?(?:b|i|u|br|br/)>)[^>]+>', '', text)
-    clean = clean.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-    clean = clean.replace('&nbsp;', ' ')
-    return clean
-
-
 def _v(val) -> str:
     if val is None:
         return 'N/A'
@@ -134,7 +125,7 @@ def _v(val) -> str:
 # The frontend's MarkdownEditor stores fields (finding description, impact,
 # steps_to_reproduce, mitigations, references, text-section content,
 # cleanup description / notes) as raw markdown. The PDF generator used to
-# call _strip_html on those fields, which is a no-op for markdown — so
+# strip HTML tags from those fields, which is a no-op for markdown — so
 # `**bold**` and `# heading` rendered literally in the PDF.
 #
 # `_md_inline_to_rl` converts inline markdown (bold/italic/code/link) into
@@ -197,7 +188,7 @@ def _md_inline_to_rl(text: str) -> str:
         # Try to extract data-color or style="background-color: ..."
         bg = None
         attrs = m.group(0)[:m.group(0).index('>')]
-        m_color = re.search(r'(?:data-color|background-color)\s*[:=]\s*[\'"]?(#?[A-Za-z0-9]+)', attrs)
+        m_color = re.search(r'(?:data-color|background-color)\s*[:=]\s*[\'"]?(#?[0-9a-fA-F]{3,8})', attrs)
         if m_color:
             bg = m_color.group(1)
             if not bg.startswith('#') and len(bg) in (3, 6) and re.fullmatch(r'[0-9A-Fa-f]+', bg):
@@ -215,12 +206,12 @@ def _md_inline_to_rl(text: str) -> str:
         inner = _escape_xml(m.group(2))
         color = None
         bg = None
-        m_c = re.search(r'(?<!-)color\s*:\s*(#?[A-Za-z0-9]+)', attrs)
+        m_c = re.search(r'(?<!-)color\s*:\s*(#?[0-9a-fA-F]{3,8})', attrs)
         if m_c:
             color = m_c.group(1)
             if not color.startswith('#') and re.fullmatch(r'[0-9A-Fa-f]+', color):
                 color = '#' + color
-        m_bg = re.search(r'background-color\s*:\s*(#?[A-Za-z0-9]+)', attrs)
+        m_bg = re.search(r'background-color\s*:\s*(#?[0-9a-fA-F]{3,8})', attrs)
         if m_bg:
             bg = m_bg.group(1)
             if not bg.startswith('#') and re.fullmatch(r'[0-9A-Fa-f]+', bg):

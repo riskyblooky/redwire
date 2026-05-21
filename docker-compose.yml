@@ -164,7 +164,6 @@ services:
     container_name: redwire-mcp
     environment:
       REDWIRE_API_URL: http://backend:8000
-      REDWIRE_API_TOKEN: ${MCP_API_TOKEN:-}
       MCP_PORT: "3001"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080,https://localhost:8443}
     ports:

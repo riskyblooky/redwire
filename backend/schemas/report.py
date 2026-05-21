@@ -7,6 +7,7 @@ class ReportFormat(str, Enum):
     PDF = "pdf"
     MARKDOWN = "markdown"
     JSON_ZIP = "json_zip"
+    JSON_LAYOUT_ZIP = "json_layout_zip"
 
 
 class ReportConfiguration(BaseModel):

@@ -175,7 +175,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     const { activeUsers } = useCollaboration({ resourceType: 'report', resourceId: engagementId });
 
     // ── Report generation ──
-    const [format, setFormat] = useState<'pdf' | 'markdown' | 'json_zip'>('pdf');
+    const [format, setFormat] = useState<'pdf' | 'markdown' | 'json_zip' | 'json_layout_zip'>('pdf');
     const [isGenerating, setIsGenerating] = useState(false);
     const [lastGenerated, setLastGenerated] = useState<string | null>(null);
     const [includeEvidence, setIncludeEvidence] = useState(true);
@@ -485,7 +485,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                 report_format: format,
                 exclude_severities: [],
                 theme_id: selectedThemeId || undefined,
-                include_evidence: format === 'json_zip' ? includeEvidence : undefined,
+                include_evidence: (format === 'json_zip' || format === 'json_layout_zip') ? includeEvidence : undefined,
                 finding_ids: selectedFindingIds ? Array.from(selectedFindingIds) : undefined,
                 testcase_ids: selectedTestcaseIds ? Array.from(selectedTestcaseIds) : undefined,
                 cleanup_ids: selectedCleanupIds ? Array.from(selectedCleanupIds) : undefined,
@@ -956,16 +956,21 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                     <SelectItem value="json_zip" className="focus:bg-indigo-500/20 focus:text-indigo-400">
                                         JSON Export (.zip)
                                     </SelectItem>
+                                    <SelectItem value="json_layout_zip" className="focus:bg-indigo-500/20 focus:text-indigo-400">
+                                        JSON Export with Layout (.zip)
+                                    </SelectItem>
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-slate-500">
                                 {format === 'json_zip'
                                     ? 'Exports engagement data as JSON with evidence attachments in a ZIP archive'
+                                    : format === 'json_layout_zip'
+                                    ? 'Same as JSON Export, plus the selected layout (section order and custom text content) so consumers can render the report in the same structure as the PDF/Markdown formats'
                                     : 'PDF is recommended for final delivery'}
                             </p>
                         </div>
 
-                        {format === 'json_zip' && (
+                        {(format === 'json_zip' || format === 'json_layout_zip') && (
                             <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-950/30 border border-slate-800/50">
                                 <label className="flex items-center gap-2.5 cursor-pointer group">
                                     <div className="relative">
@@ -1220,7 +1225,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                         format === 'markdown' ? 'border-blue-500/30 text-blue-400' :
                                         'border-amber-500/30 text-amber-400'
                                     )}>
-                                        {format === 'pdf' ? 'PDF' : format === 'markdown' ? 'Markdown' : 'JSON ZIP'}
+                                        {format === 'pdf' ? 'PDF' : format === 'markdown' ? 'Markdown' : format === 'json_layout_zip' ? 'JSON+Layout ZIP' : 'JSON ZIP'}
                                     </Badge>
                                     {lastGenerated && (
                                         <span className="text-[10px] text-slate-500 flex items-center gap-1">
@@ -1244,7 +1249,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                             />
                         ) : format === 'markdown' && previewResult ? (
                             <MarkdownPreview blob={previewResult.blob} />
-                        ) : format === 'json_zip' && previewResult ? (
+                        ) : (format === 'json_zip' || format === 'json_layout_zip') && previewResult ? (
                             <div className="flex items-center justify-center h-full min-h-[300px]">
                                 <div className="text-center space-y-4">
                                     <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 inline-block">
