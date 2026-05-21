@@ -11,7 +11,7 @@ Admin endpoints:
   POST   /admin/api-tokens       — create token for any user
   DELETE /admin/api-tokens/{id}  — revoke any token
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
@@ -75,6 +75,7 @@ async def list_own_tokens(
     description="Generates a new API token. The raw token is returned once in the response — store it securely.",
 )
 async def create_own_token(
+    request: Request,
     body: ApiTokenCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -89,6 +90,20 @@ async def create_own_token(
     hashed_password to verify against and currently skip this step-up;
     session-freshness-based step-up for them is tracked as a follow-up.
     """
+    # An API token must not be able to mint another API token — that would
+    # let a stolen/expiring token replace itself indefinitely and defeats
+    # revocation (GHSA-x64x-c7pw-7g8x). Require an interactive (JWT) session.
+    # api_token_permission is set only on the API-token branch of
+    # get_current_user (auth/dependencies.py:100); it is None for JWTs.
+    # Reject BEFORE the password gate so an API-token caller can't probe
+    # the password-error oracle.
+    if getattr(request.state, "api_token_permission", None) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API tokens cannot be used to create other API tokens. "
+                   "Please log in interactively.",
+        )
+
     if current_user.auth_provider == "local":
         from auth.password import verify_password
         if not body.password:
@@ -227,11 +242,22 @@ async def admin_list_tokens(
     description="Generates an API token for any user. Useful for creating service account tokens.",
 )
 async def admin_create_token(
+    request: Request,
     body: ApiTokenAdminCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create an API token for any user (admin only). Used for service tokens."""
+    # Same protection as create_own_token (GHSA-x64x-c7pw-7g8x): an
+    # admin's leaked rw_ token must not be able to mint tokens on behalf
+    # of any user. Interactive admin session required.
+    if getattr(request.state, "api_token_permission", None) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API tokens cannot be used to create other API tokens. "
+                   "Please log in interactively.",
+        )
+
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Full admin access required")
 
