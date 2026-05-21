@@ -87,6 +87,9 @@ class TotpSetupResponse(BaseModel):
     qr_code: str
     otpauth_uri: str
 
+class TotpSetupRequest(BaseModel):
+    password: str
+
 class TotpVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=6)
 

@@ -9,7 +9,7 @@ from models.user import User, UserRole
 from models.auth_settings import AuthSetting
 from schemas.user import (
     UserLogin, Token, TokenRefresh, UserCreate, UserResponse,
-    TotpSetupResponse, TotpVerifyRequest, TotpDisableRequest,
+    TotpSetupResponse, TotpSetupRequest, TotpVerifyRequest, TotpDisableRequest,
 )
 from schemas.auth_settings import AuthProvidersResponse, ForgotPasswordRequest, ResetPasswordRequest
 from auth import (
@@ -509,6 +509,7 @@ async def force_change_password(
 @limiter.limit("5/minute")
 async def totp_setup(
     request: Request,
+    body: TotpSetupRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -518,7 +519,28 @@ async def totp_setup(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Two-factor authentication is already enabled",
         )
-    
+
+    # SSO/LDAP users authenticate via their identity provider; there's no
+    # local hashed_password to verify against, and the IdP is the right
+    # place to manage MFA for them. Refuse setup here rather than fall
+    # through to verify_password() (which would fail for any input).
+    if current_user.auth_provider != "local":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is managed by your identity provider.",
+        )
+
+    # Require the current password before binding a new second factor —
+    # mirrors /totp/disable, which already enforces this. Without this
+    # check, a stolen session token alone is enough to enroll the
+    # account into an attacker-controlled authenticator and permanently
+    # lock the legitimate owner out.
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+
     secret = generate_totp_secret()
     uri = get_totp_uri(secret, current_user.username)
     qr_code = generate_qr_base64(uri)
@@ -568,7 +590,21 @@ async def totp_verify_setup(
     current_user.totp_enabled = True
     current_user.totp_verified_at = datetime.utcnow()
     await db.commit()
-    
+
+    # MFA boundary changed: invalidate every existing session and
+    # long-lived API token so a stolen pre-2FA bearer cannot survive
+    # the user enabling 2FA (mirrors the password-change path).
+    from auth.jwt import revoke_all_user_tokens
+    from sqlalchemy import update as _sa_update
+    from models.api_token import ApiToken
+    revoke_all_user_tokens(current_user.id)
+    await db.execute(
+        _sa_update(ApiToken)
+        .where(ApiToken.user_id == current_user.id)
+        .values(is_active=False)
+    )
+    await db.commit()
+
     return {"message": "Two-factor authentication enabled successfully"}
 
 
@@ -612,7 +648,21 @@ async def totp_disable(
     current_user.totp_enabled = False
     current_user.totp_verified_at = None
     await db.commit()
-    
+
+    # MFA boundary changed: invalidate every existing session and
+    # long-lived API token so a stolen post-2FA bearer cannot survive
+    # the user disabling 2FA (mirrors the password-change path).
+    from auth.jwt import revoke_all_user_tokens
+    from sqlalchemy import update as _sa_update
+    from models.api_token import ApiToken
+    revoke_all_user_tokens(current_user.id)
+    await db.execute(
+        _sa_update(ApiToken)
+        .where(ApiToken.user_id == current_user.id)
+        .values(is_active=False)
+    )
+    await db.commit()
+
     return {"message": "Two-factor authentication disabled successfully"}
 
 
