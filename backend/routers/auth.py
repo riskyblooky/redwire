@@ -154,9 +154,16 @@ async def login(request: Request, credentials: UserLogin, db: AsyncSession = Dep
     user = result.scalar_one_or_none()
 
     authenticated = False
+    # Capture the row's auth_provider up-front. Treat NULL/empty as
+    # "local" for back-compat with rows that pre-date the column.
+    provider = (user.auth_provider or "local") if user else None
 
-    # Try local authentication first
-    if user and verify_password(credentials.password, user.hashed_password):
+    # Local password is only valid for local-auth users. Without this
+    # guard, an SSO/LDAP-bound user whose `hashed_password` still
+    # exists (because they migrated from local, or an admin reset
+    # their password) can bypass the IdP indefinitely
+    # (GHSA-39x9-f79h-rh4r issue 1).
+    if user and provider == "local" and verify_password(credentials.password, user.hashed_password):
         authenticated = True
 
     # Try LDAP if local failed and LDAP is enabled
@@ -206,10 +213,18 @@ async def login(request: Request, credentials: UserLogin, db: AsyncSession = Dep
                 await db.commit()
                 user = new_user
                 logger.info(f"JIT provisioned LDAP user: {user.username}")
-            else:
-                # Update auth_provider if switching
-                if user.auth_provider != "ldap":
-                    user.auth_provider = "ldap"
+            elif provider != "ldap":
+                # An existing local- or SAML-bound row with the same
+                # username is a collision, not the same identity.
+                # Adopting it would let an LDAP entry with
+                # uid=<existing-local-admin> assume that account's
+                # role, engagements, and API tokens
+                # (GHSA-39x9-f79h-rh4r issue 2).
+                logger.warning(
+                    "LDAP login for %r refused: existing user is auth_provider=%r",
+                    credentials.username, provider,
+                )
+                authenticated = False
 
     if not authenticated or not user:
         raise HTTPException(
