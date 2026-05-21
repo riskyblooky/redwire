@@ -43,9 +43,33 @@ What is offered instead:
 
 ## Acknowledgements
 
-Security researchers who have contributed to RedWire's security posture will be listed here.
+Security researchers who have contributed to RedWire's security posture are listed here.
 
-*No reports yet — this section will be populated as reports come in.*
+### 2026-05 coordinated disclosure — Lockheed Martin Red Team
+
+Nineteen advisories reported by **HackAndPwn** at the Lockheed Martin Red Team through GitHub's coordinated disclosure flow. Each report included a complete write-up with proof-of-concept and, in most cases, a suggested fix — depth of analysis that made the maintainer-side patches reviewable and fast to land. Fixes shipped in v1.1.0.
+
+| Advisory | Summary |
+|---|---|
+| GHSA-39x9-f79h-rh4r | Login handler does not bind credentials to their auth provider |
+| GHSA-68hx-hggg-vrr2 | SAML ACS accepts unsolicited responses, runs when SAML is disabled, and adopts existing local accounts by name |
+| GHSA-p97c-94pr-2m32 | Logout blacklists access token only — refresh token survives and mints new sessions |
+| GHSA-vm6w-9wm5-q367 | 2FA enrollment requires no password |
+| GHSA-7rcx-8hqc-mm5f | API tokens survive password change and global session revocation |
+| GHSA-hc9w-hggj-r52w | Email change requires no password |
+| GHSA-xfrh-8gq5-f82x | WebSocket endpoints lack token-type and engagement-membership checks |
+| GHSA-m8mm-g4rr-cwph | Secondary-FK link endpoints do not scope the linked resource to the primary's engagement |
+| GHSA-438x-7v7q-hpj9 | Test-case version-history endpoints lack engagement-membership check |
+| GHSA-ffmc-hrp8-hhj7 | Analytics and stats aggregate-read endpoints lack engagement scoping |
+| GHSA-74g3-5fmp-7p85 | Engagement import allows cross-tenant record injection and attribution forgery |
+| GHSA-58q3-f33p-w84m | Per-item infra-vault ACL grant/revoke reachable by any grantee |
+| GHSA-6vmm-vfh3-6p5r | Vault credential edits leak plaintext in logs and on update |
+| GHSA-qf2j-p8q7-v98h | MCP server /sse has no authentication and falls back to a service-scope token |
+| GHSA-vm9w-7vpv-2jpm | PDF report generator passes user fields to ReportLab Paragraph() unescaped — SSRF + local file read |
+| GHSA-3gpw-vj2h-2x25 | Markdown image upload accepts SVG and serves it inline — stored XSS |
+| GHSA-ghw9-87v2-9453 | Scanner-import XML parsed without defusedxml — entity-expansion DoS |
+| GHSA-wr3h-qrm5-x433 | Arbitrary file deletion via profile_photo path |
+| GHSA-x64x-c7pw-7g8x | API token can mint its own non-expiring replacement |
 
 ## Out of scope
 
