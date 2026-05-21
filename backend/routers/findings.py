@@ -687,6 +687,17 @@ async def get_finding_versions(
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
 
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, finding.engagement_id, Permission.FINDING_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'finding_view' permission to view findings.",
+            )
+
     versions = await db.execute(
         select(VersionHistory, User.username)
         .outerjoin(User, VersionHistory.changed_by == User.id)
@@ -716,6 +727,23 @@ async def get_finding_version(
     current_user: User = Depends(get_current_user),
 ):
     """Get the full snapshot of a specific version."""
+    # Load the parent finding so we have an engagement_id to gate on.
+    finding_result = await db.execute(select(Finding).where(Finding.id == finding_id))
+    finding = finding_result.scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, finding.engagement_id, Permission.FINDING_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'finding_view' permission to view findings.",
+            )
+
     result = await db.execute(
         select(VersionHistory, User.username)
         .outerjoin(User, VersionHistory.changed_by == User.id)
