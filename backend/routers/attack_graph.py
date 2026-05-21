@@ -758,6 +758,29 @@ async def create_attacker_edge(
     if not target_node_id:
         raise HTTPException(status_code=400, detail="target_node_id is required")
 
+    # Verify the target node belongs to this engagement (mirrors vault.py's
+    # cross-engagement guard). Without this an attacker could draw graph
+    # edges from a same-engagement attacker node to a foreign testcase /
+    # finding / asset, pulling the target's serialized fields back through
+    # graph reads.
+    from models.testcase import TestCase as _TC
+    from models.finding import Finding as _Finding
+    from models.asset import Asset as _Asset
+    _target_models = {"testcase": _TC, "finding": _Finding, "asset": _Asset}
+    _model = _target_models.get(target_node_type)
+    if _model is None:
+        raise HTTPException(status_code=400, detail="Unsupported target_node_type")
+    _target = (await db.execute(
+        select(_model).where(_model.id == target_node_id)
+    )).scalar_one_or_none()
+    if not _target:
+        raise HTTPException(status_code=404, detail=f"{target_node_type.capitalize()} not found")
+    if getattr(_target, "engagement_id", None) != engagement_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{target_node_type.capitalize()} belongs to a different engagement",
+        )
+
     # Check for duplicate edge
     existing = await db.execute(
         select(AttackerNodeEdge).where(

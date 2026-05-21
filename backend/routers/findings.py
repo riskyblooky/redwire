@@ -390,20 +390,31 @@ async def create_finding(
         created_by=current_user.id
     )
     
-    # Add assets if provided
+    # Add assets if provided — only assets in the SAME engagement; foreign
+    # ids are silently dropped from the .in_() filter.
     if asset_ids:
-        asset_result = await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+        asset_result = await db.execute(
+            select(Asset).where(
+                Asset.id.in_(asset_ids),
+                Asset.engagement_id == new_finding.engagement_id,
+            )
+        )
         new_finding.assets = asset_result.scalars().all()
 
-    # Add tags if provided
+    # Add tags if provided (Tag has no engagement_id — intentionally global)
     if tag_ids:
         tag_result = await db.execute(select(Tag).where(Tag.id.in_(tag_ids)))
         new_finding.tags = tag_result.scalars().all()
 
-    # Link to test case if provided
+    # Link to test case if provided — must be in the same engagement
     if testcase_id:
         from models.testcase import TestCase as TC
-        tc_result = await db.execute(select(TC).where(TC.id == testcase_id))
+        tc_result = await db.execute(
+            select(TC).where(
+                TC.id == testcase_id,
+                TC.engagement_id == new_finding.engagement_id,
+            )
+        )
         tc = tc_result.scalar_one_or_none()
         if tc:
             new_finding.testcases = [tc]
@@ -535,9 +546,15 @@ async def update_finding(
     
     finding.updated_by = current_user.id
     
-    # Update assets if provided
+    # Update assets if provided — only assets in the SAME engagement; foreign
+    # ids are silently dropped from the .in_() filter.
     if finding_data.asset_ids is not None:
-        asset_result = await db.execute(select(Asset).where(Asset.id.in_(finding_data.asset_ids)))
+        asset_result = await db.execute(
+            select(Asset).where(
+                Asset.id.in_(finding_data.asset_ids),
+                Asset.engagement_id == finding.engagement_id,
+            )
+        )
         finding.assets = asset_result.scalars().all()
 
     # Update tags if provided
@@ -981,12 +998,15 @@ async def link_finding_to_testcase(finding_id: str, testcase_id: str, db: AsyncS
     """Link a finding to a test case."""
     from models.associations import FindingTestCase
     from models.testcase import TestCase as TC
-    await _require_finding(finding_id, db, current_user)
+    finding = await _require_finding(finding_id, db, current_user)
     existing = await db.execute(select(FindingTestCase).where(FindingTestCase.finding_id == finding_id, FindingTestCase.testcase_id == testcase_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    if not (await db.execute(select(TC).where(TC.id == testcase_id))).scalar_one_or_none():
+    tc = (await db.execute(select(TC).where(TC.id == testcase_id))).scalar_one_or_none()
+    if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
+    if tc.engagement_id != finding.engagement_id:
+        raise HTTPException(status_code=400, detail="Test case belongs to a different engagement")
     db.add(FindingTestCase(finding_id=finding_id, testcase_id=testcase_id))
     await db.commit()
 
@@ -1011,12 +1031,15 @@ async def link_finding_to_vault_item(finding_id: str, vault_item_id: str, db: As
     """Link a finding to a vault item."""
     from models.associations import VaultItemFinding
     from models.vault import VaultItem
-    await _require_finding(finding_id, db, current_user)
+    finding = await _require_finding(finding_id, db, current_user)
     existing = await db.execute(select(VaultItemFinding).where(VaultItemFinding.finding_id == finding_id, VaultItemFinding.vault_item_id == vault_item_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    if not (await db.execute(select(VaultItem).where(VaultItem.id == vault_item_id))).scalar_one_or_none():
+    item = (await db.execute(select(VaultItem).where(VaultItem.id == vault_item_id))).scalar_one_or_none()
+    if not item:
         raise HTTPException(status_code=404, detail="Vault item not found")
+    if item.engagement_id != finding.engagement_id:
+        raise HTTPException(status_code=400, detail="Vault item belongs to a different engagement")
     db.add(VaultItemFinding(vault_item_id=vault_item_id, finding_id=finding_id))
     await db.commit()
 
@@ -1041,12 +1064,15 @@ async def link_finding_to_cleanup_artifact(finding_id: str, cleanup_artifact_id:
     """Link a finding to a cleanup artifact."""
     from models.associations import CleanupArtifactFinding
     from models.cleanup_artifact import CleanupArtifact as CA
-    await _require_finding(finding_id, db, current_user)
+    finding = await _require_finding(finding_id, db, current_user)
     existing = await db.execute(select(CleanupArtifactFinding).where(CleanupArtifactFinding.finding_id == finding_id, CleanupArtifactFinding.cleanup_artifact_id == cleanup_artifact_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    if not (await db.execute(select(CA).where(CA.id == cleanup_artifact_id))).scalar_one_or_none():
+    ca = (await db.execute(select(CA).where(CA.id == cleanup_artifact_id))).scalar_one_or_none()
+    if not ca:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    if ca.engagement_id != finding.engagement_id:
+        raise HTTPException(status_code=400, detail="Cleanup artifact belongs to a different engagement")
     db.add(CleanupArtifactFinding(cleanup_artifact_id=cleanup_artifact_id, finding_id=finding_id))
     await db.commit()
 

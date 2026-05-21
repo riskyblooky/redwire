@@ -992,12 +992,15 @@ async def link_asset_to_finding(asset_id: str, finding_id: str, db: AsyncSession
     """Link an asset to a finding (without remediation fields)."""
     from models.associations import FindingAsset
     from models.finding import Finding
-    await _require_asset(asset_id, db, current_user)
+    asset = await _require_asset(asset_id, db, current_user)
     existing = await db.execute(select(FindingAsset).where(FindingAsset.asset_id == asset_id, FindingAsset.finding_id == finding_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    if not (await db.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none():
+    finding = (await db.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none()
+    if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+    if finding.engagement_id != asset.engagement_id:
+        raise HTTPException(status_code=400, detail="Finding belongs to a different engagement")
     db.add(FindingAsset(finding_id=finding_id, asset_id=asset_id))
     await db.commit()
 
@@ -1022,12 +1025,15 @@ async def link_asset_to_testcase(asset_id: str, testcase_id: str, db: AsyncSessi
     """Link an asset to a test case."""
     from models.associations import TestCaseAsset
     from models.testcase import TestCase as TC
-    await _require_asset(asset_id, db, current_user)
+    asset = await _require_asset(asset_id, db, current_user)
     existing = await db.execute(select(TestCaseAsset).where(TestCaseAsset.asset_id == asset_id, TestCaseAsset.testcase_id == testcase_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    if not (await db.execute(select(TC).where(TC.id == testcase_id))).scalar_one_or_none():
+    tc = (await db.execute(select(TC).where(TC.id == testcase_id))).scalar_one_or_none()
+    if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
+    if tc.engagement_id != asset.engagement_id:
+        raise HTTPException(status_code=400, detail="Test case belongs to a different engagement")
     db.add(TestCaseAsset(testcase_id=testcase_id, asset_id=asset_id))
     await db.commit()
 
@@ -1052,12 +1058,15 @@ async def link_asset_to_vault_item(asset_id: str, vault_item_id: str, db: AsyncS
     """Link an asset to a vault item."""
     from models.associations import VaultItemAsset
     from models.vault import VaultItem
-    await _require_asset(asset_id, db, current_user)
+    asset = await _require_asset(asset_id, db, current_user)
     existing = await db.execute(select(VaultItemAsset).where(VaultItemAsset.asset_id == asset_id, VaultItemAsset.vault_item_id == vault_item_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    if not (await db.execute(select(VaultItem).where(VaultItem.id == vault_item_id))).scalar_one_or_none():
+    item = (await db.execute(select(VaultItem).where(VaultItem.id == vault_item_id))).scalar_one_or_none()
+    if not item:
         raise HTTPException(status_code=404, detail="Vault item not found")
+    if item.engagement_id != asset.engagement_id:
+        raise HTTPException(status_code=400, detail="Vault item belongs to a different engagement")
     db.add(VaultItemAsset(vault_item_id=vault_item_id, asset_id=asset_id))
     await db.commit()
 
@@ -1080,12 +1089,15 @@ async def link_asset_to_cleanup_artifact(asset_id: str, cleanup_artifact_id: str
     """Link an asset to a cleanup artifact."""
     from models.associations import CleanupArtifactAsset
     from models.cleanup_artifact import CleanupArtifact as CA
-    await _require_asset(asset_id, db, current_user)
+    asset = await _require_asset(asset_id, db, current_user)
     existing = await db.execute(select(CleanupArtifactAsset).where(CleanupArtifactAsset.asset_id == asset_id, CleanupArtifactAsset.cleanup_artifact_id == cleanup_artifact_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Already linked")
-    if not (await db.execute(select(CA).where(CA.id == cleanup_artifact_id))).scalar_one_or_none():
+    ca = (await db.execute(select(CA).where(CA.id == cleanup_artifact_id))).scalar_one_or_none()
+    if not ca:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    if ca.engagement_id != asset.engagement_id:
+        raise HTTPException(status_code=400, detail="Cleanup artifact belongs to a different engagement")
     db.add(CleanupArtifactAsset(cleanup_artifact_id=cleanup_artifact_id, asset_id=asset_id))
     await db.commit()
 
