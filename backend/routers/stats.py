@@ -13,6 +13,7 @@ from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
 from models.associations import EngagementAssignment
 from models.discussion import ActivityLog
 from auth.dependencies import get_current_user
+from auth.rbac import resolve_engagement_scope, scope_to_assignments
 import asyncio
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -38,39 +39,43 @@ async def get_overview_stats(
     current_user: User = Depends(get_current_user)
 ):
     """Get high-level overview statistics."""
-    
-    # Base queries
+
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+
+    # Base queries — evidence joins through Finding so engagement scoping
+    # can be applied on Finding.engagement_id uniformly.
     findings_query = select(func.count(Finding.id))
     engagements_query = select(func.count(Engagement.id))
     active_engagements_query = select(func.count(Engagement.id)).where(
         Engagement.status.in_([EngagementStatus.PLANNING, EngagementStatus.IN_PROGRESS])
     )
-    evidence_query = select(func.count(Evidence.id))
+    evidence_query = select(func.count(Evidence.id)).join(
+        Finding, Evidence.finding_id == Finding.id
+    )
     critical_high_query = select(func.count(Finding.id)).where(
         Finding.severity.in_([Severity.CRITICAL, Severity.HIGH])
     )
-    
+
     # Avg CVSS
     avg_cvss_query = select(func.avg(Finding.cvss_score)).where(Finding.cvss_score.isnot(None))
-    
+
     # Active users (users who created findings/engagements in last 30 days)
     thirty_days_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
     user_activity_query = select(func.count(func.distinct(Finding.created_by))).where(
         Finding.created_at >= thirty_days_ago
     )
-    
+
     # Total team members
     total_users_query = select(func.count(User.id)).where(User.is_active == True)
-    
-    # Apply filtering if engagement_id is provided
-    if engagement_id:
-        findings_query = findings_query.where(Finding.engagement_id == engagement_id)
-        engagements_query = engagements_query.where(Engagement.id == engagement_id)
-        active_engagements_query = active_engagements_query.where(Engagement.id == engagement_id)
-        evidence_query = evidence_query.join(Finding).where(Finding.engagement_id == engagement_id)
-        critical_high_query = critical_high_query.where(Finding.engagement_id == engagement_id)
-        avg_cvss_query = avg_cvss_query.where(Finding.engagement_id == engagement_id)
-        user_activity_query = user_activity_query.where(Finding.engagement_id == engagement_id)
+
+    # Apply engagement scoping
+    findings_query = scope_to_assignments(findings_query, Finding.engagement_id, engagement_id, is_admin, allowed)
+    engagements_query = scope_to_assignments(engagements_query, Engagement.id, engagement_id, is_admin, allowed)
+    active_engagements_query = scope_to_assignments(active_engagements_query, Engagement.id, engagement_id, is_admin, allowed)
+    evidence_query = scope_to_assignments(evidence_query, Finding.engagement_id, engagement_id, is_admin, allowed)
+    critical_high_query = scope_to_assignments(critical_high_query, Finding.engagement_id, engagement_id, is_admin, allowed)
+    avg_cvss_query = scope_to_assignments(avg_cvss_query, Finding.engagement_id, engagement_id, is_admin, allowed)
+    user_activity_query = scope_to_assignments(user_activity_query, Finding.engagement_id, engagement_id, is_admin, allowed)
     
     # Run queries sequentially (AsyncSession uses a single connection, not concurrency-safe)
     total_findings = (await db.execute(findings_query)).scalar()
@@ -104,7 +109,9 @@ async def get_findings_timeline(
     current_user: User = Depends(get_current_user)
 ):
     """Get findings created over time (grouped by day)."""
-    
+
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+
     # Determine date range
     if start_date and end_date:
         start = datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None)
@@ -115,18 +122,17 @@ async def get_findings_timeline(
     else:
         start = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
         end = datetime.now(timezone.utc).replace(tzinfo=None)
-    
+
     # Group findings by date
     date_col = func.date_trunc('day', Finding.created_at).label('date')
-    
+
     query = select(
         date_col,
         func.count(Finding.id).label('count')
     ).where(Finding.created_at >= start, Finding.created_at <= end)
-    
-    if engagement_id:
-        query = query.where(Finding.engagement_id == engagement_id)
-        
+
+    query = scope_to_assignments(query, Finding.engagement_id, engagement_id, is_admin, allowed)
+
     result = await db.execute(
         query.group_by(date_col)
         .order_by(date_col)
@@ -152,21 +158,22 @@ async def get_severity_distribution(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of findings by severity."""
-    
+
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+
     query = select(
         Finding.severity,
         func.count(Finding.id).label('count')
     ).group_by(Finding.severity)
-    
+
     # Apply date filtering if provided
     if start_date and end_date:
         start = datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None)
         end = datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None)
         query = query.where(Finding.created_at >= start, Finding.created_at <= end)
-    
-    if engagement_id:
-        query = query.where(Finding.engagement_id == engagement_id)
-    
+
+    query = scope_to_assignments(query, Finding.engagement_id, engagement_id, is_admin, allowed)
+
     result = await db.execute(query)
     
     distribution = [
@@ -190,6 +197,8 @@ async def get_user_activity(
 ):
     """Get top contributors by all activity log entries (excluding note auto-saves)."""
 
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+
     query = select(
         User.username,
         User.full_name,
@@ -206,8 +215,7 @@ async def get_user_activity(
         end = datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None)
         query = query.where(ActivityLog.created_at >= start, ActivityLog.created_at <= end)
 
-    if engagement_id:
-        query = query.where(ActivityLog.engagement_id == engagement_id)
+    query = scope_to_assignments(query, ActivityLog.engagement_id, engagement_id, is_admin, allowed)
 
     query = query.group_by(
         User.id, User.username, User.full_name, User.profile_photo, User.role
@@ -238,21 +246,22 @@ async def get_engagement_status(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of engagements by status."""
-    
+
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+
     query = select(
         Engagement.status,
         func.count(Engagement.id).label('count')
     ).group_by(Engagement.status)
-    
+
     # Apply date filtering if provided
     if start_date and end_date:
         start = datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None)
         end = datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None)
         query = query.where(Engagement.created_at >= start, Engagement.created_at <= end)
-    
-    if engagement_id:
-        query = query.where(Engagement.id == engagement_id)
-    
+
+    query = scope_to_assignments(query, Engagement.id, engagement_id, is_admin, allowed)
+
     result = await db.execute(query)
     
     distribution = [
@@ -279,6 +288,8 @@ async def get_findings_by_category(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of findings by category."""
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+
     query = select(
         func.coalesce(Finding.category, 'Uncategorized').label('category'),
         func.count(Finding.id).label('count')
@@ -287,8 +298,7 @@ async def get_findings_by_category(
     start, end = _parse_date_range(start_date, end_date)
     if start and end:
         query = query.where(Finding.created_at >= start, Finding.created_at <= end)
-    if engagement_id:
-        query = query.where(Finding.engagement_id == engagement_id)
+    query = scope_to_assignments(query, Finding.engagement_id, engagement_id, is_admin, allowed)
 
     query = query.order_by(func.count(Finding.id).desc()).limit(15)
     result = await db.execute(query)
@@ -305,6 +315,8 @@ async def get_findings_by_status(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of findings by status."""
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+
     query = select(
         Finding.status,
         func.count(Finding.id).label('count')
@@ -313,8 +325,7 @@ async def get_findings_by_status(
     start, end = _parse_date_range(start_date, end_date)
     if start and end:
         query = query.where(Finding.created_at >= start, Finding.created_at <= end)
-    if engagement_id:
-        query = query.where(Finding.engagement_id == engagement_id)
+    query = scope_to_assignments(query, Finding.engagement_id, engagement_id, is_admin, allowed)
 
     result = await db.execute(query)
 
@@ -329,6 +340,8 @@ async def get_engagement_types(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of engagements by type."""
+    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
+
     query = select(
         Engagement.engagement_type,
         func.count(Engagement.id).label('count')
@@ -337,6 +350,7 @@ async def get_engagement_types(
     start, end = _parse_date_range(start_date, end_date)
     if start and end:
         query = query.where(Engagement.created_at >= start, Engagement.created_at <= end)
+    query = scope_to_assignments(query, Engagement.id, None, is_admin, allowed)
 
     query = query.order_by(func.count(Engagement.id).desc())
     result = await db.execute(query)
@@ -353,6 +367,7 @@ async def get_engagement_metrics(
 ):
     """Get aggregate engagement metrics: avg duration, findings per engagement, avg CVSS per engagement, by client."""
 
+    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     # Avg duration of completed engagements (in days)
@@ -366,6 +381,7 @@ async def get_engagement_metrics(
     )
     if start and end:
         dur_query = dur_query.where(Engagement.created_at >= start, Engagement.created_at <= end)
+    dur_query = scope_to_assignments(dur_query, Engagement.id, None, is_admin, allowed)
     dur_result = await db.execute(dur_query)
     avg_seconds = dur_result.scalar()
     avg_duration_days = round(avg_seconds / 86400, 1) if avg_seconds else 0
@@ -382,6 +398,7 @@ async def get_engagement_metrics(
 
     if start and end:
         fpe_query = fpe_query.where(Engagement.created_at >= start, Engagement.created_at <= end)
+    fpe_query = scope_to_assignments(fpe_query, Engagement.id, None, is_admin, allowed)
 
     fpe_result = await db.execute(fpe_query)
     per_engagement = [
@@ -401,6 +418,7 @@ async def get_engagement_metrics(
     ).group_by(Engagement.client_name).order_by(func.count(Engagement.id).desc()).limit(10)
     if start and end:
         client_query = client_query.where(Engagement.created_at >= start, Engagement.created_at <= end)
+    client_query = scope_to_assignments(client_query, Engagement.id, None, is_admin, allowed)
     client_result = await db.execute(client_query)
     by_client = [{"client": r.client, "count": r.count} for r in client_result.all()]
 
@@ -420,6 +438,7 @@ async def get_operator_performance(
 ):
     """Per-operator breakdown: findings by severity, engagement count, test cases executed."""
 
+    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     # Per-user findings with severity breakdown
@@ -448,6 +467,7 @@ async def get_operator_performance(
     findings_query = findings_query.group_by(
         User.id, User.username, User.full_name, User.profile_photo, User.role, User.last_active
     )
+    findings_query = scope_to_assignments(findings_query, Finding.engagement_id, None, is_admin, allowed)
     findings_result = await db.execute(findings_query)
     user_findings = {r.user_id: r for r in findings_result.all()}
 
@@ -456,6 +476,7 @@ async def get_operator_performance(
         EngagementAssignment.user_id,
         func.count(EngagementAssignment.engagement_id).label('engagement_count')
     ).group_by(EngagementAssignment.user_id)
+    eng_query = scope_to_assignments(eng_query, EngagementAssignment.engagement_id, None, is_admin, allowed)
     eng_result = await db.execute(eng_query)
     user_engs = {r.user_id: r.engagement_count for r in eng_result.all()}
 
@@ -468,6 +489,7 @@ async def get_operator_performance(
     ).group_by(TestCase.created_by)
     if start and end:
         tc_query = tc_query.where(TestCase.created_at >= start, TestCase.created_at <= end)
+    tc_query = scope_to_assignments(tc_query, TestCase.engagement_id, None, is_admin, allowed)
     tc_result = await db.execute(tc_query)
     user_tc = {r.created_by: r for r in tc_result.all()}
 
@@ -509,6 +531,7 @@ async def get_testcase_stats(
 ):
     """Get test case execution and success rates."""
 
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     base = select(
@@ -518,8 +541,7 @@ async def get_testcase_stats(
     )
     if start and end:
         base = base.where(TestCase.created_at >= start, TestCase.created_at <= end)
-    if engagement_id:
-        base = base.where(TestCase.engagement_id == engagement_id)
+    base = scope_to_assignments(base, TestCase.engagement_id, engagement_id, is_admin, allowed)
 
     result = await db.execute(base)
     row = result.one()
@@ -533,8 +555,7 @@ async def get_testcase_stats(
     ).group_by(TestCase.category).order_by(func.count(TestCase.id).desc())
     if start and end:
         cat_query = cat_query.where(TestCase.created_at >= start, TestCase.created_at <= end)
-    if engagement_id:
-        cat_query = cat_query.where(TestCase.engagement_id == engagement_id)
+    cat_query = scope_to_assignments(cat_query, TestCase.engagement_id, engagement_id, is_admin, allowed)
     cat_result = await db.execute(cat_query)
 
     return {
@@ -565,6 +586,7 @@ async def get_cleanup_stats(
 ):
     """Get cleanup artifact status distribution."""
 
+    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     query = select(
@@ -574,16 +596,14 @@ async def get_cleanup_stats(
 
     if start and end:
         query = query.where(CleanupArtifact.created_at >= start, CleanupArtifact.created_at <= end)
-    if engagement_id:
-        query = query.where(CleanupArtifact.engagement_id == engagement_id)
+    query = scope_to_assignments(query, CleanupArtifact.engagement_id, engagement_id, is_admin, allowed)
 
     result = await db.execute(query)
 
     total_query = select(func.count(CleanupArtifact.id))
     if start and end:
         total_query = total_query.where(CleanupArtifact.created_at >= start, CleanupArtifact.created_at <= end)
-    if engagement_id:
-        total_query = total_query.where(CleanupArtifact.engagement_id == engagement_id)
+    total_query = scope_to_assignments(total_query, CleanupArtifact.engagement_id, engagement_id, is_admin, allowed)
     total_result = await db.execute(total_query)
     total = total_result.scalar()
 
@@ -602,6 +622,7 @@ async def get_client_stats(
 ):
     """Get comprehensive per-client statistics."""
 
+    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     # ── Per-client engagement count, avg duration ──
@@ -619,6 +640,7 @@ async def get_client_stats(
 
     if start and end:
         eng_query = eng_query.where(Engagement.created_at >= start, Engagement.created_at <= end)
+    eng_query = scope_to_assignments(eng_query, Engagement.id, None, is_admin, allowed)
 
     eng_result = await db.execute(eng_query)
     client_eng = {r.client: r for r in eng_result.all()}
@@ -633,6 +655,7 @@ async def get_client_stats(
     )
     if start and end:
         type_query = type_query.where(Engagement.created_at >= start, Engagement.created_at <= end)
+    type_query = scope_to_assignments(type_query, Engagement.id, None, is_admin, allowed)
     type_result = await db.execute(type_query)
     client_types: dict = {}
     for r in type_result.all():
@@ -655,6 +678,7 @@ async def get_client_stats(
 
     if start and end:
         findings_query = findings_query.where(Finding.created_at >= start, Finding.created_at <= end)
+    findings_query = scope_to_assignments(findings_query, Engagement.id, None, is_admin, allowed)
 
     findings_result = await db.execute(findings_query)
     client_findings = {r.client: r for r in findings_result.all()}

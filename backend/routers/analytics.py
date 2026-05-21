@@ -9,6 +9,7 @@ from models.user import User
 from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
 from models.associations import EngagementAssignment
 from auth.dependencies import get_current_user
+from auth.rbac import resolve_engagement_scope, scope_to_assignments
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -23,17 +24,21 @@ async def get_dashboard_stats(
     """Get aggregated dashboard statistics. Pass engagement_id to scope to a single engagement."""
     active_statuses = [EngagementStatus.IN_PROGRESS, EngagementStatus.PLANNING, EngagementStatus.REPORTING]
 
-    # --- Engagement filter helper ---
+    # Resolve scoping context up-front. For non-admin callers every aggregate
+    # query below is restricted to engagements they're assigned to; if they
+    # supply an engagement_id they aren't on, this 403s.
+    is_admin, allowed_eng_subq = await resolve_engagement_scope(
+        engagement_id, db, current_user
+    )
+
     def _eng_filter(query, column=Finding.engagement_id):
-        """Apply engagement filter when scoped."""
-        if engagement_id:
-            return query.where(column == engagement_id)
-        return query
+        return scope_to_assignments(query, column, engagement_id, is_admin, allowed_eng_subq)
 
     # Active engagements
-    active_eng_query = select(Engagement).where(Engagement.status.in_(active_statuses))
-    if engagement_id:
-        active_eng_query = active_eng_query.where(Engagement.id == engagement_id)
+    active_eng_query = _eng_filter(
+        select(Engagement).where(Engagement.status.in_(active_statuses)),
+        Engagement.id,
+    )
     active_eng_result = await db.execute(active_eng_query)
     active_engagements = active_eng_result.scalars().all()
     
@@ -103,8 +108,7 @@ async def get_dashboard_stats(
         )
         .limit(5)
     )
-    if engagement_id:
-        top_findings_query = top_findings_query.where(Finding.engagement_id == engagement_id)
+    top_findings_query = _eng_filter(top_findings_query, Finding.engagement_id)
     top_findings_result = await db.execute(top_findings_query)
     top_findings_db = top_findings_result.scalars().all()
     top_findings = [{
@@ -124,8 +128,7 @@ async def get_dashboard_stats(
             CleanupArtifactStatus.PARTIALLY_CLEANED
         ])
     )
-    if engagement_id:
-        cleanup_query = cleanup_query.where(CleanupArtifact.engagement_id == engagement_id)
+    cleanup_query = _eng_filter(cleanup_query, CleanupArtifact.engagement_id)
     pending_cleanup = (await db.execute(cleanup_query)).scalar() or 0
 
     # My Active Engagements
@@ -144,6 +147,8 @@ async def get_dashboard_stats(
         .order_by(desc(Engagement.updated_at))
         .limit(5)
     )
+    # `my_eng_query` is already filtered to the caller's EngagementAssignment
+    # rows, so it's safe to apply only the optional engagement_id narrowing here.
     if engagement_id:
         my_eng_query = my_eng_query.where(Engagement.id == engagement_id)
     my_eng_result = await db.execute(my_eng_query)
@@ -183,8 +188,7 @@ async def get_dashboard_stats(
         .order_by(Engagement.start_date)
         .limit(5)
     )
-    if engagement_id:
-        upcoming_query = upcoming_query.where(Engagement.id == engagement_id)
+    upcoming_query = _eng_filter(upcoming_query, Engagement.id)
     upcoming_result = await db.execute(upcoming_query)
     upcoming_db = upcoming_result.scalars().all()
     upcoming_engagements = [{
@@ -211,8 +215,7 @@ async def get_dashboard_stats(
             User.is_active == True
         )
     )
-    if engagement_id:
-        assigned_query = assigned_query.where(Engagement.id == engagement_id)
+    assigned_query = _eng_filter(assigned_query, Engagement.id)
     assigned_operators = (await db.execute(assigned_query)).scalar() or 0
 
     team_utilization = {
@@ -230,9 +233,8 @@ async def get_dashboard_stats(
         .order_by(desc(ActivityLog.created_at))
         .limit(10)
     )
-    if engagement_id:
-        activity_query = activity_query.where(ActivityLog.engagement_id == engagement_id)
-    
+    activity_query = _eng_filter(activity_query, ActivityLog.engagement_id)
+
     activity_result = await db.execute(activity_query)
     activities_db = activity_result.scalars().all()
     
