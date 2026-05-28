@@ -263,6 +263,14 @@ async def _seed_admin_user(session_factory):
 @asynccontextmanager
 async def lifespan(app):
     """Manage background tasks on startup/shutdown."""
+    # ── Validate at-rest encryption keys (fail closed, GHSA-pg99-33rm-7wgq) ──
+    # Refuse to start unless VAULT_ENCRYPTION_KEY and TOTP_ENCRYPTION_KEY are
+    # set and valid Fernet keys. Never silently derive them from JWT_SECRET.
+    from utils import vault_crypto
+    from auth import crypto as totp_crypto
+    vault_crypto.validate_key()
+    totp_crypto.validate_key()
+
     # Load Bloom filter in background (it loads millions of rows, don't block startup)
     from utils.hash_utils import bloom_service
     from database import AsyncSessionLocal

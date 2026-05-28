@@ -46,9 +46,41 @@ echo "Docker is installed."
 # 2. Environment Setup
 echo -e "\n${BLUE}[2/8] Configuring Environment...${NC}"
 
+# Fernet keys must be 32 url-safe-base64 bytes — NOT hex. Generate with the
+# stdlib so no extra Python package is required on the deploy host.
+FERNET_GEN='import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+# Set when we generate an at-rest key on an EXISTING install, so existing data
+# (still under the legacy JWT_SECRET-derived key) gets re-keyed after startup.
+NEEDS_ROTATION=0
+
 if [ -f .env ]; then
     echo ".env file already exists. Loading configuration..."
     export $(grep -v '^#' .env | xargs)
+
+    # The backend fails closed if either at-rest encryption key is missing
+    # (GHSA-pg99). For an existing .env from before these keys existed, generate
+    # them now AND flag a re-key: existing vault/TOTP data is still encrypted
+    # under the legacy JWT-derived key, so generating without rotating would
+    # silently corrupt it. The rotation step (post-startup) migrates the data.
+    if [ -z "${VAULT_ENCRYPTION_KEY:-}" ]; then
+        VAULT_ENCRYPTION_KEY=$(python3 -c "$FERNET_GEN")
+        echo "VAULT_ENCRYPTION_KEY=${VAULT_ENCRYPTION_KEY}" >> .env
+        export VAULT_ENCRYPTION_KEY
+        echo -e "${BLUE}Generated a new VAULT_ENCRYPTION_KEY and added it to .env.${NC}"
+        NEEDS_ROTATION=1
+    fi
+    if [ -z "${TOTP_ENCRYPTION_KEY:-}" ]; then
+        TOTP_ENCRYPTION_KEY=$(python3 -c "$FERNET_GEN")
+        echo "TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY}" >> .env
+        export TOTP_ENCRYPTION_KEY
+        echo -e "${BLUE}Generated a new TOTP_ENCRYPTION_KEY and added it to .env.${NC}"
+        NEEDS_ROTATION=1
+    fi
+    if [ "$NEEDS_ROTATION" -eq 1 ]; then
+        echo -e "${RED}IMPORTANT: a new encryption key was generated. Back up Postgres + MinIO${NC}"
+        echo -e "${RED}and save the new key(s) from .env. Do NOT change JWT_SECRET until the${NC}"
+        echo -e "${RED}re-key step below completes, or existing vault/TOTP data is lost.${NC}"
+    fi
 else
     echo "This script will help you create a secure configuration."
     
@@ -67,7 +99,9 @@ else
     REDIS_PASSWORD=$(openssl rand -hex 32)
     MINIO_PASSWORD=$(openssl rand -hex 32)
     JWT_SECRET=$(openssl rand -hex 32)
-    VAULT_ENCRYPTION_KEY=$(openssl rand -hex 32)
+    # FERNET_GEN defined above. Fresh install has no data, so no rotation needed.
+    VAULT_ENCRYPTION_KEY=$(python3 -c "$FERNET_GEN")
+    TOTP_ENCRYPTION_KEY=$(python3 -c "$FERNET_GEN")
 
     # Save formatted .env
     cat <<EOF > .env
@@ -85,6 +119,7 @@ ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ADMIN_USERNAME=${ADMIN_USERNAME}
 VAULT_ENCRYPTION_KEY=${VAULT_ENCRYPTION_KEY}
+TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY}
 EOF
 
     # Save credentials for the user
@@ -102,6 +137,7 @@ Redis Password:       ${REDIS_PASSWORD}
 MinIO Root Password:  ${MINIO_PASSWORD}
 JWT Secret:           ${JWT_SECRET}
 Vault Encryption Key: ${VAULT_ENCRYPTION_KEY}
+TOTP Encryption Key:  ${TOTP_ENCRYPTION_KEY}
 
 KEEP THIS FILE SAFE!
 EOF
@@ -185,6 +221,16 @@ echo -e "\n${BLUE}[7/8] Running Database Migrations...${NC}"
 echo "Applying alembic migrations to update schema without data loss..."
 docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
 echo -e "${GREEN}Migrations applied successfully!${NC}"
+
+# 7b. Re-key at-rest data onto freshly generated encryption key(s) (GHSA-pg99).
+# Only runs when a key was generated for an existing install above. The script
+# is idempotent: it reads legacy data via the JWT-derived key and re-encrypts it
+# under the new dedicated key; rows already on the new key are skipped.
+if [ "${NEEDS_ROTATION:-0}" -eq 1 ]; then
+    echo -e "\n${BLUE}[7b] Re-keying existing vault/TOTP data onto the new encryption key(s)...${NC}"
+    docker compose -f docker-compose.prod.yml run --rm backend python3 rotate_encryption_keys.py
+    echo -e "${GREEN}Encryption key rotation complete.${NC}"
+fi
 
 # Legacy Import Check (Skipped by default for safety as requested)
 if [ -f redwire_backup.sql ]; then
