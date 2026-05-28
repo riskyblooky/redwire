@@ -74,7 +74,8 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: redwire-evidence
       MINIO_SECURE: "false"
-      VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:-}
+      VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:-rupaeC7vJHXImS7rk3ICKHqhlTLfiwAnf0BRbKfVsAo=}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-pJiT9KvIAZarxuTHGlmb4kEoXh3XcitCRRR1VOAIJoA=}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080,https://localhost:8443}
       SQL_ECHO: "true"
       MCP_SERVER_URL: http://mcp-server:3001

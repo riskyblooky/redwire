@@ -4,14 +4,14 @@ Vault field-level encryption using Fernet (AES-128-CBC + HMAC-SHA256).
 Every sensitive vault field (username, password, note) is encrypted before
 being persisted to PostgreSQL and decrypted when read back.
 
-Key is sourced from the VAULT_ENCRYPTION_KEY env var.  In development, a
-deterministic key is derived automatically so that existing data survives
-container restarts.
+Key is sourced exclusively from the VAULT_ENCRYPTION_KEY env var, which must be
+a valid Fernet key (32 url-safe base64-encoded bytes, as produced by
+`Fernet.generate_key()`). The module fails closed: if the key is absent or
+malformed it raises rather than deriving a key from any other secret.
 """
 
 import os
-import base64
-import hashlib
+import binascii
 import logging
 from typing import Optional
 
@@ -21,28 +21,41 @@ logger = logging.getLogger(__name__)
 
 _ENCRYPTION_KEY: Optional[str] = None
 
+_KEYGEN_HINT = (
+    "Generate one with: "
+    "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+)
+
 
 def _get_fernet() -> Fernet:
-    """Return a cached Fernet instance, initialising the key on first call."""
+    """Return a cached Fernet instance, initialising the key on first call.
+
+    Fails closed: VAULT_ENCRYPTION_KEY must be set and be a valid Fernet key.
+    No fallback derivation from JWT_SECRET (GHSA-pg99-33rm-7wgq)."""
     global _ENCRYPTION_KEY
 
     if _ENCRYPTION_KEY is None:
-        raw = os.getenv("VAULT_ENCRYPTION_KEY", "")
-        if raw:
-            # Validate that the key is valid Fernet (url-safe base64, 32 bytes)
-            _ENCRYPTION_KEY = raw
-        else:
-            # Derive a deterministic dev key from JWT_SECRET so data survives
-            # restarts without requiring an explicit env var.
-            jwt_secret = os.getenv("JWT_SECRET", "redwire-dev-fallback")
-            derived = hashlib.sha256(f"vault-key:{jwt_secret}".encode()).digest()
-            _ENCRYPTION_KEY = base64.urlsafe_b64encode(derived).decode()
-            logger.warning(
-                "VAULT_ENCRYPTION_KEY not set — derived a key from JWT_SECRET. "
-                "Set VAULT_ENCRYPTION_KEY in production!"
+        raw = os.getenv("VAULT_ENCRYPTION_KEY", "").strip()
+        if not raw:
+            raise RuntimeError(
+                "VAULT_ENCRYPTION_KEY is not set. Refusing to derive a vault "
+                f"encryption key from JWT_SECRET. {_KEYGEN_HINT}"
             )
+        try:
+            Fernet(raw)  # validates url-safe base64 / 32-byte length
+        except (ValueError, binascii.Error, TypeError) as e:
+            raise RuntimeError(
+                "VAULT_ENCRYPTION_KEY is not a valid Fernet key (must be 32 "
+                f"url-safe base64-encoded bytes). {_KEYGEN_HINT}"
+            ) from e
+        _ENCRYPTION_KEY = raw
 
     return Fernet(_ENCRYPTION_KEY)
+
+
+def validate_key() -> None:
+    """Force key validation (used at startup to fail closed early)."""
+    _get_fernet()
 
 
 def encrypt_field(value: Optional[str]) -> Optional[str]:

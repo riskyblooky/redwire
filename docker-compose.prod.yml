@@ -79,6 +79,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:-}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
 
     depends_on:
       postgres:

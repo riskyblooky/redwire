@@ -2,41 +2,53 @@
 Symmetric encryption helpers for sensitive data at rest.
 
 Uses Fernet (AES-128-CBC + HMAC-SHA256) from the `cryptography` package.
-The encryption key is derived from the TOTP_ENCRYPTION_KEY environment variable.
-If no key is set, falls back to a deterministic key derived from JWT_SECRET
-(not ideal, but prevents startup failures).
+The encryption key is sourced exclusively from the TOTP_ENCRYPTION_KEY
+environment variable, which must be a valid Fernet key. The module fails
+closed: if the key is absent or malformed it raises rather than deriving a
+key from JWT_SECRET (GHSA-pg99-33rm-7wgq).
 """
 import os
-import base64
-import hashlib
+import binascii
 import logging
 
 logger = logging.getLogger(__name__)
 
 _fernet = None
 
+_KEYGEN_HINT = (
+    "Generate one with: "
+    "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+)
+
 
 def _get_fernet():
-    """Lazily initialise the Fernet instance."""
+    """Lazily initialise the Fernet instance, failing closed on a missing or
+    malformed TOTP_ENCRYPTION_KEY."""
     global _fernet
     if _fernet is not None:
         return _fernet
 
     from cryptography.fernet import Fernet
 
-    key = os.getenv("TOTP_ENCRYPTION_KEY", "")
+    key = os.getenv("TOTP_ENCRYPTION_KEY", "").strip()
     if not key:
-        # Derive a Fernet-compatible key from JWT_SECRET as fallback
-        jwt_secret = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
-        raw = hashlib.sha256(jwt_secret.encode()).digest()
-        key = base64.urlsafe_b64encode(raw).decode()
-        logger.warning(
-            "TOTP_ENCRYPTION_KEY not set — deriving from JWT_SECRET. "
-            "Set TOTP_ENCRYPTION_KEY for production."
+        raise RuntimeError(
+            "TOTP_ENCRYPTION_KEY is not set. Refusing to derive a TOTP "
+            f"encryption key from JWT_SECRET. {_KEYGEN_HINT}"
         )
-
-    _fernet = Fernet(key)
+    try:
+        _fernet = Fernet(key)  # validates url-safe base64 / 32-byte length
+    except (ValueError, binascii.Error, TypeError) as e:
+        raise RuntimeError(
+            "TOTP_ENCRYPTION_KEY is not a valid Fernet key (must be 32 "
+            f"url-safe base64-encoded bytes). {_KEYGEN_HINT}"
+        ) from e
     return _fernet
+
+
+def validate_key() -> None:
+    """Force key validation (used at startup to fail closed early)."""
+    _get_fernet()
 
 
 def encrypt_totp_secret(plaintext: str) -> str:
