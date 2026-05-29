@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from models.intel_item import IntelItemType, IntelSeverity
+from utils.ssrf import validate_outbound_url_sync, OutboundURLError
 
 
 # ── Intel Feed Schemas ───────────────────────────────────────────
@@ -11,6 +12,17 @@ class IntelFeedCreate(BaseModel):
     url: str = Field(..., min_length=1)
     feed_type: str = "RSS"
     enabled: bool = True
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        # SSRF guard (GHSA-f33c-g6w5-6xm6): refuse to store a feed URL that
+        # points at a non-public address. Re-checked at fetch time too.
+        try:
+            validate_outbound_url_sync(v)
+        except OutboundURLError as e:
+            raise ValueError(str(e))
+        return v
 
 class IntelFeedResponse(BaseModel):
     id: str
