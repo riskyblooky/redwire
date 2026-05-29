@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -11,6 +11,7 @@ from models.automation import AutomationRule, TRIGGER_TYPES
 from models.permission import Permission
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
+from utils.ssrf import validate_outbound_url_sync, OutboundURLError
 
 router = APIRouter(prefix="/automations", tags=["automations"])
 
@@ -36,6 +37,18 @@ class ActionSchema(BaseModel):
     subject: Optional[str] = None
     body: Optional[str] = None
     tag_ids: Optional[List[str]] = None
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: Optional[str]) -> Optional[str]:
+        # SSRF guard (GHSA-7f74-569m-w73h): refuse to store a webhook URL that
+        # points at a non-public address. Re-checked at fire time too.
+        if v:
+            try:
+                validate_outbound_url_sync(v)
+            except OutboundURLError as e:
+                raise ValueError(str(e))
+        return v
 
 
 class AutomationCreate(BaseModel):
