@@ -14,7 +14,16 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from utils.ssrf import validate_outbound_url, OutboundURLError
+
 logger = logging.getLogger(__name__)
+
+# Headers stripped from caller-supplied webhook actions so the request can't
+# carry attacker-chosen credentials or spoof its origin (GHSA-7f74-569m-w73h).
+_BLOCKED_WEBHOOK_HEADERS = {
+    "authorization", "proxy-authorization", "cookie", "host",
+    "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip",
+}
 
 
 # ── condition evaluation ──────────────────────────────────────────────
@@ -232,8 +241,22 @@ async def _execute_webhook(action: dict, context: Dict[str, Any], rule_name: str
         logger.warning("Webhook action missing URL, skipping")
         return
 
+    # SSRF guard (GHSA-7f74-569m-w73h): reject internal/non-public targets at
+    # fire time. Caught here so a stored rule cannot reach docker-internal
+    # services, loopback, or cloud metadata.
+    try:
+        await validate_outbound_url(url)
+    except OutboundURLError as exc:
+        logger.warning("Webhook for rule %r rejected: %s", rule_name, exc)
+        return
+
     method = action.get("method", "POST").upper()
-    headers = action.get("headers", {})
+    # Drop caller-controlled headers that would let the webhook carry
+    # credentials or spoof its origin against an internal service.
+    headers = {
+        k: v for k, v in (action.get("headers") or {}).items()
+        if k.lower() not in _BLOCKED_WEBHOOK_HEADERS
+    }
     body_template = action.get("body_template", "")
 
     # Simple template variable substitution
@@ -256,7 +279,7 @@ async def _execute_webhook(action: dict, context: Dict[str, Any], rule_name: str
             headers["Content-Type"] = "application/json"
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
             if method == "GET":
                 await client.get(url, headers=headers)
             else:

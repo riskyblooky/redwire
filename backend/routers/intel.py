@@ -23,6 +23,10 @@ from schemas.intel import (
     IntelLinkRequest, LinkedEntitySummary, IntelAttachmentResponse,
 )
 from utils.storage import storage_service
+from utils.ssrf import validate_outbound_url, validate_outbound_url_sync, OutboundURLError
+
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/intel", tags=["intelligence"])
 
@@ -535,9 +539,17 @@ async def refresh_feeds(
 
     total_new = 0
 
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
         for feed in feeds:
             try:
+                # SSRF guard (GHSA-f33c-g6w5-6xm6): re-validate at fetch time and
+                # don't follow redirects, so a stored feed URL can't reach
+                # internal services or 302 to them.
+                try:
+                    await validate_outbound_url(feed.url)
+                except OutboundURLError as exc:
+                    logger.warning("Skipping intel feed %r: %s", feed.url, exc)
+                    continue
                 resp = await client.get(feed.url, headers={"User-Agent": "RedWire/1.0"})
                 if resp.status_code != 200:
                     continue

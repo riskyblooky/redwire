@@ -103,6 +103,7 @@ async def _refresh_intel_feeds_background():
     import re
     from datetime import datetime
     from routers.intel import _get_text, _strip_html, _parse_date, _parse_rss_date
+    from utils.ssrf import validate_outbound_url, OutboundURLError
 
     interval = int(os.getenv("INTEL_REFRESH_INTERVAL", "7200"))  # Default: 2 hours
     print(f"[Intel] Background feed refresh enabled (every {interval}s)")
@@ -117,9 +118,16 @@ async def _refresh_intel_feeds_background():
                 feeds = result.scalars().all()
                 total_new = 0
 
-                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
                     for feed in feeds:
                         try:
+                            # SSRF guard (GHSA-f33c-g6w5-6xm6): validate before
+                            # the unattended fetch; redirects disabled above.
+                            try:
+                                await validate_outbound_url(feed.url)
+                            except OutboundURLError as exc:
+                                print(f"[Intel] Skipping feed {feed.url!r}: {exc}")
+                                continue
                             resp = await client.get(feed.url, headers={"User-Agent": "RedWire/1.0"})
                             if resp.status_code != 200:
                                 continue
