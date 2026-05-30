@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from typing import List
 from database import get_db
 from models.user import User, UserRole
-from schemas.user import UserResponse, UserCreate, UserUpdate, UserPasswordUpdate, ALLOWED_THEMES, ALLOWED_PALETTES
+from schemas.user import UserResponse, UserSummary, UserCreate, UserUpdate, UserPasswordUpdate, ALLOWED_THEMES, ALLOWED_PALETTES
 from auth.dependencies import get_current_user
 from auth.password import get_password_hash
 from utils.paths import ensure_within
@@ -253,28 +253,22 @@ async def upload_profile_photo(
     
     return current_user
 
-@router.get("", response_model=List[UserResponse])
+@router.get("", response_model=List[UserSummary])
 async def get_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = 0,
     limit: int = 100
 ):
-    """Get all users. Visible to all authenticated users for team collaboration."""
-    # Allow all authenticated users to see user list (for team selection etc)
-    # if current_user.role != UserRole.ADMIN:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Only admins can list all users"
-    #     )
-    
+    """Team picker — returns lightweight UserSummary rows visible to any
+    authenticated user. The full UserResponse (with auth_provider,
+    totp_enabled, last_login etc.) is reserved for /api/admin/users
+    (GHSA-52gv-wf4c-7qmm)."""
     result = await db.execute(
         select(User)
-        .options(selectinload(User.groups))
         .offset(skip).limit(limit)
     )
-    users = result.scalars().all()
-    return users
+    return result.scalars().all()
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(

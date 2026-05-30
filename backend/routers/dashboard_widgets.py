@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func, and_, cast, Float, Integer, String as SAString, case, extract, text
 
 from database import get_db
-from models.user import User
+from models.user import User, UserRole
 from models.dashboard_widget import DashboardWidget
 from models.permission import Permission
 from models.finding import Finding, Severity, FindingStatus
@@ -23,6 +23,7 @@ from models.asset import Asset
 from models.testcase import TestCase
 from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
 from models.client import Client
+from models.associations import EngagementAssignment
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
 
@@ -573,6 +574,16 @@ async def get_widget_data(
 
     req = QueryPreviewRequest(**query_config)
     query = _build_query(req)
+    # GHSA-f9x8-qmr3-jrv9: scope non-admins to engagements they're assigned to.
+    if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
+        eng_sq = select(EngagementAssignment.engagement_id).where(
+            EngagementAssignment.user_id == current_user.id
+        )
+        model = _TABLE_MAP[req.table]
+        if req.table == "engagements":
+            query = query.where(model.id.in_(eng_sq))
+        elif hasattr(model, "engagement_id"):
+            query = query.where(model.engagement_id.in_(eng_sq))
     result = await db.execute(query)
     rows = result.all()
 

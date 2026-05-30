@@ -100,8 +100,16 @@ async def update_calendar_event(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions. You need the 'calendar_edit' permission to modify calendar events."
             )
-        
-    update_data = event_data.model_dump(exclude_unset=True)
+
+    # GHSA-fpj5-2p59-xq8r: OOO events are creator-only (mirrors DELETE), and
+    # event_type is frozen at create time so a caller can't flip another
+    # user's OOO to a non-OOO type to bypass the OOO guard on the DELETE path.
+    if event.event_type == "OOO" and not is_admin and event.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only edit your own Out of Office events.",
+        )
+    update_data = event_data.model_dump(exclude_unset=True, exclude={"event_type"})
     for field, value in update_data.items():
         setattr(event, field, value)
         
@@ -196,6 +204,18 @@ async def get_calendar_feed(
             Engagement.end_date.is_(None)
         )
     )
+    # GHSA-fpj5-2p59-xq8r: CALENDAR_VIEW alone must not enumerate every
+    # client's engagement. Confine to the caller's own assignments unless
+    # they hold VIEW_ALL_ENGAGEMENTS (or are admin/team-lead).
+    can_view_all = is_admin or await has_global_permission(
+        current_user, Permission.VIEW_ALL_ENGAGEMENTS, db
+    )
+    if not can_view_all:
+        eng_query = (
+            eng_query
+            .join(EngagementAssignment, EngagementAssignment.engagement_id == Engagement.id)
+            .where(EngagementAssignment.user_id == current_user.id)
+        )
     eng_result = await db.execute(eng_query)
     engagements = eng_result.scalars().all()
     
@@ -333,6 +353,16 @@ async def get_team_availability(
             )
         )
     )
+    # GHSA-fpj5-2p59-xq8r: scope to assignments unless VIEW_ALL_ENGAGEMENTS.
+    can_view_all = is_admin or await has_global_permission(
+        current_user, Permission.VIEW_ALL_ENGAGEMENTS, db
+    )
+    if not can_view_all:
+        eng_query = (
+            eng_query
+            .join(EngagementAssignment, EngagementAssignment.engagement_id == Engagement.id)
+            .where(EngagementAssignment.user_id == current_user.id)
+        )
     eng_result = await db.execute(eng_query)
     engagements = eng_result.scalars().all()
 

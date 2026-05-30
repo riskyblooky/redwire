@@ -616,18 +616,33 @@ async def delete_asset_port(
 
 @router.get("/port-filters")
 async def get_port_filters(
-    engagement_id: Optional[str] = Query(None),
+    engagement_id: str = Query(..., description="Engagement to scope filters to"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get distinct port numbers and service names for filter dropdowns"""
     from sqlalchemy import func, distinct
 
+    # GHSA-q8mx-crhg-4mxr: require engagement membership; the endpoint
+    # previously accepted no engagement_id (union across all tenants) or a
+    # foreign engagement_id (no membership check), leaking cross-tenant
+    # port/service inventory.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        if not await check_engagement_permission(
+            current_user.id, engagement_id, Permission.ASSET_VIEW.value, db
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this engagement.",
+            )
+
     port_query = select(
         distinct(AssetPort.port_number),
         AssetPort.protocol,
     ).join(Asset, AssetPort.asset_id == Asset.id).where(
-        AssetPort.state == PortState.OPEN
+        AssetPort.state == PortState.OPEN,
+        Asset.engagement_id == engagement_id,
     )
 
     service_query = select(
@@ -636,11 +651,8 @@ async def get_port_filters(
         AssetPort.state == PortState.OPEN,
         AssetPort.service_name.isnot(None),
         AssetPort.service_name != '',
+        Asset.engagement_id == engagement_id,
     )
-
-    if engagement_id:
-        port_query = port_query.where(Asset.engagement_id == engagement_id)
-        service_query = service_query.where(Asset.engagement_id == engagement_id)
 
     port_result = await db.execute(port_query.order_by(AssetPort.port_number))
     service_result = await db.execute(service_query.order_by(AssetPort.service_name))

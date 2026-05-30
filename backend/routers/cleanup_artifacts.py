@@ -20,6 +20,46 @@ from sqlalchemy.orm import selectinload
 router = APIRouter(prefix="/cleanup-artifacts", tags=["cleanup-artifacts"])
 
 
+# ── Engagement-scoping guards (GHSA-6r9w-whxr-3gvr) ─────────────────────
+
+def _is_admin(user: User) -> bool:
+    return user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+
+
+async def _require_artifact_view(
+    artifact: CleanupArtifact, current_user: User, db: AsyncSession
+) -> None:
+    if _is_admin(current_user):
+        return
+    if not await check_engagement_permission(
+        current_user.id, artifact.engagement_id, Permission.CLEANUP_VIEW.value, db
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. You need the 'cleanup_view' permission.",
+        )
+
+
+async def _require_artifact_edit(
+    artifact: CleanupArtifact, current_user: User, db: AsyncSession
+) -> None:
+    """Owner -> CLEANUP_EDIT, otherwise CLEANUP_EDIT_ANY (matches PATCH/DELETE)."""
+    if _is_admin(current_user):
+        return
+    perm = (
+        Permission.CLEANUP_EDIT.value
+        if artifact.created_by == current_user.id
+        else Permission.CLEANUP_EDIT_ANY.value
+    )
+    if not await check_engagement_permission(
+        current_user.id, artifact.engagement_id, perm, db
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Insufficient permissions. You need the '{perm}' permission.",
+        )
+
+
 # ============ CRUD ============
 
 @router.get("", response_model=List[CleanupArtifactResponse])
@@ -89,6 +129,7 @@ async def get_cleanup_artifact(
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
 
     artifact, creator_username, creator_profile_photo = row
+    await _require_artifact_view(artifact, current_user, db)
     item_dict = CleanupArtifactResponse.model_validate(artifact).model_dump()
     item_dict["created_by_username"] = creator_username
     item_dict["created_by_profile_photo"] = creator_profile_photo
@@ -256,6 +297,7 @@ async def link_cleanup_to_finding(
     artifact = result.scalar_one_or_none()
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    await _require_artifact_edit(artifact, current_user, db)
 
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()
@@ -294,6 +336,7 @@ async def unlink_cleanup_from_finding(
     artifact = result.scalar_one_or_none()
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    await _require_artifact_edit(artifact, current_user, db)
 
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()
@@ -332,6 +375,7 @@ async def link_cleanup_to_testcase(
     artifact = result.scalar_one_or_none()
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    await _require_artifact_edit(artifact, current_user, db)
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
     testcase = result.scalar_one_or_none()
@@ -370,6 +414,7 @@ async def unlink_cleanup_from_testcase(
     artifact = result.scalar_one_or_none()
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    await _require_artifact_edit(artifact, current_user, db)
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
     testcase = result.scalar_one_or_none()
@@ -408,6 +453,7 @@ async def link_cleanup_to_asset(
     artifact = result.scalar_one_or_none()
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    await _require_artifact_edit(artifact, current_user, db)
 
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalar_one_or_none()
@@ -446,6 +492,7 @@ async def unlink_cleanup_from_asset(
     artifact = result.scalar_one_or_none()
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
+    await _require_artifact_edit(artifact, current_user, db)
 
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalar_one_or_none()

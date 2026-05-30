@@ -286,6 +286,10 @@ async def update_testcase(
     # Update fields
     update_data = testcase_update.model_dump(exclude_unset=True, exclude={"tag_ids", "attack_technique_ids"})
 
+    # GHSA-73v7-5vx4-gfwm: never let the update body re-parent a test case to
+    # another engagement (cross-engagement injection / move-by-mass-assign).
+    update_data.pop("engagement_id", None)
+
     # Capture change summary before applying updates
     change_details = build_change_summary(db_testcase, update_data, label=f"Updated test case '{db_testcase.title}'")
     if testcase_update.tag_ids is not None:

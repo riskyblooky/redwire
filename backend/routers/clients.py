@@ -195,6 +195,13 @@ async def get_clients(
     current_user: User = Depends(get_current_user),
 ):
     """Get all clients as a flat list."""
+    # GHSA-fj3c-4c5j-cq87: confine non-admins to their granted clients.
+    accessible_ids = None
+    if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
+        accessible_ids = await get_accessible_client_ids(current_user.id, db)
+        if not accessible_ids:
+            return []
+
     # Subquery for engagement counts
     eng_count_sq = (
         select(Engagement.client_id, func.count(Engagement.id).label("eng_count"))
@@ -203,12 +210,15 @@ async def get_clients(
         .subquery()
     )
 
-    result = await db.execute(
+    query = (
         select(Client, func.coalesce(eng_count_sq.c.eng_count, 0).label("engagement_count"))
         .outerjoin(eng_count_sq, Client.id == eng_count_sq.c.client_id)
         .options(selectinload(Client.client_type))
         .order_by(Client.sort_order, Client.name)
     )
+    if accessible_ids is not None:
+        query = query.where(Client.id.in_(accessible_ids))
+    result = await db.execute(query)
     rows = result.all()
 
     clients = []
@@ -224,12 +234,22 @@ async def get_client_tree(
     current_user: User = Depends(get_current_user),
 ):
     """Get the full hierarchical client tree."""
+    # GHSA-fj3c-4c5j-cq87: confine non-admins to their granted clients.
+    accessible_ids = None
+    if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
+        accessible_ids = await get_accessible_client_ids(current_user.id, db)
+        if not accessible_ids:
+            return []
+
     # Get all clients
-    result = await db.execute(
+    query = (
         select(Client)
         .options(selectinload(Client.client_type))
         .order_by(Client.sort_order, Client.name)
     )
+    if accessible_ids is not None:
+        query = query.where(Client.id.in_(accessible_ids))
+    result = await db.execute(query)
     all_clients = result.scalars().all()
 
     # Get engagement counts
@@ -250,6 +270,8 @@ async def get_client(
     current_user: User = Depends(get_current_user),
 ):
     """Get a single client."""
+    # GHSA-fj3c-4c5j-cq87: enforce per-user client visibility.
+    await _ensure_client_visible(client_id, current_user, db)
     result = await db.execute(
         select(Client)
         .options(selectinload(Client.client_type))
@@ -743,12 +765,9 @@ async def get_client_engagements(
 ):
     """Per-engagement summaries for a client. Defaults to rolling up descendants
     so a parent client shows the union across the whole subtree."""
-    accessible = await get_accessible_client_ids(current_user.id, db)
-    if accessible and client_id not in accessible:
-        raise HTTPException(status_code=404, detail="Client not found")
-    exists = await db.execute(select(Client.id).where(Client.id == client_id))
-    if exists.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Client not found")
+    # GHSA-fj3c-4c5j-cq87: previous check failed open on empty grant set
+    # (set() is falsy → short-circuit skipped the 404).
+    await _ensure_client_visible(client_id, current_user, db)
 
     scope = await _resolve_client_scope(client_id, include_descendants, db)
     return await _build_engagement_summaries(scope, db)
