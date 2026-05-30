@@ -20,6 +20,8 @@ from database import get_db
 from models.user import User, UserRole
 from models.ai_settings import AiSetting
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES, WRITE_ADMIN_ROLES
+from auth.rbac import check_engagement_permission
+from models.permission import Permission
 
 logger = logging.getLogger(__name__)
 
@@ -582,6 +584,14 @@ async def _execute_mcp_tool(
             return query
         return query.where(eid_col.in_(accessible_ids))
 
+    async def _require_perm(eid: str, perm: str) -> None:
+        """GHSA-m9p9-2ccq-2348: tool layer must honor per-permission grants,
+        not just engagement membership."""
+        if is_privileged:
+            return
+        if not await check_engagement_permission(user.id, eid, perm, db):
+            raise HTTPException(403, "Insufficient permissions for this engagement.")
+
     if tool_name == "list_engagements":
         query = select(Engagement).order_by(Engagement.created_at.desc())
         if args.get("status"):
@@ -606,6 +616,7 @@ async def _execute_mcp_tool(
         e = result.scalar_one_or_none()
         if not e:
             raise HTTPException(404, "Engagement not found")
+        await _require_perm(e.id, Permission.ENGAGEMENT_VIEW.value)
         return {
             "id": e.id, "name": e.name, "status": e.status,
             "description": e.description, "client_name": e.client_name,
@@ -617,6 +628,7 @@ async def _execute_mcp_tool(
         eid = args.get("engagement_id")
         if not eid:
             raise HTTPException(400, "engagement_id required")
+        await _require_perm(eid, Permission.FINDING_VIEW.value)
         accessible = await _get_accessible_engagement_ids()
         query = select(Finding).where(Finding.engagement_id == eid).order_by(Finding.created_at.desc())
         query = _scope_by_engagement(query, Finding.engagement_id, accessible)
@@ -638,6 +650,7 @@ async def _execute_mcp_tool(
         f = result.scalar_one_or_none()
         if not f:
             raise HTTPException(404, "Finding not found")
+        await _require_perm(f.engagement_id, Permission.FINDING_VIEW.value)
         return {
             "id": f.id, "title": f.title, "severity": f.severity,
             "status": f.status, "description": f.description,
@@ -648,6 +661,7 @@ async def _execute_mcp_tool(
         eid = args.get("engagement_id")
         if not eid:
             raise HTTPException(400, "engagement_id required")
+        await _require_perm(eid, Permission.ASSET_VIEW.value)
         accessible = await _get_accessible_engagement_ids()
         query = select(Asset).where(Asset.engagement_id == eid).order_by(Asset.created_at.desc())
         query = _scope_by_engagement(query, Asset.engagement_id, accessible)
@@ -665,6 +679,7 @@ async def _execute_mcp_tool(
         eid = args.get("engagement_id")
         if not eid:
             raise HTTPException(400, "engagement_id required")
+        await _require_perm(eid, Permission.TESTCASE_VIEW.value)
         accessible = await _get_accessible_engagement_ids()
         query = select(TestCase).where(TestCase.engagement_id == eid).order_by(TestCase.created_at.desc())
         query = _scope_by_engagement(query, TestCase.engagement_id, accessible)

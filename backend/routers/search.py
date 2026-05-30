@@ -38,6 +38,8 @@ from sqlalchemy import and_, cast, func, not_, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
+from auth.rbac import check_engagement_permission
+from models.permission import Permission
 from database import get_db
 from models.asset import Asset
 from models.associations import EngagementAssignment
@@ -733,6 +735,14 @@ async def global_search(
         )
         if clause is not None:
             client_q = client_q.where(clause)
+        # GHSA-h52c-fq68-j82x: confine non-admins to clients reachable through
+        # the engagements they're assigned to.
+        if accessible_ids is not None:
+            client_q = client_q.where(
+                Client.id.in_(
+                    select(Engagement.client_id).where(Engagement.id.in_(accessible_ids))
+                )
+            )
         client_q = client_q.order_by(Client.name).limit(limit)
         rows = (await db.execute(client_q)).all()
         items = []
@@ -759,7 +769,17 @@ async def global_search(
             results.append({"category": "clients", "items": items})
 
     # ── Vault ────────────────────────────────────────────────────────────
-    if _should_search_category(ast, "vault"):
+    # GHSA-h52c-fq68-j82x: reduce non-admin scope to engagements where the
+    # caller actually holds VAULT_VIEW (engagement membership alone is not
+    # sufficient — the dedicated vault router enforces this).
+    vault_eids = accessible_ids
+    if vault_eids is not None:
+        vault_eids = [
+            eid for eid in vault_eids
+            if await check_engagement_permission(
+                current_user.id, eid, Permission.VAULT_VIEW.value, db)
+        ]
+    if _should_search_category(ast, "vault") and (vault_eids is None or vault_eids):
         clause = build_vault_clause(ast) if ast else None
         vault_q = select(
             VaultItem.id, VaultItem.name, VaultItem.item_type,
@@ -768,7 +788,8 @@ async def global_search(
         ).join(Engagement, VaultItem.engagement_id == Engagement.id)
         if clause is not None:
             vault_q = vault_q.where(clause)
-        vault_q = scope_to_engagements(vault_q, VaultItem.engagement_id)
+        if vault_eids is not None:
+            vault_q = vault_q.where(VaultItem.engagement_id.in_(vault_eids))
         vault_q = vault_q.limit(limit)
         rows = (await db.execute(vault_q)).all()
         items = []

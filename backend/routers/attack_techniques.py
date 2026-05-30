@@ -427,6 +427,20 @@ async def suggest_techniques(
     import asyncio
     import httpx
 
+    # GHSA-gg6r-62gm-r9cp: gate the route on engagement membership AND
+    # constrain caller-supplied finding_ids to this engagement, so they can't
+    # name UUIDs from other tenants' engagements to leak finding bodies via
+    # the response or ship them to the external AI provider.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        if not await check_engagement_permission(
+            current_user.id, engagement_id, Permission.FINDING_VIEW.value, db
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this engagement.",
+            )
+
     print(f"[ATT&CK Suggest] Called for engagement {engagement_id}, finding_ids={request.finding_ids}")
 
     # Check AI enabled
@@ -468,9 +482,13 @@ async def suggest_techniques(
         print("[ATT&CK Suggest] No unmapped findings, returning early")
         return {"suggestions": [], "message": "All findings already have techniques mapped"}
 
-    # Fetch the actual finding data
+    # Fetch the actual finding data — scope to this engagement so caller-supplied
+    # finding_ids can't reach into other tenants' engagements (GHSA-gg6r-62gm-r9cp).
     findings_result = await db.execute(
-        select(Finding).where(Finding.id.in_(finding_ids))
+        select(Finding).where(
+            Finding.id.in_(finding_ids),
+            Finding.engagement_id == engagement_id,
+        )
     )
     findings = findings_result.scalars().all()
     print(f"[ATT&CK Suggest] Processing {len(findings)} findings concurrently (max {AI_MAX_CONCURRENCY})")

@@ -49,13 +49,14 @@ async def get_admin_config(
         "session_timeout_hours": REFRESH_TOKEN_EXPIRE_HOURS,
     }
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users", response_model=List[UserResponse], dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
 async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List all users in the system."""
-    # Allow all authenticated users to see the user list for team selection etc
+    """List all users in the system (admin-only — full UserResponse with
+    auth_provider, totp_enabled, last_login, etc.). The lightweight team
+    picker lives at /api/users (GHSA-52gv-wf4c-7qmm)."""
     result = await db.execute(select(User).options(selectinload(User.groups)).order_by(User.created_at.desc()))
     users = result.scalars().all()
     return users

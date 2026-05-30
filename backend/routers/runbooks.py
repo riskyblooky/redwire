@@ -63,6 +63,31 @@ def _is_visible(runbook: Runbook, current_user: User) -> bool:
     return False
 
 
+async def _ensure_template_visible(
+    template_id: str | None, current_user: User, db: AsyncSession
+) -> None:
+    """GHSA-r9qx-3j9h-qx7f: refuse to link a runbook item to a template the
+    caller can't see. Mirrors testcase_templates.py's read-time gate:
+    PUBLISHED to all, otherwise creator-only (manage roles see all)."""
+    if not template_id:
+        return
+    template = (
+        await db.execute(select(TestCaseTemplate).where(TestCaseTemplate.id == template_id))
+    ).scalar_one_or_none()
+    if template is None:
+        raise HTTPException(status_code=404, detail="Referenced template not found")
+    if template.status == TemplateStatus.PUBLISHED:
+        return
+    if template.created_by == current_user.id:
+        return
+    if _can_manage(current_user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="You do not have access to one of the referenced templates.",
+    )
+
+
 @router.get("", response_model=List[RunbookResponse])
 async def get_runbooks(
     db: AsyncSession = Depends(get_db),
@@ -120,6 +145,7 @@ async def create_runbook(
             if not parent_id:
                 raise HTTPException(status_code=400, detail=f"Invalid parent_temp_key: {item_data.parent_temp_key}")
 
+        await _ensure_template_visible(item_data.template_id, current_user, db)
         item = RunbookItem(
             id=item_id,
             runbook_id=runbook.id,
@@ -191,6 +217,7 @@ async def update_runbook(
                 if not parent_id:
                     raise HTTPException(status_code=400, detail=f"Invalid parent_temp_key: {item_data.parent_temp_key}")
 
+            await _ensure_template_visible(item_data.template_id, current_user, db)
             item = RunbookItem(
                 id=item_id,
                 runbook_id=runbook.id,

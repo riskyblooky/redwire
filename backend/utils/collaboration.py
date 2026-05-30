@@ -136,6 +136,23 @@ async def notify_mentions(
     )
     users = result.all()
 
+    # GHSA-m2wc-pppv-77gf: if there's an engagement context, drop recipients
+    # who can't see that engagement, so @mentions can't leak engagement
+    # existence / titles or be used as a username-enumeration oracle.
+    if engagement_id:
+        from auth.rbac import check_engagement_permission
+        from models.permission import Permission
+        filtered = []
+        for uid, uname in users:
+            try:
+                if await check_engagement_permission(
+                    uid, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+                ):
+                    filtered.append((uid, uname))
+            except Exception:
+                continue  # fail closed
+        users = filtered
+
     for uid, _uname in users:
         await create_notification(
             db=db,

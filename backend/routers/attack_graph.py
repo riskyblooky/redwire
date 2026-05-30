@@ -313,7 +313,7 @@ async def create_attack_graph_layout(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -378,7 +378,7 @@ async def update_attack_graph_layout(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -426,7 +426,7 @@ async def activate_attack_graph_layout(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -477,7 +477,7 @@ async def delete_attack_graph_layout_named(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -529,7 +529,7 @@ async def save_attack_graph_layout(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -593,7 +593,7 @@ async def delete_attack_graph_layout(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -634,7 +634,7 @@ async def create_attacker_node(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -672,7 +672,7 @@ async def update_attacker_node(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -715,7 +715,7 @@ async def delete_attacker_node(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -748,7 +748,7 @@ async def create_attacker_edge(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -823,7 +823,7 @@ async def delete_attacker_edge(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
+            current_user.id, engagement_id, "engagement_edit", db
         )
         if not has_permission:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")

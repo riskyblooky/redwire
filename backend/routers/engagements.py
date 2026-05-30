@@ -303,7 +303,23 @@ async def update_engagement(
     update_data = engagement_data.model_dump(exclude_unset=True)
     user_ids = update_data.pop("assigned_user_ids", None)
     assignments_data = update_data.pop("assignments", None)
-    
+
+    # GHSA-rh65-78qj-3mg2: non-admin operators may not re-parent an engagement
+    # to a different client via mass-assigned client_id. Admins/leads still can.
+    if not is_admin:
+        update_data.pop("client_id", None)
+
+    # GHSA-2778-7vvg-h9x9: rewriting the engagement team is gated by a separate
+    # permission; engagement_edit alone is not enough.
+    if not is_admin and (user_ids is not None or assignments_data is not None):
+        if not await check_engagement_permission(
+            current_user.id, engagement_id, Permission.ENGAGEMENT_MANAGE_MEMBERS.value, db
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'engagement_manage_members' permission to change team membership.",
+            )
+
     # Capture old status before applying updates (for notification)
     old_eng_status = engagement.status if engagement.status else None
 
