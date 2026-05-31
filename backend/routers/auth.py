@@ -369,8 +369,14 @@ async def verify_2fa(
             detail="Invalid two-factor authentication code",
         )
 
-    # Blacklist the pending token so it can't be reused
-    blacklist_token(token)
+    # Blacklist the pending token so it can't be reused. A silent failure
+    # here would leave the 5-minute pending token live for replay; surface
+    # it. GHSA-832g-v288-v593.
+    if not blacklist_token(token):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
 
     # Update last login
     user.last_login = datetime.utcnow()
@@ -440,6 +446,17 @@ async def refresh_token_endpoint(
             detail="User not found or inactive"
         )
     
+    # Re-check the blacklist immediately before minting. The first check at
+    # the top of the handler ran before the await above, so a
+    # revoke_all_user_tokens that landed during the DB read would otherwise
+    # be missed and the new access token would carry an iat > revocation_ts.
+    # GHSA-832g-v288-v593 issue 3.
+    if is_token_blacklisted(refresh_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked"
+        )
+
     # Create new access token only — do NOT rotate the refresh token
     # so the session naturally expires when the refresh token does.
     # The refresh cookie is left in place untouched.
@@ -480,13 +497,21 @@ async def logout(
     except Exception:
         pass  # Don't fail logout if this errors
 
-    # Blacklist the access token
-    blacklist_token(access_token)
-    # Blacklist the paired refresh token so /auth/refresh cannot
-    # mint a new session after logout (GHSA-p97c-94pr-2m32 fix; the
-    # token is now read from the HttpOnly cookie per GHSA-gv65-p25x-qrqj).
+    # Blacklist the access token and the paired refresh token (read from
+    # the HttpOnly cookie per GHSA-gv65-p25x-qrqj). A silent failure here
+    # leaves the tokens live after a "successful" logout — surface the
+    # failure instead. GHSA-832g-v288-v593.
+    if not blacklist_token(access_token):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
     if refresh_token:
-        blacklist_token(refresh_token)
+        if not blacklist_token(refresh_token):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Session revocation failed. Please retry.",
+            )
     _clear_refresh_cookie(response)
 
     return {"message": "Successfully logged out"}
@@ -541,9 +566,16 @@ async def force_change_password(
     current_user.updated_at = datetime.utcnow()
     await db.commit()
     
-    # Revoke all existing sessions so old tokens become invalid
+    # Revoke all existing sessions so old tokens become invalid. The
+    # password has already been committed; if the revoke fails the change
+    # is in place but old sessions live, which we must surface rather than
+    # silently no-op. GHSA-832g-v288-v593.
     from auth.jwt import revoke_all_user_tokens
-    revoke_all_user_tokens(current_user.id)
+    if not revoke_all_user_tokens(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
 
     # Issue fresh tokens
     access_token = create_access_token(data={"sub": current_user.id, "role": current_user.role.value})
@@ -658,7 +690,11 @@ async def totp_verify_setup(
     from auth.jwt import revoke_all_user_tokens
     from sqlalchemy import update as _sa_update
     from models.api_token import ApiToken
-    revoke_all_user_tokens(current_user.id)
+    if not revoke_all_user_tokens(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
     await db.execute(
         _sa_update(ApiToken)
         .where(ApiToken.user_id == current_user.id)
@@ -716,7 +752,11 @@ async def totp_disable(
     from auth.jwt import revoke_all_user_tokens
     from sqlalchemy import update as _sa_update
     from models.api_token import ApiToken
-    revoke_all_user_tokens(current_user.id)
+    if not revoke_all_user_tokens(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
     await db.execute(
         _sa_update(ApiToken)
         .where(ApiToken.user_id == current_user.id)
@@ -1091,13 +1131,20 @@ async def reset_password(
     user.totp_verified_at = None
     await db.commit()
     
-    # Blacklist the reset token so it cannot be replayed
-    from auth.jwt import blacklist_token
-    blacklist_token(req.token)
-    
-    # Revoke all existing sessions
-    from auth.jwt import revoke_all_user_tokens
-    revoke_all_user_tokens(user.id)
+    # Blacklist the reset token so it cannot be replayed, then revoke
+    # all existing sessions. Both must surface failure instead of silently
+    # no-op. GHSA-832g-v288-v593.
+    from auth.jwt import blacklist_token, revoke_all_user_tokens
+    if not blacklist_token(req.token):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
+    if not revoke_all_user_tokens(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
 
     logger.info(f"Password reset completed for user {user.username}")
     return {"message": "Password has been reset successfully. You can now log in with your new password."}

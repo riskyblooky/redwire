@@ -2,9 +2,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 import os
-import hashlib
 import redis
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +56,19 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     # Preserve explicit token type (e.g. "password_reset") if set in data,
     # otherwise default to "access"
     token_type = to_encode.pop("type", "access")
-    to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": token_type})
+    # jti gives each token a stable identity that survives base64 padding —
+    # the per-token blacklist keys on it instead of the raw token bytes.
+    # GHSA-832g-v288-v593.
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": token_type,
+        "jti": str(uuid.uuid4()),
+    })
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -69,17 +77,27 @@ def create_refresh_token(data: dict) -> str:
     """Create a JWT refresh token."""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(hours=REFRESH_TOKEN_EXPIRE_HOURS)
-    to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "refresh"})
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "refresh",
+        "jti": str(uuid.uuid4()),
+    })
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 
 def decode_token(token: str) -> Optional[dict]:
     """Decode and verify a JWT token.
-    
+
     Verifies signature using the pinned algorithm (prevents algorithm confusion attacks).
-    Requires 'sub', 'type', and 'exp' claims to be present.
+    Requires 'sub', 'type', 'jti', and 'exp' claims to be present.
     Validates expiration automatically.
+
+    The jti requirement also acts as a deploy-time invalidation: any token
+    issued before the jti rollout lacks the claim and is rejected, forcing
+    all active sessions to re-authenticate on first request after upgrade.
+    GHSA-832g-v288-v593.
     """
     try:
         payload = jwt.decode(
@@ -93,41 +111,40 @@ def decode_token(token: str) -> Optional[dict]:
                 "verify_signature": True,
             }
         )
-        # Additional check: require 'type' claim
-        if "type" not in payload:
+        # Additional checks: require 'type' and 'jti' claims
+        if "type" not in payload or "jti" not in payload:
             return None
         return payload
     except JWTError:
         return None
 
 
-def _token_fingerprint(token: str) -> str:
-    """Create a short fingerprint of a token for Redis storage.
-    
-    We store a hash instead of the full token to minimize what's in Redis.
-    """
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 def blacklist_token(token: str) -> bool:
-    """Add a token to the blacklist.
-    
-    The token is stored in Redis with a TTL matching its remaining lifetime.
-    Returns True if successfully blacklisted, False if Redis is unavailable.
+    """Add a token to the per-token blacklist, keyed on its jti claim.
+
+    Returns True on success, False if Redis is unavailable or the token is
+    not blacklistable (missing jti or malformed). The caller MUST surface a
+    False return to the client — a silently-failed revocation looks like
+    success but leaves the token live. GHSA-832g-v288-v593.
     """
     r = _get_redis()
     if r is None:
         logger.error("Cannot blacklist token: Redis unavailable")
         return False
-    
+
     try:
-        # Decode without verification to get expiration (token is already verified by caller)
+        # Decode without exp verification — an expired token still needs
+        # revocation if a caller asks for it (callers verify freshness).
         payload = jwt.decode(
             token,
             SECRET_KEY,
             algorithms=[ALGORITHM],
-            options={"verify_exp": False}  # May be expired but still need to blacklist
+            options={"verify_exp": False}
         )
+        jti = payload.get("jti")
+        if not jti:
+            logger.error("Cannot blacklist token: missing jti claim")
+            return False
         exp = payload.get("exp")
         if exp:
             # TTL = time until token expires (no point keeping it longer)
@@ -135,9 +152,8 @@ def blacklist_token(token: str) -> bool:
         else:
             # Fallback: blacklist for 24 hours
             ttl = 86400
-        
-        fingerprint = _token_fingerprint(token)
-        r.setex(f"token_blacklist:{fingerprint}", ttl, "1")
+
+        r.setex(f"token_blacklist:{jti}", ttl, "1")
         return True
     except Exception as e:
         logger.error(f"Failed to blacklist token: {e}")
@@ -167,23 +183,26 @@ def revoke_all_user_tokens(user_id: str) -> bool:
 
 def is_token_blacklisted(token: str) -> bool:
     """Check if a token has been blacklisted.
-    
-    Checks both specific token blacklist and user-wide revocation.
-    Fails CLOSED if Redis is unavailable — revoked tokens must not be accepted.
+
+    Checks both the per-token blacklist (keyed on jti) and the per-user
+    revocation cutoff. Fails CLOSED on any error — revoked tokens must not
+    be silently accepted under a Redis hiccup or decode fault.
+    GHSA-832g-v288-v593.
     """
     r = _get_redis()
     if r is None:
         logger.critical("Redis unavailable — failing closed on token blacklist check")
         return True
-    
+
     try:
-        # 1. Check exact token fingerprint blacklist
-        fingerprint = _token_fingerprint(token)
-        if r.exists(f"token_blacklist:{fingerprint}") > 0:
-            return True
-            
-        # 2. Check user-wide revocation
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
+
+        # 1. Per-token blacklist, keyed on jti so base64 padding can't bypass it.
+        jti = payload.get("jti")
+        if jti and r.exists(f"token_blacklist:{jti}") > 0:
+            return True
+
+        # 2. Per-user revocation cutoff
         user_id = payload.get("sub")
         if user_id:
             revocation_ts = r.get(f"token_revocation:{user_id}")
@@ -192,8 +211,10 @@ def is_token_blacklisted(token: str) -> bool:
                 # If token has no iat, or was issued before the revocation timestamp, reject it
                 if not iat or float(iat) < float(revocation_ts):
                     return True
-                    
+
         return False
     except Exception as e:
-        logger.warning(f"Failed to check token blacklist: {e}")
-        return False
+        # Any exception (Redis fault, decode error, anything) means we
+        # can't tell — fail closed.
+        logger.critical(f"Failing closed on token blacklist check: {e}")
+        return True

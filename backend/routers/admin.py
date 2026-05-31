@@ -213,9 +213,15 @@ async def reset_password(
     user.must_change_password = True
     await db.commit()
     
-    # Revoke all existing sessions
+    # Revoke all existing sessions. Surface failure rather than silently
+    # leaving the old session live after a "successful" admin reset.
+    # GHSA-832g-v288-v593.
     from auth.jwt import revoke_all_user_tokens
-    revoke_all_user_tokens(user.id)
+    if not revoke_all_user_tokens(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
     
     # Notify user that their password was reset
     from utils.collaboration import create_notification
