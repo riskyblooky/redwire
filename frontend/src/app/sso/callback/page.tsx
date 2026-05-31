@@ -7,8 +7,9 @@ import { useAuthStore } from '@/stores/auth-store';
 /**
  * SSO Callback Page
  *
- * After SAML ACS, the backend redirects here with tokens in the URL fragment:
- *   /sso/callback#access_token=xxx&refresh_token=yyy
+ * After SAML ACS, the backend redirects here with the access token in the
+ * URL fragment and the refresh token in an HttpOnly cookie:
+ *   /sso/callback#access_token=xxx
  *
  * If the user has 2FA enabled, the fragment instead contains:
  *   /sso/callback#requires_2fa=true&access_token=<pending_token>
@@ -35,7 +36,6 @@ export default function SSOCallbackPage() {
         const hash = window.location.hash.substring(1); // remove #
         const params = new URLSearchParams(hash);
         const accessToken = params.get('access_token');
-        const refreshToken = params.get('refresh_token');
         const requires2fa = params.get('requires_2fa') === 'true';
 
         if (!accessToken) {
@@ -60,11 +60,9 @@ export default function SSOCallbackPage() {
             return;
         }
 
-        // Normal flow — store tokens and redirect
+        // Normal flow — store the access token only. The refresh token rides
+        // an HttpOnly cookie set by the SAML ACS response (GHSA-gv65-p25x-qrqj).
         localStorage.setItem('access_token', accessToken);
-        if (refreshToken) {
-            localStorage.setItem('refresh_token', refreshToken);
-        }
 
         // Set session cookie for Next.js middleware
         document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';

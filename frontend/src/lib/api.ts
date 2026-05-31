@@ -4,6 +4,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
     baseURL: API_URL,
+    // Send the HttpOnly refresh-token cookie on /auth/refresh & /auth/logout.
+    // Backend CORS already has allow_credentials=True; this is the matching
+    // half. GHSA-gv65-p25x-qrqj.
+    withCredentials: true,
     headers: {
         'Content-Type': 'application/json',
     },
@@ -74,18 +78,16 @@ api.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                const refreshToken = localStorage.getItem('refresh_token');
-                if (!refreshToken) {
-                    throw new Error('No refresh token');
-                }
-
-                const response = await axios.post(`${API_URL}/auth/refresh`, {
-                    refresh_token: refreshToken,
+                // Refresh token now lives in an HttpOnly cookie set by
+                // /auth/login (GHSA-gv65-p25x-qrqj); the JS side just calls
+                // /auth/refresh with credentials and reads the new access
+                // token back from the JSON body.
+                const response = await axios.post(`${API_URL}/auth/refresh`, {}, {
+                    withCredentials: true,
                 });
 
-                const { access_token, refresh_token: newRefreshToken } = response.data;
+                const { access_token } = response.data;
                 localStorage.setItem('access_token', access_token);
-                localStorage.setItem('refresh_token', newRefreshToken);
                 // Renew session cookie on successful refresh
                 document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
 
@@ -97,9 +99,10 @@ api.interceptors.response.use(
             } catch (refreshError) {
                 isRefreshing = false;
                 onRefreshFailed();
-                // Refresh failed, clear tokens and redirect to login
+                // Refresh failed, clear access token and redirect to login.
+                // The refresh cookie is cleared by /auth/logout, or by the
+                // server when it issues a 401 on an expired/missing cookie.
                 localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
                 document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
                 window.location.href = '/login';
                 return Promise.reject(refreshError);
@@ -120,8 +123,10 @@ function startProactiveRefresh() {
     if (proactiveRefreshTimer) return; // Already running
 
     proactiveRefreshTimer = setInterval(async () => {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
+        // If there's no access token in localStorage we're not logged in;
+        // the refresh cookie (if any) will be sent automatically, but there
+        // is nothing to keep alive on this tab.
+        if (!localStorage.getItem('access_token')) {
             stopProactiveRefresh();
             return;
         }
@@ -131,13 +136,12 @@ function startProactiveRefresh() {
 
         try {
             isRefreshing = true;
-            const response = await axios.post(`${API_URL}/auth/refresh`, {
-                refresh_token: refreshToken,
+            const response = await axios.post(`${API_URL}/auth/refresh`, {}, {
+                withCredentials: true,
             });
 
-            const { access_token, refresh_token: newRefreshToken } = response.data;
+            const { access_token } = response.data;
             localStorage.setItem('access_token', access_token);
-            localStorage.setItem('refresh_token', newRefreshToken);
             document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
             isRefreshing = false;
         } catch {
