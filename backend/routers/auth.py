@@ -1,10 +1,10 @@
 from typing import Optional
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status, Request
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from database import get_db
+from database import AsyncSessionLocal, get_db
 from models.user import User, UserRole
 from models.auth_settings import AuthSetting
 from schemas.user import (
@@ -1062,19 +1062,43 @@ async def get_splash_config(db: AsyncSession = Depends(get_db)):
 
 # ── Password Reset (Public) ────────────────────────────────────────────────────
 
+
+async def _dispatch_reset_email(to_email: str, reset_url: str, username: str) -> None:
+    """Background-task helper that actually sends the password reset email.
+
+    Opens its own AsyncSessionLocal() because the request's Depends(get_db)
+    session is closed before FastAPI runs background tasks. Exceptions are
+    logged here rather than raised — a SMTP failure must not be observable
+    to the caller (would re-introduce the enumeration timing oracle).
+    GHSA-rrrx-36ww-rq4q.
+    """
+    from utils.email_service import send_password_reset_email
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            await send_password_reset_email(bg_db, to_email, reset_url, username)
+    except Exception as e:
+        logger.error(f"Failed to send reset email to {to_email}: {e}")
+
+
 @router.post(
     "/forgot-password",
     summary="Request password reset email",
     description="Public endpoint — sends a password reset email if the email exists. "
                 "Always returns 200 to prevent user enumeration.",
 )
+@limiter.limit("5/minute")
 async def forgot_password(
+    request: Request,
     req: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a reset token and send a password reset email."""
-    from utils.email_service import send_password_reset_email
+    """Generate a reset token and schedule the password reset email.
 
+    The dispatch is moved off the request path (GHSA-rrrx-36ww-rq4q) so
+    response time is constant whether or not the email matched — closing
+    the account-existence timing oracle.
+    """
     # Always return success to prevent user enumeration
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
@@ -1089,10 +1113,9 @@ async def forgot_password(
         frontend_url = os.getenv("FRONTEND_URL", "https://localhost:8443")
         reset_url = f"{frontend_url}/reset-password?token={reset_token}"
 
-        try:
-            await send_password_reset_email(db, user.email, reset_url, user.username)
-        except Exception as e:
-            logger.error(f"Failed to send reset email to {user.email}: {e}")
+        background_tasks.add_task(
+            _dispatch_reset_email, user.email, reset_url, user.username,
+        )
 
     return {"message": "If an account with that email exists, a password reset link has been sent."}
 
@@ -1102,7 +1125,9 @@ async def forgot_password(
     summary="Reset password with token",
     description="Public endpoint — resets the user's password using a valid reset token.",
 )
+@limiter.limit("5/minute")
 async def reset_password(
+    request: Request,
     req: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
