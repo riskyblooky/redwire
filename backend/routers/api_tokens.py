@@ -125,11 +125,15 @@ async def create_own_token(
                     detail="Two-factor authentication code required.",
                 )
             decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
-            if not verify_totp_code(decrypted_secret, body.totp_code):
+            matched_step = verify_totp_code(
+                decrypted_secret, body.totp_code, current_user.totp_last_timestep
+            )
+            if matched_step is None:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid two-factor authentication code.",
+                    detail="Invalid or already-used two-factor authentication code.",
                 )
+            current_user.totp_last_timestep = matched_step
 
     raw_token, token_hash, token_prefix = _generate_token(body.permission)
 

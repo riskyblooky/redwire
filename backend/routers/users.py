@@ -92,11 +92,15 @@ async def update_current_user(
                     detail="Two-factor authentication code required.",
                 )
             decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
-            if not verify_totp_code(decrypted_secret, user_data.totp_code):
+            matched_step = verify_totp_code(
+                decrypted_secret, user_data.totp_code, current_user.totp_last_timestep
+            )
+            if matched_step is None:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid two-factor authentication code.",
+                    detail="Invalid or already-used two-factor authentication code.",
                 )
+            current_user.totp_last_timestep = matched_step
         result = await db.execute(select(User).where(User.email == user_data.email))
         if result.scalar_one_or_none():
             raise HTTPException(
@@ -199,11 +203,15 @@ async def change_password(
                 detail="Two-factor authentication code required",
             )
         decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
-        if not verify_totp_code(decrypted_secret, password_data.totp_code):
+        matched_step = verify_totp_code(
+            decrypted_secret, password_data.totp_code, current_user.totp_last_timestep
+        )
+        if matched_step is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid two-factor authentication code",
+                detail="Invalid or already-used two-factor authentication code",
             )
+        current_user.totp_last_timestep = matched_step
 
     current_user.hashed_password = get_password_hash(password_data.new_password)
     await db.commit()
