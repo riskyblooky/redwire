@@ -178,18 +178,53 @@ def _build_resource_link(context: Dict[str, Any]) -> Optional[str]:
 async def _execute_notify_users(
     db: AsyncSession, action: dict, context: Dict[str, Any], rule_name: str
 ):
-    """Send in-app notification to specific users."""
+    """Send in-app notification to specific users.
+
+    GHSA-jvcx-44v2-gc9m: intersect recipients with users who can see the
+    event's engagement. Applies to both scoped and global rules so a global
+    rule (admin-curated) can't notify users about engagements they wouldn't
+    otherwise see. Fail closed on the check.
+    """
     from utils.collaboration import create_notification
+    from auth.rbac import check_engagement_permission
+    from auth.permissions import has_global_permission
+    from models.permission import Permission
+    from models.user import User, UserRole
+    from sqlalchemy import select
 
     user_ids = action.get("user_ids", [])
     message = action.get("message", f"Automation '{rule_name}' triggered")
     link = context.get("link")
+    event_engagement_id = context.get("engagement_id")
 
     # Build a deep link from context if not provided
     if not link:
         link = _build_resource_link(context)
 
+    async def _can_see_engagement(uid: str) -> bool:
+        """Mirror the read-side gate: admin/lead bypass, VIEW_ALL_ENGAGEMENTS
+        bypass, otherwise engagement_view on this engagement."""
+        if not event_engagement_id:
+            return True
+        try:
+            user = (
+                await db.execute(select(User).where(User.id == uid))
+            ).scalar_one_or_none()
+            if user is None:
+                return False
+            if user.role in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
+                return True
+            if await has_global_permission(user, Permission.VIEW_ALL_ENGAGEMENTS, db):
+                return True
+            return await check_engagement_permission(
+                uid, event_engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+            )
+        except Exception:
+            return False  # fail closed
+
     for uid in user_ids:
+        if not await _can_see_engagement(uid):
+            continue
         await create_notification(
             db=db,
             user_id=uid,
@@ -198,7 +233,7 @@ async def _execute_notify_users(
             message=message,
             link=link,
             actor_id=context.get("user_id"),
-            engagement_id=context.get("engagement_id"),
+            engagement_id=event_engagement_id,
             skip_self_check=True,
         )
 
@@ -455,11 +490,27 @@ async def evaluate_rules(
     if trigger_type == "manual":
         return
 
+    # GHSA-jvcx-44v2-gc9m: dispatch must be tenant-aware. Match a rule iff
+    # it's either global (engagement_id IS NULL, admin-curated) or scoped to
+    # the engagement that raised this event. If the event has no engagement
+    # context, only global rules can match — non-global rules can't fire for
+    # events outside their engagement.
+    from sqlalchemy import or_
+    event_engagement_id = context.get("engagement_id")
+
     try:
+        if event_engagement_id:
+            scope_clause = or_(
+                AutomationRule.engagement_id.is_(None),
+                AutomationRule.engagement_id == event_engagement_id,
+            )
+        else:
+            scope_clause = AutomationRule.engagement_id.is_(None)
         result = await db.execute(
             select(AutomationRule).where(
                 AutomationRule.trigger_type == trigger_type,
                 AutomationRule.is_enabled == True,
+                scope_clause,
             )
         )
         rules = result.scalars().all()
