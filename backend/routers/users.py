@@ -154,7 +154,11 @@ async def update_current_user(
         from auth.jwt import revoke_all_user_tokens
         from sqlalchemy import update as _sa_update
         from models.api_token import ApiToken
-        revoke_all_user_tokens(current_user.id)
+        if not revoke_all_user_tokens(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Session revocation failed. Please retry.",
+            )
         await db.execute(
             _sa_update(ApiToken)
             .where(ApiToken.user_id == current_user.id)
@@ -204,7 +208,11 @@ async def change_password(
     current_user.hashed_password = get_password_hash(password_data.new_password)
     await db.commit()
 
-    revoke_all_user_tokens(current_user.id)
+    if not revoke_all_user_tokens(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Session revocation failed. Please retry.",
+        )
 
     return {"detail": "Password updated successfully"}
 
