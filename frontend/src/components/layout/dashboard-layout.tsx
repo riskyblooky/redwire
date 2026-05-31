@@ -132,9 +132,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 current_password: fpCurrentPassword,
                 new_password: fpNewPassword,
             });
-            const { access_token, refresh_token } = response.data;
+            const { access_token } = response.data;
+            // Refresh token is set as an HttpOnly cookie by the backend
+            // (GHSA-gv65-p25x-qrqj); we only see the access token here.
             localStorage.setItem('access_token', access_token);
-            localStorage.setItem('refresh_token', refresh_token);
             document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
             startProactiveRefresh();
             clearMustChangePassword();

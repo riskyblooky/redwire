@@ -36,7 +36,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     login: async (username: string, password: string) => {
         try {
             const response = await api.post('/auth/login', { username, password });
-            const { access_token, refresh_token, requires_2fa, must_change_password } = response.data;
+            const { access_token, requires_2fa, must_change_password } = response.data;
 
             if (requires_2fa) {
                 // Store pending token for the 2FA verification step
@@ -44,8 +44,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 return;
             }
 
+            // The refresh token rides an HttpOnly cookie set by the backend
+            // (GHSA-gv65-p25x-qrqj); we never see or store it client-side.
             localStorage.setItem('access_token', access_token);
-            localStorage.setItem('refresh_token', refresh_token);
             // Set session cookie for Next.js middleware (24h to match refresh token)
             document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
             startProactiveRefresh();
@@ -75,10 +76,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             const response = await api.post('/auth/verify-2fa', { code }, {
                 headers: { Authorization: `Bearer ${pendingToken}` },
             });
-            const { access_token, refresh_token, must_change_password } = response.data;
+            const { access_token, must_change_password } = response.data;
 
             localStorage.setItem('access_token', access_token);
-            localStorage.setItem('refresh_token', refresh_token);
             document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
             startProactiveRefresh();
 
@@ -107,10 +107,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             const response = await api.post('/auth/verify-2fa', { code }, {
                 headers: { Authorization: `Bearer ${pendingToken}` },
             });
-            const { access_token, refresh_token, must_change_password } = response.data;
+            const { access_token, must_change_password } = response.data;
 
             localStorage.setItem('access_token', access_token);
-            localStorage.setItem('refresh_token', refresh_token);
             document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
             startProactiveRefresh();
 
@@ -130,22 +129,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
 
     logout: () => {
-        // Capture tokens BEFORE clearing localStorage
+        // Capture access token BEFORE clearing localStorage
         const token = localStorage.getItem('access_token');
-        const refreshToken = localStorage.getItem('refresh_token');
 
         // Clear local state immediately for responsive UX
         localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
         document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
         stopProactiveRefresh();
         set({ user: null, isAuthenticated: false, needsRedirect: false, requires2fa: false, pendingCredentials: null, mustChangePassword: false });
 
-        // Then blacklist the token on the backend (fire-and-forget)
-        // We pass the token explicitly since localStorage is already cleared
+        // Then ask the backend to blacklist the access token and the
+        // refresh-cookie (read server-side), and clear the cookie.
+        // withCredentials lets the cookie travel cross-origin in dev.
         if (token) {
-            api.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : {}, {
-                headers: { Authorization: `Bearer ${token}` }
+            api.post('/auth/logout', {}, {
+                headers: { Authorization: `Bearer ${token}` },
+                withCredentials: true,
             }).catch(() => {
                 // Best-effort: if this fails, the token will still expire naturally
             });

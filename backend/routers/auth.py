@@ -1,14 +1,14 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
 from models.user import User, UserRole
 from models.auth_settings import AuthSetting
 from schemas.user import (
-    UserLogin, Token, TokenRefresh, UserCreate, UserResponse,
+    UserLogin, Token, UserCreate, UserResponse,
     TotpSetupResponse, TotpSetupRequest, TotpVerifyRequest, TotpDisableRequest,
 )
 from schemas.auth_settings import AuthProvidersResponse, ForgotPasswordRequest, ResetPasswordRequest
@@ -40,6 +40,31 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer()
+
+# Refresh token is set as an HttpOnly, SameSite=Strict cookie scoped to "/"
+# (the browser-visible path; Nginx may rewrite /api/auth -> /auth on the way
+# to the backend, so the cookie has to be set at the browser's path root).
+# An empty string is still returned in the JSON body for response-model
+# compatibility, but the only value a client can use is the cookie.
+# GHSA-gv65-p25x-qrqj.
+REFRESH_COOKIE_NAME = "refresh_token"
+REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24  # 24h — matches create_refresh_token
+
+
+def _set_refresh_cookie(response: Response, request: Request, refresh_token: str) -> None:
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        refresh_token,
+        max_age=REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+        path="/",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
@@ -138,7 +163,7 @@ async def register(request: Request, user_data: UserCreate, db: AsyncSession = D
 
 @router.post("/login")
 @limiter.limit("5/minute")
-async def login(request: Request, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(request: Request, credentials: UserLogin, response: Response, db: AsyncSession = Depends(get_db)):
     """Authenticate user and return JWT tokens. Supports local, LDAP, and 2FA."""
     # Load auth settings (gracefully handle missing table if migration not yet applied)
     try:
@@ -270,10 +295,11 @@ async def login(request: Request, credentials: UserLogin, db: AsyncSession = Dep
     # Create tokens
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
     refresh_token = create_refresh_token(data={"sub": user.id})
-    
+
+    _set_refresh_cookie(response, request, refresh_token)
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
+        "refresh_token": "",
         "token_type": "bearer",
         "requires_2fa": False,
         "must_change_password": user.must_change_password,
@@ -291,6 +317,7 @@ async def login(request: Request, credentials: UserLogin, db: AsyncSession = Dep
 async def verify_2fa(
     request: Request,
     body: TotpVerifyRequest,
+    response: Response,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ):
@@ -353,31 +380,43 @@ async def verify_2fa(
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
     refresh_token = create_refresh_token(data={"sub": user.id})
 
+    _set_refresh_cookie(response, request, refresh_token)
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
+        "refresh_token": "",
         "token_type": "bearer",
         "requires_2fa": False,
         "must_change_password": user.must_change_password,
     }
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token_endpoint(token_data: TokenRefresh, db: AsyncSession = Depends(get_db)):
-    """Refresh access token using refresh token.
-    
-    Only issues a new access token. The original refresh token is reused
-    (not rotated) so the session expires when the refresh token's original
-    expiry is reached (default 24h from login).
+async def refresh_token_endpoint(
+    refresh_token: Optional[str] = Cookie(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh access token using the refresh-token cookie.
+
+    Only issues a new access token. The refresh-token cookie is reused
+    (not rotated) so the session expires when its original expiry is
+    reached (default 24h from login).
+
+    The refresh token is read from an HttpOnly+SameSite=Strict cookie
+    set by /auth/login (and friends); accepting it from the request body
+    would defeat the cookie's XSS protection. GHSA-gv65-p25x-qrqj.
     """
-    # Check if the refresh token has been revoked
-    if is_token_blacklisted(token_data.refresh_token):
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh-token cookie"
+        )
+    if is_token_blacklisted(refresh_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token has been revoked"
         )
-    
-    payload = decode_token(token_data.refresh_token)
-    
+
+    payload = decode_token(refresh_token)
+
     if payload is None or payload.get("type") != "refresh":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -402,24 +441,27 @@ async def refresh_token_endpoint(token_data: TokenRefresh, db: AsyncSession = De
         )
     
     # Create new access token only — do NOT rotate the refresh token
-    # so the session naturally expires when the refresh token does
+    # so the session naturally expires when the refresh token does.
+    # The refresh cookie is left in place untouched.
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
-    
+
     return {
         "access_token": access_token,
-        "refresh_token": token_data.refresh_token,  # return the same refresh token
+        "refresh_token": "",
         "token_type": "bearer"
     }
 
 @router.post("/logout")
 async def logout(
-    token_data: Optional[TokenRefresh] = None,
+    response: Response,
+    refresh_token: Optional[str] = Cookie(default=None),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ):
-    """Logout user by blacklisting their current access token.
-    
-    Client must discard all tokens after this call.
+    """Logout user by blacklisting their current access token and refresh
+    cookie, and clearing the refresh cookie from the browser.
+
+    Client must discard the access token after this call.
     """
     access_token = credentials.credentials
 
@@ -441,10 +483,12 @@ async def logout(
     # Blacklist the access token
     blacklist_token(access_token)
     # Blacklist the paired refresh token so /auth/refresh cannot
-    # mint a new session after logout (GHSA fix)
-    if token_data and token_data.refresh_token:
-        blacklist_token(token_data.refresh_token)
-    
+    # mint a new session after logout (GHSA-p97c-94pr-2m32 fix; the
+    # token is now read from the HttpOnly cookie per GHSA-gv65-p25x-qrqj).
+    if refresh_token:
+        blacklist_token(refresh_token)
+    _clear_refresh_cookie(response)
+
     return {"message": "Successfully logged out"}
 
 
@@ -466,6 +510,7 @@ class ForceChangePasswordRequest(BaseModel):
 async def force_change_password(
     request: Request,
     body: ForceChangePasswordRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -504,9 +549,10 @@ async def force_change_password(
     access_token = create_access_token(data={"sub": current_user.id, "role": current_user.role.value})
     refresh_token = create_refresh_token(data={"sub": current_user.id})
 
+    _set_refresh_cookie(response, request, refresh_token)
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
+        "refresh_token": "",
         "token_type": "bearer",
         "message": "Password changed successfully",
     }
@@ -899,10 +945,14 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
     refresh_token = create_refresh_token(data={"sub": user.id})
 
-    # Redirect to frontend with tokens in URL fragment (hash)
-    redirect_url = f"{frontend_url}/sso/callback#access_token={access_token}&refresh_token={refresh_token}"
+    # The access token still rides the URL fragment so the SPA can pick it up
+    # from window.location.hash; the refresh token is set as an HttpOnly
+    # cookie instead of being echoed into the URL, so it never reaches
+    # localStorage. GHSA-gv65-p25x-qrqj.
+    redirect_url = f"{frontend_url}/sso/callback#access_token={access_token}"
     response = RedirectResponse(url=redirect_url, status_code=302)
     response.delete_cookie("saml_request_id")
+    _set_refresh_cookie(response, request, refresh_token)
     return response
 
 

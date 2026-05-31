@@ -75,6 +75,5 @@ Nineteen advisories reported by **HackAndPwn** at the Lockheed Martin Red Team t
 
 The following are known properties of the current design and are not treated as vulnerabilities unless the underlying threat model changes:
 
-- **JWT tokens stored in `localStorage`.** This is intentional in the current design. Reports specifically about token storage location will not be treated as vulnerabilities; reports about the underlying token handling (signing, expiry, refresh logic) are in scope.
 - **Default admin credentials (`admin` / `changeme`).** Operators are expected to change these on first login; this is documented in the README.
 - **Issues that require a privileged operator role to exploit** are generally lower priority, since users with admin or team-lead roles already have broad access by design. Privilege-escalation issues that allow a lower role to gain a higher one are in scope.
