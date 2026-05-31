@@ -122,6 +122,50 @@ A second wave of forty-three advisories reported by **HackAndPwn** at the Lockhe
 | GHSA-xg53-8wgq-w9cw | Rate limiter keys on client-spoofable forwarded-IP header |
 | GHSA-xqfh-2j9p-vmff | TOTP one-time codes accepted multiple times within their validity window |
 
+## Encryption keys — generation and rotation
+
+RedWire encrypts two classes of data at rest with separate Fernet keys:
+
+- **`VAULT_ENCRYPTION_KEY`** — vault item passwords, vault file blobs, spray-campaign credentials, infra-vault items.
+- **`TOTP_ENCRYPTION_KEY`** — user TOTP seeds.
+
+Both **must** be set in production. The backend fails closed at startup if either is missing or malformed (`GHSA-pg99-33rm-7wgq`). They are different keys from `JWT_SECRET` by design.
+
+### Generate fresh keys
+
+For a new deployment, or to replace the dev defaults baked into `docker-compose.yml`:
+
+```bash
+python3 scripts/generate_encryption_keys.py
+```
+
+Outputs two `KEY=VALUE` lines formatted for `.env`. Pipe to `>> .env` if you'd like, or paste manually.
+
+> **Back the keys up before encrypting anything with them.** Losing `VAULT_ENCRYPTION_KEY` means losing every vault credential; losing `TOTP_ENCRYPTION_KEY` means losing every TOTP seed. There is no recovery — store them in a password manager separately from the database backup.
+
+### Rotate existing keys
+
+To replace currently-active keys with fresh ones (periodic rotation, suspected exposure, post-incident):
+
+1. **Back up Postgres and MinIO.** The rotation rewrites data in place.
+2. Generate new keys: `python3 scripts/generate_encryption_keys.py`.
+3. Run the rotation script with both old and new keys in the environment:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml run --rm \
+     -e OLD_VAULT_ENCRYPTION_KEY=<currently-active-vault-key> \
+     -e OLD_TOTP_ENCRYPTION_KEY=<currently-active-totp-key> \
+     -e VAULT_ENCRYPTION_KEY=<new-vault-key> \
+     -e TOTP_ENCRYPTION_KEY=<new-totp-key> \
+     backend python3 rotate_encryption_keys.py --dry-run
+   ```
+
+   Drop `--dry-run` to actually re-key. The script is idempotent and resumable — it tries the new key first per row (already migrated → skip), then the old key (re-key), then treats as legacy plaintext. A crashed run is safe to re-run.
+
+4. Replace the keys in `.env` with the new values and restart the backend.
+
+The same script also handles the original `pg99` first-time migration from the legacy `JWT_SECRET`-derived fallback: omit `OLD_*_ENCRYPTION_KEY` and the script derives the old keys from `JWT_SECRET`. In that flow, **do not rotate `JWT_SECRET`** until the rotation completes — the old key is unrecoverable once `JWT_SECRET` changes.
+
 ## Out of scope
 
 The following are known properties of the current design and are not treated as vulnerabilities unless the underlying threat model changes:

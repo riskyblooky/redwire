@@ -2,19 +2,30 @@
 """
 rotate_encryption_keys.py — GHSA-pg99-33rm-7wgq
 
-Re-encrypts every at-rest secret from the legacy JWT_SECRET-derived Fernet keys
-onto dedicated VAULT_ENCRYPTION_KEY / TOTP_ENCRYPTION_KEY keys, so the auth
-signing secret is no longer sufficient to decrypt vault data or TOTP seeds.
+Re-encrypts every at-rest secret onto new dedicated Fernet keys. Supports
+two modes via env vars:
 
-Run order on an upgrade:
+  (a) PG99 MIGRATION (no OLD_*_ENCRYPTION_KEY set) — the original use case:
+      derive the OLD keys from JWT_SECRET (the legacy fallback formulas) and
+      re-key onto the new VAULT_ENCRYPTION_KEY / TOTP_ENCRYPTION_KEY.
+
+  (b) DEDICATED-TO-DEDICATED ROTATION (OLD_*_ENCRYPTION_KEY set) — for
+      operators who want to rotate already-set dedicated keys (e.g. periodic
+      rotation, suspected key exposure). Pass the CURRENT keys as
+      OLD_VAULT_ENCRYPTION_KEY / OLD_TOTP_ENCRYPTION_KEY and the new keys as
+      VAULT_ENCRYPTION_KEY / TOTP_ENCRYPTION_KEY. JWT_SECRET is not consulted.
+
+Run order on an upgrade or rotation:
   1. Back up Postgres AND MinIO.
-  2. Set VAULT_ENCRYPTION_KEY and TOTP_ENCRYPTION_KEY in the environment
-     (generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())").
-  3. Run this script (it reads the OLD keys by deriving them from JWT_SECRET,
-     which must still be the original value).
-  4. Deploy the fail-closed backend.
-  Do NOT rotate JWT_SECRET until this has completed — the old key is
-  unrecoverable once JWT_SECRET changes.
+  2. Generate new keys: python3 scripts/generate_encryption_keys.py
+  3. Set the new keys in the environment (VAULT_ENCRYPTION_KEY,
+     TOTP_ENCRYPTION_KEY). For mode (b), also set OLD_VAULT_ENCRYPTION_KEY
+     and OLD_TOTP_ENCRYPTION_KEY to the keys currently in use.
+  4. Run this script.
+  5. Deploy the fail-closed backend.
+
+For mode (a), do NOT rotate JWT_SECRET until this has completed — the old
+key is unrecoverable once JWT_SECRET changes.
 
 Usage (inside the backend container):
     docker compose exec backend python3 rotate_encryption_keys.py --dry-run
@@ -168,9 +179,21 @@ async def main():
                     help="report what would change without writing")
     args = ap.parse_args()
 
+    # OLD keys: explicit env override takes precedence (dedicated->dedicated
+    # rotation), else fall back to deriving from JWT_SECRET (pg99 first-time
+    # migration). At least one path must yield a key, or we can't read existing
+    # data.
+    explicit_old_vault = os.getenv("OLD_VAULT_ENCRYPTION_KEY", "").strip()
+    explicit_old_totp = os.getenv("OLD_TOTP_ENCRYPTION_KEY", "").strip()
     jwt_secret = os.getenv("JWT_SECRET", "")
-    if not jwt_secret:
-        sys.exit("JWT_SECRET is not set — cannot derive the legacy keys to read existing data.")
+    if not (explicit_old_vault or jwt_secret):
+        sys.exit(
+            "Neither OLD_VAULT_ENCRYPTION_KEY nor JWT_SECRET is set — "
+            "no way to read existing vault data.")
+    if not (explicit_old_totp or jwt_secret):
+        sys.exit(
+            "Neither OLD_TOTP_ENCRYPTION_KEY nor JWT_SECRET is set — "
+            "no way to read existing TOTP data.")
 
     new_vault = os.getenv("VAULT_ENCRYPTION_KEY", "").strip()
     new_totp = os.getenv("TOTP_ENCRYPTION_KEY", "").strip()
@@ -198,8 +221,16 @@ async def main():
     except Exception as e:
         sys.exit(f"Provided key is not a valid Fernet key: {e}")
 
-    old_vault_f = Fernet(_legacy_vault_key(jwt_secret))
-    old_totp_f = Fernet(_legacy_totp_key(jwt_secret))
+    try:
+        old_vault_f = Fernet(explicit_old_vault) if explicit_old_vault else Fernet(_legacy_vault_key(jwt_secret))
+        old_totp_f = Fernet(explicit_old_totp) if explicit_old_totp else Fernet(_legacy_totp_key(jwt_secret))
+    except Exception as e:
+        sys.exit(f"OLD_*_ENCRYPTION_KEY env var is not a valid Fernet key: {e}")
+
+    vault_src = "OLD_VAULT_ENCRYPTION_KEY" if explicit_old_vault else "derived from JWT_SECRET"
+    totp_src = "OLD_TOTP_ENCRYPTION_KEY"  if explicit_old_totp  else "derived from JWT_SECRET"
+    print(f"  vault old key: {vault_src}")
+    print(f"  totp  old key: {totp_src}")
 
     dsn = os.getenv("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql://")
     bucket = os.getenv("MINIO_BUCKET", "redwire-evidence")
