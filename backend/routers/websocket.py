@@ -89,7 +89,16 @@ async def websocket_endpoint(
         return
 
     user_id = payload.get("sub")
-    role = payload.get("role")
+
+    # Load the User row so role and is_active reflect the live DB state,
+    # not whatever the JWT was minted with. Without this, a freshly
+    # deactivated or demoted user keeps WS access until their access
+    # token naturally expires. GHSA-464j-7qr3-47pj.
+    user_row = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user_row or not user_row.is_active:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    role = user_row.role.value
 
     # 2. Resolve resource and capture its owning engagement_id (where applicable).
     from models.engagement import Engagement
@@ -248,7 +257,16 @@ async def yjs_websocket_endpoint(
         return
 
     user_id = payload.get("sub")
-    role = payload.get("role")
+
+    # Load the User row so role and is_active reflect the live DB state,
+    # not whatever the JWT was minted with. Without this, a demoted user
+    # keeps the is_admin = role in (ADMIN, ...) bypass below until their
+    # token expires. GHSA-464j-7qr3-47pj.
+    user_row = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user_row or not user_row.is_active:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    role = user_row.role.value
 
     # 2. Verify note exists
     from models.note import Note
