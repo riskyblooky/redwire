@@ -130,9 +130,23 @@ async def update_user(
         )
         
     update_data = user_update.model_dump(exclude={'group_ids'}, exclude_unset=True)
+    # Detect deactivation BEFORE we mutate the row, so we can force-revoke
+    # outstanding tokens after the commit. Role and group changes are
+    # already reflected on every REST and (post-fix) WebSocket call by the
+    # in-handler User row lookup, so we deliberately do not revoke on those
+    # — that would be a disruptive forced logout for a benign privilege
+    # adjustment. Deactivation does revoke so the access-token never
+    # becomes usable again if the admin later reactivates the account.
+    # GHSA-464j-7qr3-47pj.
+    deactivating = (
+        'is_active' in update_data
+        and update_data['is_active'] is False
+        and user.is_active is True
+    )
+
     for key, value in update_data.items():
         setattr(user, key, value)
-    
+
     if user_update.group_ids is not None:
         group_ids = user_update.group_ids
         if not group_ids:
@@ -140,9 +154,18 @@ async def update_user(
         else:
             group_result = await db.execute(select(Group).where(Group.id.in_(group_ids)))
             user.groups = group_result.scalars().all()
-        
+
     await db.commit()
     await db.refresh(user)
+
+    if deactivating:
+        from auth.jwt import revoke_all_user_tokens
+        if not revoke_all_user_tokens(user.id):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Session revocation failed. Please retry.",
+            )
+
     return user
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
