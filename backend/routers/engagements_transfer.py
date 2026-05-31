@@ -873,7 +873,10 @@ async def import_engagement(
                 try:
                     await storage_service.upload_file(file_bytes, new_storage_name, content_type=ev.get("mime_type"))
                 except Exception:
-                    new_storage_name = old_path  # fallback
+                    # GHSA-rcjp-27mp-v69m: never fall back to the bundle-supplied
+                    # path — that would persist an attacker-controlled storage
+                    # key pointing at another engagement's object. Skip the row.
+                    continue
 
             db.add(Evidence(
                 id=new_id(ev["id"]),
@@ -907,7 +910,12 @@ async def import_engagement(
                     try:
                         await storage_service.upload_file(file_bytes, new_vault_path, content_type=None)
                     except Exception:
-                        new_vault_path = old_path
+                        # GHSA-rcjp-27mp-v69m: drop the file reference rather
+                        # than persisting the attacker-supplied path. VaultItem
+                        # carries non-file payload too (username/password/note),
+                        # so the row is still useful — vault.py:322 already
+                        # handles file_path is None with a 404 on download.
+                        new_vault_path = None
 
             db.add(VaultItem(
                 id=new_id(vi["id"]),
