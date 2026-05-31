@@ -134,9 +134,36 @@ async def _api_delete(path: str) -> dict | None:
 mcp = Server("redwire")
 
 
+# GHSA-q4x9-5gmc-fxh5 (a2): write-capable MCP tools are gated by an admin
+# toggle (ai_write_tools_enabled, default false). When off, write tools are
+# stripped from the catalog the agent sees AND refused at call_tool time.
+_WRITE_TOOL_PREFIXES = ("create_", "update_", "delete_")
+
+
+def _is_write_tool(name: str) -> bool:
+    return any(name.startswith(p) for p in _WRITE_TOOL_PREFIXES)
+
+
+async def _write_tools_enabled() -> bool:
+    """Read the admin toggle. Fail closed on any error."""
+    try:
+        s = await _api_get("/ai/settings/status")
+        return bool(s.get("write_tools_enabled", False)) if isinstance(s, dict) else False
+    except Exception:
+        return False
+
+
 @mcp.list_tools()
 async def list_tools() -> list[Tool]:
-    """Return all available RedWire tools."""
+    """Return all available RedWire tools. Write tools are filtered out when
+    the admin toggle ai_write_tools_enabled is off (the default)."""
+    tools = _all_tools()
+    if await _write_tools_enabled():
+        return tools
+    return [t for t in tools if not _is_write_tool(t.name)]
+
+
+def _all_tools() -> list[Tool]:
     return [
         # ── Engagements ──────────────────────────────────────────────
         Tool(
@@ -821,22 +848,91 @@ async def list_tools() -> list[Tool]:
     ]
 
 
+# GHSA-q4x9-5gmc-fxh5: untrusted-data envelope mirrors the in-backend ai.py
+# loop so an MCP client agent sees the same sentinels and can apply the same
+# system-prompt instruction to ignore embedded commands.
+_TOOL_DATA_BEGIN = "<<<REDWIRE_UNTRUSTED_TOOL_DATA_BEGIN>>>"
+_TOOL_DATA_END = "<<<REDWIRE_UNTRUSTED_TOOL_DATA_END>>>"
+
+
+def _wrap_untrusted(payload: str) -> str:
+    safe = (payload or "").replace(_TOOL_DATA_BEGIN, "").replace(_TOOL_DATA_END, "")
+    return f"{_TOOL_DATA_BEGIN}\n{safe}\n{_TOOL_DATA_END}"
+
+
 @mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Dispatch tool calls to the appropriate handler."""
+    # GHSA-q4x9-5gmc-fxh5 (a2): refuse write tools when the admin toggle is
+    # off, even if a client somehow asks for one not in list_tools.
+    if _is_write_tool(name) and not await _write_tools_enabled():
+        return [TextContent(type="text", text=_wrap_untrusted(
+            f"Tool {name!r} requires ai_write_tools_enabled=true. "
+            "An administrator must enable this in the AI settings; doing so "
+            "while indirect prompt-injection mitigations are not in place can "
+            "be unsafe. Refusing."))]
     try:
         result = await _dispatch(name, arguments)
-        return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+        text = json.dumps(result, indent=2, default=str)
+        return [TextContent(type="text", text=_wrap_untrusted(text))]
     except httpx.HTTPStatusError as e:
-        error_body = e.response.text
-        return [TextContent(type="text", text=f"API Error {e.response.status_code}: {error_body}")]
+        # GHSA-q4x9-5gmc-fxh5: truncate the backend response body so a
+        # validation-error echo of attacker-supplied fields can't smuggle
+        # large instruction payloads through the error channel.
+        raw_body = e.response.text or ""
+        body = raw_body[:200] + ("…" if len(raw_body) > 200 else "")
+        text = f"API Error {e.response.status_code}: {body}"
+        return [TextContent(type="text", text=_wrap_untrusted(text))]
     except Exception as e:
         logger.exception(f"Tool {name} failed")
-        return [TextContent(type="text", text=f"Error: {str(e)}")]
+        return [TextContent(type="text", text=_wrap_untrusted(f"Error: {str(e)}"))]
+
+
+_UUID_ARG_KEYS = (
+    "engagement_id", "finding_id", "asset_id", "testcase_id", "note_id",
+    "vault_item_id", "cleanup_artifact_id", "template_id", "user_id",
+)
+
+
+_VAULT_SECRET_FIELDS = ("username", "password", "note")
+
+
+def _redact_vault_secrets(items):
+    """GHSA-q4x9-5gmc-fxh5 (b1): never hand plaintext credentials to the LLM.
+    Returns the input with `username` / `password` / `note` stripped from
+    each vault item dict (recursing into a list of items)."""
+    def _strip(it):
+        if not isinstance(it, dict):
+            return it
+        out = {k: v for k, v in it.items() if k not in _VAULT_SECRET_FIELDS}
+        out["_redacted"] = "secret fields hidden from AI assistant; view in UI"
+        return out
+    if isinstance(items, list):
+        return [_strip(i) for i in items]
+    return _strip(items)
+
+
+def _validate_uuid_args(args: dict[str, Any]) -> None:
+    """GHSA-q4x9-5gmc-fxh5: every *_id argument is interpolated into a backend
+    URL path. A model-supplied value containing '..' (or just a non-UUID path
+    fragment) would traverse to unintended routes. Validate as UUID before
+    any URL interpolation."""
+    import uuid as _uuid
+    for k in _UUID_ARG_KEYS:
+        v = args.get(k)
+        if v is None or v == "":
+            continue
+        if not isinstance(v, str):
+            raise ValueError(f"argument {k!r} must be a UUID string")
+        try:
+            _uuid.UUID(v)
+        except (ValueError, AttributeError):
+            raise ValueError(f"argument {k!r}={v!r} is not a valid UUID")
 
 
 async def _dispatch(name: str, args: dict[str, Any]) -> Any:
     """Route tool calls to RedWire API endpoints."""
+    _validate_uuid_args(args)
 
     # ── Engagements ──────────────────────────────────────────────────
     if name == "list_engagements":
@@ -922,7 +1018,11 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
 
     # ── Vault ────────────────────────────────────────────────────────
     elif name == "list_vault_items":
-        return await _api_get("/vault", params={"engagement_id": args["engagement_id"]})
+        items = await _api_get("/vault", params={"engagement_id": args["engagement_id"]})
+        # GHSA-q4x9-5gmc-fxh5 (b1): never return plaintext secrets to the
+        # LLM. An injected description that drove a vault read could otherwise
+        # exfiltrate credentials to the model context.
+        return _redact_vault_secrets(items)
 
     elif name == "create_vault_item":
         eid = args.pop("engagement_id")
@@ -1016,7 +1116,7 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         if isinstance(items, list):
             for it in items:
                 if str(it.get("id")) == args["item_id"]:
-                    return it
+                    return _redact_vault_secrets(it)   # GHSA-q4x9-5gmc-fxh5
         return {"error": f"vault item {args['item_id']} not found in engagement {args['engagement_id']}"}
 
     elif name == "delete_vault_item":

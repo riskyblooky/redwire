@@ -35,6 +35,7 @@ export function AiSettingsManagement() {
     const [editorEnabled, setEditorEnabled] = useState(false);
     const [chatbotEnabled, setChatbotEnabled] = useState(false);
     const [mcpEnabled, setMcpEnabled] = useState(false);
+    const [writeToolsEnabled, setWriteToolsEnabled] = useState(false);
 
 
 
@@ -45,6 +46,7 @@ export function AiSettingsManagement() {
             setEditorEnabled(settings.ai_enabled === 'true');
             setChatbotEnabled(settings.chatbot_enabled === 'true');
             setMcpEnabled(settings.mcp_enabled === 'true');
+            setWriteToolsEnabled(settings.ai_write_tools_enabled === 'true');
 
             if (!apiKey) {
                 setApiKey(settings.ai_api_key || '');
@@ -335,6 +337,51 @@ export function AiSettingsManagement() {
                                     toggleFeature('mcp_enabled', v, 'MCP Server');
                                 }}
                             />
+                        </div>
+                    </div>
+
+                    {/* MCP Write Tools (GHSA-q4x9-5gmc-fxh5) */}
+                    <div className="border-t border-slate-800 pt-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-1.5 rounded-lg bg-amber-500/10">
+                                    <AlertTriangle className="h-4 w-4 text-amber-400" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-white">MCP Write Tools</p>
+                                    <p className="text-xs text-slate-500">Allow the assistant to <span className="text-amber-300">create / update / delete</span> records via MCP</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Badge className={writeToolsEnabled
+                                    ? "bg-amber-500/10 text-amber-300 border-amber-500/20 text-[10px]"
+                                    : "bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px]"
+                                }>
+                                    {writeToolsEnabled ? 'On' : 'Off'}
+                                </Badge>
+                                <Switch
+                                    checked={writeToolsEnabled}
+                                    onCheckedChange={(v) => {
+                                        setWriteToolsEnabled(v);
+                                        toggleFeature('ai_write_tools_enabled', v, 'MCP Write Tools');
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
+                            <div className="flex items-start gap-2 text-xs text-red-200/90">
+                                <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+                                <div className="space-y-1">
+                                    <p className="font-medium text-red-200">Indirect prompt-injection risk</p>
+                                    <p>
+                                        A malicious string in a finding description, note, or asset name can drive the assistant
+                                        to call write tools <span className="font-medium">on behalf of any user who opens it</span>.
+                                        With this toggle on, writes execute autonomously. Per-call user confirmation is tracked separately
+                                        and is not yet shipped — keep this off in shared or multi-tenant deployments, and only enable
+                                        it on instances where every user authoring finding/note content is trusted.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </CardContent>

@@ -91,6 +91,7 @@ export interface AiSettings {
     ai_default_model: string;
     chatbot_enabled: string;
     mcp_enabled: string;
+    ai_write_tools_enabled: string;
     mcp_url: string;
 }
 
