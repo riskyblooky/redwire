@@ -9,7 +9,7 @@ from typing import List
 from database import get_db
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES
 from auth.permissions import has_global_permission, require_global_permission
-from models.user import User
+from models.user import User, UserRole
 from models.group import Group
 from models.engagement_role import EngagementRole
 from models.permission import (
@@ -296,31 +296,49 @@ async def update_group_permissions(
 ):
     """Update permissions for a group."""
     await require_global_permission(Permission.MANAGE_GROUPS, current_user, db)
-    
-    # Validate all permissions are global permissions
+
+    # GHSA-v2j8-mw59-w33v: least-privilege ceiling. A caller may only grant
+    # permissions they themselves hold. has_global_permission already returns
+    # True unconditionally for UserRole.ADMIN so admins are unaffected.
     for perm_value in perm_data.permissions:
         try:
             perm = Permission(perm_value)
-            if perm not in GLOBAL_PERMISSIONS:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Permission '{perm_value}' is not a global permission"
-                )
         except ValueError:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid permission: {perm_value}"
             )
-    
+        if perm not in GLOBAL_PERMISSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Permission '{perm_value}' is not a global permission"
+            )
+        if not await has_global_permission(current_user, perm, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Cannot grant permission '{perm_value}' which you do not hold"
+            )
+
     # Get group
     from sqlalchemy.orm import selectinload
-    
+
     query = select(Group).options(selectinload(Group.permission_set)).where(Group.id == group_id)
     result = await db.execute(query)
     group = result.scalar_one_or_none()
-    
+
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+
+    # GHSA-v2j8-mw59-w33v: mirror the delete-side guard. System / default
+    # groups (e.g. Default — every user) must not be mutated via this route
+    # by a non-admin manager.
+    if group.is_system or group.is_default:
+        is_admin = current_user.role == UserRole.ADMIN
+        if not is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot modify permissions on a system or default group"
+            )
     
     # Update or create permissions
     if group.permission_set:
