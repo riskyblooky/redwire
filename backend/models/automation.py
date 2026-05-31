@@ -15,6 +15,10 @@ class AutomationRule(Base):
     actions = Column(JSON, nullable=False, default=list)       # [{type, ...config}]
     is_enabled = Column(Boolean, default=True, nullable=False)
     created_by = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # GHSA-jvcx-44v2-gc9m: NULL means a global rule (fires for every
+    # engagement, gated at create time by VIEW_ALL_ENGAGEMENTS); a non-NULL
+    # value scopes the rule to a single engagement.
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     last_triggered_at = Column(DateTime, nullable=True)

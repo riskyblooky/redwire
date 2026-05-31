@@ -11,6 +11,7 @@ from models.automation import AutomationRule, TRIGGER_TYPES
 from models.permission import Permission
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
+from auth.rbac import check_engagement_permission
 from utils.ssrf import validate_outbound_url_sync, OutboundURLError
 
 router = APIRouter(prefix="/automations", tags=["automations"])
@@ -58,6 +59,10 @@ class AutomationCreate(BaseModel):
     conditions: List[ConditionSchema] = []
     actions: List[ActionSchema] = []
     is_enabled: bool = True
+    # GHSA-jvcx-44v2-gc9m: None = global rule (requires VIEW_ALL_ENGAGEMENTS);
+    # a UUID scopes the rule to a single engagement (requires engagement_view
+    # on that engagement). Enforced in the create handler.
+    engagement_id: Optional[str] = None
 
 
 class AutomationUpdate(BaseModel):
@@ -79,6 +84,7 @@ def _rule_to_dict(rule: AutomationRule) -> dict:
         "actions": rule.actions or [],
         "is_enabled": rule.is_enabled,
         "created_by": rule.created_by,
+        "engagement_id": rule.engagement_id,
         "created_at": rule.created_at.isoformat() if rule.created_at else None,
         "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
         "last_triggered_at": rule.last_triggered_at.isoformat() if rule.last_triggered_at else None,
@@ -133,6 +139,27 @@ async def create_rule(
     if not await has_global_permission(current_user, Permission.AUTOMATION_CREATE, db):
         raise HTTPException(403, "You don't have permission to create automations")
 
+    # GHSA-jvcx-44v2-gc9m: gate the rule's scope.
+    is_admin = current_user.role in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
+    if data.engagement_id is None:
+        # Global rule (fires on every engagement) — must be able to see all
+        # engagements. Admin role passes via has_global_permission's bypass.
+        if not await has_global_permission(current_user, Permission.VIEW_ALL_ENGAGEMENTS, db):
+            raise HTTPException(
+                403,
+                "Creating a global automation rule requires the 'view_all_engagements' permission.",
+            )
+    else:
+        # Engagement-scoped rule — caller must be able to see the target.
+        # Admin/lead roles bypass per the codebase-wide pattern.
+        if not is_admin and not await check_engagement_permission(
+            current_user.id, data.engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+        ):
+            raise HTTPException(
+                403,
+                "You do not have access to the engagement this rule would scope to.",
+            )
+
     if data.trigger_type not in TRIGGER_TYPES:
         raise HTTPException(400, f"Unknown trigger type: {data.trigger_type}")
 
@@ -144,6 +171,7 @@ async def create_rule(
         actions=[a.model_dump(exclude_none=True) for a in data.actions],
         is_enabled=data.is_enabled,
         created_by=current_user.id,
+        engagement_id=data.engagement_id,
     )
     db.add(rule)
     await db.commit()
