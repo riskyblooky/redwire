@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Boolean, Enum as SQLEnum, ForeignKey, JSON
+from sqlalchemy import Column, String, DateTime, Boolean, Enum as SQLEnum, ForeignKey, Integer, JSON
 from sqlalchemy.orm import relationship
 from database import Base
 from models.associations import EngagementAssignment
@@ -37,6 +37,10 @@ class User(Base):
     totp_secret = Column(String(256), nullable=True)  # Fernet-encrypted
     totp_enabled = Column(Boolean, default=False, nullable=False)
     totp_verified_at = Column(DateTime, nullable=True)
+    # Last TOTP time-step the user has successfully consumed. The verifier
+    # refuses any code whose matched step is <= this value, so a captured
+    # code cannot be replayed within its valid_window. GHSA-xqfh-2j9p-vmff.
+    totp_last_timestep = Column(Integer, nullable=True)
 
     # Authentication provider: 'local', 'ldap', or 'saml'
     auth_provider = Column(String(16), default="local", nullable=False, server_default="local")

@@ -282,12 +282,16 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
         # Decrypt and verify the TOTP code
         from auth.crypto import decrypt_totp_secret
         decrypted_secret = decrypt_totp_secret(user.totp_secret)
-        if not verify_totp_code(decrypted_secret, credentials.totp_code):
+        matched_step = verify_totp_code(
+            decrypted_secret, credentials.totp_code, user.totp_last_timestep
+        )
+        if matched_step is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid two-factor authentication code",
+                detail="Invalid or already-used two-factor authentication code",
             )
-    
+        user.totp_last_timestep = matched_step
+
     # Update last login
     user.last_login = datetime.utcnow()
     await db.commit()
@@ -363,11 +367,15 @@ async def verify_2fa(
     # Decrypt and verify the TOTP code
     from auth.crypto import decrypt_totp_secret
     decrypted_secret = decrypt_totp_secret(user.totp_secret)
-    if not verify_totp_code(decrypted_secret, body.code):
+    matched_step = verify_totp_code(
+        decrypted_secret, body.code, user.totp_last_timestep
+    )
+    if matched_step is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid two-factor authentication code",
+            detail="Invalid or already-used two-factor authentication code",
         )
+    user.totp_last_timestep = matched_step
 
     # Blacklist the pending token so it can't be reused. A silent failure
     # here would leave the 5-minute pending token live for replay; surface
@@ -674,12 +682,16 @@ async def totp_verify_setup(
     
     from auth.crypto import decrypt_totp_secret
     decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
-    if not verify_totp_code(decrypted_secret, body.code):
+    matched_step = verify_totp_code(
+        decrypted_secret, body.code, current_user.totp_last_timestep
+    )
+    if matched_step is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid TOTP code. Please try again.",
+            detail="Invalid or already-used TOTP code. Please try again.",
         )
-    
+    current_user.totp_last_timestep = matched_step
+
     current_user.totp_enabled = True
     current_user.totp_verified_at = datetime.utcnow()
     await db.commit()
@@ -735,12 +747,16 @@ async def totp_disable(
     # Decrypt and verify TOTP code
     from auth.crypto import decrypt_totp_secret
     decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
-    if not verify_totp_code(decrypted_secret, body.code):
+    matched_step = verify_totp_code(
+        decrypted_secret, body.code, current_user.totp_last_timestep
+    )
+    if matched_step is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid TOTP code",
+            detail="Invalid or already-used TOTP code",
         )
-    
+    current_user.totp_last_timestep = matched_step
+
     current_user.totp_secret = None
     current_user.totp_enabled = False
     current_user.totp_verified_at = None
