@@ -368,37 +368,98 @@ async def get_evidence_presigned_url(
     url = storage_service.get_presigned_url(evidence.filename)
     return {"url": url}
 
-# Helper dependency for query param authentication
+# Query-param authentication for the download endpoint. The frontend
+# attaches the JWT to ?token=... because <img src> and window.open
+# can't carry an Authorization header — and that puts the credential
+# into URL sinks (browser history, proxy logs, Referer).
+#
+# To make those sinks low-value, the dependency now ONLY accepts a
+# purpose-scoped, short-lived JWT minted by POST /evidence/{id}/
+# download-token: type == "evidence_dl", an "eid" claim that pins it
+# to a specific evidence row, and a 60-second lifetime. A captured
+# download URL therefore can't be replayed against any other endpoint
+# or against a different evidence row. GHSA-gjcp-hxgm-2vx7.
 async def get_current_user_from_token(
+    evidence_id: str,
     token: str = Query(...),
     db: AsyncSession = Depends(get_db)
 ) -> User:
     from auth.jwt import decode_token, is_token_blacklisted
-    from sqlalchemy.orm import selectinload
 
     # Check blacklist/revocation first
     if is_token_blacklisted(token):
         raise HTTPException(status_code=401, detail="Token has been revoked")
 
     payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
+    if not payload or payload.get("type") != "evidence_dl":
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    # Reject 2FA-pending tokens
-    if payload.get("2fa_pending"):
-        raise HTTPException(status_code=401, detail="Two-factor authentication required")
+    if payload.get("eid") != evidence_id:
+        raise HTTPException(status_code=401, detail="Token not issued for this evidence")
 
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
-        
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-        
+
     return user
+
+@router.post("/{evidence_id}/download-token")
+async def create_evidence_download_token(
+    evidence_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mint a short-lived (60s) download-only JWT for this evidence id.
+
+    Header-authenticated so the long-lived session token never leaves the
+    Authorization header. The returned JWT has type=evidence_dl and is
+    scoped to this evidence_id via the eid claim — get_current_user_from_token
+    on /download rejects anything else. GHSA-gjcp-hxgm-2vx7.
+    """
+    from datetime import timedelta
+    from auth.jwt import create_access_token
+
+    result = await db.execute(select(Evidence).where(Evidence.id == evidence_id))
+    evidence = result.scalar_one_or_none()
+    if not evidence:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidence not found",
+        )
+
+    # Mirror the same authorization the download route enforces — issuing
+    # a token to a caller who can't use the underlying file would be a
+    # capability leak.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        eng_id = await get_evidence_engagement_id(evidence, db)
+        if eng_id and not await check_engagement_permission(
+            current_user.id, eng_id, Permission.EVIDENCE_VIEW.value, db,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Insufficient permissions. You need the 'evidence_view' "
+                    "permission to download files from this engagement."
+                ),
+            )
+
+    dl_token = create_access_token(
+        data={
+            "sub": current_user.id,
+            "type": "evidence_dl",
+            "eid": evidence_id,
+        },
+        expires_delta=timedelta(seconds=60),
+    )
+    return {"token": dl_token}
+
 
 @router.get("/{evidence_id}/download")
 async def download_evidence(

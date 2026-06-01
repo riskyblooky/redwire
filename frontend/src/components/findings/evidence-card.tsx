@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { FileIcon, ExternalLink, Download, ImageIcon, FileText, FileCode, CheckCircle2, XCircle, Eye, X, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import { getEvidenceUrl } from '@/lib/hooks/use-evidence';
+import { getEvidenceDownloadUrl } from '@/lib/evidence-download';
 import { Evidence } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
@@ -27,15 +28,26 @@ export function EvidenceCard({ evidence, findingId }: EvidenceCardProps) {
     const [showPreview, setShowPreview] = useState(false);
     const [zoom, setZoom] = useState(1);
     const [rotation, setRotation] = useState(0);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-    const getImageUrl = () => {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-        return `${apiUrl}/evidence/${evidence.id}/download?token=${localStorage.getItem('access_token')}`;
-    };
+    // Mint a fresh dl-token whenever the preview is opened (60s lifetime).
+    useEffect(() => {
+        if (!showPreview || !isImage) { setPreviewUrl(null); return; }
+        let cancelled = false;
+        getEvidenceDownloadUrl(evidence.id).then((url) => {
+            if (!cancelled) setPreviewUrl(url);
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [showPreview, isImage, evidence.id]);
 
-    const handleDownload = (e: React.MouseEvent) => {
+    const handleDownload = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        window.open(getImageUrl(), '_blank');
+        try {
+            const url = await getEvidenceDownloadUrl(evidence.id);
+            window.open(url, '_blank');
+        } catch {
+            // surface via existing toast/error UI elsewhere
+        }
     };
 
     const searchParams = useSearchParams();
@@ -210,16 +222,18 @@ export function EvidenceCard({ evidence, findingId }: EvidenceCardProps) {
                         </div>
                         {/* Image */}
                         <div className="flex-1 overflow-auto flex items-center justify-center p-4 min-h-0">
-                            <img
-                                src={getImageUrl()}
-                                alt={evidence.original_filename}
-                                className="max-w-full max-h-full object-contain transition-transform duration-200"
-                                style={{
-                                    transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                                    transformOrigin: 'center center',
-                                }}
-                                draggable={false}
-                            />
+                            {previewUrl && (
+                                <img
+                                    src={previewUrl}
+                                    alt={evidence.original_filename}
+                                    className="max-w-full max-h-full object-contain transition-transform duration-200"
+                                    style={{
+                                        transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                                        transformOrigin: 'center center',
+                                    }}
+                                    draggable={false}
+                                />
+                            )}
                         </div>
                     </DialogContent>
                 </Dialog>
