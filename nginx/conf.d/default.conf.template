@@ -51,7 +51,11 @@ server {
         proxy_pass $frontend_url;
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Replace, don't append. $proxy_add_x_forwarded_for would let a
+        # client-sent X-Forwarded-For sit at the left of the chain that
+        # uvicorn's --proxy-headers middleware then trusts.
+        # GHSA-xg53-8wgq-w9cw.
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
@@ -64,7 +68,9 @@ server {
         proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Replace, don't append — see / location above for the rationale.
+        # GHSA-xg53-8wgq-w9cw.
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
 
         # Long timeouts for slow endpoints (local LLM inference, scanner imports).
