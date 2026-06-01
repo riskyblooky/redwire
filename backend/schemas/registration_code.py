@@ -10,7 +10,11 @@ class RegistrationCodeBase(BaseModel):
     is_active: bool = True
 
 class RegistrationCodeCreate(RegistrationCodeBase):
-    pass
+    # The server generates the code with a CSPRNG and ignores any client-
+    # supplied value -- Math.random()-derived codes are predictable from a
+    # single observation. Field stays Optional so older clients that still
+    # post {"code": ...} don't 422. GHSA-gc2q-wm5m-59xm.
+    code: Optional[str] = None
 
 class RegistrationCodeUpdate(BaseModel):
     label: Optional[str] = None
