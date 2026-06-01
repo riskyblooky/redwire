@@ -101,9 +101,15 @@ async def register(request: Request, user_data: UserCreate, db: AsyncSession = D
     
     from models.registration_code import RegistrationCode
     
-    # Check code validity
+    # Check code validity. .with_for_update() takes an exclusive PostgreSQL
+    # row lock so concurrent registrations for the same code serialize at
+    # the SELECT instead of all reading the same pre-increment used_count
+    # under their own MVCC snapshot — the TOCTOU at the heart of
+    # GHSA-552x-cmhc-wfg9. The lock is held until db.commit() below.
     reg_code = await db.execute(
-        select(RegistrationCode).where(RegistrationCode.code == user_data.registration_code)
+        select(RegistrationCode)
+        .where(RegistrationCode.code == user_data.registration_code)
+        .with_for_update()
     )
     reg_code = reg_code.scalar_one_or_none()
     
