@@ -24,6 +24,9 @@ router = APIRouter(
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
+from schemas.user import normalize_username
+
+
 class AdminUserCreate(BaseModel):
     username: str
     email: str
@@ -33,10 +36,11 @@ class AdminUserCreate(BaseModel):
 
     @field_validator("username")
     @classmethod
-    def username_no_spaces(cls, v: str) -> str:
-        if " " in v:
-            raise ValueError("Username cannot contain spaces")
-        return v.lower()
+    def _validate_username(cls, v: str) -> str:
+        # Shared with UserBase so admin-created and self-registered users
+        # go through the same NFKC + casefold + ASCII allowlist.
+        # GHSA-2hrj-c2v3-8p2v.
+        return normalize_username(v)
 
 
 @router.get("/config")

@@ -1,14 +1,48 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
+import re
+import unicodedata
 from models.user import UserRole
 from schemas.rbac import GroupResponse
+
+# Username allowlist: 2-50 chars from [a-z0-9._-], must start AND end with
+# an alphanumeric. Applied AFTER NFKC + casefold so fullwidth/Cyrillic/etc.
+# collapse to their canonical form (or fail) before the regex runs.
+# GHSA-2hrj-c2v3-8p2v.
+_USERNAME_ALLOWED = re.compile(r"^[a-z0-9][a-z0-9._-]{0,48}[a-z0-9]$")
+
+
+def normalize_username(v: str) -> str:
+    """NFKC-normalize + casefold + strict ASCII allowlist.
+
+    Closes the Unicode homograph spoof on registration (GHSA-2hrj-c2v3-8p2v).
+    Order matters: NFKC first collapses fullwidth / compatibility forms into
+    their canonical letters (so 'ａｄｍｉｎ' becomes 'admin' and gets caught by
+    case-fold dedup against an existing 'admin'); casefold then handles
+    cases the .lower() method misses (eszett, etc.). Anything not in the
+    ASCII allowlist after that — Cyrillic 'а' (U+0430), control chars,
+    invisibles, etc. — falls out at the regex.
+    """
+    v = unicodedata.normalize("NFKC", v).casefold()
+    if not _USERNAME_ALLOWED.fullmatch(v):
+        raise ValueError(
+            "Username must be 2-50 ASCII chars from [a-z0-9._-] and must "
+            "start and end with an alphanumeric (case-insensitive)."
+        )
+    return v
+
 
 class UserBase(BaseModel):
     username: str = Field(..., min_length=2, max_length=50)
     email: EmailStr
     full_name: Optional[str] = None
     profile_photo: Optional[str] = None
+
+    @field_validator("username")
+    @classmethod
+    def _validate_username(cls, v: str) -> str:
+        return normalize_username(v)
 
 class UserCreate(UserBase):
     # max_length caps unauth body allocation before the route runs (GHSA-8r3m-6x57-pg97).
