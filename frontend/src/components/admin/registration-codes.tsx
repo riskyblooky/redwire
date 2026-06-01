@@ -47,7 +47,8 @@ interface CodeUser {
 export function RegistrationCodeManagement() {
     const queryClient = useQueryClient();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
-    const [newCode, setNewCode] = useState('');
+    // The code value is now generated server-side with a CSPRNG
+    // (GHSA-gc2q-wm5m-59xm). The client only chooses label and max_uses.
     const [newLabel, setNewLabel] = useState('');
     const [maxUses, setMaxUses] = useState(1);
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -72,20 +73,19 @@ export function RegistrationCodeManagement() {
     });
 
     const createMutation = useMutation({
-        mutationFn: async (data: { code: string; label?: string; max_uses: number }) => {
+        mutationFn: async (data: { label?: string; max_uses: number }) => {
             const response = await api.post<RegistrationCode>('/admin/registration-codes', data);
             return response.data;
         },
-        onSuccess: () => {
+        onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['registration-codes'] });
             setIsCreateOpen(false);
-            setNewCode('');
             setNewLabel('');
             setMaxUses(1);
-            toast.success('Registration code created');
+            toast.success(`Registration code created: ${data.code}`);
         },
         onError: () => {
-            toast.error('Failed to create code. It might already exist.');
+            toast.error('Failed to create code.');
         }
     });
 
@@ -117,8 +117,7 @@ export function RegistrationCodeManagement() {
     });
 
     const handleCreate = () => {
-        if (!newCode) return;
-        createMutation.mutate({ code: newCode, label: newLabel || undefined, max_uses: maxUses });
+        createMutation.mutate({ label: newLabel || undefined, max_uses: maxUses });
     };
 
     const copyToClipboard = (text: string, id: string) => {
@@ -126,16 +125,6 @@ export function RegistrationCodeManagement() {
         setCopiedId(id);
         setTimeout(() => setCopiedId(null), 2000);
         toast.success('Code copied to clipboard');
-    };
-
-    const generateRandomCode = () => {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-        let result = '';
-        for (let i = 0; i < 12; i++) {
-            if (i > 0 && i % 4 === 0) result += '-';
-            result += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        setNewCode(result);
     };
 
     const getStatusInfo = (code: RegistrationCode) => {
@@ -153,7 +142,7 @@ export function RegistrationCodeManagement() {
                 </div>
                 <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                     <DialogTrigger asChild>
-                        <Button onClick={generateRandomCode}>
+                        <Button>
                             <Plus className="mr-2 h-4 w-4" />
                             Generate Code
                         </Button>
@@ -162,7 +151,7 @@ export function RegistrationCodeManagement() {
                         <DialogHeader>
                             <DialogTitle>Create Registration Code</DialogTitle>
                             <DialogDescription>
-                                Create a new code that users can use to sign up.
+                                A secure code will be generated on save.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-4 py-4">
@@ -175,20 +164,6 @@ export function RegistrationCodeManagement() {
                                     placeholder="e.g. Client onboarding, Beta testers..."
                                     className="col-span-3 bg-slate-800 border-slate-700"
                                 />
-                            </div>
-                            <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="code" className="text-right">Code</Label>
-                                <div className="col-span-3 flex gap-2">
-                                    <Input
-                                        id="code"
-                                        value={newCode}
-                                        onChange={(e) => setNewCode(e.target.value.toUpperCase())}
-                                        className="bg-slate-800 border-slate-700"
-                                    />
-                                    <Button size="icon" variant="outline" onClick={generateRandomCode} title="Regenerate">
-                                        <Loader2 className={`h-4 w-4 ${false ? 'animate-spin' : ''}`} />
-                                    </Button>
-                                </div>
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
                                 <Label htmlFor="maxUses" className="text-right">Max Uses</Label>
@@ -204,7 +179,7 @@ export function RegistrationCodeManagement() {
                         </div>
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-                            <Button onClick={handleCreate} disabled={createMutation.isPending || !newCode}>
+                            <Button onClick={handleCreate} disabled={createMutation.isPending}>
                                 {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 Create Code
                             </Button>

@@ -359,24 +359,50 @@ async def list_registration_codes(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(RegistrationCode).order_by(RegistrationCode.created_at.desc()))
     return result.scalars().all()
 
+def _generate_registration_code() -> str:
+    """CSPRNG-backed registration code, 12 chars from an unambiguous alphabet
+    formatted as XXXX-XXXX-XXXX (~60 bits of entropy). Replaces the
+    client-side Math.random() previously trusted at this endpoint.
+    GHSA-gc2q-wm5m-59xm.
+    """
+    import secrets
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L for legibility
+    chunks = ["".join(secrets.choice(alphabet) for _ in range(4)) for _ in range(3)]
+    return "-".join(chunks)
+
+
 @router.post("/registration-codes", response_model=RegistrationCodeResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
 async def create_registration_code(
     code_data: RegistrationCodeCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new registration code."""
-    # Check uniqueness
-    exists = await db.execute(select(RegistrationCode).where(RegistrationCode.code == code_data.code))
-    if exists.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Code already exists")
-        
+    """Create a new registration code.
+
+    The code value is generated server-side with a CSPRNG and any
+    client-supplied ``code`` in the request body is ignored. Math.random
+    on the JS side is xorshift128+, so a single observed code lets an
+    attacker invert the PRNG state and predict every subsequent code the
+    admin tab will generate. GHSA-gc2q-wm5m-59xm.
+    """
+    # Retry on the (~negligible) chance of a collision against an existing row.
+    for _ in range(8):
+        candidate = _generate_registration_code()
+        exists = await db.execute(select(RegistrationCode).where(RegistrationCode.code == candidate))
+        if exists.scalar_one_or_none() is None:
+            break
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not generate a unique registration code, please retry.",
+        )
+
     new_code = RegistrationCode(
-        code=code_data.code,
+        code=candidate,
         label=code_data.label,
         max_uses=code_data.max_uses,
         expires_at=code_data.expires_at,
-        created_by=current_user.id
+        created_by=current_user.id,
     )
     db.add(new_code)
     await db.commit()
