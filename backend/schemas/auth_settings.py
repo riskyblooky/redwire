@@ -1,5 +1,5 @@
 """Pydantic schemas for LDAP and SAML SSO configuration."""
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -67,11 +67,15 @@ class SmtpTestRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     """Public forgot-password request."""
-    email: str
+    # max_length caps unauth body allocation before the route runs
+    # (GHSA-8r3m-6x57-pg97). 254 is the RFC 5321 limit.
+    email: str = Field(..., max_length=254)
 
 
 class ResetPasswordRequest(BaseModel):
     """Public reset-password request."""
-    token: str
-    new_password: str
+    # token is a JWT (typically <1KB); 4096 is generous.
+    # GHSA-8r3m-6x57-pg97.
+    token: str = Field(..., max_length=4096)
+    new_password: str = Field(..., max_length=256)
 
