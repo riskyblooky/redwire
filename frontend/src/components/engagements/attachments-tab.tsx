@@ -41,6 +41,7 @@ import {
     Link2
 } from 'lucide-react';
 import { useEngagementEvidence, useUploadEvidence, useUpdateEvidence, useDeleteEvidence, getEvidenceUrl } from '@/lib/hooks/use-evidence';
+import { getEvidenceDownloadUrl } from '@/lib/evidence-download';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -211,11 +212,14 @@ const AttachmentRow = ({ item, engagementId, router, getFileIcon, formatSize, ha
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="bg-slate-900 border-slate-800 text-white" align="end">
-                        <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={(e) => {
+                        <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={async (e) => {
                             e.stopPropagation();
-                            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-                            const url = `${apiUrl}/evidence/${item.id}/download?token=${localStorage.getItem('access_token')}`;
-                            window.open(url, '_blank');
+                            try {
+                                const url = await getEvidenceDownloadUrl(item.id);
+                                window.open(url, '_blank');
+                            } catch {
+                                // surface via existing toast/error UI elsewhere
+                            }
                         }}>
                             <Download className="h-4 w-4 mr-2" />
                             Download
