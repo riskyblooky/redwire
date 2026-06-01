@@ -11,8 +11,10 @@ class UserBase(BaseModel):
     profile_photo: Optional[str] = None
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
-    registration_code: Optional[str] = None
+    # max_length caps unauth body allocation before the route runs (GHSA-8r3m-6x57-pg97).
+    # bcrypt truncates at 72 bytes, but 256 leaves headroom for future hashes (argon2 etc.).
+    password: str = Field(..., min_length=8, max_length=256)
+    registration_code: Optional[str] = Field(default=None, max_length=64)
 
 ALLOWED_THEMES = {"purple", "crimson", "blue", "emerald", "amber", "custom"}
 ALLOWED_PALETTES = {"aurora", "operator", "half-dark", "light"}
@@ -73,10 +75,10 @@ class UserSummary(BaseModel):
         from_attributes = True
 
 class UserLogin(BaseModel):
-
-    username: str
-    password: str
-    totp_code: Optional[str] = None
+    # max_length caps unauth body allocation before the route runs (GHSA-8r3m-6x57-pg97).
+    username: str = Field(..., max_length=50)
+    password: str = Field(..., max_length=256)
+    totp_code: Optional[str] = Field(default=None, min_length=6, max_length=6)
 
 class Token(BaseModel):
     access_token: str
@@ -85,7 +87,10 @@ class Token(BaseModel):
     requires_2fa: bool = False
 
 class TokenRefresh(BaseModel):
-    refresh_token: str
+    # /auth/refresh has no @limiter decorator and the value is fed through
+    # decode_token -> jwt.decode -- O(n) over attacker-controlled data.
+    # max_length caps the per-request allocation. GHSA-8r3m-6x57-pg97.
+    refresh_token: str = Field(..., max_length=4096)
 
 class TotpSetupResponse(BaseModel):
     secret: str
@@ -99,5 +104,6 @@ class TotpVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=6)
 
 class TotpDisableRequest(BaseModel):
-    password: str
+    # max_length caps body allocation before the route runs (GHSA-8r3m-6x57-pg97).
+    password: str = Field(..., max_length=256)
     code: str = Field(..., min_length=6, max_length=6)
