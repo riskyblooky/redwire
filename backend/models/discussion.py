@@ -60,7 +60,11 @@ class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False)
+    # GHSA-9h56-fv6g-5x98: nullable + ON DELETE SET NULL so audit rows survive
+    # the parent engagement's deletion (with engagement_id then NULL). The
+    # resource_id / resource_name / user_id / details fields keep the
+    # forensic trail intact even after the parent row is gone.
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="SET NULL"), nullable=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     action = Column(String(100), nullable=False) # e.g., "created", "updated", "deleted", "resolved"
     resource_type = Column(String(50), nullable=False)  # Changed from Enum to String
@@ -68,7 +72,7 @@ class ActivityLog(Base):
     resource_name = Column(String(255), nullable=True) # Friendly name of the resource
     details = Column(Text, nullable=True) # JSON or descriptive string of changes
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
+
     # Relationships
     engagement = relationship("Engagement", back_populates="activity_logs", foreign_keys="ActivityLog.engagement_id")
     user = relationship("User", foreign_keys="ActivityLog.user_id")
