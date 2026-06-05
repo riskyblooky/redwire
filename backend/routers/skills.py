@@ -297,9 +297,13 @@ async def get_user_skills(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Allow self-view without SKILL_VIEW permission; otherwise require it.
+    # Self-view is always allowed. Cross-user reads expose private growth
+    # targets, so they're limited to roles that already see them via
+    # /skills/focus-fit (admins and team leads). The global SKILL_VIEW
+    # permission is seeded into the Default group and would not gate this.
     if user_id != current_user.id:
-        await require_global_permission(Permission.SKILL_VIEW, current_user, db)
+        if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+            raise HTTPException(status_code=403, detail="Cannot view another user's skill profile")
     result = await db.execute(
         select(UserSkill)
         .options(selectinload(UserSkill.skill).selectinload(Skill.category))
