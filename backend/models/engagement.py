@@ -48,7 +48,11 @@ class Engagement(Base, AuditMixin):
     testcases = relationship("TestCase", back_populates="engagement", cascade="all, delete-orphan")
     evidence = relationship("Evidence", back_populates="engagement", cascade="all, delete-orphan")
     threads = relationship("Thread", back_populates="engagement", cascade="all, delete-orphan")
-    activity_logs = relationship("ActivityLog", back_populates="engagement", cascade="all, delete-orphan")
+    # GHSA-9h56-fv6g-5x98: deliberately NOT cascade-deleted. Activity log rows
+    # must outlive their parent engagement so an "engagement deleted by user X"
+    # tombstone (and every prior action under that engagement) survives the
+    # delete commit. FK is ON DELETE SET NULL — see ActivityLog.engagement_id.
+    activity_logs = relationship("ActivityLog", back_populates="engagement", passive_deletes=True)
     vault_items = relationship("VaultItem", back_populates="engagement", cascade="all, delete-orphan")
     cleanup_artifacts = relationship("CleanupArtifact", back_populates="engagement", cascade="all, delete-orphan")
     phases = relationship("EngagementPhase", backref="engagement", cascade="all, delete-orphan", order_by="EngagementPhase.sort_order")
