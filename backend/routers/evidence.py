@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Form, Query, Uplo
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
+import logging
 from database import get_db
 from models.evidence import Evidence
 from models.user import User, UserRole
@@ -12,11 +13,13 @@ from models.permission import Permission
 from utils.storage import storage_service
 from utils.collaboration import create_activity_log
 
-from models.finding import Finding
+from models.finding import Finding, FindingStatus
 from models.testcase import TestCase
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import io
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
 
@@ -31,6 +34,31 @@ async def get_evidence_engagement_id(evidence: Evidence, db: AsyncSession) -> Op
         result = await db.execute(select(TestCase.engagement_id).where(TestCase.id == evidence.testcase_id))
         return result.scalar_one_or_none()
     return None
+
+
+async def _assert_evidence_mutable(
+    db: AsyncSession, evidence: Evidence, current_user: User, action: str
+) -> None:
+    """Chain-of-custody guard: evidence on a VERIFIED finding is immutable.
+
+    Applies to byte-level mutations (delete / replace-file / strip-exif) and binds
+    every caller including admins, since the integrity property belongs to the
+    data, not the actor.
+    """
+    if not evidence.finding_id:
+        return
+    result = await db.execute(
+        select(Finding.status).where(Finding.id == evidence.finding_id)
+    )
+    if result.scalar_one_or_none() == FindingStatus.VERIFIED:
+        logger.warning(
+            "Blocked %s on evidence %s by user %s: parent finding %s is VERIFIED",
+            action, evidence.id, current_user.id, evidence.finding_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Evidence is locked: parent finding is VERIFIED",
+        )
 
 @router.get("/{evidence_id}", response_model=EvidenceResponse)
 async def get_evidence(
@@ -225,7 +253,9 @@ async def delete_evidence(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions to delete this evidence."
             )
-    
+
+    await _assert_evidence_mutable(db, evidence, current_user, "delete")
+
     # Capture details before deletion
     engagement_id = evidence.engagement_id or "global"
     evidence_id = evidence.id
@@ -299,6 +329,8 @@ async def replace_evidence_file(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions to modify this evidence."
             )
+
+    await _assert_evidence_mutable(db, evidence, current_user, "replace-file")
 
     # Read file content and overwrite in storage using the same key
     file_content = await file.read()
@@ -637,6 +669,8 @@ async def strip_evidence_exif(
                 raise HTTPException(status_code=403, detail=f"Insufficient permissions ({perm})")
         else:
             raise HTTPException(status_code=403, detail="Access denied")
+
+    await _assert_evidence_mutable(db, evidence, current_user, "strip-exif")
 
     if not evidence.mime_type or not evidence.mime_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="Not an image file")
