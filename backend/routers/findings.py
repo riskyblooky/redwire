@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import uuid
 import os
 import json
+import logging
 from database import get_db
 
 from models.user import User
@@ -25,6 +26,8 @@ from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
 from models.version_history import VersionHistory
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/findings", tags=["findings"])
 
@@ -525,6 +528,26 @@ async def update_finding(
     
     # Update fields
     update_data = finding_data.model_dump(exclude_unset=True, exclude={"asset_ids", "asset_port_ids", "tag_ids", "attack_technique_ids"})
+
+    # Two-person rule: a finding's author cannot self-attest the terminal-state
+    # transitions that downstream reports + dashboards treat as reviewed work.
+    # Admins and team-leads still can, matching the existing global bypass; a
+    # future configurable layer (see todo "Configurable chain-of-custody admin
+    # tab") will replace the role check with an engagement-scoped permission.
+    if (
+        "status" in update_data
+        and is_owner
+        and not is_admin
+        and update_data["status"] in (FindingStatus.VERIFIED, FindingStatus.REMEDIATED, FindingStatus.CLOSED)
+    ):
+        logger.warning(
+            "Blocked self-attestation on finding %s by author %s: status→%s",
+            finding.id, current_user.id, update_data["status"],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Finding authors cannot set their own finding to VERIFIED/REMEDIATED/CLOSED. A separate reviewer must approve the status change.",
+        )
 
     # Capture old status before applying updates (for notification)
     old_status = finding.status.value if finding.status else None
