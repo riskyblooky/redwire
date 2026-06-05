@@ -39,6 +39,11 @@ class EngagementBase(BaseModel):
     objectives: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    # Portion marking
+    marking_profile_id: Optional[str] = None
+    default_classification_level: Optional[str] = Field(None, max_length=20)
+    default_classification_suffix: Optional[str] = Field(None, max_length=120)
+    ceiling_classification_level: Optional[str] = Field(None, max_length=20)
 
 class EngagementCreate(EngagementBase):
     assigned_user_ids: Optional[List[str]] = []
@@ -55,6 +60,10 @@ class EngagementUpdate(BaseModel):
     objectives: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    marking_profile_id: Optional[str] = None
+    default_classification_level: Optional[str] = Field(None, max_length=20)
+    default_classification_suffix: Optional[str] = Field(None, max_length=120)
+    ceiling_classification_level: Optional[str] = Field(None, max_length=20)
     assigned_user_ids: Optional[List[str]] = None
     assignments: Optional[List[EngagementAssignmentCreate]] = None
 

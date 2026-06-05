@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, Fragment } from 'react';
 import {
     DndContext,
     closestCenter,
@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
     Dialog,
     DialogContent,
@@ -43,7 +44,8 @@ import {
     FileText, Download, Loader2, AlertTriangle, CheckCircle, Info,
     Plus, GripVertical, Trash2, Save, Import, Upload, Search,
     BookOpen, ClipboardList, Type, ChevronDown, LayoutTemplate, Palette, Sparkles, Package, Network,
-    Eye, Paperclip, ExternalLink, X, Archive
+    Maximize2, Minimize2,
+    Eye, Paperclip, ExternalLink, X, Archive, ShieldAlert
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGenerateReport, useSaveReportToEngagement, downloadBlob, type GenerateReportResult } from '@/lib/hooks/use-reports';
@@ -59,6 +61,9 @@ import {
 } from '@/lib/hooks/use-report-layouts';
 import { useReportLayoutTemplates, useCreateReportLayoutTemplate } from '@/lib/hooks/use-report-layout-templates';
 import { useReportThemes } from '@/lib/hooks/use-report-themes';
+import { useMarkingProfiles } from '@/lib/hooks/use-marking-profiles';
+import { useEngagement } from '@/lib/hooks/use-engagements';
+import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { SectionType } from '@/lib/types';
 import { toast } from 'sonner';
@@ -81,10 +86,98 @@ interface LocalSection {
     section_type: SectionType;
     title: string;
     content: string;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
+    page_break_before?: boolean;
 }
 
 function newLocalId() {
     return 'local_' + Math.random().toString(36).slice(2, 10);
+}
+
+// Shared type → label / color / icon meta for section cards.
+function sectionTypeMeta(t: SectionType) {
+    if (t === SectionType.TEXT) return { label: 'Text', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20', icon: <Type className="h-3.5 w-3.5" /> };
+    if (t === SectionType.FINDINGS) return { label: 'Findings', color: 'bg-amber-500/10 text-amber-400 border-amber-500/20', icon: <Search className="h-3.5 w-3.5" /> };
+    if (t === SectionType.TESTCASES) return { label: 'Test Cases', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', icon: <ClipboardList className="h-3.5 w-3.5" /> };
+    return { label: 'Cleanup', color: 'bg-lime-500/10 text-lime-400 border-lime-500/20', icon: <Sparkles className="h-3.5 w-3.5" /> };
+}
+
+// ── Hover-to-insert zone between expanded section cards ──
+function InsertZone({ at, onAdd, disabled }: {
+    at: number;
+    onAdd: (type: SectionType, at: number) => void;
+    disabled?: boolean;
+}) {
+    if (disabled) return <div className="h-3" />;
+    return (
+        <div className="group relative h-6">
+            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-indigo-500/0 group-hover:bg-indigo-500/40 transition-colors" />
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <button
+                        className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-indigo-500/20 hover:text-indigo-300 hover:border-indigo-500/40 flex items-center justify-center transition-all"
+                        title="Add a section here"
+                    >
+                        <Plus className="h-3 w-3" />
+                    </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="bg-slate-900 border-slate-800 text-slate-300">
+                    <DropdownMenuItem onClick={() => onAdd(SectionType.TEXT, at)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><Type className="h-4 w-4 text-blue-400" /> Text Section</DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-slate-800" />
+                    <DropdownMenuItem onClick={() => onAdd(SectionType.FINDINGS, at)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><Search className="h-4 w-4 text-amber-400" /> Findings Placeholder</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onAdd(SectionType.TESTCASES, at)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><ClipboardList className="h-4 w-4 text-emerald-400" /> Test Cases Placeholder</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onAdd(SectionType.CLEANUP_ARTIFACTS, at)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><Sparkles className="h-4 w-4 text-lime-400" /> Cleanup Artifacts Placeholder</DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+        </div>
+    );
+}
+
+// ── Expanded (full-editor) draggable section card ──
+function ExpandedSectionCard({
+    section, onDelete, disabled, collapsed, onToggleCollapse, children,
+}: {
+    section: LocalSection;
+    onDelete: () => void;
+    disabled?: boolean;
+    collapsed?: boolean;
+    onToggleCollapse: () => void;
+    children: React.ReactNode;
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.localId });
+    const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+    const meta = sectionTypeMeta(section.section_type);
+    return (
+        <div ref={setNodeRef} style={style} className="rounded-lg border border-slate-800 bg-slate-950/30">
+            <div className={cn('flex items-center gap-2 p-3', !collapsed && 'border-b border-slate-800/60')}>
+                <button
+                    {...attributes}
+                    {...listeners}
+                    className="p-1 rounded hover:bg-slate-700/50 cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-300 touch-none"
+                >
+                    <GripVertical className="h-4 w-4" />
+                </button>
+                <button
+                    onClick={onToggleCollapse}
+                    className="p-1 rounded hover:bg-slate-700/50 text-slate-400 hover:text-white"
+                    title={collapsed ? 'Expand section' : 'Collapse section'}
+                >
+                    <ChevronDown className={cn('h-4 w-4 transition-transform', collapsed && '-rotate-90')} />
+                </button>
+                <p className="flex-1 min-w-0 text-sm font-medium text-white truncate cursor-pointer" onClick={onToggleCollapse}>{section.title || 'Untitled Section'}</p>
+                <Badge variant="outline" className={cn('text-[10px] gap-1 shrink-0', meta.color)}>{meta.icon} {meta.label}</Badge>
+                <Button
+                    variant="ghost" size="icon"
+                    className="h-7 w-7 text-slate-500 hover:text-red-400 shrink-0"
+                    onClick={onDelete} disabled={disabled}
+                >
+                    <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+            </div>
+            {!collapsed && <div className="p-4 space-y-4">{children}</div>}
+        </div>
+    );
 }
 
 // ── Sortable Section Card ──
@@ -175,7 +268,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     const { activeUsers } = useCollaboration({ resourceType: 'report', resourceId: engagementId });
 
     // ── Report generation ──
-    const [format, setFormat] = useState<'pdf' | 'markdown' | 'json_zip' | 'json_layout_zip'>('pdf');
+    const [format, setFormat] = useState<'pdf' | 'markdown' | 'html' | 'json_zip' | 'json_layout_zip'>('pdf');
     const [isGenerating, setIsGenerating] = useState(false);
     const [lastGenerated, setLastGenerated] = useState<string | null>(null);
     const [includeEvidence, setIncludeEvidence] = useState(true);
@@ -203,6 +296,13 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     const { data: themes = [] } = useReportThemes();
     const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
 
+    // ── Marking Profiles ──
+    const { data: markingProfiles = [] } = useMarkingProfiles();
+    const { data: engagement } = useEngagement(engagementId);
+    const engagementHasMarking = !!engagement?.marking_profile_id;
+    // null = inherit (engagement's profile, else default). '_off' = no marking.
+    const [selectedMarkingProfileId, setSelectedMarkingProfileId] = useState<string | null>(null);
+
     // Auto-select default theme
     useEffect(() => {
         if (themes.length > 0 && !selectedThemeId) {
@@ -216,6 +316,8 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     const [layoutName, setLayoutName] = useState('');
     const [sections, setSections] = useState<LocalSection[]>([]);
     const [selectedSectionIdx, setSelectedSectionIdx] = useState<number | null>(null);
+    const [expandedBuilder, setExpandedBuilder] = useState(false);
+    const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(new Set());
     const [isDirty, setIsDirty] = useState(false);
 
     // ── Temporary item selection (not saved in layout) ──
@@ -265,6 +367,9 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                     section_type: s.section_type,
                     title: s.title,
                     content: s.content,
+                    classification_level: s.classification_level ?? null,
+                    classification_suffix: s.classification_suffix ?? null,
+                    page_break_before: s.page_break_before ?? false,
                 }))
         );
         setSelectedSectionIdx(null);
@@ -303,7 +408,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
         }
     };
 
-    const addSection = (sectionType: SectionType) => {
+    const addSection = (sectionType: SectionType, atIndex?: number) => {
         const title = sectionType === SectionType.TEXT
             ? 'New Section'
             : sectionType === SectionType.FINDINGS
@@ -317,8 +422,13 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             title,
             content: '',
         };
-        setSections(prev => [...prev, newSection]);
-        setSelectedSectionIdx(sections.length);
+        setSections(prev => {
+            if (atIndex == null || atIndex >= prev.length) return [...prev, newSection];
+            const next = [...prev];
+            next.splice(Math.max(0, atIndex), 0, newSection);
+            return next;
+        });
+        setSelectedSectionIdx(atIndex == null ? sections.length : Math.min(atIndex, sections.length));
         setIsDirty(true);
     };
 
@@ -346,6 +456,152 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
         setIsDirty(true);
     };
 
+    const updateSectionClassification = (idx: number, level: string | null, suffix: string | null) => {
+        setSections(prev => prev.map((s, i) => i === idx ? { ...s, classification_level: level, classification_suffix: suffix } : s));
+        setIsDirty(true);
+    };
+
+    const updateSectionPageBreak = (idx: number, value: boolean) => {
+        setSections(prev => prev.map((s, i) => i === idx ? { ...s, page_break_before: value } : s));
+        setIsDirty(true);
+    };
+
+    // Full editor for a single section — used by both the collapsed master-detail
+    // panel and the expanded all-sections view.
+    const renderSectionFields = (section: LocalSection, idx: number) => (
+        <>
+            <div className="space-y-1.5">
+                <Label className="text-xs text-slate-400 uppercase tracking-wide">Section Title</Label>
+                <Input
+                    value={section.title}
+                    onChange={e => updateSectionTitle(idx, e.target.value)}
+                    className="bg-slate-950/50 border-slate-800 text-white h-9"
+                    disabled={!canGenerateReport}
+                />
+            </div>
+
+            <EntityClassificationField
+                engagementId={engagementId}
+                level={section.classification_level || null}
+                suffix={section.classification_suffix || null}
+                inheritLabel="Inherit (engagement default)"
+                label="Classification Marking"
+                onChange={(lvl, suf) => updateSectionClassification(idx, lvl, suf)}
+            />
+            <p className="text-xs text-slate-500 -mt-1">
+                Marks the <span className="text-slate-400">section title</span> only.
+                {section.section_type === SectionType.TEXT
+                    ? ' Body paragraphs are not auto-marked — prefix each portion in the content yourself (e.g. “(U) …”), per best practice that each paragraph is marked individually.'
+                    : ' Findings / test cases / cleanup entries are marked per the profile’s table-placement rules.'}
+            </p>
+
+            <div className="flex items-center gap-3">
+                <Switch
+                    checked={!!section.page_break_before}
+                    onCheckedChange={(v) => updateSectionPageBreak(idx, v)}
+                    disabled={!canGenerateReport}
+                />
+                <Label className="text-xs text-slate-400 uppercase tracking-wide">Start on a new page</Label>
+            </div>
+
+            {section.section_type === SectionType.TEXT ? (
+                <div className="space-y-1.5">
+                    <Label className="text-xs text-slate-400 uppercase tracking-wide">Content</Label>
+                    <TiptapEditor
+                        value={section.content}
+                        onChange={val => updateSectionContent(idx, val)}
+                        placeholder="Write your section content here..."
+                        minHeight="250px"
+                        disabled={!canGenerateReport}
+                    />
+                </div>
+            ) : (() => {
+                const isFindings = section.section_type === SectionType.FINDINGS;
+                const isTestcases = section.section_type === SectionType.TESTCASES;
+                const items = isFindings ? allFindings : isTestcases ? allTestCases : allCleanup;
+                const selectedIds = isFindings ? selectedFindingIds : isTestcases ? selectedTestcaseIds : selectedCleanupIds;
+                const setSelectedIds = isFindings ? setSelectedFindingIds : isTestcases ? setSelectedTestcaseIds : setSelectedCleanupIds;
+                const allSelected = selectedIds === null;
+                const selectedCount = allSelected ? items.length : selectedIds.size;
+                const colorClasses = isFindings
+                    ? { icon: 'text-amber-400/70', badge: 'border-amber-500/30 text-amber-400' }
+                    : isTestcases
+                        ? { icon: 'text-emerald-400/70', badge: 'border-emerald-500/30 text-emerald-400' }
+                        : { icon: 'text-lime-400/70', badge: 'border-lime-500/30 text-lime-400' };
+                const Icon = isFindings ? Search : isTestcases ? ClipboardList : Sparkles;
+                const label = isFindings ? 'Findings' : isTestcases ? 'Test Cases' : 'Cleanup Artifacts';
+
+                const toggleItem = (id: string) => {
+                    if (allSelected) {
+                        const newSet = new Set(items.map((i: any) => i.id));
+                        newSet.delete(id);
+                        setSelectedIds(newSet);
+                    } else {
+                        const newSet = new Set(selectedIds);
+                        if (newSet.has(id)) newSet.delete(id);
+                        else newSet.add(id);
+                        if (newSet.size === items.length) setSelectedIds(null);
+                        else setSelectedIds(newSet);
+                    }
+                };
+                const toggleAll = () => { if (allSelected) setSelectedIds(new Set()); else setSelectedIds(null); };
+                const isItemSelected = (id: string) => allSelected || selectedIds.has(id);
+                const severityBadge = (severity: string) => {
+                    const colors: Record<string, string> = {
+                        CRITICAL: 'bg-red-500/20 text-red-400', HIGH: 'bg-orange-500/20 text-orange-400',
+                        MEDIUM: 'bg-yellow-500/20 text-yellow-400', LOW: 'bg-blue-500/20 text-blue-400', INFO: 'bg-slate-500/20 text-slate-400',
+                    };
+                    return <Badge className={cn('text-[9px] h-4 px-1.5 border-none', colors[severity] || 'bg-slate-500/20 text-slate-400')}>{severity}</Badge>;
+                };
+                const statusBadge = (status: string) => {
+                    const colors: Record<string, string> = {
+                        PENDING: 'bg-amber-500/20 text-amber-400', CLEANED: 'bg-emerald-500/20 text-emerald-400',
+                        PARTIALLY_CLEANED: 'bg-yellow-500/20 text-yellow-400', NOT_APPLICABLE: 'bg-slate-500/20 text-slate-400',
+                    };
+                    return <Badge className={cn('text-[9px] h-4 px-1.5 border-none', colors[status] || 'bg-slate-500/20 text-slate-400')}>{status.replace(/_/g, ' ')}</Badge>;
+                };
+                return (
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/50 overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800 bg-slate-900/80">
+                            <div className="flex items-center gap-2">
+                                <Icon className={cn('h-4 w-4', colorClasses.icon)} />
+                                <span className="text-xs font-semibold text-slate-300">{label} to Include</span>
+                                <Badge variant="outline" className={cn('text-[10px] h-5 px-1.5', colorClasses.badge)}>{selectedCount}/{items.length}</Badge>
+                            </div>
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-slate-400 hover:text-white" onClick={toggleAll}>
+                                {allSelected ? 'Deselect All' : 'Select All'}
+                            </Button>
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto">
+                            {items.length === 0 ? (
+                                <div className="p-6 text-center"><p className="text-xs text-slate-500">No {label.toLowerCase()} found for this engagement</p></div>
+                            ) : (
+                                <div className="divide-y divide-slate-800/50">
+                                    {items.map((item: any) => (
+                                        <label key={item.id} className="flex items-center gap-3 px-4 py-2 hover:bg-slate-800/40 cursor-pointer transition-colors">
+                                            <Checkbox
+                                                checked={isItemSelected(item.id)}
+                                                onCheckedChange={() => toggleItem(item.id)}
+                                                className="border-slate-600 data-[state=checked]:bg-primary data-[state=checked]:border-indigo-600"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs font-medium text-white truncate">{item.title}</p>
+                                                {isFindings && item.category && (<p className="text-[10px] text-slate-500 truncate">{item.category}</p>)}
+                                            </div>
+                                            {isFindings && item.severity && severityBadge(item.severity)}
+                                            {!isFindings && !isTestcases && item.status && statusBadge(item.status)}
+                                            {isTestcases && item.category && (<span className="text-[10px] text-slate-500 shrink-0">{item.category}</span>)}
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
+        </>
+    );
+
     const handleSave = async () => {
         if (!layoutName.trim()) {
             toast.error('Please enter a layout name');
@@ -356,6 +612,9 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             title: s.title,
             content: s.content,
             sort_order: i,
+            classification_level: s.classification_level || null,
+            classification_suffix: s.classification_suffix || null,
+            page_break_before: !!s.page_break_before,
         }));
         try {
             if (selectedLayoutId) {
@@ -485,12 +744,19 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                 report_format: format,
                 exclude_severities: [],
                 theme_id: selectedThemeId || undefined,
+                marking_profile_id: selectedMarkingProfileId || undefined,
                 include_evidence: (format === 'json_zip' || format === 'json_layout_zip') ? includeEvidence : undefined,
                 finding_ids: selectedFindingIds ? Array.from(selectedFindingIds) : undefined,
                 testcase_ids: selectedTestcaseIds ? Array.from(selectedTestcaseIds) : undefined,
                 cleanup_ids: selectedCleanupIds ? Array.from(selectedCleanupIds) : undefined,
             });
             setLastGenerated(new Date().toLocaleTimeString());
+
+            if (result.markingWarnings && result.markingWarnings > 0) {
+                toast.warning(`${result.markingWarnings} portion(s) are using the inherited default classification`, {
+                    description: 'Marking profile enforcement is set to WARN. Mark them explicitly to silence this.',
+                });
+            }
 
             // Store result and open preview
             setPreviewResult(result);
@@ -499,8 +765,19 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             const url = window.URL.createObjectURL(result.blob);
             setPreviewBlobUrl(url);
             setPreviewOpen(true);
-        } catch (error) {
-            toast.error('Failed to generate report. Please check if findings exist.');
+        } catch (error: any) {
+            let msg = 'Failed to generate report. Please check if findings exist.';
+            try {
+                // responseType is 'blob', so an error body arrives as a Blob.
+                const data = error?.response?.data;
+                if (data instanceof Blob) {
+                    const parsed = JSON.parse(await data.text());
+                    if (parsed?.detail) msg = parsed.detail;
+                } else if (data?.detail) {
+                    msg = data.detail;
+                }
+            } catch { /* keep the default message */ }
+            toast.error(msg);
         } finally {
             setIsGenerating(false);
         }
@@ -660,13 +937,17 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                         </div>
                     )}
 
-                    {/* Two-column builder */}
-                    {(selectedLayoutId || sections.length > 0) && (
+                    {/* Two-column builder (collapsed / master-detail mode) */}
+                    {(selectedLayoutId || sections.length > 0) && !expandedBuilder && (
                         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
                             {/* Left: Section List */}
                             <div className="lg:col-span-2 space-y-3">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Sections</h3>
+                                    <div className="flex items-center gap-2">
+                                    <Button size="sm" variant="outline" className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1.5 h-8" onClick={() => setExpandedBuilder(true)}>
+                                        <Maximize2 className="h-3.5 w-3.5" /> Expand all
+                                    </Button>
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
                                             <Button
@@ -694,6 +975,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
+                                    </div>
                                 </div>
 
                                 {sections.length === 0 ? (
@@ -737,6 +1019,30 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                                 className="bg-slate-950/50 border-slate-800 text-white h-9"
                                                 disabled={!canGenerateReport}
                                             />
+                                        </div>
+
+                                        <EntityClassificationField
+                                            engagementId={engagementId}
+                                            level={selectedSection.classification_level || null}
+                                            suffix={selectedSection.classification_suffix || null}
+                                            inheritLabel="Inherit (engagement default)"
+                                            label="Classification Marking"
+                                            onChange={(lvl, suf) => updateSectionClassification(selectedSectionIdx!, lvl, suf)}
+                                        />
+                                        <p className="text-xs text-slate-500 -mt-1">
+                                            Marks the <span className="text-slate-400">section title</span> only.
+                                            {selectedSection.section_type === SectionType.TEXT
+                                                ? ' Body paragraphs are not auto-marked — prefix each portion in the content yourself (e.g. “(U) …”), per best practice that each paragraph is marked individually.'
+                                                : ' Findings / test cases / cleanup entries are marked per the profile’s table-placement rules.'}
+                                        </p>
+
+                                        <div className="flex items-center gap-3">
+                                            <Switch
+                                                checked={!!selectedSection.page_break_before}
+                                                onCheckedChange={(v) => updateSectionPageBreak(selectedSectionIdx!, v)}
+                                                disabled={!canGenerateReport}
+                                            />
+                                            <Label className="text-xs text-slate-400 uppercase tracking-wide">Start on a new page</Label>
                                         </div>
 
                                         {selectedSection.section_type === SectionType.TEXT ? (
@@ -882,6 +1188,81 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                         </div>
                     )}
 
+                    {/* Expanded builder — all sections, full editors, drag to reorder */}
+                    {(selectedLayoutId || sections.length > 0) && expandedBuilder && (
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Sections — Expanded</h3>
+                                <div className="flex items-center gap-2">
+                                    {(() => {
+                                        const allCollapsed = sections.length > 0 && sections.every(s => collapsedSectionIds.has(s.localId));
+                                        return (
+                                            <Button size="sm" variant="ghost" className="text-slate-400 hover:text-white gap-1.5 h-8"
+                                                onClick={() => setCollapsedSectionIds(allCollapsed ? new Set() : new Set(sections.map(s => s.localId)))}>
+                                                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', allCollapsed && '-rotate-90')} />
+                                                {allCollapsed ? 'Expand sections' : 'Collapse sections'}
+                                            </Button>
+                                        );
+                                    })()}
+                                    <Button size="sm" variant="outline" className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1.5 h-8" onClick={() => setExpandedBuilder(false)}>
+                                        <Minimize2 className="h-3.5 w-3.5" /> Collapse view
+                                    </Button>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button size="sm" variant="outline" className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1.5 h-8" disabled={!canGenerateReport}>
+                                                <Plus className="h-3.5 w-3.5" /> Add <ChevronDown className="h-3 w-3" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-slate-300">
+                                            <DropdownMenuItem onClick={() => addSection(SectionType.TEXT)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><Type className="h-4 w-4 text-blue-400" /> Text Section</DropdownMenuItem>
+                                            <DropdownMenuSeparator className="bg-slate-800" />
+                                            <DropdownMenuItem onClick={() => addSection(SectionType.FINDINGS)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><Search className="h-4 w-4 text-amber-400" /> Findings Placeholder</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => addSection(SectionType.TESTCASES)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><ClipboardList className="h-4 w-4 text-emerald-400" /> Test Cases Placeholder</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => addSection(SectionType.CLEANUP_ARTIFACTS)} className="hover:bg-slate-800 focus:bg-slate-800 cursor-pointer gap-2"><Sparkles className="h-4 w-4 text-lime-400" /> Cleanup Artifacts Placeholder</DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+                            </div>
+
+                            {sections.length === 0 ? (
+                                <div className="text-center py-12 border border-dashed border-slate-800 rounded-lg">
+                                    <LayoutTemplate className="h-10 w-10 mx-auto text-slate-700 mb-3" />
+                                    <p className="text-sm text-slate-500">No sections yet</p>
+                                    <p className="text-xs text-slate-600 mt-1">Click "Add" to build your report layout</p>
+                                </div>
+                            ) : (
+                                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                    <SortableContext items={sections.map(s => s.localId)} strategy={verticalListSortingStrategy}>
+                                        <div>
+                                            {sections.map((section, idx) => (
+                                                <Fragment key={section.localId}>
+                                                    {/* insert above this section (and between previous + this) */}
+                                                    <InsertZone at={idx} onAdd={addSection} disabled={!canGenerateReport} />
+                                                    <ExpandedSectionCard
+                                                        section={section}
+                                                        disabled={!canGenerateReport}
+                                                        collapsed={collapsedSectionIds.has(section.localId)}
+                                                        onToggleCollapse={() => setCollapsedSectionIds(prev => {
+                                                            const next = new Set(prev);
+                                                            if (next.has(section.localId)) next.delete(section.localId);
+                                                            else next.add(section.localId);
+                                                            return next;
+                                                        })}
+                                                        onDelete={() => deleteSection(idx)}
+                                                    >
+                                                        {renderSectionFields(section, idx)}
+                                                    </ExpandedSectionCard>
+                                                </Fragment>
+                                            ))}
+                                            {/* insert below the last section */}
+                                            <InsertZone at={sections.length} onAdd={addSection} disabled={!canGenerateReport} />
+                                        </div>
+                                    </SortableContext>
+                                </DndContext>
+                            )}
+                        </div>
+                    )}
+
                     {/* Action bar */}
                     {selectedLayoutId && (
                         <div className="flex items-center justify-between pt-4 border-t border-slate-800/50">
@@ -953,6 +1334,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                 <SelectContent className="bg-slate-900 border-slate-800 text-white">
                                     <SelectItem value="pdf" className="focus:bg-indigo-500/20 focus:text-indigo-400">PDF Document (.pdf)</SelectItem>
                                     <SelectItem value="markdown" className="focus:bg-indigo-500/20 focus:text-indigo-400">Markdown File (.md)</SelectItem>
+                                    <SelectItem value="html" className="focus:bg-indigo-500/20 focus:text-indigo-400">HTML Document (.html)</SelectItem>
                                     <SelectItem value="json_zip" className="focus:bg-indigo-500/20 focus:text-indigo-400">
                                         JSON Export (.zip)
                                     </SelectItem>
@@ -1016,6 +1398,28 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                             </Select>
                             <p className="text-xs text-slate-500">Controls colors, fonts, logo, and page settings</p>
                         </div>
+
+                        {engagementHasMarking && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-300 flex items-center gap-1.5">
+                                <ShieldAlert className="h-3.5 w-3.5 text-red-400" /> Classification Marking
+                            </label>
+                            <Select value={selectedMarkingProfileId || '_inherit'} onValueChange={(v) => setSelectedMarkingProfileId(v === '_inherit' ? null : v)}>
+                                <SelectTrigger className="bg-slate-950/50 border-slate-800 text-white h-11">
+                                    <SelectValue placeholder="Inherit from engagement" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                    <SelectItem value="_inherit" className="focus:bg-red-500/20 focus:text-red-400">Inherit from engagement</SelectItem>
+                                    {markingProfiles.map(p => (
+                                        <SelectItem key={p.id} value={p.id} className="focus:bg-red-500/20 focus:text-red-400">
+                                            {p.name}{p.is_builtin ? ' (built-in)' : ''}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-slate-500">Portion marking + banner. Marks only render where a classification level is set (engagement default or per item).</p>
+                        </div>
+                        )}
 
                         {selectedLayoutId ? (
                             <div className="bg-slate-950/30 rounded-xl p-4 border border-slate-800/50 space-y-2">
@@ -1223,9 +1627,10 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                         'text-[10px]',
                                         format === 'pdf' ? 'border-red-500/30 text-red-400' :
                                         format === 'markdown' ? 'border-blue-500/30 text-blue-400' :
+                                        format === 'html' ? 'border-emerald-500/30 text-emerald-400' :
                                         'border-amber-500/30 text-amber-400'
                                     )}>
-                                        {format === 'pdf' ? 'PDF' : format === 'markdown' ? 'Markdown' : format === 'json_layout_zip' ? 'JSON+Layout ZIP' : 'JSON ZIP'}
+                                        {format === 'pdf' ? 'PDF' : format === 'markdown' ? 'Markdown' : format === 'html' ? 'HTML' : format === 'json_layout_zip' ? 'JSON+Layout ZIP' : 'JSON ZIP'}
                                     </Badge>
                                     {lastGenerated && (
                                         <span className="text-[10px] text-slate-500 flex items-center gap-1">
@@ -1241,11 +1646,14 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
 
                     {/* Preview Area */}
                     <div className="flex-1 min-h-0 rounded-lg border border-slate-800 bg-slate-950/50 overflow-hidden">
-                        {format === 'pdf' && previewBlobUrl ? (
+                        {(format === 'pdf' || format === 'html') && previewBlobUrl ? (
                             <iframe
                                 src={previewBlobUrl}
                                 className="w-full h-full min-h-[60vh]"
                                 title="Report Preview"
+                                // HTML reports render author content — sandbox so no script
+                                // can execute in the app origin (defense-in-depth vs XSS).
+                                sandbox={format === 'html' ? '' : undefined}
                             />
                         ) : format === 'markdown' && previewResult ? (
                             <MarkdownPreview blob={previewResult.blob} />

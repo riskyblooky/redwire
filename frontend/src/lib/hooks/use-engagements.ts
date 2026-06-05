@@ -50,6 +50,10 @@ export interface Engagement {
     assigned_users: AssignedUser[];
     assignment_details: EngagementAssignment[];
     phases: EngagementPhase[];
+    marking_profile_id?: string | null;
+    default_classification_level?: string | null;
+    default_classification_suffix?: string | null;
+    ceiling_classification_level?: string | null;
 }
 
 export interface EngagementCreate {
@@ -65,6 +69,10 @@ export interface EngagementCreate {
     end_date?: string;
     assigned_user_ids?: string[];
     assignments?: EngagementAssignmentCreate[];
+    marking_profile_id?: string | null;
+    default_classification_level?: string | null;
+    default_classification_suffix?: string | null;
+    ceiling_classification_level?: string | null;
 }
 
 export interface EngagementUpdate extends Partial<EngagementCreate> {

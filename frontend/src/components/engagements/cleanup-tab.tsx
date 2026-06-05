@@ -65,6 +65,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { useAuthStore } from '@/stores/auth-store';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
+import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 
 interface CleanupTabProps {
     engagementId: string;
@@ -98,6 +99,8 @@ const defaultForm = {
     location: '',
     description: '',
     cleanup_notes: '',
+    classification_level: '' as string,
+    classification_suffix: '' as string,
 };
 
 export function CleanupTab({ engagementId }: CleanupTabProps) {
@@ -206,7 +209,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
         if (!form.title.trim()) { toast.error('Title is required'); return; }
         setIsSubmitting(true);
         try {
-            await createMutation.mutateAsync({ ...form, engagement_id: engagementId } as any);
+            await createMutation.mutateAsync({ ...form, engagement_id: engagementId, classification_level: form.classification_level || null, classification_suffix: form.classification_suffix || null } as any);
             toast.success('Cleanup artifact created');
             setForm({ ...defaultForm });
             setIsAddOpen(false);
@@ -225,6 +228,8 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
             location: artifact.location || '',
             description: artifact.description || '',
             cleanup_notes: artifact.cleanup_notes || '',
+            classification_level: artifact.classification_level || '',
+            classification_suffix: artifact.classification_suffix || '',
         });
         setIsEditOpen(true);
     };
@@ -233,7 +238,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
         if (!editId) return;
         setIsSubmitting(true);
         try {
-            await updateMutation.mutateAsync({ id: editId, ...form });
+            await updateMutation.mutateAsync({ id: editId, ...form, classification_level: form.classification_level || null, classification_suffix: form.classification_suffix || null });
             toast.success('Cleanup artifact updated');
             setIsEditOpen(false);
             setEditId(null);
@@ -390,7 +395,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                                         Document an artifact left behind that requires cleanup.
                                     </DialogDescription>
                                 </DialogHeader>
-                                <ArtifactForm form={form} setForm={setForm} />
+                                <ArtifactForm form={form} setForm={setForm} engagementId={engagementId} />
                                 <DialogFooter>
                                     <Button variant="ghost" onClick={() => setIsAddOpen(false)} disabled={isSubmitting}>Cancel</Button>
                                     <Button className="bg-primary hover:bg-primary/90" onClick={handleCreate} disabled={isSubmitting}>
@@ -519,7 +524,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                             Update the details of this cleanup item.
                         </DialogDescription>
                     </DialogHeader>
-                    <ArtifactForm form={form} setForm={setForm} />
+                    <ArtifactForm form={form} setForm={setForm} engagementId={engagementId} />
                     <DialogFooter>
                         <Button variant="ghost" onClick={() => setIsEditOpen(false)} disabled={isSubmitting}>Cancel</Button>
                         <Button className="bg-primary hover:bg-primary/90" onClick={handleUpdate} disabled={isSubmitting}>
@@ -558,7 +563,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
 
 // ─── Sub-components ──────────────────────────────────────────────
 
-function ArtifactForm({ form, setForm }: { form: typeof defaultForm; setForm: (f: typeof defaultForm) => void }) {
+function ArtifactForm({ form, setForm, engagementId }: { form: typeof defaultForm; setForm: (f: typeof defaultForm) => void; engagementId: string }) {
     return (
         <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
@@ -634,6 +639,14 @@ function ArtifactForm({ form, setForm }: { form: typeof defaultForm; setForm: (f
                     className="bg-slate-950/50 border-slate-800 h-20"
                 />
             </div>
+            <EntityClassificationField
+                engagementId={engagementId}
+                level={form.classification_level || null}
+                suffix={form.classification_suffix || null}
+                inheritLabel="Inherit (engagement default)"
+                label="Classification Marking"
+                onChange={(lvl, suf) => setForm({ ...form, classification_level: lvl || '', classification_suffix: suf || '' })}
+            />
         </div>
     );
 }

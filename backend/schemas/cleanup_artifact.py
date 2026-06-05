@@ -37,6 +37,8 @@ class CleanupArtifactBase(BaseModel):
     location: Optional[str] = Field(None, max_length=500)
     description: Optional[str] = None
     cleanup_notes: Optional[str] = None
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
 
 
 class CleanupArtifactCreate(CleanupArtifactBase):
@@ -50,6 +52,8 @@ class CleanupArtifactUpdate(BaseModel):
     location: Optional[str] = Field(None, max_length=500)
     description: Optional[str] = None
     cleanup_notes: Optional[str] = None
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
 
 
 class CleanupArtifactResponse(CleanupArtifactBase):

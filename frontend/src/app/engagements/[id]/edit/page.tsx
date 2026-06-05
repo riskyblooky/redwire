@@ -32,6 +32,8 @@ import {
     useGenerateEngagementPhases,
 } from '@/lib/hooks/use-engagements';
 import type { EngagementPhase } from '@/lib/hooks/use-engagements';
+import { useMarkingProfiles } from '@/lib/hooks/use-marking-profiles';
+import { ClassificationPicker } from '@/components/marking/classification-picker';
 import { useClients } from '@/lib/hooks/use-clients';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { TeamManagementDialog } from '@/components/engagements/team-management-dialog';
@@ -132,6 +134,8 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         engagement_type: '',
         status: 'PLANNING',
         start_date: '', end_date: '', scope: '', objectives: '',
+        marking_profile_id: '', default_classification_level: '',
+        default_classification_suffix: '', ceiling_classification_level: '',
     });
     const [detailsDirty, setDetailsDirty] = useState(false);
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
@@ -139,6 +143,8 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     const [phasesEdited, setPhasesEdited] = useState(false);
     const [skillsDirty, setSkillsDirty] = useState(false);
     const skillsSaveRef = useRef<(() => Promise<void>) | null>(null);
+    const { data: markingProfiles = [] } = useMarkingProfiles();
+    const activeMarkingProfile = markingProfiles.find(p => p.id === formData.marking_profile_id);
 
     const isSaving   = updateEngagement.isPending || updatePhases.isPending;
     const hasUnsaved = detailsDirty || phasesEdited || skillsDirty;
@@ -177,6 +183,10 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 end_date:        engagement.end_date   ? engagement.end_date.split('T')[0]   : '',
                 scope:           engagement.scope      || '',
                 objectives:      engagement.objectives || '',
+                marking_profile_id:            engagement.marking_profile_id || '',
+                default_classification_level:  engagement.default_classification_level || '',
+                default_classification_suffix: engagement.default_classification_suffix || '',
+                ceiling_classification_level:  engagement.ceiling_classification_level || '',
             });
             setDetailsDirty(false);
         }
@@ -240,6 +250,10 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 client_id:  formData.client_id  || undefined,
                 start_date: formData.start_date ? `${formData.start_date}T00:00:00` : undefined,
                 end_date:   formData.end_date   ? `${formData.end_date}T23:59:59`   : undefined,
+                marking_profile_id:            formData.marking_profile_id || null,
+                default_classification_level:  formData.default_classification_level || null,
+                default_classification_suffix: formData.default_classification_suffix || null,
+                ceiling_classification_level:  formData.ceiling_classification_level || null,
             }));
         }
 
@@ -457,6 +471,59 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                             minHeight="220px"
                                             fieldContext={{ resourceType: 'engagement', fieldName: 'Objectives' }}
                                         />
+                                    </div>
+
+                                    <SectionDivider label="Classification Marking" />
+                                    <div className="space-y-4">
+                                        <p className="text-xs text-slate-500">
+                                            Portion-marking policy for generated reports. The <span className="text-slate-400">default</span> is
+                                            inherited by any unmarked item; the <span className="text-slate-400">ceiling</span> caps the level any
+                                            item may be set to. The page banner is computed from the highest mark present.
+                                        </p>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-slate-300">Marking profile</Label>
+                                            <Select
+                                                value={formData.marking_profile_id || '_none'}
+                                                onValueChange={v => handleChange('marking_profile_id', v === '_none' ? '' : v)}
+                                            >
+                                                <SelectTrigger className="bg-slate-950/50 border-slate-800 text-white">
+                                                    <SelectValue placeholder="No marking" />
+                                                </SelectTrigger>
+                                                <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                                    <SelectItem value="_none">No marking</SelectItem>
+                                                    {markingProfiles.map(p => (
+                                                        <SelectItem key={p.id} value={p.id}>{p.name}{p.is_builtin ? ' (built-in)' : ''}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        {activeMarkingProfile && (
+                                            <>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-slate-300">Default classification</Label>
+                                                    <ClassificationPicker
+                                                        levels={activeMarkingProfile.levels}
+                                                        level={formData.default_classification_level || null}
+                                                        suffix={formData.default_classification_suffix || null}
+                                                        inheritLabel="None (no marking)"
+                                                        onChange={(lvl, suf) => {
+                                                            handleChange('default_classification_level', lvl || '');
+                                                            handleChange('default_classification_suffix', suf || '');
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-slate-300">Ceiling (max any item may be marked)</Label>
+                                                    <ClassificationPicker
+                                                        levels={activeMarkingProfile.levels}
+                                                        level={formData.ceiling_classification_level || null}
+                                                        showSuffix={false}
+                                                        inheritLabel="No ceiling"
+                                                        onChange={(lvl) => handleChange('ceiling_classification_level', lvl || '')}
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </CardContent>
                             </Card>

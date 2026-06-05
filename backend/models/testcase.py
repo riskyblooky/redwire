@@ -21,6 +21,10 @@ class TestCase(Base, AuditMixin):
     is_successful = Column(Boolean)
     notes = Column(Text)
 
+    # Portion marking — null level means inherit (report/engagement default).
+    classification_level = Column(String(20), nullable=True)
+    classification_suffix = Column(String(120), nullable=True)
+
     # Relationships
     engagement = relationship("Engagement", back_populates="testcases")
     parent = relationship("TestCase", remote_side=[id], backref="children")

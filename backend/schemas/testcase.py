@@ -14,6 +14,8 @@ class TestCaseBase(BaseModel):
     is_executed: Optional[bool] = False
     is_successful: Optional[bool] = None
     notes: Optional[str] = None
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
 
 class TestCaseCreate(TestCaseBase):
     engagement_id: str
@@ -33,6 +35,8 @@ class TestCaseUpdate(BaseModel):
     is_executed: Optional[bool] = None
     is_successful: Optional[bool] = None
     notes: Optional[str] = None
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
     tag_ids: Optional[list[str]] = None
     attack_technique_ids: Optional[list[str]] = None
 

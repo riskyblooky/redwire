@@ -132,6 +132,8 @@ import {
     ArrowDown,
     ChevronsUpDown,
 } from 'lucide-react';
+import { MarkingProfilesManager } from '@/components/marking/marking-profiles-manager';
+import { useMarkingProfiles } from '@/lib/hooks/use-marking-profiles';
 
 // ─── Permission helper ───────────────────────────────────────────
 function canManageTemplates(role?: UserRole) {
@@ -267,6 +269,7 @@ export default function TemplatesPage() {
 
     // ── Report themes ──
     const { data: reportThemes = [], isLoading: rtLoading } = useReportThemes();
+    const { data: markingProfiles = [] } = useMarkingProfiles();
     const deleteRT = useDeleteReportTheme();
 
     // ── UI state ──
@@ -896,6 +899,11 @@ export default function TemplatesPage() {
                             <Palette className="h-4 w-4" />
                             Report Themes
                             <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{reportThemes.length}</Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="marking-profiles" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
+                            <ShieldAlert className="h-4 w-4" />
+                            Marking Profiles
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{markingProfiles.length}</Badge>
                         </TabsTrigger>
                     </TabsList>
 
@@ -1801,6 +1809,11 @@ export default function TemplatesPage() {
                                 )}
                             </CardContent>
                         </Card>
+                    </TabsContent>
+
+                    {/* ─── Marking Profiles Tab ─── */}
+                    <TabsContent value="marking-profiles">
+                        <MarkingProfilesManager />
                     </TabsContent>
                 </Tabs>
 

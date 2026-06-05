@@ -19,6 +19,11 @@ class Evidence(Base, AuditMixin):
     description = Column(String(500))
     include_in_report = Column(Boolean, default=True)
 
+    # Portion marking — null level means inherit from the owning finding /
+    # engagement default. suffix is a free-text caveat, e.g. "//SAR/123".
+    classification_level = Column(String(20), nullable=True)
+    classification_suffix = Column(String(120), nullable=True)
+
     # Relationships
     finding = relationship("Finding", back_populates="evidence")
     testcase = relationship("TestCase", back_populates="evidence")

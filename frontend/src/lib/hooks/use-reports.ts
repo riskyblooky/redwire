@@ -4,9 +4,10 @@ import api from '../api';
 export interface ReportConfiguration {
     engagement_id: string;
     layout_id: string;
-    report_format: 'pdf' | 'markdown' | 'json_zip' | 'json_layout_zip';
+    report_format: 'pdf' | 'markdown' | 'html' | 'json_zip' | 'json_layout_zip';
     exclude_severities: string[];
     theme_id?: string;
+    marking_profile_id?: string;
     include_evidence?: boolean;
     finding_ids?: string[];
     testcase_ids?: string[];
@@ -17,6 +18,7 @@ export interface GenerateReportResult {
     blob: Blob;
     filename: string;
     mimeType: string;
+    markingWarnings?: number;
 }
 
 /**
@@ -41,10 +43,14 @@ export function useGenerateReport() {
             // Determine mime type
             const mimeType = String(response.headers['content-type'] ?? 'application/octet-stream');
 
+            const warnHeader = response.headers['x-marking-warnings'];
+            const markingWarnings = warnHeader ? parseInt(String(warnHeader), 10) || 0 : 0;
+
             return {
                 blob: new Blob([response.data]),
                 filename,
                 mimeType,
+                markingWarnings,
             };
         },
     });

@@ -40,6 +40,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 
 // ── colour maps ──────────────────────────────────────────────────────
 
@@ -358,6 +359,30 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 <MarkdownPreview value={finding.mitigations} theme="dark" />
                                             </div>
                                         </Section>
+                                        <Separator className="bg-slate-800/60" />
+                                    </>
+                                )}
+
+                                {/* Classification (portion marking) */}
+                                {canEdit && (
+                                    <>
+                                        <div>
+                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Classification Marking</h4>
+                                            <EntityClassificationField
+                                                engagementId={finding.engagement_id}
+                                                level={finding.classification_level || null}
+                                                suffix={finding.classification_suffix || null}
+                                                inheritLabel="Inherit (engagement default)"
+                                                label=""
+                                                onChange={async (lvl, suf) => {
+                                                    try {
+                                                        await updateFinding.mutateAsync({ id: finding.id, classification_level: lvl, classification_suffix: suf });
+                                                    } catch (e: any) {
+                                                        toast.error(getErrorMessage(e, 'Failed to update classification'));
+                                                    }
+                                                }}
+                                            />
+                                        </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}

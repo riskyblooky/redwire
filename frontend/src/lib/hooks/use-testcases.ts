@@ -14,6 +14,8 @@ export interface TestCase {
     is_executed: boolean;
     is_successful: boolean | null;
     notes: string | null;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
     created_at: string;
     updated_at: string;
     created_by: string;
@@ -41,6 +43,8 @@ export interface TestCaseCreate {
     is_executed?: boolean;
     is_successful?: boolean | null;
     notes?: string;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
     tag_ids?: string[];
     attack_technique_ids?: string[];
 }

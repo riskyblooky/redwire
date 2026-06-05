@@ -8,6 +8,7 @@ from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image, HRFlowable, KeepTogether
+from reportlab.platypus.tableofcontents import TableOfContents
 from reportlab.lib.units import inch, cm
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab import rl_config
@@ -28,6 +29,7 @@ from models.testcase import TestCase
 from models.cleanup_artifact import CleanupArtifact
 from models.report_layout import ReportSection, SectionType
 from models.report_theme import ReportTheme
+from utils.marking import MarkingEngine, MarkedImage
 from typing import List, Optional
 import re
 
@@ -65,6 +67,46 @@ _DEFAULTS = {
     "header_text":         None,
     "footer_text":         "CONFIDENTIAL",
     "page_size":           "letter",
+
+    # Severity (themeable — promoted from the _SEV_COLORS constants below)
+    "severity_critical_color": "#DC2626",
+    "severity_high_color":     "#EA580C",
+    "severity_medium_color":   "#D97706",
+    "severity_low_color":      "#2563EB",
+    "severity_info_color":     "#64748B",
+
+    # Table style tokens
+    "table_zebra_enabled": True,
+    "table_alt_row_bg":    "#F8FAFC",
+    "table_grid_color":    "#CBD5E1",
+
+    # Header / footer zones + page numbering
+    "show_page_x_of_y":    False,
+
+    # Cover
+    "cover_template":      "banded",
+
+    # Evidence
+    "show_evidence_filenames": True,
+
+    # Finding card styling
+    "show_finding_severity_bar": True,
+    "show_section_title_background": True,
+
+    # Logo
+    "logo_scale": 100,   # percent of the base height; aspect ratio preserved
+}
+
+# Order findings/severity summaries are rendered in (most → least severe).
+_SEV_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+
+# Map a severity to its themeable color key (falls back via _DEFAULTS).
+_SEV_THEME_KEY = {
+    "CRITICAL": "severity_critical_color",
+    "HIGH":     "severity_high_color",
+    "MEDIUM":   "severity_medium_color",
+    "LOW":      "severity_low_color",
+    "INFO":     "severity_info_color",
 }
 
 # Severity colours
@@ -269,6 +311,9 @@ def _md_to_flowables(
     image_resolver=None,
     max_image_width: float = 6.0 * inch,
     max_image_height: float = 4.0 * inch,
+    mark_text: Optional[str] = None,
+    mark_anchors=None,
+    mark_fg: str = '#B91C1C',
 ) -> list:
     """Convert markdown text into a list of ReportLab flowables.
 
@@ -374,7 +419,16 @@ def _md_to_flowables(
             return None
         try:
             buf = io.BytesIO(data)
-            img = Image(buf)
+            # Inline images inherit the parent's effective mark. They have no
+            # caption, so a CAPTION-only policy still stamps a corner (TOP_LEFT)
+            # so the image carries its mark.
+            overlay = [a for a in (mark_anchors or []) if a != 'CAPTION']
+            if mark_text and not overlay:
+                overlay = ['TOP_LEFT']
+            if mark_text and overlay:
+                img = MarkedImage(buf, mark_text=mark_text, anchors=overlay, mark_fg=mark_fg)
+            else:
+                img = Image(buf)
             iw, ih = img.imageWidth, img.imageHeight
             if iw <= 0 or ih <= 0:
                 return None
@@ -578,6 +632,58 @@ def _get_page_size(name: str):
 # PDF Report Generator
 # ═══════════════════════════════════════════════════════════════════
 
+class _OutlineDocTemplate(SimpleDocTemplate):
+    """SimpleDocTemplate that registers a PDF outline (bookmark) entry for any
+    flowable tagged with `_outline_label`, so the reader's navigation pane is
+    populated. Optional `_outline_level` nests entries."""
+
+    def afterFlowable(self, flowable):
+        label = getattr(flowable, '_outline_label', None)
+        if not label:
+            return
+        level = getattr(flowable, '_outline_level', 0)
+        key = f'sec-{id(flowable)}'
+        try:
+            self.canv.bookmarkPage(key)
+            self.canv.addOutlineEntry(label, key, level=level, closed=False)
+            # Feed the TableOfContents (resolved over multiBuild passes).
+            self.notify('TOCEntry', (level, label, self.page, key))
+        except Exception:
+            pass
+
+
+def _make_numbered_canvas(font_name: str, color_hex: str, skip_first: bool):
+    """Canvas subclass that stamps 'Page X of Y' once the total page count is
+    known (second save pass). `skip_first` omits the number on the cover."""
+    class NumberedCanvas(pdfcanvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_states = []
+
+        def showPage(self):
+            self._saved_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._saved_states)
+            for idx, state in enumerate(self._saved_states):
+                self.__dict__.update(state)
+                if not (skip_first and idx == 0):
+                    self._draw_page_number(idx + 1, total)
+                pdfcanvas.Canvas.showPage(self)
+            pdfcanvas.Canvas.save(self)
+
+        def _draw_page_number(self, page_num, total):
+            W = self._pagesize[0]
+            self.saveState()
+            self.setFont(font_name, 8)
+            self.setFillColor(colors.HexColor(color_hex))
+            self.drawRightString(W - 54, 24, f'Page {page_num} of {total}')
+            self.restoreState()
+
+    return NumberedCanvas
+
+
 class PDFReportGenerator:
     def __init__(
         self,
@@ -589,6 +695,7 @@ class PDFReportGenerator:
         theme: Optional[ReportTheme] = None,
         storage=None,
         markdown_image_map: Optional[dict] = None,
+        marking_profile=None,
     ):
         self.engagement = engagement
         self.sections = sections
@@ -597,6 +704,10 @@ class PDFReportGenerator:
         self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
         self.storage = storage
+        # Portion marking — None when no profile is selected (marking disabled).
+        self.marking = MarkingEngine(marking_profile, engagement) if marking_profile else None
+        # Document banner level (high-water mark), computed in generate().
+        self._banner_level = None
         # { image_id: { storage_key, content_type } } — pre-loaded by the
         # route so this class needs no DB session. Used by _md_to_flowables
         # via _resolve_markdown_image to embed inline pasted/dropped images.
@@ -627,6 +738,218 @@ class PDFReportGenerator:
         except Exception as exc:
             _log.warning(f'Could not fetch markdown image {image_id!r}: {exc}')
             return None
+
+    # ── Severity colors (themeable) ───────────────────────────────
+
+    def _sev_hex(self, sev: str) -> str:
+        key = _SEV_THEME_KEY.get((sev or '').upper())
+        return (_t(self.theme, key) if key else None) or _SEV_COLORS.get((sev or '').upper(), '#64748B')
+
+    # ── Portion marking helpers ───────────────────────────────────
+
+    def _eff_mark(self, entity):
+        """Effective (level, suffix) for an entity; (None, None) if marking off."""
+        if not self.marking:
+            return (None, None)
+        return self.marking.resolve(
+            getattr(entity, 'classification_level', None),
+            getattr(entity, 'classification_suffix', None),
+        )
+
+    def _mark_str(self, entity) -> str:
+        """XML-escaped portion-mark token for an entity ('' if marking off)."""
+        if not self.marking:
+            return ''
+        lvl, suf = self._eff_mark(entity)
+        return _escape_xml(self.marking.portion_mark(lvl, suf))
+
+    def _mark_prefix(self, entity) -> str:
+        """Portion mark + trailing space, for prefixing a title/header."""
+        m = self._mark_str(entity)
+        return f'{m} ' if m else ''
+
+    def _static_mark(self):
+        """(level, suffix) for structural/static headings: the lowest level
+        (e.g. (U)/TLP:CLEAR) by default, or the engagement default if the
+        profile's static_heading_marks is 'INHERIT'."""
+        if not self.marking:
+            return (None, None)
+        if self.marking.static_heading_mode == 'INHERIT':
+            return self.marking.resolve(None, None)
+        return (self.marking.lowest_level(), None)
+
+    def _heading_mark_token(self, section=None) -> str:
+        """Raw portion-mark token for a heading. An explicitly-marked section
+        wins; else the static-heading mark (U by default). '' if marking off."""
+        if not self.marking:
+            return ''
+        if section is not None and getattr(section, 'classification_level', None):
+            lvl, suf = self.marking.resolve(section.classification_level, section.classification_suffix)
+        else:
+            lvl, suf = self._static_mark()
+        return self.marking.portion_mark(lvl, suf)
+
+    def _heading_mark_prefix(self, section=None) -> str:
+        """Escaped mark prefix (+ trailing space) for a heading Paragraph."""
+        tok = self._heading_mark_token(section)
+        return f'{_escape_xml(tok)} ' if tok else ''
+
+    def _eff_mark_evidence(self, ev, finding):
+        """Evidence inherits the owning finding's effective mark when it has no
+        explicit mark of its own (then engagement default → ceiling)."""
+        if not self.marking:
+            return (None, None)
+        if getattr(ev, 'classification_level', None):
+            return self.marking.resolve(ev.classification_level, ev.classification_suffix)
+        return self._eff_mark(finding)
+
+    def _mark_fg(self, level) -> str:
+        """Banner color for a level — used to tint image stamps."""
+        if self.marking and level:
+            b = self.marking.banner(level)
+            if b:
+                return b[1]
+        return '#B91C1C'
+
+    def _table_style_tokens(self):
+        """(zebra_enabled, alt_row_bg Color, grid Color) from the theme."""
+        zebra = _t(self.theme, 'table_zebra_enabled')
+        return (
+            True if zebra is None else bool(zebra),
+            colors.HexColor(_t(self.theme, 'table_alt_row_bg')),
+            colors.HexColor(_t(self.theme, 'table_grid_color')),
+        )
+
+    def _table_mark_flowables(self, marks):
+        """(above, below) small mark-line flowables for a table.
+
+        `marks` is a list of (level, suffix) pairs (one per row/portion). The
+        table-level mark is the highest-ranked portion, *carrying its suffix*
+        (e.g. (S//SAR/TEST), not just (S))."""
+        if not self.marking or not self.marking.table_anchors:
+            return [], []
+        best, best_rank = None, -1
+        for lvl, suf in marks:
+            if not lvl:
+                continue
+            r = self.marking._rank(lvl)
+            if r > best_rank:
+                best, best_rank = (lvl, suf), r
+        if not best:
+            return [], []
+        top, top_suf = best
+        mark = _escape_xml(self.marking.portion_mark(top, top_suf))
+        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        align_map = {'LEFT': 0, 'CENTER': 1, 'RIGHT': 2}
+        above, below, seen = [], [], set()
+        for anchor in self.marking.table_anchors:
+            vert, horiz = ('BOTTOM', 'RIGHT') if anchor == 'CAPTION' else tuple(anchor.split('_'))
+            if (vert, horiz) in seen:
+                continue
+            seen.add((vert, horiz))
+            style = ParagraphStyle(
+                name=f'_tblmk_{vert}_{horiz}', parent=self.styles['Small'],
+                fontName=font_b, fontSize=8, alignment=align_map.get(horiz, 2),
+                textColor=colors.HexColor(self._mark_fg(top)),
+            )
+            (above if vert == 'TOP' else below).append(Paragraph(mark, style))
+        return above, below
+
+    def _anchor_mark_lines(self, mark_raw, anchors, fg):
+        """(above, below) mark-line Paragraphs for a single object's (image's)
+        non-CAPTION anchors, drawn *outside* the object so they don't overlap it."""
+        if not mark_raw:
+            return [], []
+        mark = _escape_xml(mark_raw)
+        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        align_map = {'LEFT': 0, 'CENTER': 1, 'RIGHT': 2}
+        above, below, seen = [], [], set()
+        for a in anchors:
+            if a == 'CAPTION':
+                continue
+            vert, horiz = a.split('_')
+            if (vert, horiz) in seen:
+                continue
+            seen.add((vert, horiz))
+            style = ParagraphStyle(
+                name=f'_imgmk_{vert}_{horiz}', parent=self.styles['Small'],
+                fontName=font_b, fontSize=8, alignment=align_map.get(horiz, 1),
+                textColor=colors.HexColor(fg),
+            )
+            (above if vert == 'TOP' else below).append(Paragraph(mark, style))
+        return above, below
+
+    def _row_mark_cell(self, level, suffix, header=False):
+        """A leading per-row mark cell for marked tables."""
+        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        if header:
+            txt, color = 'MARK', colors.white
+        else:
+            txt = _escape_xml(self.marking.portion_mark(level, suffix)) if self.marking else ''
+            color = colors.HexColor(self._mark_fg(level) if level else '#64748B')
+        return Paragraph(txt, ParagraphStyle(
+            name='_rowmk', parent=self.styles['Small'],
+            fontName=font_b, fontSize=7, textColor=color,
+        ))
+
+    def _compute_banner_level(self):
+        """High-water mark across every effective portion mark in the document."""
+        if not self.marking:
+            return None
+        marks = [getattr(self.engagement, 'default_classification_level', None)]
+        for s in self.sections:
+            lvl, _ = self.marking.resolve(
+                getattr(s, 'classification_level', None),
+                getattr(s, 'classification_suffix', None),
+            )
+            marks.append(lvl)
+        for f in self.findings:
+            marks.append(self._eff_mark(f)[0])
+            for ev in (f.evidence or []):
+                if getattr(ev, 'include_in_report', False):
+                    marks.append(self._eff_mark_evidence(ev, f)[0])
+        for tc in self.testcases:
+            marks.append(self._eff_mark(tc)[0])
+        for ca in self.cleanup_artifacts:
+            marks.append(self._eff_mark(ca)[0])
+        return self.marking.highest(marks)
+
+    # ── Banner painter ────────────────────────────────────────────
+
+    def _draw_banner(self, canvas, doc):
+        """Paint the document banner (page header/footer). High-water level.
+
+        IC/DoD + custom: centered filled strip top *and* bottom of every page.
+        TLP: a centered filled chip in both the header and the footer.
+        """
+        if not self.marking or not self._banner_level:
+            return
+        b = self.marking.banner(self._banner_level)
+        if not b:
+            return
+        text, bg, fg = b
+        W, H = doc.pagesize
+        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        canvas.saveState()
+        if self.marking.banner_top_and_bottom:
+            for y in (H - 16, 4):
+                canvas.setFillColor(colors.HexColor(bg))
+                canvas.rect(0, y, W, 14, fill=1, stroke=0)
+                canvas.setFillColor(colors.HexColor(fg))
+                canvas.setFont(font_b, 9)
+                canvas.drawCentredString(W / 2.0, y + 3, text)
+        else:
+            # TLP: centered chip top + bottom (header + footer), at the page edges
+            # so it clears the header zones and the footer page number.
+            canvas.setFont(font_b, 9)
+            tw = canvas.stringWidth(text, font_b, 9)
+            cx = W / 2.0
+            for y in (H - 18, 6):
+                canvas.setFillColor(colors.HexColor(bg))
+                canvas.rect(cx - tw / 2 - 6, y - 3, tw + 12, 14, fill=1, stroke=0)
+                canvas.setFillColor(colors.HexColor(fg))
+                canvas.drawCentredString(cx, y, text)
+        canvas.restoreState()
 
     # ── Styles ────────────────────────────────────────────────────
 
@@ -742,38 +1065,63 @@ class PDFReportGenerator:
     # ── Header / Footer ───────────────────────────────────────────
 
     def _header_footer(self, canvas, doc):
-        """Professional running header + footer with accent rule."""
+        """Running header + footer: accent rule, L/C/R zones, banner, page no."""
         canvas.saveState()
-        font      = _t(self.theme, 'font_family')
-        primary   = _t(self.theme, 'primary_color')
-        muted     = _t(self.theme, 'muted_text_color')
-        footer_t  = _t(self.theme, 'footer_text')
-        show_num  = _t(self.theme, 'show_page_numbers')
-        W, H      = doc.pagesize
+        font     = _t(self.theme, 'font_family')
+        font_b   = f'{font}-Bold'
+        primary  = _t(self.theme, 'primary_color')
+        muted    = _t(self.theme, 'muted_text_color')
+        show_num = _t(self.theme, 'show_page_numbers')
+        W, H     = doc.pagesize
 
         # ── Top accent rule ────────────────
         canvas.setStrokeColor(colors.HexColor(primary))
         canvas.setLineWidth(2)
         canvas.line(54, H - 38, W - 54, H - 38)
 
-        # Engagement name top-left
-        canvas.setFont(f'{font}-Bold', 8)
+        # ── Header zones (fall back to legacy header_text / engagement name) ──
+        h_left   = _t(self.theme, 'header_left') or _t(self.theme, 'header_text') or self.engagement.name
+        h_center = _t(self.theme, 'header_center')
+        h_right  = _t(self.theme, 'header_right')
+        canvas.setFont(font_b, 8)
         canvas.setFillColor(colors.HexColor(muted))
-        canvas.drawString(54, H - 28, self.engagement.name[:60])
+        if h_left:
+            canvas.drawString(54, H - 28, str(h_left)[:60])
+        if h_center:
+            canvas.drawCentredString(W / 2.0, H - 28, str(h_center)[:60])
+        if h_right:
+            canvas.drawRightString(W - 54, H - 28, str(h_right)[:60])
 
-        # Footer rule
+        # ── Footer rule + zones ────────────
         canvas.setStrokeColor(colors.HexColor('#E2E8F0'))
         canvas.setLineWidth(0.5)
         canvas.line(54, 36, W - 54, 36)
 
+        # When marking is on, the classification lives in the banner, so the
+        # legacy footer_text (default "CONFIDENTIAL") is suppressed to avoid a
+        # second, conflicting marking.
+        legacy_footer = None if (self.marking and self._banner_level) else _t(self.theme, 'footer_text')
+        f_left   = _t(self.theme, 'footer_left') or legacy_footer
+        f_center = _t(self.theme, 'footer_center')
+        f_right  = _t(self.theme, 'footer_right')
         canvas.setFont(font, 8)
         canvas.setFillColor(colors.HexColor(muted))
-        if footer_t:
-            canvas.drawString(54, 24, footer_t)
-        if show_num:
+        if f_left:
+            canvas.drawString(54, 24, str(f_left)[:80])
+        if f_center:
+            canvas.drawCentredString(W / 2.0, 24, str(f_center)[:80])
+        # Page number takes the right zone unless an explicit footer_right is set.
+        # When "Page X of Y" is on, the counting canvas draws it instead.
+        show_x_of_y = _t(self.theme, 'show_page_x_of_y')
+        if f_right:
+            canvas.drawRightString(W - 54, 24, str(f_right)[:80])
+        elif show_num and not show_x_of_y:
             canvas.drawRightString(W - 54, 24, f'Page {doc.page}')
 
         canvas.restoreState()
+
+        # Banner painted last so it sits cleanly above everything else.
+        self._draw_banner(canvas, doc)
 
     def _cover_page_canvas(self, canvas, doc):
         """Dark cover page — called as onFirstPage."""
@@ -788,65 +1136,104 @@ class PDFReportGenerator:
         cover_bg = _t(self.theme, 'cover_bg_color')
         primary  = _t(self.theme, 'primary_color')
 
-        # ── Full dark background ───────────────────────────────────
-        canvas.setFillColor(colors.HexColor(cover_bg))
-        canvas.rect(0, 0, W, H, fill=1, stroke=0)
+        template    = (_t(self.theme, 'cover_template') or 'banded')
+        bg_img_data = _t(self.theme, 'cover_background_base64')
 
-        # ── Geometric accent: top-right polygon ───────────────────
-        # Large dark triangle top right
-        canvas.setFillColor(colors.HexColor('#1E293B'))
-        p = canvas.beginPath()
-        p.moveTo(W * 0.55, H)
-        p.lineTo(W, H)
-        p.lineTo(W, H * 0.60)
-        p.close()
-        canvas.drawPath(p, fill=1, stroke=0)
+        # ── Background: full-bleed image (with scrim) or solid fill ──
+        drew_image = False
+        if bg_img_data:
+            stream = _decode_logo(bg_img_data)
+            if stream:
+                try:
+                    from reportlab.lib.utils import ImageReader
+                    canvas.drawImage(ImageReader(stream), 0, 0, width=W, height=H,
+                                     preserveAspectRatio=False, mask='auto')
+                    drew_image = True
+                except Exception:
+                    pass
+        if not drew_image:
+            canvas.setFillColor(colors.HexColor(cover_bg))
+            canvas.rect(0, 0, W, H, fill=1, stroke=0)
+        else:
+            # Dark scrim keeps the title legible over a photo.
+            canvas.saveState()
+            canvas.setFillColor(colors.HexColor('#0F172A'))
+            canvas.setFillAlpha(0.55)
+            canvas.rect(0, 0, W, H, fill=1, stroke=0)
+            canvas.restoreState()
 
-        # Thin red accent slash in the top-right triangle
-        canvas.setFillColor(colors.HexColor(primary))
-        p2 = canvas.beginPath()
-        p2.moveTo(W * 0.68, H)
-        p2.lineTo(W * 0.72, H)
-        p2.lineTo(W, H * 0.72)
-        p2.lineTo(W, H * 0.68)
-        p2.close()
-        canvas.drawPath(p2, fill=1, stroke=0)
+        # ── Geometric accents (banded only, and not over a photo) ──
+        if template == 'banded' and not drew_image:
+            canvas.setFillColor(colors.HexColor('#1E293B'))
+            p = canvas.beginPath()
+            p.moveTo(W * 0.55, H); p.lineTo(W, H); p.lineTo(W, H * 0.60); p.close()
+            canvas.drawPath(p, fill=1, stroke=0)
+            canvas.setFillColor(colors.HexColor(primary))
+            p2 = canvas.beginPath()
+            p2.moveTo(W * 0.68, H); p2.lineTo(W * 0.72, H); p2.lineTo(W, H * 0.72); p2.lineTo(W, H * 0.68); p2.close()
+            canvas.drawPath(p2, fill=1, stroke=0)
 
-        # ── Bottom accent bar ──────────────────────────────────────
-        canvas.setFillColor(colors.HexColor(primary))
-        canvas.rect(0, 0, W, 6, fill=1, stroke=0)
+        # ── Bottom band (banded / classified) ─────────────────────
+        draw_bottom_band = template in ('banded', 'classified')
+        if draw_bottom_band:
+            canvas.setFillColor(colors.HexColor(primary))
+            canvas.rect(0, 0, W, 6, fill=1, stroke=0)
+            canvas.setFillColor(colors.HexColor('#1E293B'))
+            canvas.rect(0, 6, W, 52, fill=1, stroke=0)
+        # 'classified' adds a matching top band to frame the marking banner.
+        if template == 'classified':
+            canvas.setFillColor(colors.HexColor('#1E293B'))
+            canvas.rect(0, H - 40, W, 40, fill=1, stroke=0)
 
-        # Small dark band above bottom bar for classification
-        canvas.setFillColor(colors.HexColor('#1E293B'))
-        canvas.rect(0, 6, W, 52, fill=1, stroke=0)
+        # Classification label — suppressed when marking is on (the banner
+        # carries the classification, and is painted over the cover separately).
+        band_y = 26 if draw_bottom_band else 30
+        if not (self.marking and self._banner_level):
+            canvas.setFillColor(colors.HexColor(primary))
+            canvas.setFont(font_b, 8)
+            _t_classify = _t(self.theme, 'footer_text') or 'CONFIDENTIAL'
+            canvas.drawCentredString(W / 2, band_y, f'● {_t_classify.upper()} ●')
 
-        # Classification label
-        canvas.setFillColor(colors.HexColor(primary))
-        canvas.setFont(font_b, 8)
-        _t_classify = _t(self.theme, 'footer_text') or 'CONFIDENTIAL'
-        canvas.drawCentredString(W / 2, 26, f'● {_t_classify.upper()} ●')
-
-        # Date bottom-right inside band
+        # Date
         canvas.setFillColor(colors.HexColor('#94A3B8'))
         canvas.setFont(font, 8)
-        canvas.drawRightString(W - 54, 26, datetime.now().strftime('%B %d, %Y'))
+        canvas.drawRightString(W - 54, band_y, datetime.now().strftime('%B %d, %Y'))
 
-        # ── Red accent rule (horizontal) ───────────────────────────
-        accent_y = H * 0.45
-        canvas.setStrokeColor(colors.HexColor(primary))
-        canvas.setLineWidth(2)
-        canvas.line(54, accent_y, W * 0.5, accent_y)
+        # ── Red accent rule (all templates except full-bleed image) ──
+        if template != 'full_bleed_image':
+            accent_y = H * 0.45
+            canvas.setStrokeColor(colors.HexColor(primary))
+            canvas.setLineWidth(2)
+            canvas.line(54, accent_y, W * 0.5, accent_y)
 
         # ── Logo ───────────────────────────────────────────────────
         logo_data = _t(self.theme, 'logo_base64')
-        logo_top = H * 0.80
+        # Fixed TOP edge for the logo; it grows downward as it scales so a large
+        # logo never overlaps the top banner.
+        logo_top_edge = H * 0.88
         if logo_data:
             logo_stream = _decode_logo(logo_data)
             if logo_stream:
                 try:
+                    from reportlab.lib.utils import ImageReader
                     from reportlab.platypus import Image as RLImage
-                    img = RLImage(logo_stream, width=1.6 * inch, height=0.8 * inch)
-                    img.drawOn(canvas, 54, logo_top)
+                    ir = ImageReader(logo_stream)
+                    iw, ih = ir.getSize()
+                    # Preserve aspect ratio: bind to a base height, scaled by the
+                    # theme's logo_scale percent; cap width so it can't overrun.
+                    scale = (_t(self.theme, 'logo_scale') or 100) / 100.0
+                    base_h = 1.0 * inch
+                    target_h = base_h * scale
+                    target_w = target_h * (iw / ih) if ih else 2.0 * inch
+                    max_w = 4.0 * inch
+                    if target_w > max_w:
+                        target_w = max_w
+                        target_h = target_w * (ih / iw) if iw else target_h
+                    logo_stream.seek(0)
+                    img = RLImage(logo_stream, width=target_w, height=target_h)
+                    # Anchor top-left: drawOn's y is the bottom edge, so subtract
+                    # the height to keep the top fixed.
+                    img.drawOn(canvas, 54, logo_top_edge - target_h)
                 except Exception:
                     pass
 
@@ -888,69 +1275,136 @@ class PDFReportGenerator:
             canvas.setFillColor(colors.HexColor('#64748B'))
             canvas.drawString(54, H * 0.31, eng_type.replace('_', ' ').upper())
 
+        # ── Cover metadata (subtitle / reference / version) ─────────
+        cover_subtitle = _t(self.theme, 'cover_subtitle')
+        if cover_subtitle:
+            canvas.setFillColor(colors.HexColor('#94A3B8'))
+            canvas.setFont(font, 11)
+            canvas.drawString(54, H * 0.53, str(cover_subtitle)[:80])
+
+        meta_bits = []
+        ref = _t(self.theme, 'report_reference')
+        ver = _t(self.theme, 'report_version')
+        if ref:
+            meta_bits.append(f'REF: {ref}')
+        if ver:
+            meta_bits.append(f'VERSION: {ver}')
+        if meta_bits:
+            canvas.setFillColor(colors.HexColor('#64748B'))
+            canvas.setFont(font, 9)
+            canvas.drawString(54, H * 0.28, '   |   '.join(str(b) for b in meta_bits))
+
+        # ── Classification legend + distribution statement ──────────
+        if self.marking and self._banner_level:
+            self._draw_cover_marking(canvas, doc, font, font_b)
+
         canvas.restoreState()
+
+    def _draw_cover_marking(self, canvas, doc, font, font_b):
+        """Classification legend (one colored chip per level) and the
+        distribution statement, drawn low on the cover above the bottom band."""
+        W, H = doc.pagesize
+        y = H * 0.20
+        if self.marking.show_legend:
+            canvas.setFillColor(colors.HexColor('#94A3B8'))
+            canvas.setFont(font_b, 8)
+            canvas.drawString(54, y + 16, 'CLASSIFICATION LEGEND')
+            x = 54
+            for abbr, full_name, bg, fg in self.marking.legend_entries():
+                label = full_name or abbr
+                canvas.setFont(font_b, 7)
+                tw = canvas.stringWidth(label, font_b, 7)
+                canvas.setFillColor(colors.HexColor(bg))
+                canvas.rect(x, y, tw + 10, 12, fill=1, stroke=0)
+                canvas.setFillColor(colors.HexColor(fg))
+                canvas.drawString(x + 5, y + 3, label)
+                x += tw + 18
+                if x > W - 80:
+                    break
+
+        dist = self.marking.distribution_statement
+        if dist:
+            canvas.setFillColor(colors.HexColor('#64748B'))
+            canvas.setFont(font, 7)
+            # Wrap to ~95 chars/line, max 3 lines.
+            words, line, lines = str(dist).split(), '', []
+            for w in words:
+                if len(line + ' ' + w) > 95:
+                    lines.append(line.strip())
+                    line = w
+                else:
+                    line += ' ' + w
+            if line.strip():
+                lines.append(line.strip())
+            for i, ln in enumerate(lines[:3]):
+                canvas.drawString(54, (H * 0.20) - 14 - (i * 9), ln)
 
     # ── Table of Contents ─────────────────────────────────────────
 
     def _render_toc(self, elements):
         font      = _t(self.theme, 'font_family')
         font_b    = f'{font}-Bold'
-        dark      = _t(self.theme, 'secondary_color')
         body_c    = _t(self.theme, 'body_text_color')
-        muted_c   = _t(self.theme, 'muted_text_color')
+        body_size = _t(self.theme, 'font_size_body')
 
-        # Section title bar
-        elements.append(self._section_header_table('TABLE OF CONTENTS'))
+        # Section title bar (excluded from the outline/TOC so it doesn't list itself)
+        elements.append(self._section_header_table('TABLE OF CONTENTS', outline=False))
         elements.append(Spacer(1, 16))
 
-        toc_items = []
-        for i, section in enumerate(self.sections, 1):
-            row = [
-                Paragraph(f'{i}.  {_escape_xml(section.title)}', ParagraphStyle(
-                    name=f'TOC_{i}',
-                    parent=self.styles['TOCEntry'],
-                    fontName=font_b if i == 1 else font,
-                )),
-                Paragraph('· · · · · · · · · · · · · · · · · · · ·', ParagraphStyle(
-                    name=f'TOC_dots_{i}',
-                    parent=self.styles['TOCEntry'],
-                    textColor=colors.HexColor(muted_c),
-                    alignment=1,
-                )),
-            ]
-            toc_items.append(row)
-
-        if toc_items:
-            toc_table = Table(toc_items, colWidths=[3.5 * inch, None])
-            toc_table.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-                ('LINEBELOW', (0, 0), (-1, -2), 0.25, colors.HexColor('#E2E8F0')),
-            ]))
-            elements.append(toc_table)
-
+        # Real TOC: entries + page numbers are filled in by the doc template's
+        # afterFlowable notifications during multiBuild. Dot leaders + right-
+        # aligned page numbers are drawn by the flowable itself.
+        toc = TableOfContents()
+        toc.dotsMinLevel = 0
+        toc.levelStyles = [
+            ParagraphStyle(
+                name='TOCLevel0', parent=self.styles['TOCEntry'],
+                fontName=font_b, fontSize=body_size, leading=body_size + 8,
+                textColor=colors.HexColor(body_c),
+                spaceBefore=4, firstLineIndent=0, leftIndent=0,
+            ),
+        ]
+        self.toc = toc
+        elements.append(toc)
         elements.append(PageBreak())
 
     # ── Section header helper ─────────────────────────────────────
 
-    def _section_header_table(self, title: str) -> Table:
-        """Returns a dark full-width header bar with white title."""
-        dark    = _t(self.theme, 'secondary_color')
-        primary = _t(self.theme, 'primary_color')
-        font    = _t(self.theme, 'font_family')
-        font_b  = f'{font}-Bold'
+    def _section_header_table(self, title: str, section=None, outline: bool = True) -> Table:
+        """A full-width section heading.
 
-        cell = Paragraph(_escape_xml(title), self.styles['SectionTitle'])
+        Marked with the section's explicit mark, else the static-heading mark
+        (U by default). Dark color-block background is toggleable via the theme
+        (`show_section_title_background`); off → a plain colored heading with an
+        accent rule. Tagged for the PDF outline/TOC unless `outline=False`.
+        """
+        dark      = _t(self.theme, 'secondary_color')
+        primary   = _t(self.theme, 'primary_color')
+        show_bg   = _t(self.theme, 'show_section_title_background')
+        show_bg   = True if show_bg is None else bool(show_bg)
+
+        tok = self._heading_mark_token(section)
+        prefix = f'{_escape_xml(tok)} ' if tok else ''
+        cell_style = ParagraphStyle(
+            name='_SectHdr', parent=self.styles['SectionTitle'],
+            textColor=colors.white if show_bg else colors.HexColor(primary),
+        )
+        cell = Paragraph(f'{prefix}{_escape_xml(title)}', cell_style)
         t = Table([[cell]], colWidths=[6.5 * inch])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(dark)),
-            ('LEFTPADDING', (0, 0), (-1, -1), 14),
+        style = [
+            ('LEFTPADDING', (0, 0), (-1, -1), 14 if show_bg else 0),
             ('RIGHTPADDING', (0, 0), (-1, -1), 14),
             ('TOPPADDING', (0, 0), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-            ('LINEABOVE', (0, 0), (-1, 0), 3, colors.HexColor(primary)),
-        ]))
+        ]
+        if show_bg:
+            style.append(('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(dark)))
+        else:
+            style.append(('LINEBELOW', (0, 0), (-1, -1), 1.5, colors.HexColor(primary)))
+        t.setStyle(TableStyle(style))
+        if outline:
+            # TOC entry + PDF bookmark carry the mark too (e.g. "(U) Findings").
+            t._outline_label = f'{tok} {title}' if tok else title
         return t
 
     # ── Severity chart ────────────────────────────────────────────
@@ -959,11 +1413,12 @@ class PDFReportGenerator:
         """Horizontal mini-bar chart as a styled table."""
         font   = _t(self.theme, 'font_family')
         font_b = f'{font}-Bold'
-        max_count = max((severity_counts.get(s, 0) for s in _SEV_COLORS), default=1) or 1
+        max_count = max((severity_counts.get(s, 0) for s in _SEV_ORDER), default=1) or 1
         bar_max_w = 180  # points
 
         rows = []
-        for sev, hex_col in _SEV_COLORS.items():
+        for sev in _SEV_ORDER:
+            hex_col = self._sev_hex(sev)
             count = severity_counts.get(sev, 0)
             bar_w = max(4, int((count / max_count) * bar_max_w)) if count > 0 else 0
 
@@ -1012,7 +1467,7 @@ class PDFReportGenerator:
     def _finding_card(self, idx: int, finding: Finding) -> Table:
         """A bordered card for a single finding."""
         sev_str   = _v(finding.severity).upper()
-        sev_hex   = _SEV_COLORS.get(sev_str, '#64748B')
+        sev_hex   = self._sev_hex(sev_str)
         sev_bg    = _SEV_BG_COLORS.get(sev_str, '#F8FAFC')
         font      = _t(self.theme, 'font_family')
         font_b    = f'{font}-Bold'
@@ -1020,43 +1475,10 @@ class PDFReportGenerator:
         muted_c   = _t(self.theme, 'muted_text_color')
         dark      = _t(self.theme, 'secondary_color')
 
+        show_bar = _t(self.theme, 'show_finding_severity_bar')
+        show_bar = True if show_bar is None else bool(show_bar)
+
         elements = []
-
-        # -- Header row: number + title + severity badge
-        title_text = Paragraph(
-            f'<font color="{sev_hex}">F{idx:02d}</font>  '
-            f'{_escape_xml(finding.title)}',
-            ParagraphStyle(
-                name=f'FT_{idx}', parent=self.styles['FindingTitle'],
-                textColor=colors.white, fontSize=11, fontName=font_b, leading=15,
-            )
-        )
-        badge = Paragraph(
-            sev_str,
-            ParagraphStyle(
-                name=f'Badge_{idx}', parent=self.styles['Normal'],
-                fontSize=9, fontName=font_b,
-                textColor=colors.HexColor(sev_hex),
-                backColor=colors.white,
-                alignment=1,
-            )
-        )
-        header_t = Table([[title_text, badge]], colWidths=[5.2 * inch, 1.2 * inch])
-        header_t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(dark)),
-            ('LEFTPADDING', (0, 0), (0, 0), 14),
-            ('RIGHTPADDING', (0, 0), (0, 0), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
-            ('BACKGROUND', (1, 0), (1, 0), colors.HexColor(sev_bg)),
-            ('LINEBEFORE', (0, 0), (0, 0), 5, colors.HexColor(sev_hex)),
-        ]))
-        elements.append(header_t)
-
-        # -- Body: details in a clean two-section layout
-        body_rows = []
 
         def _label_para(label):
             return Paragraph(label, ParagraphStyle(
@@ -1064,6 +1486,59 @@ class PDFReportGenerator:
                 fontName=font_b, fontSize=8,
                 textColor=colors.HexColor(muted_c),
             ))
+
+        # -- Header row: number + title (severity now lives in the meta row)
+        title_text = Paragraph(
+            f'<font color="{sev_hex}">F{idx:02d}</font>  '
+            f'{self._mark_prefix(finding)}{_escape_xml(finding.title)}',
+            ParagraphStyle(
+                name=f'FT_{idx}', parent=self.styles['FindingTitle'],
+                textColor=colors.white, fontSize=11, fontName=font_b, leading=15,
+            )
+        )
+        header_t = Table([[title_text]], colWidths=[6.5 * inch])
+        header_t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(dark)),
+            ('LEFTPADDING', (0, 0), (-1, -1), 14),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(header_t)
+
+        # -- Meta row: criticality + CVSS, split columns, first under title.
+        meta_val_style = ParagraphStyle(
+            name=f'MV_{idx}', parent=self.styles['BodyText2'],
+            fontSize=10, fontName=font_b, textColor=colors.HexColor(body_c), spaceAfter=0,
+        )
+        cvss_text = ''
+        if finding.cvss_score is not None:
+            cvss_text = f'{finding.cvss_score}'
+            if finding.cvss_vector:
+                cvss_text += f'  |  {finding.cvss_vector}'
+        meta_t = Table(
+            [
+                [_label_para('CRITICALITY'), _label_para('CVSS')],
+                [Paragraph(f'<font color="{sev_hex}">{sev_str}</font>', meta_val_style),
+                 Paragraph(_escape_xml(cvss_text) if cvss_text else '—', meta_val_style)],
+            ],
+            colWidths=[2.4 * inch, 4.1 * inch],
+        )
+        meta_t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(sev_bg)),
+            ('LEFTPADDING', (0, 0), (-1, -1), 14),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LINEAFTER', (0, 0), (0, -1), 0.25, colors.HexColor('#E2E8F0')),
+            ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#E2E8F0')),
+        ]))
+        elements.append(meta_t)
+
+        # -- Body: details in a clean two-section layout
+        body_rows = []
 
         def _add_row(label, value):
             """Plain (non-markdown) row — used for short scalar values."""
@@ -1076,6 +1551,12 @@ class PDFReportGenerator:
                     fontSize=9, textColor=colors.HexColor(body_c),
                 )),
             ])
+
+        # Inline images in the finding's markdown fields inherit the finding's
+        # effective mark.
+        _f_lvl, _f_suf = self._eff_mark(finding)
+        _f_mark = self.marking.portion_mark(_f_lvl, _f_suf) if (self.marking and _f_lvl) else None
+        _f_anchors = self.marking.image_anchors if self.marking else None
 
         def _add_md_row(label, value, max_chars=4000):
             """Markdown row — renders block-level markdown into the cell."""
@@ -1090,6 +1571,7 @@ class PDFReportGenerator:
                 str(value), cell_body_style, max_chars=max_chars,
                 image_resolver=self._resolve_markdown_image,
                 max_image_width=4.5 * inch, max_image_height=3.0 * inch,
+                mark_text=_f_mark, mark_anchors=_f_anchors, mark_fg=self._mark_fg(_f_lvl),
             )
             if not flowables:
                 return
@@ -1097,11 +1579,7 @@ class PDFReportGenerator:
 
         asset_names = ', '.join([a.name for a in finding.assets]) if finding.assets else 'N/A'
         _add_row('AFFECTED ASSETS', asset_names)
-        if finding.cvss_score is not None:
-            cvss_label = f'{finding.cvss_score}'
-            if finding.cvss_vector:
-                cvss_label += f'  |  {finding.cvss_vector}'
-            _add_row('CVSS', cvss_label)
+        # (CVSS now shown in the meta row alongside criticality.)
 
         _add_md_row('DESCRIPTION', finding.description)
         _add_md_row('IMPACT', finding.impact)
@@ -1120,20 +1598,24 @@ class PDFReportGenerator:
                 ('RIGHTPADDING', (1, 0), (1, -1), 8),
                 ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
                 ('LINEBELOW', (0, 0), (-1, -2), 0.25, colors.HexColor('#E2E8F0')),
-                ('LINEBEFORE', (0, 0), (0, -1), 5, colors.HexColor(sev_hex)),
             ]))
             elements.append(body_t)
         else:
             elements.append(Spacer(1, 8))
 
         card = Table([[e] for e in elements], colWidths=[6.5 * inch])
-        card.setStyle(TableStyle([
+        card_style = [
             ('TOPPADDING', (0, 0), (-1, -1), 0),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
             ('LEFTPADDING', (0, 0), (-1, -1), 0),
             ('RIGHTPADDING', (0, 0), (-1, -1), 0),
             ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-        ]))
+        ]
+        # Severity bar on the card's left edge, drawn AFTER the box so it sits
+        # on top (no border overlap). Toggleable via the theme.
+        if show_bar:
+            card_style.append(('LINEBEFORE', (0, 0), (0, -1), 5, colors.HexColor(sev_hex)))
+        card.setStyle(TableStyle(card_style))
         return card
 
     # ── Generate ──────────────────────────────────────────────────
@@ -1141,7 +1623,10 @@ class PDFReportGenerator:
     def generate(self) -> bytes:
         buffer   = io.BytesIO()
         page_size = _get_page_size(_t(self.theme, 'page_size'))
-        doc = SimpleDocTemplate(
+        # Compute the document banner (high-water mark) once up front so the
+        # per-page header/footer callback can paint it.
+        self._banner_level = self._compute_banner_level()
+        doc = _OutlineDocTemplate(
             buffer, pagesize=page_size,
             rightMargin=54, leftMargin=54,
             topMargin=60, bottomMargin=52,
@@ -1160,6 +1645,8 @@ class PDFReportGenerator:
 
         # Sections
         for section in self.sections:
+            if getattr(section, 'page_break_before', False):
+                elements.append(PageBreak())
             if section.section_type == SectionType.TEXT:
                 self._render_text_section(elements, section)
             elif section.section_type == SectionType.FINDINGS:
@@ -1175,7 +1662,19 @@ class PDFReportGenerator:
         else:
             first_page_cb = self._header_footer
 
-        doc.build(elements, onFirstPage=first_page_cb, onLaterPages=self._header_footer)
+        # "Page X of Y" needs the total page count, which only a counting canvas
+        # knows. Use it when both page numbers and the X-of-Y option are on; the
+        # header/footer callback then skips drawing the plain "Page X".
+        build_kwargs = dict(onFirstPage=first_page_cb, onLaterPages=self._header_footer)
+        if _t(self.theme, 'show_page_numbers') and _t(self.theme, 'show_page_x_of_y'):
+            build_kwargs['canvasmaker'] = _make_numbered_canvas(
+                _t(self.theme, 'font_family'),
+                _t(self.theme, 'muted_text_color'),
+                skip_first=bool(show_cover),
+            )
+
+        # multiBuild resolves the TableOfContents page numbers over repeated passes.
+        doc.multiBuild(elements, **build_kwargs)
         pdf_value = buffer.getvalue()
         buffer.close()
         return pdf_value
@@ -1185,22 +1684,29 @@ class PDFReportGenerator:
         canvas.saveState()
         self._draw_cover(canvas, doc)
         canvas.restoreState()
+        # Banner is painted on the cover too (top/bottom or TLP chip).
+        self._draw_banner(canvas, doc)
 
     # ── Section renderers ─────────────────────────────────────────
 
     def _render_text_section(self, elements, section: ReportSection):
-        elements.append(self._section_header_table(section.title.upper()))
+        elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 14))
         if section.content:
+            s_lvl, s_suf = self._eff_mark(section)
+            s_mark = self.marking.portion_mark(s_lvl, s_suf) if (self.marking and s_lvl) else None
             for fl in _md_to_flowables(
                 section.content, self.styles['BodyText2'],
                 image_resolver=self._resolve_markdown_image,
+                mark_text=s_mark,
+                mark_anchors=self.marking.image_anchors if self.marking else None,
+                mark_fg=self._mark_fg(s_lvl),
             ):
                 elements.append(fl)
         elements.append(Spacer(1, 20))
 
     def _render_findings_section(self, elements, section: ReportSection):
-        elements.append(self._section_header_table(section.title.upper()))
+        elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 16))
 
         if not self.findings:
@@ -1214,17 +1720,26 @@ class PDFReportGenerator:
             key = _v(f.severity).upper()
             severity_counts[key] = severity_counts.get(key, 0) + 1
 
-        elements.append(Paragraph('Severity Distribution', self.styles['SubSectionTitle']))
+        elements.append(Paragraph(f"{self._heading_mark_prefix()}Severity Distribution", self.styles['SubSectionTitle']))
+        # The aggregate chart carries the engagement-default mark.
+        sev_mark = self.marking.resolve(None, None) if self.marking else (None, None)
+        sev_above, sev_below = self._table_mark_flowables([sev_mark])
+        for fl in sev_above:
+            elements.append(fl)
         elements.append(self._severity_summary_table(severity_counts))
+        for fl in sev_below:
+            elements.append(fl)
         elements.append(Spacer(1, 24))
 
         # ── Finding details ────────────────────────────────────────
-        elements.append(Paragraph('Detailed Findings', self.styles['SubSectionTitle']))
+        elements.append(Paragraph(f"{self._heading_mark_prefix()}Detailed Findings", self.styles['SubSectionTitle']))
         elements.append(Spacer(1, 8))
 
         for idx, finding in enumerate(self.findings, 1):
             card = self._finding_card(idx, finding)
-            elements.append(KeepTogether(card))
+            # Each finding card is its own table → mark per the table guide.
+            above, below = self._table_mark_flowables([self._eff_mark(finding)])
+            elements.append(KeepTogether(above + [card] + below))
             elements.append(Spacer(1, 8))
             self._render_evidence(elements, finding)
             elements.append(Spacer(1, 12))
@@ -1274,40 +1789,68 @@ class PDFReportGenerator:
         ]))
         elements.append(ev_hdr)
 
+        # Image mark placement policy (per the marking profile).
+        anchors = self.marking.image_anchors if self.marking else []
+        overlay_anchors = [a for a in anchors if a != 'CAPTION']
+        show_filenames = _t(self.theme, 'show_evidence_filenames')
+
         for ev in evidence_list:
             mime = (ev.mime_type or '').lower()
-            # Build caption
+
+            # Effective mark for this evidence item (inherits the finding).
+            ev_lvl, ev_suf = self._eff_mark_evidence(ev, finding)
+            ev_mark_raw = self.marking.portion_mark(ev_lvl, ev_suf) if self.marking else ''
+            ev_mark_esc = _escape_xml(ev_mark_raw)
+
+            # Build caption (filename optional; mark-prefixed when CAPTION anchor).
             caption_parts = []
             if ev.description:
                 caption_parts.append(ev.description)
-            caption_parts.append(f'[{ev.original_filename}]')
+            if show_filenames:
+                caption_parts.append(f'[{ev.original_filename}]')
             caption_text = _escape_xml('  '.join(caption_parts))
+            if ev_mark_esc and 'CAPTION' in anchors:
+                caption_text = f'{ev_mark_esc}  {caption_text}'.strip()
 
             if mime in self._IMAGE_MIMES and self.storage:
                 file_bytes = self._fetch_file_bytes(ev.filename)
                 if file_bytes:
                     try:
                         img_stream = io.BytesIO(file_bytes)
-                        img = Image(img_stream)
+                        # Default: marks sit OUTSIDE the image (strips above/below)
+                        # so they never overlap content. stamp_images additionally
+                        # burns the mark onto the bitmap (detached-screenshot safety).
+                        do_stamp = bool(self.marking and self.marking.stamp_images and ev_mark_raw)
+                        stamp_anchors = overlay_anchors or (['TOP_LEFT'] if do_stamp else [])
+                        if do_stamp and stamp_anchors:
+                            img = MarkedImage(img_stream, mark_text=ev_mark_raw,
+                                              anchors=stamp_anchors, mark_fg=self._mark_fg(ev_lvl))
+                        else:
+                            img = Image(img_stream)
                         iw, ih = img.imageWidth, img.imageHeight
                         if iw and ih:
                             scale = min(page_w / iw, max_img_h / ih, 1.0)
                             img.drawWidth  = iw * scale
                             img.drawHeight = ih * scale
                         img.hAlign = 'CENTER'
-                        elements.append(img)
-                        elements.append(Paragraph(caption_text, ParagraphStyle(
-                            name=f'ImgCap_{ev.id}', parent=self.styles['Caption'],
-                            alignment=1, spaceAfter=6,
-                        )))
+                        above_lines, below_lines = self._anchor_mark_lines(ev_mark_raw, overlay_anchors, self._mark_fg(ev_lvl))
+                        block = above_lines + [img] + below_lines
+                        if caption_text:
+                            block.append(Paragraph(caption_text, ParagraphStyle(
+                                name=f'ImgCap_{ev.id}', parent=self.styles['Caption'],
+                                alignment=1, spaceAfter=6,
+                            )))
+                        elements.append(KeepTogether(block))
                         elements.append(Spacer(1, 4))
                         continue
                     except Exception as exc:
                         _log.warning(f'Could not embed image {ev.filename!r}: {exc}')
 
-            # Non-image or failed image → text attachment reference
+            # Non-image or failed image → text attachment reference. Always carry
+            # the mark (an attachment has no figure to stamp).
+            attach_caption = f'{ev_mark_esc}  {caption_text}' if (ev_mark_esc and 'CAPTION' not in anchors) else caption_text
             elements.append(Paragraph(
-                f'\U0001f4ce  {caption_text}',
+                f'\U0001f4ce  {attach_caption}',
                 ParagraphStyle(
                     name=f'AttachRef_{ev.id}', parent=self.styles['BodyText2'],
                     fontSize=9, textColor=colors.HexColor(muted), spaceAfter=4,
@@ -1318,7 +1861,7 @@ class PDFReportGenerator:
     # ── Table section renderers ───────────────────────────────────
 
     def _render_testcases_section(self, elements, section: ReportSection):
-        elements.append(self._section_header_table(section.title.upper()))
+        elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 16))
 
         if not self.testcases:
@@ -1339,40 +1882,67 @@ class PDFReportGenerator:
             fontSize=9, fontName=font, textColor=colors.HexColor(_t(self.theme, 'body_text_color')),
         )
 
-        rows = [[
+        per_row = bool(self.marking and self.marking.per_row)
+        zebra, alt_bg, grid = self._table_style_tokens()
+
+        header_cells = [
             Paragraph('TEST CASE', header_style),
             Paragraph('CATEGORY', header_style),
             Paragraph('EXECUTED', header_style),
             Paragraph('RESULT', header_style),
-        ]]
+        ]
+        if per_row:
+            header_cells = [self._row_mark_cell(None, None, header=True)] + header_cells
+        rows = [header_cells]
+
+        tc_levels = []
         for tc in self.testcases:
+            lvl, suf = self._eff_mark(tc)
+            tc_levels.append((lvl, suf))
             executed = '✓' if tc.is_executed else '–'
             result   = '✓ Pass' if tc.is_successful else ('✗ Fail' if tc.is_successful is False else 'N/A')
-            rows.append([
+            cells = [
                 Paragraph(_escape_xml(tc.title[:80]), cell_style),
                 Paragraph(_v(tc.category).replace('_', ' ').title(), cell_style),
                 Paragraph(executed, cell_style),
                 Paragraph(result, cell_style),
-            ])
+            ]
+            if per_row:
+                cells = [self._row_mark_cell(lvl, suf)] + cells
+            rows.append(cells)
 
-        col_widths = [3.0 * inch, 1.4 * inch, 0.85 * inch, 1.0 * inch]
+        if per_row:
+            col_widths = [0.55 * inch, 2.45 * inch, 1.4 * inch, 0.85 * inch, 1.0 * inch]
+            center_from = 3
+        else:
+            col_widths = [3.0 * inch, 1.4 * inch, 0.85 * inch, 1.0 * inch]
+            center_from = 2
+
         t = Table(rows, colWidths=col_widths, repeatRows=1)
-        t.setStyle(TableStyle([
+        style = [
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(dark)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN', (2, 1), (-1, -1), 'CENTER'),
+            ('ALIGN', (center_from, 1), (-1, -1), 'CENTER'),
             ('TOPPADDING', (0, 0), (-1, -1), 7),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
             ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
-            ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#E2E8F0')),
-        ]))
+            ('LINEBELOW', (0, 0), (-1, -1), 0.25, grid),
+        ]
+        if zebra:
+            style.append(('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, alt_bg]))
+        t.setStyle(TableStyle(style))
+
+        above, below = self._table_mark_flowables(tc_levels)
+        for fl in above:
+            elements.append(fl)
         elements.append(t)
+        for fl in below:
+            elements.append(fl)
         elements.append(Spacer(1, 20))
 
     def _render_cleanup_artifacts_section(self, elements, section: ReportSection):
-        elements.append(self._section_header_table(section.title.upper()))
+        elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 16))
 
         if not self.cleanup_artifacts:
@@ -1393,33 +1963,58 @@ class PDFReportGenerator:
             fontSize=9, fontName=font, textColor=colors.HexColor(_t(self.theme, 'body_text_color')),
         )
 
-        rows = [[
+        per_row = bool(self.marking and self.marking.per_row)
+        zebra, alt_bg, grid = self._table_style_tokens()
+
+        header_cells = [
             Paragraph('ARTIFACT', header_style),
             Paragraph('TYPE', header_style),
             Paragraph('STATUS', header_style),
             Paragraph('LOCATION', header_style),
-        ]]
+        ]
+        if per_row:
+            header_cells = [self._row_mark_cell(None, None, header=True)] + header_cells
+        rows = [header_cells]
+
+        ca_levels = []
         for ca in self.cleanup_artifacts:
-            rows.append([
+            lvl, suf = self._eff_mark(ca)
+            ca_levels.append((lvl, suf))
+            cells = [
                 Paragraph(_escape_xml(ca.title[:60]), cell_style),
                 Paragraph(_v(ca.artifact_type).replace('_', ' ').title(), cell_style),
                 Paragraph(_v(ca.status).replace('_', ' ').title(), cell_style),
                 Paragraph(_escape_xml((ca.location or 'N/A')[:50]), cell_style),
-            ])
+            ]
+            if per_row:
+                cells = [self._row_mark_cell(lvl, suf)] + cells
+            rows.append(cells)
 
-        col_widths = [2.3 * inch, 1.3 * inch, 1.2 * inch, 1.7 * inch]
+        if per_row:
+            col_widths = [0.55 * inch, 1.95 * inch, 1.2 * inch, 1.15 * inch, 1.65 * inch]
+        else:
+            col_widths = [2.3 * inch, 1.3 * inch, 1.2 * inch, 1.7 * inch]
+
         t = Table(rows, colWidths=col_widths, repeatRows=1)
-        t.setStyle(TableStyle([
+        style = [
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(dark)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('TOPPADDING', (0, 0), (-1, -1), 7),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
             ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
-            ('LINEBELOW', (0, 0), (-1, -1), 0.25, colors.HexColor('#E2E8F0')),
-        ]))
+            ('LINEBELOW', (0, 0), (-1, -1), 0.25, grid),
+        ]
+        if zebra:
+            style.append(('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, alt_bg]))
+        t.setStyle(TableStyle(style))
+
+        above, below = self._table_mark_flowables(ca_levels)
+        for fl in above:
+            elements.append(fl)
         elements.append(t)
+        for fl in below:
+            elements.append(fl)
 
         # Detailed entries
         elements.append(Spacer(1, 24))
@@ -1453,10 +2048,15 @@ class PDFReportGenerator:
                     name=f'CAV_{idx}_{label}', parent=self.styles['BodyText2'],
                     fontSize=9, spaceAfter=2,
                 )
+                _ca_lvl, _ca_suf = self._eff_mark(ca)
+                _ca_mark = self.marking.portion_mark(_ca_lvl, _ca_suf) if (self.marking and _ca_lvl) else None
                 flowables = _md_to_flowables(
                     str(val), cell_style, max_chars=max_chars,
                     image_resolver=self._resolve_markdown_image,
                     max_image_width=4.5 * inch, max_image_height=3.0 * inch,
+                    mark_text=_ca_mark,
+                    mark_anchors=self.marking.image_anchors if self.marking else None,
+                    mark_fg=self._mark_fg(_ca_lvl),
                 )
                 if not flowables:
                     return
@@ -1474,7 +2074,7 @@ class PDFReportGenerator:
 
             if det_rows:
                 header = Table(
-                    [[Paragraph(f'{idx}. {_escape_xml(ca.title)}', ParagraphStyle(
+                    [[Paragraph(f'{idx}. {self._mark_prefix(ca)}{_escape_xml(ca.title)}', ParagraphStyle(
                         name=f'CATitle_{idx}', parent=self.styles['FindingTitle'],
                         fontSize=10,
                     ))]],
@@ -1498,7 +2098,9 @@ class PDFReportGenerator:
                     ('LINEBELOW', (0, 0), (-1, -2), 0.25, colors.HexColor('#E2E8F0')),
                     ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
                 ]))
-                elements.append(KeepTogether([header, body_t]))
+                # Each cleanup entry is its own table → mark per the table guide.
+                ca_above, ca_below = self._table_mark_flowables([self._eff_mark(ca)])
+                elements.append(KeepTogether(ca_above + [header, body_t] + ca_below))
                 elements.append(Spacer(1, 12))
 
 
@@ -1655,3 +2257,304 @@ class MarkdownReportGenerator:
             md += '\n---\n\n'
 
         return md
+
+
+# ═══════════════════════════════════════════════════════════════════
+# HTML Report Generator — self-contained, styled, marking-aware
+# ═══════════════════════════════════════════════════════════════════
+
+class HTMLReportGenerator:
+    """Produces a single self-contained HTML document (inline CSS, base64
+    images) — an editable deliverable clients can open in a browser or import
+    into Word. Honors the theme palette and the marking profile (banner +
+    portion marks)."""
+
+    def __init__(self, engagement, sections, findings, testcases,
+                 cleanup_artifacts=None, theme=None, storage=None,
+                 markdown_image_map=None, marking_profile=None):
+        self.engagement = engagement
+        self.sections = sections
+        self.findings = sorted(findings, key=lambda x: _severity_rank(x.severity), reverse=True)
+        self.testcases = testcases
+        self.cleanup_artifacts = cleanup_artifacts or []
+        self.theme = theme
+        self.storage = storage
+        self.markdown_image_map = markdown_image_map or {}
+        self.marking = MarkingEngine(marking_profile, engagement) if marking_profile else None
+        self._banner_level = self._compute_banner_level()
+
+    # ── marking helpers ───────────────────────────────────────────
+    def _eff(self, entity):
+        if not self.marking:
+            return (None, None)
+        return self.marking.resolve(getattr(entity, 'classification_level', None),
+                                    getattr(entity, 'classification_suffix', None))
+
+    def _eff_evidence(self, ev, finding):
+        if not self.marking:
+            return (None, None)
+        if getattr(ev, 'classification_level', None):
+            return self.marking.resolve(ev.classification_level, ev.classification_suffix)
+        return self._eff(finding)
+
+    def _mark_prefix(self, entity):
+        if not self.marking:
+            return ''
+        lvl, suf = self._eff(entity)
+        tok = self.marking.portion_mark(lvl, suf)
+        return f'<span class="pmark">{_escape_xml(tok)}</span> ' if tok else ''
+
+    def _heading_mark_prefix(self, section=None):
+        """Static-heading mark (lowest level by default) for structural headings,
+        unless the section is explicitly marked."""
+        if not self.marking:
+            return ''
+        if section is not None and getattr(section, 'classification_level', None):
+            lvl, suf = self.marking.resolve(section.classification_level, section.classification_suffix)
+        elif self.marking.static_heading_mode == 'INHERIT':
+            lvl, suf = self.marking.resolve(None, None)
+        else:
+            lvl, suf = self.marking.lowest_level(), None
+        tok = self.marking.portion_mark(lvl, suf)
+        return f'<span class="pmark">{_escape_xml(tok)}</span> ' if tok else ''
+
+    def _compute_banner_level(self):
+        if not self.marking:
+            return None
+        marks = [getattr(self.engagement, 'default_classification_level', None)]
+        for s in self.sections:
+            marks.append(self.marking.resolve(getattr(s, 'classification_level', None),
+                                              getattr(s, 'classification_suffix', None))[0])
+        for f in self.findings:
+            marks.append(self._eff(f)[0])
+            for ev in (f.evidence or []):
+                if getattr(ev, 'include_in_report', False):
+                    marks.append(self._eff_evidence(ev, f)[0])
+        for tc in self.testcases:
+            marks.append(self._eff(tc)[0])
+        for ca in self.cleanup_artifacts:
+            marks.append(self._eff(ca)[0])
+        return self.marking.highest(marks)
+
+    def _sev_color(self, sev):
+        key = _SEV_THEME_KEY.get((sev or '').upper())
+        return (_t(self.theme, key) if key else None) or _SEV_COLORS.get((sev or '').upper(), '#64748B')
+
+    # ── images ────────────────────────────────────────────────────
+    def _data_uri(self, storage_key, content_type=None):
+        if not self.storage or not storage_key:
+            return None
+        try:
+            buf = io.BytesIO()
+            self.storage.s3.download_fileobj(self.storage.bucket_name, storage_key, buf)
+            b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+            return f'data:{content_type or "image/png"};base64,{b64}'
+        except Exception as exc:
+            _log.warning(f'HTML: could not embed image {storage_key!r}: {exc}')
+            return None
+
+    def _rewrite_inline_images(self, html_text):
+        """Replace /markdown-images/<id> srcs with embedded data URIs."""
+        if not self.markdown_image_map:
+            return html_text
+
+        def _repl(m):
+            src = m.group(1)
+            mm = re.search(r'/markdown-images/([^/?#"\']+)', src) or re.search(r'([0-9a-fA-F-]{16,})', src)
+            if not mm:
+                return m.group(0)
+            image_id = mm.group(1).rsplit('.', 1)[0]
+            info = self.markdown_image_map.get(image_id)
+            if not info:
+                return m.group(0)
+            uri = self._data_uri(info.get('storage_key'), info.get('content_type'))
+            return f'src="{uri}"' if uri else m.group(0)
+
+        return re.sub(r'src="([^"]+)"', _repl, html_text)
+
+    def _md(self, text):
+        if not text:
+            return ''
+        import html as _html
+        try:
+            import markdown as _markdown
+            # Report fields are markdown. Escape any raw HTML first so author
+            # content (finding descriptions, etc.) cannot inject <script>/<img
+            # onerror=…> into the rendered report — markdown syntax still works.
+            safe = _html.escape(str(text), quote=False)
+            html = _markdown.markdown(safe, extensions=['extra', 'sane_lists', 'nl2br'])
+        except Exception:
+            html = '<p>' + _escape_xml(str(text)).replace('\n', '<br/>') + '</p>'
+        # Neutralize dangerous URL schemes markdown may emit from links like
+        # [x](javascript:…). Our own embedded images (data: URIs) are added by
+        # _rewrite_inline_images *after* this strip, so they are unaffected.
+        html = re.sub(r'(?i)(href|src)\s*=\s*"\s*(?:javascript|vbscript|data):[^"]*"', r'\1="#"', html)
+        return self._rewrite_inline_images(html)
+
+    # ── generate ──────────────────────────────────────────────────
+    def generate(self) -> str:
+        primary = _t(self.theme, 'primary_color')
+        dark = _t(self.theme, 'secondary_color')
+        body_c = _t(self.theme, 'body_text_color')
+        font = _t(self.theme, 'font_family')
+        alt_bg = _t(self.theme, 'table_alt_row_bg')
+        grid = _t(self.theme, 'table_grid_color')
+
+        banner_html = ''
+        if self.marking and self._banner_level:
+            b = self.marking.banner(self._banner_level)
+            if b:
+                text, bg, fg = b
+                banner_html = (f'<div class="banner" style="background:{bg};color:{fg}">'
+                               f'{_escape_xml(text)}</div>')
+
+        parts = [f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>{_escape_xml(_t(self.theme, 'cover_title') or 'Report')} — {_escape_xml(self.engagement.name)}</title>
+<style>
+  :root {{ --primary:{primary}; --dark:{dark}; --body:{body_c}; --alt:{alt_bg}; --grid:{grid}; }}
+  body {{ font-family:{font}, Arial, sans-serif; color:var(--body); max-width:60rem; margin:0 auto; padding:2rem; line-height:1.5; }}
+  .banner {{ text-align:center; font-weight:bold; padding:.4rem; letter-spacing:.05em; position:sticky; top:0; }}
+  .banner.bottom {{ position:static; margin-top:2rem; }}
+  h1.cover {{ color:var(--primary); font-size:2rem; margin:.2rem 0; }}
+  .cover-meta {{ color:#64748b; font-size:.9rem; }}
+  .section-bar {{ background:var(--dark); color:#fff; padding:.6rem 1rem; font-size:1.1rem; font-weight:bold; border-top:3px solid var(--primary); margin-top:2rem; }}
+  table {{ border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }}
+  th {{ background:var(--dark); color:#fff; text-align:left; padding:.5rem; }}
+  td {{ padding:.5rem; border-bottom:1px solid var(--grid); vertical-align:top; }}
+  tr:nth-child(even) td {{ background:var(--alt); }}
+  .finding {{ border:1px solid var(--grid); border-radius:6px; margin:1rem 0; overflow:hidden; }}
+  .finding-head {{ background:var(--dark); color:#fff; padding:.6rem 1rem; font-weight:bold; }}
+  .finding-body {{ padding:1rem; }}
+  .label {{ color:#64748b; font-size:.7rem; font-weight:bold; text-transform:uppercase; letter-spacing:.05em; margin-top:.8rem; }}
+  .sev {{ display:inline-block; padding:.1rem .5rem; border-radius:3px; color:#fff; font-size:.75rem; font-weight:bold; }}
+  .pmark {{ font-weight:bold; color:var(--primary); }}
+  .legend span {{ display:inline-block; padding:.1rem .5rem; margin:.1rem; border-radius:3px; font-size:.75rem; font-weight:bold; }}
+  figure {{ margin:1rem 0; }} figure img {{ max-width:100%; border:1px solid var(--grid); }}
+  figcaption {{ color:#64748b; font-size:.8rem; text-align:center; }}
+  img {{ max-width:100%; }}
+</style></head><body>"""]
+
+        if banner_html:
+            parts.append(banner_html)
+
+        # Cover block
+        parts.append('<header style="text-align:center;padding:2rem 0;border-bottom:2px solid var(--primary)">')
+        parts.append(f'<h1 class="cover">{_escape_xml(_t(self.theme, "cover_title") or "Security Assessment Report")}</h1>')
+        parts.append(f'<div class="cover-meta"><strong>{_escape_xml(self.engagement.name)}</strong></div>')
+        parts.append(f'<div class="cover-meta">Client: {_escape_xml(self.engagement.client_name or "")}</div>')
+        parts.append(f'<div class="cover-meta">{datetime.now().strftime("%B %d, %Y")}</div>')
+        ref = _t(self.theme, 'report_reference'); ver = _t(self.theme, 'report_version')
+        if ref or ver:
+            parts.append(f'<div class="cover-meta">{_escape_xml(("REF: "+ref) if ref else "")} {_escape_xml(("v"+ver) if ver else "")}</div>')
+        if self.marking and self.marking.show_legend and self._banner_level:
+            chips = ''.join(
+                f'<span style="background:{bg};color:{fg}">{_escape_xml(full or abbr)}</span>'
+                for abbr, full, bg, fg in self.marking.legend_entries()
+            )
+            parts.append(f'<div class="legend" style="margin-top:1rem">{chips}</div>')
+            if self.marking.distribution_statement:
+                parts.append(f'<div class="cover-meta" style="margin-top:.5rem">{_escape_xml(self.marking.distribution_statement)}</div>')
+        parts.append('</header>')
+
+        for section in self.sections:
+            st = section.section_type
+            if st == SectionType.TEXT:
+                parts.append(self._section_bar(section))
+                parts.append(self._md(section.content or ''))
+            elif st == SectionType.FINDINGS:
+                parts.append(self._section_bar(section))
+                parts.append(self._findings_html())
+            elif st == SectionType.TESTCASES:
+                parts.append(self._section_bar(section))
+                parts.append(self._testcases_html())
+            elif st == SectionType.CLEANUP_ARTIFACTS:
+                parts.append(self._section_bar(section))
+                parts.append(self._cleanup_html())
+
+        if banner_html:
+            parts.append(banner_html.replace('class="banner"', 'class="banner bottom"'))
+        parts.append('</body></html>')
+        return '\n'.join(parts)
+
+    def _section_bar(self, section):
+        return f'<div class="section-bar">{self._heading_mark_prefix(section)}{_escape_xml(section.title.upper())}</div>'
+
+    def _findings_html(self):
+        if not self.findings:
+            return '<p>No findings recorded for this engagement.</p>'
+        counts = {}
+        for f in self.findings:
+            k = _v(f.severity).upper()
+            counts[k] = counts.get(k, 0) + 1
+        rows = ''.join(
+            f'<tr><td><span class="sev" style="background:{self._sev_color(s)}">{s}</span></td>'
+            f'<td>{counts.get(s, 0)}</td></tr>'
+            for s in _SEV_ORDER
+        )
+        out = [f'<h3>{self._heading_mark_prefix()}Severity Distribution</h3><table><tr><th>Severity</th><th>Count</th></tr>{rows}</table>']
+        for idx, f in enumerate(self.findings, 1):
+            sev = _v(f.severity).upper()
+            out.append('<div class="finding">')
+            out.append(f'<div class="finding-head" style="border-left:5px solid {self._sev_color(sev)}">'
+                       f'{self._mark_prefix(f)}F{idx:02d} — {_escape_xml(f.title)} '
+                       f'<span class="sev" style="background:{self._sev_color(sev)};float:right">{sev}</span></div>')
+            out.append('<div class="finding-body">')
+            assets = ', '.join(a.name for a in f.assets) if f.assets else 'N/A'
+            out.append(f'<div class="label">Affected Assets</div><div>{_escape_xml(assets)}</div>')
+            if f.cvss_score is not None:
+                cvss = f'{f.cvss_score}' + (f' | {_escape_xml(f.cvss_vector)}' if f.cvss_vector else '')
+                out.append(f'<div class="label">CVSS</div><div>{cvss}</div>')
+            for lbl, val in (('Description', f.description), ('Impact', f.impact),
+                             ('Steps to Reproduce', f.steps_to_reproduce),
+                             ('Recommendations', f.mitigations), ('References', f.references)):
+                if val:
+                    out.append(f'<div class="label">{lbl}</div>{self._md(val)}')
+            # Evidence images
+            for ev in (f.evidence or []):
+                if not getattr(ev, 'include_in_report', False):
+                    continue
+                ev_lvl, ev_suf = self._eff_evidence(ev, f)
+                tok = self.marking.portion_mark(ev_lvl, ev_suf) if self.marking else ''
+                mime = (ev.mime_type or '').lower()
+                cap = f'{_escape_xml(tok)+" " if tok else ""}{_escape_xml(ev.description or "")} [{_escape_xml(ev.original_filename)}]'
+                if mime in PDFReportGenerator._IMAGE_MIMES:
+                    uri = self._data_uri(ev.filename, ev.mime_type)
+                    if uri:
+                        out.append(f'<figure><img src="{uri}" alt=""><figcaption>{cap}</figcaption></figure>')
+                        continue
+                out.append(f'<div class="cover-meta">📎 {cap}</div>')
+            out.append('</div></div>')
+        return '\n'.join(out)
+
+    def _testcases_html(self):
+        if not self.testcases:
+            return '<p>No test cases recorded.</p>'
+        per_row = bool(self.marking and self.marking.per_row)
+        head = '<tr>' + ('<th>Mark</th>' if per_row else '') + '<th>Test Case</th><th>Category</th><th>Executed</th><th>Result</th></tr>'
+        rows = []
+        for tc in self.testcases:
+            executed = '✓' if tc.is_executed else '–'
+            result = '✓ Pass' if tc.is_successful else ('✗ Fail' if tc.is_successful is False else 'N/A')
+            mark = ''
+            if per_row:
+                lvl, suf = self._eff(tc)
+                mark = f'<td class="pmark">{_escape_xml(self.marking.portion_mark(lvl, suf))}</td>'
+            rows.append(f'<tr>{mark}<td>{_escape_xml(tc.title)}</td><td>{_escape_xml(_v(tc.category).replace("_"," ").title())}</td>'
+                        f'<td>{executed}</td><td>{result}</td></tr>')
+        return f'<table>{head}{"".join(rows)}</table>'
+
+    def _cleanup_html(self):
+        if not self.cleanup_artifacts:
+            return '<p>No cleanup artifacts recorded.</p>'
+        per_row = bool(self.marking and self.marking.per_row)
+        head = '<tr>' + ('<th>Mark</th>' if per_row else '') + '<th>Artifact</th><th>Type</th><th>Status</th><th>Location</th></tr>'
+        rows = []
+        for ca in self.cleanup_artifacts:
+            mark = ''
+            if per_row:
+                lvl, suf = self._eff(ca)
+                mark = f'<td class="pmark">{_escape_xml(self.marking.portion_mark(lvl, suf))}</td>'
+            rows.append(f'<tr>{mark}<td>{_escape_xml(ca.title)}</td><td>{_escape_xml(_v(ca.artifact_type).replace("_"," ").title())}</td>'
+                        f'<td>{_escape_xml(_v(ca.status).replace("_"," ").title())}</td><td>{_escape_xml(ca.location or "N/A")}</td></tr>')
+        return f'<table>{head}{"".join(rows)}</table>'

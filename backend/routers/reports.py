@@ -19,12 +19,13 @@ from models.testcase import TestCase
 from models.cleanup_artifact import CleanupArtifact
 from models.report_layout import ReportLayout, ReportSection, SectionType
 from models.report_theme import ReportTheme
+from models.marking_profile import MarkingProfile
 from schemas.report import ReportConfiguration, ReportFormat
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
 from models.user import UserRole
-from utils.report_generator import PDFReportGenerator, MarkdownReportGenerator
+from utils.report_generator import PDFReportGenerator, MarkdownReportGenerator, HTMLReportGenerator
 from utils.storage import storage_service
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -114,6 +115,16 @@ async def _do_generate_report(
         )
         theme = default_result.scalar_one_or_none()
 
+    # 3b. Resolve the marking profile: explicit config → engagement's profile →
+    # None. Marking is OPT-IN: with no profile selected, no markings render.
+    marking_profile = None
+    chosen_profile_id = config.marking_profile_id or engagement.marking_profile_id
+    if chosen_profile_id:
+        mp_result = await db.execute(
+            select(MarkingProfile).where(MarkingProfile.id == chosen_profile_id)
+        )
+        marking_profile = mp_result.scalar_one_or_none()
+
     # 4. Fetch Findings
     findings_query = (
         select(Finding)
@@ -156,6 +167,32 @@ async def _do_generate_report(
         cleanup_id_set = set(config.cleanup_ids)
         cleanup_artifacts = [ca for ca in cleanup_artifacts if str(ca.id) in cleanup_id_set]
 
+    # 6b. Marking enforcement lint (WARN / BLOCK). Only meaningful when a
+    # profile with levels is in effect.
+    marking_warning_headers = {}
+    if marking_profile and (marking_profile.levels or []):
+        from utils.marking import MarkingEngine, lint_marking
+        engine = MarkingEngine(marking_profile, engagement)
+        enforcement = getattr(marking_profile.enforcement, 'value', marking_profile.enforcement)
+        if enforcement in ('WARN', 'BLOCK'):
+            blocking, warnings = lint_marking(engine, sections, findings, testcases, cleanup_artifacts)
+            if enforcement == 'BLOCK' and blocking:
+                logger = logging.getLogger(__name__)
+                logger.info(f"Report generation blocked by marking enforcement: {len(blocking)} unmarked portion(s)")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Marking enforcement is set to BLOCK and {len(blocking)} portion(s) have no "
+                        f"classification (no explicit mark and no engagement default). Set an engagement "
+                        f"default classification or mark these items: " + "; ".join(blocking[:15])
+                        + ("…" if len(blocking) > 15 else "")
+                    ),
+                )
+            # WARN (or BLOCK with no blockers): surface inherited-default count.
+            warn_count = len(warnings) + (len(blocking) if enforcement == 'WARN' else 0)
+            if warn_count:
+                marking_warning_headers["X-Marking-Warnings"] = str(warn_count)
+
     # 7. Generate Report
     safe_name = engagement.name.replace(' ', '_').replace('/', '_')
 
@@ -175,13 +212,13 @@ async def _do_generate_report(
     }
 
     if config.report_format == ReportFormat.PDF:
-        generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map)
+        generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile)
         pdf_content = generator.generate()
         filename = f"Report_{safe_name}.pdf"
         return Response(
             content=pdf_content,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"', **marking_warning_headers}
         )
 
     elif config.report_format == ReportFormat.MARKDOWN:
@@ -191,7 +228,17 @@ async def _do_generate_report(
         return Response(
             content=md_content,
             media_type="text/markdown",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"', **marking_warning_headers}
+        )
+
+    elif config.report_format == ReportFormat.HTML:
+        generator = HTMLReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile)
+        html_content = generator.generate()
+        filename = f"Report_{safe_name}.html"
+        return Response(
+            content=html_content,
+            media_type="text/html",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"', **marking_warning_headers}
         )
 
     elif config.report_format in (ReportFormat.JSON_ZIP, ReportFormat.JSON_LAYOUT_ZIP):

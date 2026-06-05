@@ -7,6 +7,9 @@ export interface ReportSectionCreate {
     title: string;
     content?: string;
     sort_order: number;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
+    page_break_before?: boolean | null;
 }
 
 export interface ReportLayoutCreate {

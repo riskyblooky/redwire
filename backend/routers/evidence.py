@@ -142,7 +142,15 @@ async def update_evidence(
         evidence.description = update_data["description"]
     if "include_in_report" in update_data:
         evidence.include_in_report = update_data["include_in_report"]
-        
+    # Portion-marking overrides (null clears → inherit the finding/engagement default).
+    if "classification_level" in update_data:
+        val = update_data["classification_level"]
+        evidence.classification_level = (str(val)[:20] if val else None)
+        change_parts.append("classification")
+    if "classification_suffix" in update_data:
+        val = update_data["classification_suffix"]
+        evidence.classification_suffix = (str(val)[:120] if val else None)
+
     evidence.updated_by = current_user.id
     
     await db.commit()

@@ -106,6 +106,11 @@ export interface Engagement {
     updated_at: string;
     assigned_users?: Partial<User>[];
     assignment_details?: EngagementAssignment[];
+    // Portion marking
+    marking_profile_id?: string | null;
+    default_classification_level?: string | null;
+    default_classification_suffix?: string | null;
+    ceiling_classification_level?: string | null;
 }
 
 export interface EngagementRole {
@@ -166,6 +171,9 @@ export interface Finding {
     updated_at: string;
     tags?: Tag[];
     assets?: Asset[];
+    // Portion marking — null level = inherit
+    classification_level?: string | null;
+    classification_suffix?: string | null;
 }
 
 // Asset types
@@ -216,6 +224,8 @@ export interface Evidence {
     mime_type?: string;
     description?: string;
     include_in_report: boolean;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
     created_at: string;
     updated_at: string;
     created_by: string;
@@ -309,6 +319,9 @@ export interface ReportSection {
     title: string;
     content: string;
     sort_order: number;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
+    page_break_before?: boolean | null;
 }
 
 export interface ReportLayout {

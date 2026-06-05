@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
@@ -6,6 +6,8 @@ class EvidenceBase(BaseModel):
     original_filename: str
     description: Optional[str] = None
     include_in_report: Optional[bool] = True
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
 
 class EvidenceCreate(EvidenceBase):
     finding_id: Optional[str] = None

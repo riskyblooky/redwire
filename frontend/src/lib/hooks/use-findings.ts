@@ -17,6 +17,8 @@ export interface Finding {
     references: string | null;
     cvss_score: number | null;
     cvss_vector: string | null;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
     created_by: string;
     created_at: string;
     updated_at: string;
@@ -48,6 +50,8 @@ export interface FindingCreate {
     references?: string;
     cvss_score?: number;
     cvss_vector?: string;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
     asset_ids?: string[];
     tag_ids?: string[];
     testcase_id?: string;

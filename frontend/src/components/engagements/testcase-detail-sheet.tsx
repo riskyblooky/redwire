@@ -23,6 +23,7 @@ import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import { Shield } from 'lucide-react';
 import {
@@ -299,6 +300,30 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                             <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50">
                                                 <MarkdownPreview value={testcase.actual_result} theme="dark" />
                                             </div>
+                                        </div>
+                                        <Separator className="bg-slate-800/60" />
+                                    </>
+                                )}
+
+                                {/* Classification (portion marking) */}
+                                {canEdit && (
+                                    <>
+                                        <div>
+                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Classification Marking</h4>
+                                            <EntityClassificationField
+                                                engagementId={testcase.engagement_id}
+                                                level={testcase.classification_level || null}
+                                                suffix={testcase.classification_suffix || null}
+                                                inheritLabel="Inherit (engagement default)"
+                                                label=""
+                                                onChange={async (lvl, suf) => {
+                                                    try {
+                                                        await updateTestCase.mutateAsync({ id: testcase.id, classification_level: lvl, classification_suffix: suf });
+                                                    } catch (e: any) {
+                                                        toast.error(getErrorMessage(e, 'Failed to update classification'));
+                                                    }
+                                                }}
+                                            />
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>

@@ -42,5 +42,12 @@ class ReportSection(Base):
     content = Column(Text, nullable=True, default="")
     sort_order = Column(Integer, default=0, nullable=False)
 
+    # Portion marking — null level means inherit the report/engagement default.
+    classification_level = Column(String(20), nullable=True)
+    classification_suffix = Column(String(120), nullable=True)
+
+    # Layout: force a page break before this section when rendering.
+    page_break_before = Column(Boolean, nullable=True)
+
     # Relationships
     report_layout = relationship("ReportLayout", back_populates="sections")

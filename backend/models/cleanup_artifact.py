@@ -26,6 +26,10 @@ class CleanupArtifact(Base, AuditMixin):
     cleaned_at = Column(DateTime, nullable=True)
     cleaned_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Portion marking — null level means inherit (report/engagement default).
+    classification_level = Column(String(20), nullable=True)
+    classification_suffix = Column(String(120), nullable=True)
+
     # Relationships
     engagement = relationship("Engagement", back_populates="cleanup_artifacts")
     cleaned_by_user = relationship("User", foreign_keys=[cleaned_by])

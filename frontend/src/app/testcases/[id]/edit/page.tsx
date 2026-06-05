@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { EditLockBanner } from '@/components/collaboration/edit-lock-banner';
@@ -109,6 +110,8 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
         steps: '',
         expected_result: '',
         notes: '',
+        classification_level: '' as string,
+        classification_suffix: '' as string,
         tag_ids: [] as string[],
         attack_technique_ids: [] as string[],
     });
@@ -124,6 +127,8 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                 steps: testcase.steps || '',
                 expected_result: testcase.expected_result || '',
                 notes: testcase.notes || '',
+                classification_level: (testcase as any).classification_level || '',
+                classification_suffix: (testcase as any).classification_suffix || '',
                 tag_ids: testcase.tags?.map(t => t.id) || [],
                 attack_technique_ids: testcase.attack_technique_ids || [],
             });
@@ -171,7 +176,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
         try {
-            await updateTestCase.mutateAsync({ id: id, ...formData });
+            await updateTestCase.mutateAsync({
+                id: id,
+                ...formData,
+                classification_level: formData.classification_level || null,
+                classification_suffix: formData.classification_suffix || null,
+            });
             setIsDirty(false);
             router.push(`/testcases/${id}`);
         } catch (error: any) {
@@ -319,8 +329,8 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                     </div>
 
                     {/* Sidebar with Tags */}
-                    <div className="space-y-6">
-                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-6 overflow-hidden">
+                    <div className="space-y-6 lg:sticky lg:top-6 self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto custom-scrollbar">
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
                             <div className="h-1.5 bg-linear-to-r from-purple-500 via-pink-500 to-amber-500" />
                             <CardHeader className="pb-4">
                                 <CardTitle className="text-sm font-bold text-slate-200 tracking-wider uppercase">Tags</CardTitle>
@@ -376,6 +386,26 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                 <TechniquePicker
                                     value={formData.attack_technique_ids}
                                     onChange={(ids) => handleChange('attack_technique_ids', ids)}
+                                />
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
+                            <div className="h-1.5 bg-linear-to-r from-red-500 via-rose-500 to-orange-500" />
+                            <CardHeader className="pb-4">
+                                <CardTitle className="text-sm font-bold text-slate-200 tracking-wider uppercase">Classification Marking</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <EntityClassificationField
+                                    engagementId={formData.engagement_id}
+                                    level={formData.classification_level || null}
+                                    suffix={formData.classification_suffix || null}
+                                    inheritLabel="Inherit (engagement default)"
+                                    label=""
+                                    onChange={(lvl, suf) => {
+                                        handleChange('classification_level', lvl || '');
+                                        handleChange('classification_suffix', suf || '');
+                                    }}
                                 />
                             </CardContent>
                         </Card>

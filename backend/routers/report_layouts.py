@@ -46,6 +46,9 @@ def _replace_sections(layout: ReportLayout, sections_data: List[ReportSectionCre
             title=s.title,
             content=s.content or "",
             sort_order=s.sort_order,
+            classification_level=getattr(s, "classification_level", None),
+            classification_suffix=getattr(s, "classification_suffix", None),
+            page_break_before=getattr(s, "page_break_before", None),
         ))
 
 
@@ -112,6 +115,9 @@ async def create_report_layout(
             title=s.title,
             content=s.content or "",
             sort_order=s.sort_order,
+            classification_level=getattr(s, "classification_level", None),
+            classification_suffix=getattr(s, "classification_suffix", None),
+            page_break_before=getattr(s, "page_break_before", None),
         ))
 
     db.add(layout)

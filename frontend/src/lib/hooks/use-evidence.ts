@@ -77,10 +77,12 @@ export function useUpdateEvidence() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ id, description, includeInReport }: { id: string; description?: string; includeInReport?: boolean }) => {
+        mutationFn: async ({ id, description, includeInReport, classificationLevel, classificationSuffix }: { id: string; description?: string; includeInReport?: boolean; classificationLevel?: string | null; classificationSuffix?: string | null }) => {
             const updateData: any = {};
             if (description !== undefined) updateData.description = description;
             if (includeInReport !== undefined) updateData.include_in_report = includeInReport;
+            if (classificationLevel !== undefined) updateData.classification_level = classificationLevel;
+            if (classificationSuffix !== undefined) updateData.classification_suffix = classificationSuffix;
 
             const { data } = await api.patch<Evidence>(`/evidence/${id}`, updateData);
             return data;

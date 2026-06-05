@@ -18,6 +18,9 @@ class ReportSectionBase(BaseModel):
     title: str
     content: Optional[str] = ""
     sort_order: int = 0
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
+    page_break_before: Optional[bool] = False
 
 
 class ReportSectionCreate(ReportSectionBase):

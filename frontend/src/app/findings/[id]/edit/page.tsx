@@ -60,6 +60,7 @@ import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { useAuthStore } from '@/stores/auth-store';
 import { severityRating } from '@/lib/cvss31';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 
 const severities = [
     { value: 'CRITICAL', label: 'Critical', color: 'text-red-500 bg-red-500/10 border-red-500/20' },
@@ -132,6 +133,8 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
         references: '',
         cvss_score: 5.0,
         cvss_vector: '',
+        classification_level: '' as string,
+        classification_suffix: '' as string,
         asset_ids: [] as string[],
         tag_ids: [] as string[],
         attack_technique_ids: [] as string[],
@@ -192,6 +195,8 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                 references: finding.references || '',
                 cvss_score: finding.cvss_score || 0,
                 cvss_vector: finding.cvss_vector || '',
+                classification_level: finding.classification_level || '',
+                classification_suffix: finding.classification_suffix || '',
                 asset_ids: finding.assets?.map((a: any) => a.id) || [],
                 tag_ids: finding.tags?.map((t: any) => t.id) || [],
                 attack_technique_ids: finding.attack_technique_ids || [],
@@ -339,6 +344,8 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
             references: formData.references || undefined,
             cvss_score: isNaN(score) ? 0 : score,
             cvss_vector: formData.cvss_vector || undefined,
+            classification_level: formData.classification_level || null,
+            classification_suffix: formData.classification_suffix || null,
             asset_ids: formData.asset_ids || [],
             asset_port_ids: Object.keys(assetPortIds).length > 0 ? assetPortIds : undefined,
             tag_ids: formData.tag_ids || [],
@@ -467,6 +474,17 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                                     </Select>
                                                 </div>
                                             </div>
+                                            <EntityClassificationField
+                                                engagementId={formData.engagement_id}
+                                                level={formData.classification_level || null}
+                                                suffix={formData.classification_suffix || null}
+                                                inheritLabel="Inherit (engagement default)"
+                                                label="Classification Marking"
+                                                onChange={(lvl, suf) => {
+                                                    handleChange('classification_level', lvl || '');
+                                                    handleChange('classification_suffix', suf || '');
+                                                }}
+                                            />
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Description *</Label>
                                                 <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="400px" fieldContext={{ resourceType: 'finding', fieldName: 'Description' }} engagementId={formData.engagement_id} />
@@ -618,8 +636,8 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                     </div>
 
                     {/* Sidebar */}
-                    <div className="space-y-6">
-                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-6 overflow-hidden">
+                    <div className="space-y-6 lg:sticky lg:top-6 self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto custom-scrollbar">
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
                             <div className="h-1.5 bg-linear-to-r from-blue-500 to-indigo-500" />
                             <CardHeader className="pb-4">
                                 <CardTitle className="text-sm font-bold text-slate-200 tracking-wider uppercase">Classification</CardTitle>

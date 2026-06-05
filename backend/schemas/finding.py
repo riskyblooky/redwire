@@ -62,6 +62,8 @@ class FindingBase(BaseModel):
     references: Optional[str] = None
     cvss_score: Optional[float] = Field(None, ge=0.0, le=10.0)
     cvss_vector: Optional[str] = Field(None, max_length=100)
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
 
 class FindingCreate(FindingBase):
     engagement_id: str
@@ -84,6 +86,8 @@ class FindingUpdate(BaseModel):
     references: Optional[str] = None
     cvss_score: Optional[float] = Field(None, ge=0.0, le=10.0)
     cvss_vector: Optional[str] = Field(None, max_length=100)
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
     asset_ids: Optional[list[str]] = None
     asset_port_ids: Optional[dict[str, list[str]]] = None  # {asset_id: [port_id, ...]}
     tag_ids: Optional[list[str]] = None

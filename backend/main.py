@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from database import Base, engine
 
 # Import routers
-from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, plugins as plugins_router
+from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, plugins as plugins_router
 from routers import imports as imports_router
 from routers import spray as spray_router
 from routers import attack_techniques as attack_techniques_router
@@ -47,6 +47,7 @@ openapi_tags = [
     {"name": "report-layouts", "description": "Per-engagement report section layouts and ordering"},
     {"name": "report-layout-templates", "description": "Reusable report layout templates"},
     {"name": "report-themes", "description": "Report visual themes and branding customization"},
+    {"name": "marking-profiles", "description": "Classification / portion-marking policies (TLP, IC/DoD, custom)"},
 
     # ── Templates ────────────────────────────────────────────────────
     {"name": "templates", "description": "Finding templates for reusable vulnerability definitions"},
@@ -357,6 +358,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+    expose_headers=["Content-Disposition", "X-Marking-Warnings"],
 )
 
 # Activity Middleware to update last_active (throttled)
@@ -433,6 +435,7 @@ app.include_router(attack_graph.router)
 app.include_router(report_layouts.router)
 app.include_router(report_layout_templates.router)
 app.include_router(report_themes.router)
+app.include_router(marking_profiles.router)
 app.include_router(clients.router)
 app.include_router(clients.client_type_router)
 app.include_router(cleanup_artifacts.router)

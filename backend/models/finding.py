@@ -51,7 +51,12 @@ class Finding(Base, AuditMixin):
     steps_to_reproduce = Column(Text)
     mitigations = Column(Text)
     references = Column(Text)
-    
+
+    # Portion marking — null level means inherit (report default → engagement
+    # default → clamp to ceiling). suffix is free-text caveat, e.g. "//SAR/123".
+    classification_level = Column(String(20), nullable=True)
+    classification_suffix = Column(String(120), nullable=True)
+
     # Relationships
     engagement = relationship("Engagement", back_populates="findings")
     created_by_user = relationship("User", back_populates="findings", foreign_keys="Finding.created_by")

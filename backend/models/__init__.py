@@ -22,6 +22,7 @@ from models.runbook import Runbook, RunbookItem
 from models.report_layout import ReportLayout, ReportSection, SectionType
 from models.report_layout_template import ReportLayoutTemplate, ReportLayoutTemplateSection
 from models.report_theme import ReportTheme
+from models.marking_profile import MarkingProfile, MarkingScheme, MarkingEnforcement
 from models.client import Client
 from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
 from models.configurable_type import ConfigurableType
@@ -89,6 +90,9 @@ __all__ = [
     "ReportLayoutTemplate",
     "ReportLayoutTemplateSection",
     "ReportTheme",
+    "MarkingProfile",
+    "MarkingScheme",
+    "MarkingEnforcement",
     "Client",
 
     "CleanupArtifact",

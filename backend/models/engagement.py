@@ -30,7 +30,17 @@ class Engagement(Base, AuditMixin):
     start_date = Column(DateTime)
     end_date = Column(DateTime)
 
+    # Portion marking — the engagement supplies the document-wide *default*
+    # (what unmarked portions inherit) and a *ceiling* (the max any portion may
+    # be set to). The banner is computed from effective portion marks, not set
+    # here. marking_profile_id picks the ladder/idiom (TLP vs IC vs custom).
+    marking_profile_id = Column(String, ForeignKey("marking_profiles.id", ondelete="SET NULL"), nullable=True, index=True)
+    default_classification_level = Column(String(20), nullable=True)
+    default_classification_suffix = Column(String(120), nullable=True)
+    ceiling_classification_level = Column(String(20), nullable=True)
+
     # Relationships
+    marking_profile = relationship("MarkingProfile")
     client = relationship("Client", back_populates="engagements")
     created_by_user = relationship("User", back_populates="created_engagements", foreign_keys="Engagement.created_by")
     updated_by_user = relationship("User", foreign_keys="Engagement.updated_by")

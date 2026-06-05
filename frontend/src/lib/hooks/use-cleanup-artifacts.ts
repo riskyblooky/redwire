@@ -10,6 +10,8 @@ export interface CleanupArtifact {
     location?: string;
     description?: string;
     cleanup_notes?: string;
+    classification_level?: string | null;
+    classification_suffix?: string | null;
     cleaned_at?: string;
     cleaned_by?: string;
     cleaned_by_username?: string;
