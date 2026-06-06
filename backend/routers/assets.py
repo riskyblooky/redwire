@@ -13,12 +13,25 @@ from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.user import UserRole
 from models.permission import Permission
+import logging
+import os
 import uuid
 import io
 import csv
 import defusedxml.ElementTree as ET
 from utils.collaboration import create_activity_log, build_change_summary
+from utils.uploads import read_upload_capped
 from models.discussion import ResourceType
+
+logger = logging.getLogger(__name__)
+
+
+# GHSA-4m4r-qhpf-5r8x: cap asset-import uploads at boundary. Defaults sized
+# for an MSP-scale engagement (low tens of thousands of assets); both knobs
+# are tunable via env without a code change.
+MAX_ASSET_IMPORT_BYTES = int(os.getenv("ASSET_IMPORT_MAX_BYTES", str(25 * 1024 * 1024)))
+MAX_ASSET_IMPORT_ROWS = int(os.getenv("ASSET_IMPORT_MAX_ROWS", "50000"))
+
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -330,7 +343,10 @@ async def import_assets(
                 detail="Insufficient permissions to import assets.",
             )
 
-    content = await file.read()
+    content = await read_upload_capped(
+        file, MAX_ASSET_IMPORT_BYTES,
+        detail=f"Asset import upload exceeds the {MAX_ASSET_IMPORT_BYTES}-byte size limit.",
+    )
     original_filename = file.filename or "unknown"
     filename = original_filename.lower()
 
@@ -381,6 +397,22 @@ async def import_assets(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No assets found in the uploaded file.",
+        )
+
+    # GHSA-4m4r-qhpf-5r8x: row-count cap. Counts apply symmetrically to CSV,
+    # XLSX, and Nmap-parsed hosts.
+    if len(parsed_assets) > MAX_ASSET_IMPORT_ROWS:
+        logger.warning(
+            "Refused asset import: %d rows > %d limit",
+            len(parsed_assets), MAX_ASSET_IMPORT_ROWS,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Asset import row count ({len(parsed_assets)}) exceeds the "
+                f"{MAX_ASSET_IMPORT_ROWS}-row limit. Split the file into smaller "
+                "batches and try again."
+            ),
         )
 
     # Get existing assets for dedup
