@@ -13,7 +13,8 @@ from schemas.finding import (
     FindingTemplateUpdate,
     FindingTemplateResponse,
 )
-from schemas.template_workflow import TemplateRejectRequest
+from schemas.template_workflow import TemplateRejectRequest, TemplateApproveRequest
+from utils.template_workflow import enforce_approve_workflow
 from auth.dependencies import get_current_user
 
 
@@ -244,6 +245,7 @@ async def withdraw_template(
 @router.post("/{template_id}/approve", response_model=FindingTemplateResponse)
 async def approve_template(
     template_id: str,
+    payload: Optional[TemplateApproveRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -258,6 +260,7 @@ async def approve_template(
     template = result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
+    enforce_approve_workflow(template, current_user, payload, "template")
     if template.status not in (TemplateStatus.DRAFT, TemplateStatus.SUBMITTED):
         raise HTTPException(status_code=409, detail=f"Cannot publish a template in {template.status.value} state")
 

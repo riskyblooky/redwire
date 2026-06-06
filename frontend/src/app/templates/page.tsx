@@ -601,7 +601,7 @@ export default function TemplatesPage() {
         });
         if (!confirmed) return;
         try {
-            await approveFT.mutateAsync({ id: template.id });
+            await approveFT.mutateAsync({ id: template.id, expected_updated_at: template.updated_at });
             toast.success('Template published');
         } catch (err) {
             toast.error(getErrorMessage(err, 'Failed to publish'));
@@ -666,7 +666,7 @@ export default function TemplatesPage() {
         });
         if (!confirmed) return;
         try {
-            await approveTC.mutateAsync({ id: template.id });
+            await approveTC.mutateAsync({ id: template.id, expected_updated_at: template.updated_at });
             toast.success('Template published');
         } catch (err) {
             toast.error(getErrorMessage(err, 'Failed to publish'));
@@ -731,7 +731,7 @@ export default function TemplatesPage() {
         });
         if (!confirmed) return;
         try {
-            await approveRB.mutateAsync({ id: rb.id });
+            await approveRB.mutateAsync({ id: rb.id, expected_updated_at: rb.updated_at });
             toast.success('Runbook published');
         } catch (err) {
             toast.error(getErrorMessage(err, 'Failed to publish'));
