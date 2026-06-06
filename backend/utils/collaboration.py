@@ -125,7 +125,11 @@ async def notify_mentions(
 
     from models.user import User as UserModel
 
-    usernames = set(_MENTION_RE.findall(content))
+    # GHSA-82jh-8f6p-vgx9: finditer streams matches into the dedup'd set so
+    # peak memory is bounded by the number of *distinct* usernames, not the
+    # number of '@' occurrences. The schema-layer max_length is the primary
+    # gate; this is defense-in-depth for any future caller that bypasses it.
+    usernames = {m.group(1) for m in _MENTION_RE.finditer(content)}
     if not usernames:
         return
 
