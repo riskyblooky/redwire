@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
+import logging
 from database import get_db
 from models.user import User
 from models.testcase import TestCase
@@ -16,6 +17,8 @@ from utils.collaboration import create_activity_log, build_change_summary
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
 from models.version_history import VersionHistory
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/testcases", tags=["testcases"])
 
@@ -485,6 +488,17 @@ async def delete_testcase(
     # Cascade: collect all descendant IDs and delete them too
     cascade_count = 0
     if cascade:
+        # GHSA-3mpw-xmrg-5rx5: the BFS below must enforce the same own-vs-_ANY
+        # gate per descendant that the direct-delete path enforces. Hoist the
+        # _ANY lookup once — it is a static property of the (user, engagement)
+        # pair within this request.
+        has_delete_any = False
+        if not is_admin:
+            has_delete_any = await check_engagement_permission(
+                current_user.id, db_testcase.engagement_id,
+                Permission.TESTCASE_DELETE_ANY.value, db,
+            )
+
         # BFS to find all descendants
         descendants = []
         queue = [testcase_id]
@@ -495,6 +509,15 @@ async def delete_testcase(
             )
             children = children_result.scalars().all()
             for child in children:
+                if not is_admin and child.created_by != current_user.id and not has_delete_any:
+                    logger.warning(
+                        "Blocked cascade delete by user %s: descendant %s authored by %s",
+                        current_user.id, child.id, child.created_by,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cascade delete includes test cases owned by other users; you need the 'testcase_delete_any' permission.",
+                    )
                 descendants.append(child)
                 queue.append(child.id)
         # Delete descendants in reverse (leaves first)
