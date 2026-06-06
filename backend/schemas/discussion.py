@@ -31,11 +31,15 @@ class ThreadResponse(BaseModel):
 # Comment Schemas
 class CommentCreate(BaseModel):
     thread_id: str
-    content: str
+    # GHSA-82jh-8f6p-vgx9: cap body length at the schema layer. The body
+    # flows into notify_mentions which runs a regex with O(n) materialized
+    # output; without a cap an attacker could drive multi-GB allocations
+    # on a single worker. 32 KiB comfortably accommodates a long postmortem.
+    content: str = Field(..., max_length=32768)
     is_resolvable: bool = False
 
 class CommentUpdate(BaseModel):
-    content: Optional[str] = None
+    content: Optional[str] = Field(None, max_length=32768)
     is_resolved: Optional[bool] = None
 
 class CommentResponse(BaseModel):

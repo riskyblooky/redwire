@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 from database import get_db
@@ -25,13 +25,17 @@ router = APIRouter(tags=["notes"])
 # ─── Schemas ───────────────────────────────────────────────────────────
 
 class NoteCreate(BaseModel):
-    title: str
-    content: Optional[str] = ""
+    title: str = Field(..., max_length=500)
+    # GHSA-82jh-8f6p-vgx9: cap body length at the schema layer. The note
+    # body flows into notify_mentions which runs a regex with O(n)
+    # materialized output; without a cap, a single oversized note could
+    # drive multi-GB allocations on a worker. 32 KiB is generous.
+    content: Optional[str] = Field("", max_length=32768)
     parent_id: Optional[str] = None
 
 class NoteUpdate(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=500)
+    content: Optional[str] = Field(None, max_length=32768)
     parent_id: Optional[str] = None
 
 class LinkedResourceRef(BaseModel):
