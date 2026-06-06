@@ -4,6 +4,7 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime
+import logging
 from database import get_db
 import uuid
 
@@ -17,11 +18,53 @@ from schemas.template_workflow import TemplateRejectRequest, TemplateApproveRequ
 from utils.template_workflow import enforce_approve_workflow
 from auth.dependencies import get_current_user
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/runbooks", tags=["runbooks"])
 
 
 def _can_manage(user: User) -> bool:
     return user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+
+
+def _enforce_referenced_templates_published(
+    runbook: Runbook, current_user: User, gate: str
+) -> None:
+    """GHSA-8357-pmf3-28f8: refuse approve/apply if any referenced
+    testcase-template isn't PUBLISHED. Items with a missing template row
+    are tolerated (apply skips them; approve doesn't materialize anything
+    from them) so an orphaned reference doesn't block the workflow.
+
+    Without this gate, a creator's never-reviewed DRAFT template would
+    materialize into every engagement that applies the runbook (apply
+    derefs ``item.template`` live), and a later unpublish-edit cycle on
+    a previously-PUBLISHED template would push the new body into every
+    apply that follows. The companion content-freeze hardening (snapshot
+    template content into ``runbook_items`` at approve time) is tracked
+    separately.
+    """
+    offenders = []
+    for item in runbook.items or []:
+        tmpl = item.template
+        if tmpl is None:
+            continue
+        if tmpl.status != TemplateStatus.PUBLISHED:
+            offenders.append(f"{tmpl.title!r} ({tmpl.status.value})")
+    if offenders:
+        logger.warning(
+            "Blocked runbook %s on %s by user %s: %d non-PUBLISHED template(s): %s",
+            gate, runbook.id, current_user.id, len(offenders), ", ".join(offenders[:5]),
+        )
+        plural = len(offenders) != 1
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Runbook references {len(offenders)} testcase-template"
+                f"{'s' if plural else ''} that {'are' if plural else 'is'} "
+                "not PUBLISHED. Every referenced template must be PUBLISHED "
+                "before the runbook can be approved or applied."
+            ),
+        )
 
 
 def _visibility_clause(current_user: User):
@@ -325,13 +368,15 @@ async def approve_runbook(
     if not _can_manage(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await db.execute(select(Runbook).where(Runbook.id == runbook_id))
-    runbook = result.scalar_one_or_none()
+    runbook = await _load_runbook(runbook_id, db)
     if not runbook:
         raise HTTPException(status_code=404, detail="Runbook not found")
     enforce_approve_workflow(runbook, current_user, payload, "runbook")
     if runbook.status not in (TemplateStatus.DRAFT, TemplateStatus.SUBMITTED):
         raise HTTPException(status_code=409, detail=f"Cannot publish a runbook in {runbook.status.value} state")
+
+    # GHSA-8357-pmf3-28f8: every referenced template must be PUBLISHED.
+    _enforce_referenced_templates_published(runbook, current_user, "approve")
 
     runbook.status = TemplateStatus.PUBLISHED
     runbook.published_at = datetime.utcnow()
@@ -418,6 +463,11 @@ async def apply_runbook_to_engagement(
     runbook = await _load_runbook(runbook_id, db)
     if not runbook or not _is_visible(runbook, current_user):
         raise HTTPException(status_code=404, detail="Runbook not found")
+
+    # GHSA-8357-pmf3-28f8: refuse the materialization if any referenced
+    # template has drifted off PUBLISHED since approval (or was never
+    # PUBLISHED in the first place — apply doesn't require approve).
+    _enforce_referenced_templates_published(runbook, current_user, "apply")
 
     # Check engagement-scoped testcase create permission
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
