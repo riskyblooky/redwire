@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, delete as sa_delete
 from typing import List, Optional
+import logging
 from database import get_db
 from models.user import User, UserRole
 from models.engagement import Engagement, EngagementStatus
@@ -29,6 +30,8 @@ from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/engagements", tags=["engagements"])
 
@@ -299,7 +302,21 @@ async def update_engagement(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions. You need the 'engagement_edit' permission to modify this engagement."
             )
-    
+
+    # GHSA-2gmw-jf4c-8q5g: COMPLETED is a terminal state. Once an engagement
+    # is signed off, only admins / team-leads may modify any field, including
+    # reopening the status — this blocks both post-signoff tampering and the
+    # one-shot reopen-edit-recomplete cover-up.
+    if engagement.status == EngagementStatus.COMPLETED and not is_admin:
+        logger.warning(
+            "Blocked update on COMPLETED engagement %s by user %s",
+            engagement.id, current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Engagement is locked: status is COMPLETED. Ask an administrator to reopen it before editing.",
+        )
+
     update_data = engagement_data.model_dump(exclude_unset=True)
     user_ids = update_data.pop("assigned_user_ids", None)
     assignments_data = update_data.pop("assignments", None)
