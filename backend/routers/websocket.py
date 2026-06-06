@@ -1,5 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, status
 from typing import Optional
+import json
+import logging
 from utils.collaboration import manager
 from auth import decode_token
 from auth.jwt import is_token_blacklisted
@@ -8,6 +10,8 @@ from models.permission import Permission
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 from models.user import User, UserRole
 import logging
 
@@ -178,10 +182,24 @@ async def websocket_endpoint(
         "role": role,
     }
     await manager.connect(websocket, resource_type, resource_id, user_info)
-    
+
+    # GHSA-c96m-c63f-3f2c: route cleanup through `finally` so the slot is
+    # released on every exit path — clean disconnect, malformed frame,
+    # wrong frame type, mid-message client abort, task cancellation. Per-
+    # frame JSON parse errors no longer tear the whole connection down;
+    # the loop continues so a buggy client doesn't get an immediate kick.
     try:
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await websocket.receive_json()
+            except (json.JSONDecodeError, ValueError):
+                # Bad frame — log + continue so the presence slot survives.
+                logger.debug(
+                    "presence WS %s/%s: ignoring malformed frame from user %s",
+                    resource_type, resource_id, user_id,
+                )
+                continue
+
             # Handle client messages
             if data.get("type") == "identify":
                 # Update user info with name/etc provided by client
@@ -192,7 +210,7 @@ async def websocket_endpoint(
                     "action": "identified",
                     "user": user_info
                 })
-                
+
             elif data.get("type") == "cursor_move":
                 # Broadcast cursor to others
                 await manager.broadcast_to_resource(resource_type, resource_id, {
@@ -200,14 +218,31 @@ async def websocket_endpoint(
                     "user_id": user_id,
                     "position": data.get("position")
                 })
-                
+
     except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        # Any other exception (e.g. binary frame → RuntimeError, network
+        # reset mid-frame) — log and fall through to cleanup. The previous
+        # bare `except WebSocketDisconnect` let these leak the slot.
+        logger.warning(
+            "presence WS %s/%s for user %s closed on %s: %s",
+            resource_type, resource_id, user_id, type(exc).__name__, exc,
+        )
+    finally:
         manager.disconnect(websocket, resource_type, resource_id)
-        await manager.broadcast_to_resource(resource_type, resource_id, {
-            "type": "presence_update",
-            "action": "left",
-            "user_id": user_id
-        })
+        try:
+            await manager.broadcast_to_resource(resource_type, resource_id, {
+                "type": "presence_update",
+                "action": "left",
+                "user_id": user_id
+            })
+        except Exception as exc:
+            # Best-effort departure broadcast — never surface from cleanup.
+            logger.debug(
+                "presence WS %s/%s: 'left' broadcast for user %s failed: %s",
+                resource_type, resource_id, user_id, exc,
+            )
 
 
 # ─── Y.js Collaborative Editing WebSocket ────────────────────────────
