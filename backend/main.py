@@ -214,7 +214,20 @@ async def _refresh_intel_feeds_background():
 
 
 async def _seed_admin_user(session_factory):
-    """Ensure an admin user exists with credentials from env vars."""
+    """Ensure an admin user exists with credentials from env vars.
+
+    GHSA-28f5-4wcg-9pwv: this is a *bootstrap* function — its only job is
+    to make sure a fresh database has at least one administrator. The
+    previous shape looked the bootstrap user up by username and force-set
+    ``role = ADMIN`` if they were anything else, which silently undid
+    deliberate demotions (and, if the bootstrap row had been deleted,
+    promoted whichever self-registered user happened to claim the
+    configured ``ADMIN_USERNAME``). Switch the gate to "does any user
+    with ``role == ADMIN`` exist?" — if yes, do nothing. The existing
+    administrator population (be it the original bootstrap, a
+    deliberately-promoted operator, or admin2 in dev) is the only thing
+    the seeder cares about, and no row is ever rewritten.
+    """
     from sqlalchemy import select
     from models.user import User, UserRole
     from auth.password import get_password_hash
@@ -229,35 +242,46 @@ async def _seed_admin_user(session_factory):
         return
 
     async with session_factory() as db:
-        # Check if any admin user exists
+        # If any administrator already exists, leave the database alone.
+        # The bootstrap user can be deliberately demoted, deleted, or
+        # never have existed in the first place — that's an admin
+        # decision and the seeder will not second-guess it.
+        any_admin = await db.execute(
+            select(User.id).where(User.role == UserRole.ADMIN).limit(1)
+        )
+        if any_admin.scalar_one_or_none():
+            print("[Admin] ✅ Existing administrator detected, skipping bootstrap seed")
+            return
+
+        # No admin at all — refuse to create the bootstrap row if the
+        # configured username is already in use (it would be a
+        # self-registered account that should never silently be
+        # promoted; the operator must resolve the conflict deliberately).
         result = await db.execute(
             select(User).where(User.username == admin_username)
         )
         existing = result.scalar_one_or_none()
-
         if existing:
-            # Admin already exists — do NOT overwrite password (it may have been
-            # changed via the UI). Only ensure the account is active and has admin role.
-            if existing.role != UserRole.ADMIN:
-                existing.role = UserRole.ADMIN
-                await db.commit()
-                print(f"[Admin] ✅ Admin user '{admin_username}' role restored to ADMIN")
-            else:
-                print(f"[Admin] ✅ Admin user '{admin_username}' already exists, skipping")
-        else:
-            new_admin = User(
-                id=str(uuid.uuid4()),
-                username=admin_username,
-                email=admin_email,
-                hashed_password=get_password_hash(admin_password),
-                full_name="System Administrator",
-                role=UserRole.ADMIN,
-                is_active=True,
-                must_change_password=True,
+            print(
+                f"[Admin] ⚠ No administrator exists, but username "
+                f"'{admin_username}' is taken by a non-admin user. Refusing "
+                f"to auto-promote — resolve manually and restart."
             )
-            db.add(new_admin)
-            await db.commit()
-            print(f"[Admin] ✅ Admin user '{admin_username}' created")
+            return
+
+        new_admin = User(
+            id=str(uuid.uuid4()),
+            username=admin_username,
+            email=admin_email,
+            hashed_password=get_password_hash(admin_password),
+            full_name="System Administrator",
+            role=UserRole.ADMIN,
+            is_active=True,
+            must_change_password=True,
+        )
+        db.add(new_admin)
+        await db.commit()
+        print(f"[Admin] ✅ Admin user '{admin_username}' created (no prior admin existed)")
 
 
 @asynccontextmanager

@@ -2,6 +2,7 @@
 Seed default groups and engagement roles with appropriate permissions.
 This should be run on application startup.
 """
+import logging
 
 from sqlalchemy import select
 from database import AsyncSessionLocal
@@ -12,6 +13,8 @@ from models.permission import (
     GroupPermissions,
     EngagementRolePermissions
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def seed_default_groups_and_roles():
@@ -237,27 +240,30 @@ async def seed_default_groups_and_roles():
                 db.add(group_perms)
                 print(f"✅ Created group: {group_data['name']}")
             else:
-                # Update system/default flags if needed
-                if group_data.get("is_system") and not existing_group.is_system:
-                    existing_group.is_system = True
-                if group_data.get("is_default") and not existing_group.is_default:
-                    existing_group.is_default = True
-                
-                # Update existing group permissions
+                # GHSA-28f5-4wcg-9pwv: leave existing groups untouched on
+                # restart. The previous behaviour set-unioned the hard-coded
+                # seed list back into the DB row on every boot and force-set
+                # is_default=True, which silently re-granted permissions an
+                # administrator had deliberately revoked and re-defaulted
+                # groups the admin had un-defaulted. New permission constants
+                # introduced by an upgrade no longer auto-land here — the
+                # admin must add them via the admin UI (see the
+                # "seed_revision watermark" todo for the long-term path).
+                #
+                # The one remaining mutation: backfill the permissions row if
+                # it's missing entirely (group row present but no
+                # GroupPermissions). That isn't a revoke-revert; it's repair
+                # for a deployment whose seed never finished.
                 result = await db.execute(
                     select(GroupPermissions).where(GroupPermissions.group_id == existing_group.id)
                 )
                 existing_perms = result.scalar_one_or_none()
                 if existing_perms:
-                    # Merge: add any new permissions from seed that aren't already present
-                    current = set(existing_perms.permissions or [])
-                    seeded = set(group_data["permissions"])
-                    merged = list(current | seeded)
-                    if len(merged) > len(current):
-                        existing_perms.permissions = merged
-                        print(f"🔄 Updated group permissions: {group_data['name']} (+{len(merged) - len(current)} new)")
+                    logger.debug(
+                        "seed_default_groups_and_roles: group %r exists, leaving permissions untouched",
+                        group_data["name"],
+                    )
                 else:
-                    # Group exists but has no permissions row — create one
                     group_perms = GroupPermissions(
                         group_id=existing_group.id,
                         permissions=group_data["permissions"]
@@ -290,18 +296,18 @@ async def seed_default_groups_and_roles():
                 db.add(role_perms)
                 print(f"✅ Created engagement role: {role_data['name']}")
             else:
-                # Update existing role permissions
+                # GHSA-28f5-4wcg-9pwv: same "no auto-merge into existing rows"
+                # rule as the groups path above. Only backfill a missing
+                # permissions row.
                 result = await db.execute(
                     select(EngagementRolePermissions).where(EngagementRolePermissions.role_id == existing_role.id)
                 )
                 existing_perms = result.scalar_one_or_none()
                 if existing_perms:
-                    current = set(existing_perms.permissions or [])
-                    seeded = set(role_data["permissions"])
-                    merged = list(current | seeded)
-                    if len(merged) > len(current):
-                        existing_perms.permissions = merged
-                        print(f"🔄 Updated role permissions: {role_data['name']} (+{len(merged) - len(current)} new)")
+                    logger.debug(
+                        "seed_default_groups_and_roles: engagement role %r exists, leaving permissions untouched",
+                        role_data["name"],
+                    )
                 else:
                     role_perms = EngagementRolePermissions(
                         role_id=existing_role.id,
