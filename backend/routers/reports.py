@@ -4,11 +4,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List
 import json
+import os
 import zipfile
 import io
 import logging
 import traceback
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+# GHSA-q8q6-22jx-7rjj: aggregate-size guard for evidence in JSON_ZIP /
+# JSON_LAYOUT_ZIP exports. The exporter buffers each evidence file fully
+# in memory and ``zip_buffer.getvalue()`` doubles peak RSS for the
+# Response body, so the worst-case footprint is roughly 2× this cap.
+# Default sized for a small container; tune via env without code change.
+REPORT_EXPORT_MAX_EVIDENCE_BYTES = int(
+    os.getenv("REPORT_EXPORT_MAX_EVIDENCE_BYTES", str(50 * 1024 * 1024))
+)
 
 from database import get_db
 from models.user import User
@@ -36,7 +49,6 @@ async def generate_report(
     current_user: User = Depends(get_current_user)
 ):
     """Generate a report based on the selected layout and theme."""
-    logger = logging.getLogger(__name__)
     try:
         return await _do_generate_report(config, db, current_user)
     except HTTPException:
@@ -332,6 +344,38 @@ async def _do_generate_report(
 
             # Download and bundle evidence files
             if config.include_evidence:
+                # GHSA-q8q6-22jx-7rjj: sum recorded file sizes from the DB row
+                # before any MinIO round-trip. include_in_report mirrors what
+                # the loops below will write, so the cap matches what the
+                # archive would otherwise have grown to.
+                total_evidence_bytes = sum(
+                    (e.file_size or 0)
+                    for f in findings
+                    for e in (f.evidence or [])
+                    if e.include_in_report and e.filename
+                ) + sum(
+                    (e.file_size or 0)
+                    for e in standalone_evidence
+                    if e.include_in_report and e.filename
+                )
+                if total_evidence_bytes > REPORT_EXPORT_MAX_EVIDENCE_BYTES:
+                    logger.warning(
+                        "Refused JSON_ZIP export of engagement %s by user %s: "
+                        "%d evidence bytes > %d cap",
+                        engagement.id, current_user.id,
+                        total_evidence_bytes, REPORT_EXPORT_MAX_EVIDENCE_BYTES,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=(
+                            f"Evidence export aggregate "
+                            f"({total_evidence_bytes // (1024*1024)} MiB) exceeds "
+                            f"the {REPORT_EXPORT_MAX_EVIDENCE_BYTES // (1024*1024)} "
+                            "MiB limit. Deselect 'include evidence' or reduce the "
+                            "engagement's evidence set."
+                        ),
+                    )
+
                 # Finding evidence
                 for f in findings:
                     for e in (f.evidence or []):
