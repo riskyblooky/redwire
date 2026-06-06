@@ -14,8 +14,10 @@ from database import get_db
 from auth.dependencies import get_current_user
 from models.user import User, UserRole
 from utils.storage import storage_service
+from utils.uploads import read_upload_capped
 
 import json
+import logging
 import uuid
 import zipfile
 import io
@@ -23,7 +25,47 @@ import os
 import traceback
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/engagements", tags=["engagements"])
+
+
+# GHSA-f826-6226-4rfw: bound the receive side and reject zip bombs by
+# compression ratio. The archive byte cap protects memory/network budget
+# on ingest; the ratio cap is the actual bomb detector (legitimate JSON
+# exports rarely top 30:1, zip bombs hit 1000:1+). Both are env-tunable.
+IMPORT_MAX_ARCHIVE_BYTES = int(
+    os.getenv("ENGAGEMENT_IMPORT_MAX_ARCHIVE_BYTES", str(200 * 1024 * 1024))
+)
+IMPORT_MAX_COMPRESSION_RATIO = int(
+    os.getenv("ENGAGEMENT_IMPORT_MAX_COMPRESSION_RATIO", "100")
+)
+
+
+def _reject_zip_bomb(zf: zipfile.ZipFile) -> None:
+    """Walk the archive's central directory and refuse members whose
+    declared compression ratio looks like a zip bomb. Cheap — central
+    directory only, no inflate runs here.
+    """
+    for info in zf.infolist():
+        if info.compress_size == 0:
+            # Directory entries or zero-byte members. Skip.
+            continue
+        ratio = info.file_size / info.compress_size
+        if ratio > IMPORT_MAX_COMPRESSION_RATIO:
+            logger.warning(
+                "Refused engagement-import archive: member %r ratio %.0f:1 > %d:1 cap",
+                info.filename, ratio, IMPORT_MAX_COMPRESSION_RATIO,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Archive member '{info.filename}' has a suspicious "
+                    f"compression ratio of {ratio:.0f}:1 (limit "
+                    f"{IMPORT_MAX_COMPRESSION_RATIO}:1). Refusing as a potential "
+                    "zip bomb."
+                ),
+            )
 
 # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -491,17 +533,23 @@ async def preview_import(
     current_user: User = Depends(get_current_user),
 ):
     """Preview a ZIP archive: return matched & unmatched users so the admin can map them."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    # GHSA-f826-6226-4rfw: READ_ONLY_ADMIN dropped — import is a write path
+    # and a read-only role should never be able to trigger DB ingestion.
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
 
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")
 
-    content = await file.read()
+    content = await read_upload_capped(
+        file, IMPORT_MAX_ARCHIVE_BYTES,
+        detail=f"Engagement-import archive exceeds the {IMPORT_MAX_ARCHIVE_BYTES}-byte size limit.",
+    )
     try:
         zf = zipfile.ZipFile(io.BytesIO(content))
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    _reject_zip_bomb(zf)
 
     if "manifest.json" not in zf.namelist():
         raise HTTPException(status_code=400, detail="Missing manifest.json in archive")
@@ -570,17 +618,22 @@ async def import_engagement(
     current_user: User = Depends(get_current_user),
 ):
     """Import an engagement from a ZIP archive. Accepts optional user_mapping JSON."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    # GHSA-f826-6226-4rfw: READ_ONLY_ADMIN dropped — see preview_import note.
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
 
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")
 
-    content = await file.read()
+    content = await read_upload_capped(
+        file, IMPORT_MAX_ARCHIVE_BYTES,
+        detail=f"Engagement-import archive exceeds the {IMPORT_MAX_ARCHIVE_BYTES}-byte size limit.",
+    )
     try:
         zf = zipfile.ZipFile(io.BytesIO(content))
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    _reject_zip_bomb(zf)
 
     # Read manifest
     if "manifest.json" not in zf.namelist():
