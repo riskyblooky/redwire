@@ -129,8 +129,14 @@ function rbAction(action: 'submit' | 'withdraw' | 'approve' | 'reject' | 'unpubl
     return function useRunbookAction() {
         const queryClient = useQueryClient();
         return useMutation({
-            mutationFn: async (args: { id: string; review_note?: string }) => {
-                const body = action === 'reject' ? { review_note: args.review_note } : undefined;
+            mutationFn: async (args: { id: string; review_note?: string; expected_updated_at?: string }) => {
+                let body: Record<string, string> | undefined;
+                if (action === 'reject') {
+                    body = { review_note: args.review_note ?? '' };
+                } else if (action === 'approve' && args.expected_updated_at) {
+                    // GHSA-9cvp-w26m-49j9: pin the approval to the exact row revision the reviewer read.
+                    body = { expected_updated_at: args.expected_updated_at };
+                }
                 const { data } = await api.post<Runbook>(`/runbooks/${args.id}/${action}`, body);
                 return data;
             },

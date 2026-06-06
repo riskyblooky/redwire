@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from database import get_db
 import uuid
@@ -13,7 +13,8 @@ from models.runbook import Runbook, RunbookItem
 from models.testcase_template import TestCaseTemplate
 from models.testcase import TestCase
 from schemas.runbook import RunbookCreate, RunbookUpdate, RunbookResponse
-from schemas.template_workflow import TemplateRejectRequest
+from schemas.template_workflow import TemplateRejectRequest, TemplateApproveRequest
+from utils.template_workflow import enforce_approve_workflow
 from auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/runbooks", tags=["runbooks"])
@@ -289,6 +290,7 @@ async def withdraw_runbook(
 @router.post("/{runbook_id}/approve", response_model=RunbookResponse)
 async def approve_runbook(
     runbook_id: str,
+    payload: Optional[TemplateApproveRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -300,6 +302,7 @@ async def approve_runbook(
     runbook = result.scalar_one_or_none()
     if not runbook:
         raise HTTPException(status_code=404, detail="Runbook not found")
+    enforce_approve_workflow(runbook, current_user, payload, "runbook")
     if runbook.status not in (TemplateStatus.DRAFT, TemplateStatus.SUBMITTED):
         raise HTTPException(status_code=409, detail=f"Cannot publish a runbook in {runbook.status.value} state")
 
