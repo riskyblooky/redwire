@@ -7,7 +7,6 @@ and executes matched actions.
 
 import json
 import logging
-import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote as _url_quote
@@ -106,16 +105,6 @@ def _match_condition(condition: dict, context: Dict[str, Any]) -> bool:
     expected = condition.get("value", "")
 
     actual = context.get(field)
-
-    # Try to also pull from a nested "details" string (which may contain
-    # key: value pairs in the change summary). GHSA-cjgm-6cr5-j3x2:
-    # ``field`` is interpolated through ``re.escape`` so a rule author
-    # cannot smuggle regex metacharacters into this pattern even if a
-    # bad rule landed before the validator went live.
-    if actual is None and "details" in context and isinstance(context["details"], str):
-        match = re.search(rf"{re.escape(field)}:\s*\S+\s*→\s*(\S+)", context["details"])
-        if match:
-            actual = match.group(1)
 
     if actual is None:
         print(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → field not found in context")
