@@ -23,6 +23,18 @@ REPORT_EXPORT_MAX_EVIDENCE_BYTES = int(
     os.getenv("REPORT_EXPORT_MAX_EVIDENCE_BYTES", str(50 * 1024 * 1024))
 )
 
+
+def _safe_arcname(name: str) -> str:
+    """GHSA-fwvp-qc8h-r5p4: reduce a stored filename to a basename suitable
+    for use as a ZIP member name or manifest path. Strips any directory
+    components (including Windows backslashes) and neutralises a residual
+    ``..`` after the basename so an extractor can't write outside the
+    chosen target directory.
+    """
+    cleaned = os.path.basename((name or "").replace("\\", "/"))
+    cleaned = cleaned.replace("..", "_")
+    return cleaned or "unnamed"
+
 from database import get_db
 from models.user import User
 from models.engagement import Engagement
@@ -189,7 +201,6 @@ async def _do_generate_report(
         if enforcement in ('WARN', 'BLOCK'):
             blocking, warnings = lint_marking(engine, sections, findings, testcases, cleanup_artifacts)
             if enforcement == 'BLOCK' and blocking:
-                logger = logging.getLogger(__name__)
                 logger.info(f"Report generation blocked by marking enforcement: {len(blocking)} unmarked portion(s)")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -305,7 +316,7 @@ async def _do_generate_report(
                             "file_size": e.file_size,
                             "description": e.description,
                             "include_in_report": e.include_in_report,
-                            "attachment_path": f"attachments/findings/{f.id}/{e.original_filename}" if e.include_in_report else None,
+                            "attachment_path": f"attachments/findings/{f.id}/{_safe_arcname(e.original_filename)}" if e.include_in_report else None,
                         }
                         for e in (f.evidence or [])
                     ],
@@ -354,7 +365,7 @@ async def _do_generate_report(
                     "file_size": e.file_size,
                     "description": e.description,
                     "include_in_report": e.include_in_report,
-                    "attachment_path": f"attachments/engagement/{e.original_filename}" if e.include_in_report else None,
+                    "attachment_path": f"attachments/engagement/{_safe_arcname(e.original_filename)}" if e.include_in_report else None,
                 }
                 for e in standalone_evidence
             ],
@@ -429,7 +440,13 @@ async def _do_generate_report(
                         if e.include_in_report and e.filename:
                             try:
                                 file_bytes = await storage_service.download_file(e.filename)
-                                zf.writestr(f"attachments/findings/{f.id}/{e.original_filename}", file_bytes)
+                                safe_name = _safe_arcname(e.original_filename)
+                                if safe_name != (e.original_filename or ""):
+                                    logger.warning(
+                                        "GHSA-fwvp: sanitized evidence %s original_filename %r → %r for ZIP export",
+                                        e.id, e.original_filename, safe_name,
+                                    )
+                                zf.writestr(f"attachments/findings/{f.id}/{safe_name}", file_bytes)
                             except Exception:
                                 pass  # Skip files that can't be downloaded
 
@@ -438,7 +455,13 @@ async def _do_generate_report(
                     if e.include_in_report and e.filename:
                         try:
                             file_bytes = await storage_service.download_file(e.filename)
-                            zf.writestr(f"attachments/engagement/{e.original_filename}", file_bytes)
+                            safe_name = _safe_arcname(e.original_filename)
+                            if safe_name != (e.original_filename or ""):
+                                logger.warning(
+                                    "GHSA-fwvp: sanitized standalone evidence %s original_filename %r → %r for ZIP export",
+                                    e.id, e.original_filename, safe_name,
+                                )
+                            zf.writestr(f"attachments/engagement/{safe_name}", file_bytes)
                         except Exception:
                             pass
 
