@@ -5,10 +5,13 @@ matching the trigger_type, evaluates conditions against the event context,
 and executes matched actions.
 """
 
+import json
 import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote as _url_quote
+from xml.sax.saxutils import escape as _xml_escape
 
 import httpx
 from sqlalchemy import select, update
@@ -24,6 +27,48 @@ _BLOCKED_WEBHOOK_HEADERS = {
     "authorization", "proxy-authorization", "cookie", "host",
     "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip",
 }
+
+
+def _escape_template_value(val: str, content_type: Optional[str]) -> str:
+    """Escape ``val`` for substitution into a webhook body of the given content type.
+
+    Used by :func:`_execute_webhook` to keep low-privileged user input
+    (finding/asset/discussion titles, etc.) from breaking out of the
+    string position the admin's template placed it in
+    (GHSA-rvcc-9pr2-v23q).
+    """
+    ct = (content_type or "").lower().split(";", 1)[0].strip()
+    if ct == "application/json" or ct.endswith("+json"):
+        # json.dumps wraps in quotes; strip them so the admin's surrounding
+        # "…" in the template is preserved.
+        return json.dumps(val)[1:-1]
+    if ct in ("application/xml", "text/xml") or ct.endswith("+xml"):
+        return _xml_escape(val, {'"': "&quot;", "'": "&apos;"})
+    if ct == "application/x-www-form-urlencoded":
+        return _url_quote(val, safe="")
+    return val
+
+
+def _looks_like_json_template(template: str, placeholders: List[str]) -> bool:
+    """True if the template parses as JSON when each ``{{key}}`` is replaced
+    by a JSON-value sentinel — i.e., the admin authored a JSON body.
+
+    Uses ``0`` as the sentinel so it's valid both as a bare value
+    (``{"count":0}``) and inside a quoted string (``{"text":"0"}``).
+    Requires the template to begin with ``{`` or ``[`` so a bare
+    ``{{name}}`` template isn't mis-classified as JSON.
+    """
+    probe = template
+    for key in placeholders:
+        probe = probe.replace(f"{{{{{key}}}}}", "0")
+    stripped = probe.lstrip()
+    if not stripped or stripped[0] not in "{[":
+        return False
+    try:
+        json.loads(probe)
+        return True
+    except ValueError:
+        return False
 
 
 # ── condition evaluation ──────────────────────────────────────────────
@@ -297,14 +342,25 @@ async def _execute_webhook(action: dict, context: Dict[str, Any], rule_name: str
     }
     body_template = action.get("body_template", "")
 
-    # Simple template variable substitution
+    # Content-type-aware template substitution. The canonical use of this
+    # feature is a Slack/Teams/Discord/Jira JSON webhook; an Operator-supplied
+    # {{resource_name}} carrying " or \ would otherwise break out of the
+    # admin's quoted string and inject sibling keys (GHSA-rvcc-9pr2-v23q).
+    content_type = next(
+        (v for k, v in headers.items() if k.lower() == "content-type"),
+        None,
+    )
+    if not content_type and _looks_like_json_template(body_template, list(context.keys())):
+        content_type = "application/json"
+
     body = body_template
     for key, val in context.items():
-        body = body.replace(f"{{{{{key}}}}}", str(val) if val is not None else "")
+        placeholder = f"{{{{{key}}}}}"
+        safe_val = _escape_template_value(str(val) if val is not None else "", content_type)
+        body = body.replace(placeholder, safe_val)
 
     # If no template, send context as JSON
     if not body_template:
-        import json
         body = json.dumps({
             "rule": rule_name,
             "trigger": context.get("action"),
