@@ -63,9 +63,12 @@ def _match_condition(condition: dict, context: Dict[str, Any]) -> bool:
     actual = context.get(field)
 
     # Try to also pull from a nested "details" string (which may contain
-    # key: value pairs in the change summary)
+    # key: value pairs in the change summary). GHSA-cjgm-6cr5-j3x2:
+    # ``field`` is interpolated through ``re.escape`` so a rule author
+    # cannot smuggle regex metacharacters into this pattern even if a
+    # bad rule landed before the validator went live.
     if actual is None and "details" in context and isinstance(context["details"], str):
-        match = re.search(rf"{field}:\s*\S+\s*→\s*(\S+)", context["details"])
+        match = re.search(rf"{re.escape(field)}:\s*\S+\s*→\s*(\S+)", context["details"])
         if match:
             actual = match.group(1)
 
@@ -498,6 +501,9 @@ async def evaluate_rules(
     from sqlalchemy import or_
     event_engagement_id = context.get("engagement_id")
 
+    # GHSA-cjgm-6cr5-j3x2: outer try/except guards the query path only.
+    # Per-rule failures are caught one level down so one rule's exception
+    # can't suppress every other tenant's rules on the same event.
     try:
         if event_engagement_id:
             scope_clause = or_(
@@ -514,12 +520,17 @@ async def evaluate_rules(
             )
         )
         rules = result.scalars().all()
+    except Exception as e:
+        print(f"[AUTOMATION] ENGINE QUERY ERROR: {e}")
+        logger.error(f"Automation engine query error: {e}")
+        return
 
-        print(f"[AUTOMATION] evaluate_rules: trigger='{trigger_type}', found {len(rules)} rule(s), context keys={list(context.keys())}")
-        if context.get('status'):
-            print(f"[AUTOMATION]   context status='{context.get('status')}', severity='{context.get('severity')}'")
+    print(f"[AUTOMATION] evaluate_rules: trigger='{trigger_type}', found {len(rules)} rule(s), context keys={list(context.keys())}")
+    if context.get('status'):
+        print(f"[AUTOMATION]   context status='{context.get('status')}', severity='{context.get('severity')}'")
 
-        for rule in rules:
+    for rule in rules:
+        try:
             conditions = rule.conditions or []
 
             print(f"[AUTOMATION] Evaluating rule '{rule.name}' with {len(conditions)} condition(s)")
@@ -530,13 +541,15 @@ async def evaluate_rules(
 
             print(f"[AUTOMATION] Rule '{rule.name}' → MATCHED! Executing actions")
             await execute_rule_actions(db, rule, context)
+        except Exception as e:
+            # One bad rule shouldn't suppress the others. Log with rule.id so
+            # an admin can find and delete the offender.
+            logger.warning(
+                "Automation rule %s ('%s') failed evaluation: %s",
+                rule.id, rule.name, e,
+            )
+            print(f"[AUTOMATION] Rule '{rule.name}' (id={rule.id}) FAILED: {e}")
 
-        # Note: do NOT commit here — caller (create_activity_log) commits
-        # after all rule evaluations complete
-
-    except Exception as e:
-        print(f"[AUTOMATION] ENGINE ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        logger.error(f"Automation engine error: {e}")
+    # Note: do NOT commit here — caller (create_activity_log) commits
+    # after all rule evaluations complete
 
