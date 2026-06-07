@@ -24,6 +24,25 @@ class ConditionSchema(BaseModel):
     operator: str  # equals, not_equals, contains, in
     value: str
 
+    @field_validator("field")
+    @classmethod
+    def _validate_field_name(cls, v: str) -> str:
+        """GHSA-cjgm-6cr5-j3x2: ``field`` flows into a regex compiled and
+        executed against every matching activity event's ``details``
+        change-summary. Constrain it to a dotted-identifier charset so a
+        rule author can't smuggle regex metacharacters (ReDoS) or anchors
+        (match-bypass) into that pattern. Sink-side ``re.escape`` is the
+        runtime defense for any pre-existing rule that landed before this
+        validator went live.
+        """
+        import re as _re
+        if not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,63}", v):
+            raise ValueError(
+                "condition.field must be a dotted identifier "
+                "(letters/digits/underscore/dot, 1-64 chars, no regex metacharacters)"
+            )
+        return v
+
 
 class ActionSchema(BaseModel):
     type: str  # notify_users, notify_role, webhook, email, add_tags
