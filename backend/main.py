@@ -365,8 +365,44 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/profile_photos", exist_ok=True)
 
-# Mount static files
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# GHSA-h77m-pjqc-5cm3: replace the StaticFiles mount (served pre-auth, with
+# Content-Type derived from extension → stored XSS) with an authenticated
+# FastAPI route. Every fetch requires get_current_user; the resolved path
+# must stay inside the uploads root; Content-Disposition is always
+# 'attachment' (browsers ignore that for <img> tags so legitimate profile
+# photos still render in the UI). Content-Type is from a small allow-list
+# of image MIMEs; everything else gets application/octet-stream so a legacy
+# .html upload cannot execute even when an authenticated user fetches it.
+from fastapi import Depends as _h77m_Depends, HTTPException as _h77m_HTTPException
+from fastapi.responses import FileResponse as _h77m_FileResponse
+from auth.dependencies import get_current_user as _h77m_get_current_user
+
+_UPLOADS_ROOT = os.path.realpath("uploads")
+_UPLOADS_MIME_BY_EXT = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+@app.get("/uploads/{path:path}", include_in_schema=False)
+async def _serve_upload(path: str, _user=_h77m_Depends(_h77m_get_current_user)):
+    """Authenticated, traversal-safe upload server with attachment disposition."""
+    target = os.path.realpath(os.path.join(_UPLOADS_ROOT, path))
+    if not (target == _UPLOADS_ROOT or target.startswith(_UPLOADS_ROOT + os.sep)):
+        raise _h77m_HTTPException(status_code=404, detail="Not found")
+    if not os.path.isfile(target):
+        raise _h77m_HTTPException(status_code=404, detail="Not found")
+    ext = os.path.splitext(target)[1].lower()
+    media_type = _UPLOADS_MIME_BY_EXT.get(ext, "application/octet-stream")
+    return _h77m_FileResponse(
+        target,
+        media_type=media_type,
+        filename=os.path.basename(target),
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 # Configure CORS
 origins_raw = os.getenv("CORS_ORIGINS", "")
