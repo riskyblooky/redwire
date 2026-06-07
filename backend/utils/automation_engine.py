@@ -401,18 +401,27 @@ async def _execute_email(
     subject_template = action.get("subject", f"RedWire Automation: {rule_name}")
     body_template = action.get("body_template", "")
 
-    # Template variable substitution
+    # Template variable substitution. GHSA-m28w-p732-3rm5: keep two parallel
+    # bodies — text uses raw values, HTML uses html.escape'd values — so a
+    # finding title containing HTML metacharacters can't break out of the
+    # <pre> wrapper. The rule author's literal HTML in body_template
+    # (e.g. "<strong>finding</strong>: {{resource_name}}") is preserved
+    # because we only escape the *substituted values*, not the template
+    # itself.
+    import html as _html
     subject = subject_template
-    body = body_template
+    body_text = body_template
+    body_html = body_template
     for key, val in context.items():
         placeholder = f"{{{{{key}}}}}"
         str_val = str(val) if val is not None else ""
         subject = subject.replace(placeholder, str_val)
-        body = body.replace(placeholder, str_val)
+        body_text = body_text.replace(placeholder, str_val)
+        body_html = body_html.replace(placeholder, _html.escape(str_val))
 
-    if not body:
+    if not body_template:
         import json
-        body = json.dumps({
+        body_text = json.dumps({
             "rule": rule_name,
             "trigger": context.get("action"),
             "resource_type": context.get("resource_type"),
@@ -420,13 +429,17 @@ async def _execute_email(
             "engagement_id": context.get("engagement_id"),
             "details": context.get("details"),
         }, indent=2)
+        # The fallback JSON is entirely user-data-derived (resource_name,
+        # details, etc.) — escape the whole serialized form for the HTML
+        # part.
+        body_html = _html.escape(body_text)
 
     # Wrap basic text in HTML for HTML body
-    html_body = f"<pre style='font-family: monospace; padding: 16px; background: #f8f9fa; border-radius: 8px;'>{body}</pre>"
+    html_body = f"<pre style='font-family: monospace; padding: 16px; background: #f8f9fa; border-radius: 8px;'>{body_html}</pre>"
 
     try:
         for to_email in recipients:
-            await send_email(db, to_email, subject, html_body, text_body=body)
+            await send_email(db, to_email, subject, html_body, text_body=body_text)
         logger.info(f"Email action executed for rule '{rule_name}' → {recipients}")
     except Exception as e:
         logger.error(f"Email action failed for rule '{rule_name}': {e}")
