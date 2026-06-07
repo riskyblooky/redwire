@@ -32,6 +32,7 @@ from models.report_theme import ReportTheme
 from utils.marking import MarkingEngine, MarkedImage
 from typing import List, Optional
 import re
+from html import unescape as _html_unescape
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -604,9 +605,12 @@ def _markdown_from_html(html: str) -> str:
     text = re.sub(r'</?[uo]l[^>]*>', '', text)
     text = re.sub(r'<pre[^>]*><code[^>]*>(.*?)</code></pre>', r'```\n\1\n```\n', text, flags=re.DOTALL)
     text = re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.DOTALL)
+    # Decode entities before the catch-all tag strip, so entity-encoded markup
+    # (e.g. &lt;img onerror=…&gt;) can't survive sanitisation. html.unescape
+    # covers named + numeric entities. Normalise nbsp back to ASCII space to
+    # preserve prior behaviour.
+    text = _html_unescape(text).replace('\xa0', ' ')
     text = re.sub(r'<[^>]+>', '', text)
-    text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-    text = text.replace('&nbsp;', ' ')
     return text.strip()
 
 
