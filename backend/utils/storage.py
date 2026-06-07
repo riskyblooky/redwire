@@ -62,11 +62,28 @@ class StorageService:
         self.s3.delete_object(Bucket=self.bucket_name, Key=filename)
 
     def get_presigned_url(self, filename: str, expires_in: int = 3600) -> str:
-        """Generate a presigned URL for a file."""
+        """Generate a presigned URL for a file.
+
+        GHSA-h77m-pjqc-5cm3: force ``Content-Disposition: attachment`` on
+        the presigned response so MinIO instructs the browser to download
+        the object rather than render it inline. Closes stored-XSS via a
+        ``text/html`` (or ``image/svg+xml``) Content-Type that the
+        uploader may have supplied at upload time. The original
+        ``Content-Type`` is left intact for clients that explicitly want
+        the bytes.
+        """
+        # Use a safe basename in the Content-Disposition so the storage key
+        # itself can't smuggle quote characters or directory traversal.
+        import os as _os
+        safe_name = _os.path.basename(filename) or "download"
         url = self.s3.generate_presigned_url(
             'get_object',
-            Params={'Bucket': self.bucket_name, 'Key': filename},
-            ExpiresIn=expires_in
+            Params={
+                'Bucket': self.bucket_name,
+                'Key': filename,
+                'ResponseContentDisposition': f'attachment; filename="{safe_name}"',
+            },
+            ExpiresIn=expires_in,
         )
         
         # If external endpoint is different from internal, swap it

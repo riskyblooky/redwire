@@ -10,9 +10,39 @@ from schemas.user import UserResponse, UserSummary, UserCreate, UserUpdate, User
 from auth.dependencies import get_current_user
 from auth.password import get_password_hash
 from utils.paths import ensure_within
+from utils.uploads import read_upload_capped
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+# GHSA-h77m-pjqc-5cm3: profile-photo upload hardening.
+# Allow-list, size cap, and magic-byte sniff so a client can never
+# land an executable extension or HTML body in uploads/profile_photos.
+import os as _h77m_os
+
+_PROFILE_PHOTO_MAX_BYTES = int(
+    _h77m_os.getenv("PROFILE_PHOTO_MAX_BYTES", str(5 * 1024 * 1024))
+)
+_ALLOWED_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def _sniff_image_ext(head: bytes) -> "str | None":
+    """Return a canonical image extension (with leading dot) if ``head``
+    starts with a known image signature. None otherwise.
+    """
+    if not head:
+        return None
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if head.startswith(b"GIF87a") or head.startswith(b"GIF89a"):
+        return ".gif"
+    # WebP: 'RIFF' .... 'WEBP'
+    if len(head) >= 12 and head[0:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp"
+    return None
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
@@ -230,22 +260,59 @@ async def upload_profile_photo(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Upload profile photo."""
+    """Upload profile photo. GHSA-h77m-pjqc-5cm3: allow-list + magic-byte
+    sniff + size cap; the stored extension comes from the sniffed image
+    signature, never from the client-supplied filename.
+    """
     import os
     import uuid
-    
+
+    # GHSA-h77m: reject any extension outside the image allow-list before
+    # we read a byte of the body.
+    claimed_ext = os.path.splitext(file.filename or "")[1].lower()
+    if claimed_ext not in _ALLOWED_PHOTO_EXTS:
+        logger.warning(
+            "Refused profile photo upload from user %s: extension %r not in allow-list",
+            current_user.id, claimed_ext,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Profile photo must be an image: "
+                f"{', '.join(sorted(_ALLOWED_PHOTO_EXTS))}."
+            ),
+        )
+
+    content = await read_upload_capped(
+        file, _PROFILE_PHOTO_MAX_BYTES,
+        detail=f"Profile photo exceeds the {_PROFILE_PHOTO_MAX_BYTES}-byte size limit.",
+    )
+
+    # GHSA-h77m: confirm the body actually IS an image; reject otherwise.
+    # The stored extension comes from the sniff, not the client's claim,
+    # so a renamed .html → .png never lands as .png on disk.
+    sniffed_ext = _sniff_image_ext(content[:16])
+    if sniffed_ext is None:
+        logger.warning(
+            "Refused profile photo upload from user %s: content is not a recognized image",
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Profile photo content is not a recognized image (PNG/JPEG/GIF/WebP).",
+        )
+
     # Create uploads directory if it doesn't exist
     upload_dir = "uploads/profile_photos"
     os.makedirs(upload_dir, exist_ok=True)
-    
-    # Generate unique filename
-    file_ext = os.path.splitext(file.filename)[1]
-    filename = f"{current_user.id}_{uuid.uuid4()}{file_ext}"
+
+    # Generate unique filename — sniffed extension, not the client's claim.
+    filename = f"{current_user.id}_{uuid.uuid4()}{sniffed_ext}"
     file_path = os.path.join(upload_dir, filename)
-    
+
     # Save file
     with open(file_path, "wb") as f:
-        f.write(await file.read())
+        f.write(content)
     
     # Delete old photo if it exists *and* resolves inside the uploads tree.
     # A non-conforming value means either pre-patch corruption or a
