@@ -238,11 +238,13 @@ async def delete_infra_item(
 ):
     """Delete an infra item.
 
-    Enumerates child vault items first and removes any MinIO-backed
-    file objects associated with FILE-type vault entries. Without this,
-    the DB cascade drops the vault-item rows but the underlying file
-    payloads orphan in MinIO indefinitely (RDW-115, follow-up to
-    GHSA-58q3-f33p-w84m).
+    The FK on `infra_vault_items.infra_item_id` is declared with
+    ``ondelete=CASCADE`` (GHSA-jw3p-gjp8-2cf3), so the parent delete
+    drops the child credential rows automatically. The CASCADE only
+    reaches the database rows, not the MinIO objects that back
+    FILE-type vault entries — so we enumerate the child `file_path`s
+    and best-effort delete those objects FIRST, before the cascade
+    fires (RDW-115, follow-up to GHSA-58q3-f33p-w84m).
     """
     await require_global_permission(Permission.INFRA_DELETE, current_user, db)
     result = await db.execute(select(InfraItem).where(InfraItem.id == item_id))
