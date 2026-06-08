@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 
 @dataclass
@@ -147,7 +147,16 @@ class PluginRegistry:
                 traceback.print_exc()
 
     def mount_routes(self, app: FastAPI):
-        """Mount all plugin routers onto the FastAPI app."""
+        """Mount all plugin routers onto the FastAPI app.
+
+        GHSA-2rv7-jv5j-m4jg: every plugin endpoint inherits
+        ``Depends(get_current_user)`` at the include site so a plugin
+        author who forgets per-route auth doesn't accidentally expose a
+        pre-auth surface. Imported lazily to avoid a circular import
+        with ``auth.dependencies``.
+        """
+        from auth.dependencies import get_current_user
+
         for plugin in self.plugins.values():
             if plugin.has_routes and plugin.manifest.enabled and not plugin.error:
                 prefix = f"/plugins/{plugin.slug}"
@@ -155,6 +164,7 @@ class PluginRegistry:
                     plugin.router,
                     prefix=prefix,
                     tags=[f"plugin:{plugin.slug}"],
+                    dependencies=[Depends(get_current_user)],
                 )
                 print(f"  🔌 Mounted routes: {prefix}")
 
@@ -210,10 +220,14 @@ class PluginRegistry:
         """Import plugin module and call its setup function."""
         plugin_dir = Path(self._plugins_dir) / plugin.id
 
-        # Add plugin directory to sys.path so imports work
+        # Add plugin directory to sys.path so a plugin's own internal
+        # modules can import each other by short name. Append rather than
+        # prepend so backend / stdlib modules always win name collisions —
+        # a plugin shipping `auth.py` / `permissions.py` / `jwt.py` no
+        # longer shadows the real module (GHSA-2rv7-jv5j-m4jg).
         plugin_dir_str = str(plugin_dir.resolve())
         if plugin_dir_str not in sys.path:
-            sys.path.insert(0, plugin_dir_str)
+            sys.path.append(plugin_dir_str)
 
         # Import __init__.py
         init_path = plugin_dir / "__init__.py"
