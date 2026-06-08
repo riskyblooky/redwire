@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
 import uuid
@@ -9,7 +9,17 @@ class InfraVaultItem(Base, AuditMixin):
     __tablename__ = "infra_vault_items"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    infra_item_id = Column(String, nullable=False, index=True)
+    # GHSA-jw3p-gjp8-2cf3: real FK with ondelete=CASCADE so a parent
+    # InfraItem delete actually removes the child credential rows.
+    # Without this, encrypted secrets persisted in the table indefinitely
+    # after the parent was deleted and stayed API-readable via
+    # GET /infra/items/{deleted_id}/vault.
+    infra_item_id = Column(
+        String,
+        ForeignKey("infra_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     name = Column(String(255), nullable=False)
     item_type = Column(String(100), nullable=False)  # CREDENTIAL, KEY, FILE, NOTE
 
