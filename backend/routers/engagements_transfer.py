@@ -15,6 +15,7 @@ from auth.dependencies import get_current_user
 from models.user import User, UserRole
 from utils.storage import storage_service
 from utils.uploads import read_upload_capped
+from utils.vault_crypto import encrypt_field, decrypt_field
 
 import json
 import logging
@@ -325,7 +326,21 @@ async def export_engagement(
         "file_path", "filename", "description",
         "created_by", "updated_by", "created_at", "updated_at",
     ]
-    data["vault_items"] = [_row_dict(v, vi_fields) for v in vault_items]
+    # GHSA-3r7j-7h5r-gxgx: decrypt the Fernet-protected vault columns
+    # before serialising so the archive carries plaintext that the
+    # destination instance can re-encrypt under ITS key on import.
+    # Shipping this-instance ciphertext would be useless on any other
+    # instance (different VAULT_ENCRYPTION_KEY). The archive is loudly
+    # flagged as containing plaintext secrets via SECURITY_WARNING.txt
+    # and the manifest below.
+    _vault_secret_cols = ("username", "password", "note")
+    def _vault_row_dict(v):
+        d = _row_dict(v, vi_fields)
+        for col in _vault_secret_cols:
+            if col in d:
+                d[col] = decrypt_field(d[col])
+        return d
+    data["vault_items"] = [_vault_row_dict(v) for v in vault_items]
     for v in vault_items:
         _collect_user_ids(v, "created_by", "updated_by")
 
@@ -482,14 +497,52 @@ async def export_engagement(
     # ═══════════════════════════════════════════════════════════════════
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        # manifest
+        # manifest — flag plaintext-secret contents so callers (and a
+        # future signed-import path) can detect it programmatically.
+        _has_vault_secrets = any(
+            (vi.username or vi.password or vi.note or vi.file_path)
+            for vi in vault_items
+        )
         manifest = {
-            "version": "1.0",
+            "version": "1.1",
             "exported_at": datetime.utcnow().isoformat(),
             "engagement_name": eng.name,
             "source": "redwire",
+            "contains_plaintext_secrets": _has_vault_secrets,
         }
         zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+
+        # GHSA-3r7j-7h5r-gxgx: human-readable banner so anyone who
+        # touches this archive (curl, scp, backup, share-drive viewer)
+        # sees the plaintext warning even without opening manifest.json.
+        if _has_vault_secrets:
+            zf.writestr(
+                "SECURITY_WARNING.txt",
+                (
+                    "================================================================\n"
+                    "  REDWIRE EXPORT — CONTAINS PLAINTEXT SECRETS\n"
+                    "================================================================\n"
+                    "\n"
+                    "This archive contains plaintext credentials and/or vault file\n"
+                    "attachments from an engagement (vault item username/password/\n"
+                    "note columns and any uploaded FILE-type vault attachments).\n"
+                    "\n"
+                    "Vault encryption-at-rest is intentionally stripped on export so\n"
+                    "the destination RedWire instance can re-encrypt under its own\n"
+                    "key on import. Until that import completes, treat this archive\n"
+                    "like a password file:\n"
+                    "\n"
+                    "  - do NOT email, post to Slack/Teams, or upload to cloud\n"
+                    "    storage that is not under RedWire's control;\n"
+                    "  - hand off via encrypted channel (signed PGP, encrypted\n"
+                    "    USB, S3 SSE bucket with restricted IAM, etc.);\n"
+                    "  - delete the local copy immediately after the destination\n"
+                    "    instance has imported it.\n"
+                    "\n"
+                    "manifest.json -> contains_plaintext_secrets: true\n"
+                    "================================================================\n"
+                ),
+            )
 
         # data
         zf.writestr("engagement.json", json.dumps(data, indent=2, default=str))
@@ -515,6 +568,26 @@ async def export_engagement(
     zip_buf.seek(0)
     safe_name = eng.name.replace(" ", "_").replace("/", "-")[:50]
     filename = f"redwire_export_{safe_name}_{datetime.utcnow().strftime('%Y%m%d')}.zip"
+
+    # GHSA-3r7j-7h5r-gxgx: audit-log every export, flagging when it
+    # carries plaintext vault material so the engagement's activity
+    # feed records who pulled secrets and when.
+    from utils.collaboration import create_activity_log
+    _action = "exported_engagement_with_secrets" if _has_vault_secrets else "exported_engagement"
+    _details = (
+        f"Exported engagement archive (contains plaintext vault secrets): {filename}"
+        if _has_vault_secrets else f"Exported engagement archive: {filename}"
+    )
+    await create_activity_log(
+        db=db,
+        engagement_id=engagement_id,
+        user_id=current_user.id,
+        action=_action,
+        resource_type="engagement",
+        resource_id=engagement_id,
+        resource_name=eng.name,
+        details=_details,
+    )
 
     return StreamingResponse(
         zip_buf,
@@ -970,14 +1043,22 @@ async def import_engagement(
                         # handles file_path is None with a 404 on download.
                         new_vault_path = None
 
+            # GHSA-3r7j-7h5r-gxgx: persist vault text columns under the
+            # destination instance's Fernet key. The archive carries
+            # plaintext (see export side) so a different instance can
+            # re-encrypt under its own key. encrypt_field handles None
+            # cleanly. Legacy archives whose columns were Fernet
+            # ciphertext from the source instance get re-encrypted into
+            # double-encrypted garbage — visibly wrong but no security
+            # regression; operator re-exports from a patched source.
             db.add(VaultItem(
                 id=new_id(vi["id"]),
                 engagement_id=eng_new_id,
                 name=vi["name"],
                 item_type=vi.get("item_type", "Note"),
-                username=vi.get("username"),
-                password=vi.get("password"),
-                note=vi.get("note"),
+                username=encrypt_field(vi.get("username")),
+                password=encrypt_field(vi.get("password")),
+                note=encrypt_field(vi.get("note")),
                 file_path=new_vault_path,
                 filename=vi.get("filename"),
                 description=vi.get("description"),
