@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 
 
 @dataclass
@@ -94,6 +94,23 @@ class LoadedPlugin:
         }
 
 
+def _make_enabled_check(plugin: "LoadedPlugin"):
+    """Build a per-plugin dependency that 503s when the plugin is disabled.
+
+    Closes over the live ``LoadedPlugin`` object so a subsequent
+    ``manifest.enabled = False`` flip (from the toggle handler) takes
+    effect immediately, without needing to unmount any routes
+    (GHSA-4jrh-3m3r-p448).
+    """
+    def _check_enabled():
+        if not plugin.manifest.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Plugin '{plugin.id}' is disabled",
+            )
+    return _check_enabled
+
+
 class PluginRegistry:
     """Central registry of all discovered plugins."""
 
@@ -154,6 +171,12 @@ class PluginRegistry:
         author who forgets per-route auth doesn't accidentally expose a
         pre-auth surface. Imported lazily to avoid a circular import
         with ``auth.dependencies``.
+
+        GHSA-4jrh-3m3r-p448: attach a per-plugin runtime gate so a
+        toggle-off via ``PUT /plugins/{id}/toggle`` actually disables
+        the HTTP surface. Routes stay mounted (no router surgery, no
+        race with in-flight requests) but the dependency refuses to
+        dispatch when ``plugin.manifest.enabled`` is False.
         """
         from auth.dependencies import get_current_user
 
@@ -164,7 +187,10 @@ class PluginRegistry:
                     plugin.router,
                     prefix=prefix,
                     tags=[f"plugin:{plugin.slug}"],
-                    dependencies=[Depends(get_current_user)],
+                    dependencies=[
+                        Depends(get_current_user),
+                        Depends(_make_enabled_check(plugin)),
+                    ],
                 )
                 print(f"  🔌 Mounted routes: {prefix}")
 
