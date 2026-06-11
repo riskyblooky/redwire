@@ -89,10 +89,19 @@ services:
       minio:
         condition: service_healthy
     # No volume mount for source code in production
+    # `alembic upgrade head` runs first so a fresh `docker compose up`
+    # boots cleanly — without it, the backend hits an empty schema, the
+    # `_seed_admin_user` query 500s ("relation users does not exist"),
+    # and the container crash-loops until migrations are applied
+    # out-of-band. `scripts/deploy_server.sh` already runs migrations
+    # before the stack comes up, so this is a no-op on the canonical
+    # deploy path; it only fires on a `docker compose up`-only flow.
+    # Safe because RedWire runs a single backend replica — there's no
+    # race between replicas applying migrations.
     # --forwarded-allow-ips: trust X-Forwarded-* / X-Real-IP only from
     # private docker bridge subnets (where nginx lives), not '*' which
     # let any TCP peer claim to be the proxy. GHSA-xg53-8wgq-w9cw.
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='172.16.0.0/12'
+    command: sh -c "alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='172.16.0.0/12'"
     networks:
       - redwire-network
     restart: always
