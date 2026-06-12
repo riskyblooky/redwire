@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 import threading
 import logging
@@ -29,13 +29,16 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # ── Request/Response Schemas ──
 
 class CheckPasswordRequest(BaseModel):
-    password: str
+    # Wordlist passwords are real-world strings; 256 covers the long tail.
+    password: str = Field(..., max_length=256)
 
 class CheckPasswordResponse(BaseModel):
     found: bool
 
 class LookupHashRequest(BaseModel):
-    hash: str
+    # Longest practical hash (e.g. krb5tgs) tops out around 1 KB; 4 KB is
+    # safe headroom while still blocking the multi-MB-DoS path.
+    hash: str = Field(..., max_length=4096)
 
 class LookupHashResponse(BaseModel):
     found: bool

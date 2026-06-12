@@ -2,30 +2,31 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from datetime import datetime
 from schemas.configurable_type import ConfigurableTypeResponse
+from schemas._field_limits import DESCRIPTION, EMAIL, LONG_TEXT, NAME, UUID_FIELD
 
 
 # ============ Client Schemas ============
 
 class ClientBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
-    client_type_id: Optional[str] = None
-    parent_id: Optional[str] = None
-    contact_name: Optional[str] = None
-    contact_email: Optional[str] = None
-    notes: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
+    client_type_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    parent_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    contact_name: Optional[str] = Field(None, max_length=NAME)
+    contact_email: Optional[str] = Field(None, max_length=EMAIL)
+    notes: Optional[str] = Field(None, max_length=LONG_TEXT)
 
 class ClientCreate(ClientBase):
     pass
 
 class ClientUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
-    client_type_id: Optional[str] = None
-    parent_id: Optional[str] = None
-    contact_name: Optional[str] = None
-    contact_email: Optional[str] = None
-    notes: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
+    client_type_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    parent_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    contact_name: Optional[str] = Field(None, max_length=NAME)
+    contact_email: Optional[str] = Field(None, max_length=EMAIL)
+    notes: Optional[str] = Field(None, max_length=LONG_TEXT)
 
 class ClientResponse(ClientBase):
     id: str

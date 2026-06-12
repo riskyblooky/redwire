@@ -5,6 +5,17 @@ from models.finding import Severity, FindingStatus
 from models.template_status import TemplateStatus
 from schemas.evidence import EvidenceResponse
 from schemas.asset import AssetBase
+from schemas._field_limits import (
+    CVSS_VECTOR,
+    DESCRIPTION,
+    ENUM_STR,
+    HEX_COLOR,
+    LONG_TEXT,
+    NAME,
+    SHORT_LABEL,
+    TITLE,
+    UUID_FIELD,
+)
 
 
 
@@ -51,43 +62,43 @@ class LinkedAssetResponse(AssetBase):
         from_attributes = True
 
 class FindingBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    category: Optional[str] = Field(None, max_length=255)
-    description: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1, max_length=TITLE)
+    category: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    description: str = Field(..., min_length=1, max_length=LONG_TEXT)
     severity: Severity
-    impact: Optional[str] = None
-    technical_details: Optional[str] = None
-    steps_to_reproduce: Optional[str] = None
-    mitigations: Optional[str] = None
-    references: Optional[str] = None
+    impact: Optional[str] = Field(None, max_length=LONG_TEXT)
+    technical_details: Optional[str] = Field(None, max_length=LONG_TEXT)
+    steps_to_reproduce: Optional[str] = Field(None, max_length=LONG_TEXT)
+    mitigations: Optional[str] = Field(None, max_length=LONG_TEXT)
+    references: Optional[str] = Field(None, max_length=DESCRIPTION)
     cvss_score: Optional[float] = Field(None, ge=0.0, le=10.0)
-    cvss_vector: Optional[str] = Field(None, max_length=100)
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    cvss_vector: Optional[str] = Field(None, max_length=CVSS_VECTOR)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 class FindingCreate(FindingBase):
-    engagement_id: str
+    engagement_id: str = Field(..., max_length=UUID_FIELD)
     asset_ids: list[str] = []
     asset_port_ids: Optional[dict[str, list[str]]] = None  # {asset_id: [port_id, ...]}
     tag_ids: list[str] = []
-    testcase_id: Optional[str] = None
+    testcase_id: Optional[str] = Field(None, max_length=UUID_FIELD)
     attack_technique_ids: list[str] = []
 
 class FindingUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=500)
-    category: Optional[str] = Field(None, max_length=255)
-    description: Optional[str] = Field(None, min_length=1)
+    title: Optional[str] = Field(None, min_length=1, max_length=TITLE)
+    category: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    description: Optional[str] = Field(None, min_length=1, max_length=LONG_TEXT)
     severity: Optional[Severity] = None
     status: Optional[FindingStatus] = None
-    impact: Optional[str] = None
-    technical_details: Optional[str] = None
-    steps_to_reproduce: Optional[str] = None
-    mitigations: Optional[str] = None
-    references: Optional[str] = None
+    impact: Optional[str] = Field(None, max_length=LONG_TEXT)
+    technical_details: Optional[str] = Field(None, max_length=LONG_TEXT)
+    steps_to_reproduce: Optional[str] = Field(None, max_length=LONG_TEXT)
+    mitigations: Optional[str] = Field(None, max_length=LONG_TEXT)
+    references: Optional[str] = Field(None, max_length=DESCRIPTION)
     cvss_score: Optional[float] = Field(None, ge=0.0, le=10.0)
-    cvss_vector: Optional[str] = Field(None, max_length=100)
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    cvss_vector: Optional[str] = Field(None, max_length=CVSS_VECTOR)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
     asset_ids: Optional[list[str]] = None
     asset_port_ids: Optional[dict[str, list[str]]] = None  # {asset_id: [port_id, ...]}
     tag_ids: Optional[list[str]] = None
@@ -118,24 +129,24 @@ class FindingResponse(FindingBase):
 
 # Findings Template Schemas
 class FindingTemplateBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    category: Optional[str] = Field(None, max_length=255)
-    description: str = Field(..., min_length=1)
-    impact: Optional[str] = None
-    mitigations: Optional[str] = None
-    references: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=TITLE)
+    category: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    description: str = Field(..., min_length=1, max_length=LONG_TEXT)
+    impact: Optional[str] = Field(None, max_length=LONG_TEXT)
+    mitigations: Optional[str] = Field(None, max_length=LONG_TEXT)
+    references: Optional[str] = Field(None, max_length=DESCRIPTION)
     attack_technique_ids: list[str] = []
 
 class FindingTemplateCreate(FindingTemplateBase):
     pass
 
 class FindingTemplateUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=500)
-    category: Optional[str] = Field(None, max_length=255)
-    description: Optional[str] = Field(None, min_length=1)
-    impact: Optional[str] = None
-    mitigations: Optional[str] = None
-    references: Optional[str] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=TITLE)
+    category: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    description: Optional[str] = Field(None, min_length=1, max_length=LONG_TEXT)
+    impact: Optional[str] = Field(None, max_length=LONG_TEXT)
+    mitigations: Optional[str] = Field(None, max_length=LONG_TEXT)
+    references: Optional[str] = Field(None, max_length=DESCRIPTION)
     attack_technique_ids: Optional[list[str]] = None
 
 class FindingTemplateResponse(FindingTemplateBase):

@@ -1,10 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
+from schemas._field_limits import NAME, SHORT_TOKEN
 
 class RegistrationCodeBase(BaseModel):
-    code: str
-    label: Optional[str] = None
+    code: str = Field(..., max_length=SHORT_TOKEN)
+    label: Optional[str] = Field(None, max_length=NAME)
     max_uses: int = 1
     expires_at: Optional[datetime] = None
     is_active: bool = True
@@ -14,10 +15,10 @@ class RegistrationCodeCreate(RegistrationCodeBase):
     # supplied value -- Math.random()-derived codes are predictable from a
     # single observation. Field stays Optional so older clients that still
     # post {"code": ...} don't 422. GHSA-gc2q-wm5m-59xm.
-    code: Optional[str] = None
+    code: Optional[str] = Field(None, max_length=SHORT_TOKEN)
 
 class RegistrationCodeUpdate(BaseModel):
-    label: Optional[str] = None
+    label: Optional[str] = Field(None, max_length=NAME)
     max_uses: Optional[int] = None
     expires_at: Optional[datetime] = None
     is_active: Optional[bool] = None

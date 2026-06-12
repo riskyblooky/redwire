@@ -2,6 +2,13 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from models.cleanup_artifact import CleanupArtifactStatus
+from schemas._field_limits import (
+    ENUM_STR,
+    LONG_TEXT,
+    SHORT_LABEL,
+    TITLE,
+    UUID_FIELD,
+)
 
 
 class LinkedFindingSummary(BaseModel):
@@ -31,29 +38,29 @@ class LinkedAssetSummary(BaseModel):
 
 
 class CleanupArtifactBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    artifact_type: str
+    title: str = Field(..., min_length=1, max_length=TITLE)
+    artifact_type: str = Field(..., max_length=SHORT_LABEL)
     status: Optional[CleanupArtifactStatus] = CleanupArtifactStatus.PENDING
-    location: Optional[str] = Field(None, max_length=500)
-    description: Optional[str] = None
-    cleanup_notes: Optional[str] = None
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    location: Optional[str] = Field(None, max_length=TITLE)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    cleanup_notes: Optional[str] = Field(None, max_length=LONG_TEXT)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 
 class CleanupArtifactCreate(CleanupArtifactBase):
-    engagement_id: str
+    engagement_id: str = Field(..., max_length=UUID_FIELD)
 
 
 class CleanupArtifactUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=500)
-    artifact_type: Optional[str] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=TITLE)
+    artifact_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
     status: Optional[CleanupArtifactStatus] = None
-    location: Optional[str] = Field(None, max_length=500)
-    description: Optional[str] = None
-    cleanup_notes: Optional[str] = None
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    location: Optional[str] = Field(None, max_length=TITLE)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    cleanup_notes: Optional[str] = Field(None, max_length=LONG_TEXT)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 
 class CleanupArtifactResponse(CleanupArtifactBase):

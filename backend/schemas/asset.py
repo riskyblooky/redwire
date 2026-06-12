@@ -2,6 +2,13 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from models.asset_port import PortProtocol, PortState
+from schemas._field_limits import (
+    LONG_TEXT,
+    NAME,
+    SHORT_LABEL,
+    TITLE,
+    UUID_FIELD,
+)
 
 
 class LinkedCleanupArtifactResponse(BaseModel):
@@ -41,17 +48,17 @@ class LinkedFindingResponse(BaseModel):
 class AssetPortCreate(BaseModel):
     port_number: int = Field(..., ge=1, le=65535)
     protocol: PortProtocol = PortProtocol.TCP
-    service_name: Optional[str] = None
+    service_name: Optional[str] = Field(None, max_length=SHORT_LABEL)
     state: PortState = PortState.OPEN
-    version: Optional[str] = None
+    version: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 
 class AssetPortUpdate(BaseModel):
     port_number: Optional[int] = Field(None, ge=1, le=65535)
     protocol: Optional[PortProtocol] = None
-    service_name: Optional[str] = None
+    service_name: Optional[str] = Field(None, max_length=SHORT_LABEL)
     state: Optional[PortState] = None
-    version: Optional[str] = None
+    version: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 
 class AssetPortResponse(BaseModel):
@@ -68,24 +75,24 @@ class AssetPortResponse(BaseModel):
 
 
 class AssetBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    asset_type: str
-    identifier: str = Field(..., min_length=1, max_length=500)
-    description: Optional[str] = None
-    notes: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=NAME)
+    asset_type: str = Field(..., max_length=SHORT_LABEL)
+    identifier: str = Field(..., min_length=1, max_length=TITLE)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    notes: Optional[str] = Field(None, max_length=LONG_TEXT)
     is_pwned: bool = False
     is_scanned: bool = False
     in_scope: bool = True
 
 class AssetCreate(AssetBase):
-    engagement_id: str
+    engagement_id: str = Field(..., max_length=UUID_FIELD)
 
 class AssetUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    asset_type: Optional[str] = None
-    identifier: Optional[str] = Field(None, min_length=1, max_length=500)
-    description: Optional[str] = None
-    notes: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=NAME)
+    asset_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    identifier: Optional[str] = Field(None, min_length=1, max_length=TITLE)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    notes: Optional[str] = Field(None, max_length=LONG_TEXT)
     is_pwned: Optional[bool] = None
     is_scanned: Optional[bool] = None
     in_scope: Optional[bool] = None

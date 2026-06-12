@@ -15,7 +15,7 @@ class ApiTokenCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     permission: str = Field("ro", pattern="^(ro|rw)$")
     expires_at: Optional[datetime] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(None, max_length=256)
     totp_code: Optional[str] = Field(None, min_length=6, max_length=6)
 
 

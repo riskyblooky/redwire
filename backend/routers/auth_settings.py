@@ -208,12 +208,12 @@ async def test_ldap(
 
 # ─── Splash Screen / Login Banner ─────────────────────────────────────────────
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class SplashSettings(BaseModel):
     enabled: bool = False
-    title: str = ""
-    message: str = ""
+    title: str = Field("", max_length=255)
+    message: str = Field("", max_length=8192)
 
 @router.get(
     "/splash",

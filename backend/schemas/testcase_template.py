@@ -2,14 +2,19 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from models.template_status import TemplateStatus
+from schemas._field_limits import (
+    LONG_TEXT,
+    SHORT_LABEL,
+    TITLE,
+)
 
 
 class TestCaseTemplateBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    category: str
-    description: str
-    steps: Optional[str] = None
-    expected_result: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=TITLE)
+    category: str = Field(..., max_length=SHORT_LABEL)
+    description: str = Field(..., max_length=LONG_TEXT)
+    steps: Optional[str] = Field(None, max_length=LONG_TEXT)
+    expected_result: Optional[str] = Field(None, max_length=LONG_TEXT)
     attack_technique_ids: list[str] = []
 
 
@@ -18,11 +23,11 @@ class TestCaseTemplateCreate(TestCaseTemplateBase):
 
 
 class TestCaseTemplateUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=500)
-    category: Optional[str] = None
-    description: Optional[str] = None
-    steps: Optional[str] = None
-    expected_result: Optional[str] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=TITLE)
+    category: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    steps: Optional[str] = Field(None, max_length=LONG_TEXT)
+    expected_result: Optional[str] = Field(None, max_length=LONG_TEXT)
     attack_technique_ids: Optional[list[str]] = None
 
 

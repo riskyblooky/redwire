@@ -2,6 +2,14 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
+from schemas._field_limits import (
+    DESCRIPTION,
+    ENUM_STR,
+    LONG_TEXT,
+    NAME,
+    SHORT_LABEL,
+    TITLE,
+)
 
 
 class SectionType(str, Enum):
@@ -15,11 +23,11 @@ class SectionType(str, Enum):
 
 class ReportSectionBase(BaseModel):
     section_type: SectionType = SectionType.TEXT
-    title: str
-    content: Optional[str] = ""
+    title: str = Field(..., max_length=TITLE)
+    content: Optional[str] = Field("", max_length=LONG_TEXT)
     sort_order: int = 0
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
     page_break_before: Optional[bool] = False
 
 
@@ -37,13 +45,13 @@ class ReportSectionResponse(ReportSectionBase):
 # ── Report Layout schemas (engagement-scoped) ──
 
 class ReportLayoutCreate(BaseModel):
-    name: str
+    name: str = Field(..., max_length=NAME)
     is_default: bool = False
     sections: List[ReportSectionCreate] = []
 
 
 class ReportLayoutUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=NAME)
     is_default: Optional[bool] = None
     sections: Optional[List[ReportSectionCreate]] = None
 
@@ -77,14 +85,14 @@ class ReportLayoutTemplateSectionResponse(ReportSectionBase):
 
 
 class ReportLayoutTemplateCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(..., max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
     sections: List[ReportLayoutTemplateSectionCreate] = []
 
 
 class ReportLayoutTemplateUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
     sections: Optional[List[ReportLayoutTemplateSectionCreate]] = None
 
 

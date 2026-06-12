@@ -1,19 +1,20 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
+from schemas._field_limits import DESCRIPTION, NAME
 
 # --- Group Schemas ---
 
 class GroupBase(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(..., max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
 
 class GroupCreate(GroupBase):
     pass
 
 class GroupUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
 
 class GroupResponse(GroupBase):
     id: str
@@ -24,15 +25,15 @@ class GroupResponse(GroupBase):
 # --- EngagementRole Schemas ---
 
 class EngagementRoleBase(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(..., max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
 
 class EngagementRoleCreate(EngagementRoleBase):
     pass
 
 class EngagementRoleUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
 
 class EngagementRoleResponse(EngagementRoleBase):
     id: str

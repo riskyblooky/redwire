@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -20,9 +20,9 @@ router = APIRouter(prefix="/automations", tags=["automations"])
 # ── schemas ───────────────────────────────────────────────────────────
 
 class ConditionSchema(BaseModel):
-    field: str
-    operator: str  # equals, not_equals, contains, in
-    value: str
+    field: str = Field(..., max_length=64)
+    operator: str = Field(..., max_length=32)  # equals, not_equals, contains, in
+    value: str = Field(..., max_length=2048)
 
     @field_validator("field")
     @classmethod
@@ -45,17 +45,17 @@ class ConditionSchema(BaseModel):
 
 
 class ActionSchema(BaseModel):
-    type: str  # notify_users, notify_role, webhook, email, add_tags
+    type: str = Field(..., max_length=32)  # notify_users, notify_role, webhook, email, add_tags
     user_ids: Optional[List[str]] = None
-    message: Optional[str] = None
-    role: Optional[str] = None
-    url: Optional[str] = None
-    method: Optional[str] = "POST"
+    message: Optional[str] = Field(None, max_length=8192)
+    role: Optional[str] = Field(None, max_length=32)
+    url: Optional[str] = Field(None, max_length=2048)
+    method: Optional[str] = Field("POST", max_length=8)
     headers: Optional[dict] = None
-    body_template: Optional[str] = None
+    body_template: Optional[str] = Field(None, max_length=65536)
     recipients: Optional[List[str]] = None
-    subject: Optional[str] = None
-    body: Optional[str] = None
+    subject: Optional[str] = Field(None, max_length=500)
+    body: Optional[str] = Field(None, max_length=65536)
     tag_ids: Optional[List[str]] = None
 
     @field_validator("url")
@@ -72,22 +72,22 @@ class ActionSchema(BaseModel):
 
 
 class AutomationCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    trigger_type: str
+    name: str = Field(..., max_length=255)
+    description: Optional[str] = Field(None, max_length=32768)
+    trigger_type: str = Field(..., max_length=64)
     conditions: List[ConditionSchema] = []
     actions: List[ActionSchema] = []
     is_enabled: bool = True
     # GHSA-jvcx-44v2-gc9m: None = global rule (requires VIEW_ALL_ENGAGEMENTS);
     # a UUID scopes the rule to a single engagement (requires engagement_view
     # on that engagement). Enforced in the create handler.
-    engagement_id: Optional[str] = None
+    engagement_id: Optional[str] = Field(None, max_length=64)
 
 
 class AutomationUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    trigger_type: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=32768)
+    trigger_type: Optional[str] = Field(None, max_length=64)
     conditions: Optional[List[ConditionSchema]] = None
     actions: Optional[List[ActionSchema]] = None
     is_enabled: Optional[bool] = None

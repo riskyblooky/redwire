@@ -7,7 +7,7 @@ time-series bucketing, and multi-series support.
 import logging
 from typing import Optional, List
 from datetime import datetime, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,23 +35,23 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 # ── Schemas ──────────────────────────────────────────────────────────
 
 class WidgetCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    widget_type: str
-    data_source: str
-    size: str = "medium"
-    category: str = "custom"
-    icon: Optional[str] = None
+    name: str = Field(..., max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+    widget_type: str = Field(..., max_length=64)
+    data_source: str = Field(..., max_length=128)
+    size: str = Field("medium", max_length=16)
+    category: str = Field("custom", max_length=64)
+    icon: Optional[str] = Field(None, max_length=64)
     config: Optional[dict] = None
 
 class WidgetUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    widget_type: Optional[str] = None
-    data_source: Optional[str] = None
-    size: Optional[str] = None
-    category: Optional[str] = None
-    icon: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+    widget_type: Optional[str] = Field(None, max_length=64)
+    data_source: Optional[str] = Field(None, max_length=128)
+    size: Optional[str] = Field(None, max_length=16)
+    category: Optional[str] = Field(None, max_length=64)
+    icon: Optional[str] = Field(None, max_length=64)
     config: Optional[dict] = None
     is_active: Optional[bool] = None
 
@@ -66,22 +66,22 @@ class LayoutUpdate(BaseModel):
     layout: List[LayoutItem]
 
 class QueryFilter(BaseModel):
-    column: str
-    operator: str = "eq"  # eq, ne, gt, lt, gte, lte, like
-    value: str
+    column: str = Field(..., max_length=64)
+    operator: str = Field("eq", max_length=8)  # eq, ne, gt, lt, gte, lte, like
+    value: str = Field(..., max_length=512)
 
 class QueryPreviewRequest(BaseModel):
-    table: str
-    group_by: str
-    aggregation: str = "count"  # count, avg, sum, max, min
-    value_column: str = "id"
+    table: str = Field(..., max_length=64)
+    group_by: str = Field(..., max_length=64)
+    aggregation: str = Field("count", max_length=16)  # count, avg, sum, max, min
+    value_column: str = Field("id", max_length=64)
     filters: Optional[List[QueryFilter]] = None
     limit: int = 50
     # ── Advanced fields ──
-    date_column: Optional[str] = None       # column to filter/bucket on
-    date_range: Optional[str] = None        # "7d", "30d", "90d", "quarter", "year", "all"
-    date_start: Optional[str] = None        # custom start (ISO date)
-    date_end: Optional[str] = None          # custom end (ISO date)
+    date_column: Optional[str] = Field(None, max_length=64)       # column to filter/bucket on
+    date_range: Optional[str] = Field(None, max_length=16)        # "7d", "30d", "90d", "quarter", "year", "all"
+    date_start: Optional[str] = Field(None, max_length=32)        # custom start (ISO date)
+    date_end: Optional[str] = Field(None, max_length=32)          # custom end (ISO date)
     time_bucket: Optional[str] = None       # "day", "week", "month" → time-series
     series_by: Optional[str] = None         # column to split into multi-series
     join_tables: Optional[List[str]] = None  # e.g. ["engagements", "clients"]

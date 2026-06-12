@@ -1,18 +1,19 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
+from schemas._field_limits import DESCRIPTION, ENUM_STR, NAME, SHORT_LABEL, UUID_FIELD
 
 class EvidenceBase(BaseModel):
-    original_filename: str
-    description: Optional[str] = None
+    original_filename: str = Field(..., max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
     include_in_report: Optional[bool] = True
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 class EvidenceCreate(EvidenceBase):
-    finding_id: Optional[str] = None
-    testcase_id: Optional[str] = None
-    engagement_id: Optional[str] = None
+    finding_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    testcase_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    engagement_id: Optional[str] = Field(None, max_length=UUID_FIELD)
 
 class EvidenceResponse(EvidenceBase):
     id: str

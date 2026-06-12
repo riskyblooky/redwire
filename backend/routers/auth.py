@@ -536,8 +536,9 @@ async def logout(
 from pydantic import BaseModel, Field
 
 class ForceChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(..., min_length=8)
+    # max_length caps body allocation before the route runs. GHSA-8r3m-6x57-pg97 follow-up.
+    current_password: str = Field(..., max_length=256)
+    new_password: str = Field(..., min_length=8, max_length=256)
 
 @router.post(
     "/force-change-password",

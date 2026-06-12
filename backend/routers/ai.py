@@ -7,7 +7,7 @@ import os
 import logging
 import json
 from typing import Optional, List, Any, Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -46,23 +46,23 @@ class ChatMessage(BaseModel):
     # GHSA-q4x9-5gmc-fxh5: constrain to user/assistant so a client can't
     # inject role="system" or role="tool" via the request body.
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(..., max_length=65536)
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
-    editor_content: str = ""
+    editor_content: str = Field("", max_length=65536)
     field_context: Optional[dict] = None  # { resourceType, fieldName }
 
 class AiSettingsUpdate(BaseModel):
-    ai_enabled: Optional[str] = None
-    ai_api_key: Optional[str] = None
-    ai_api_url: Optional[str] = None
-    ai_default_model: Optional[str] = None
-    chatbot_enabled: Optional[str] = None
-    mcp_enabled: Optional[str] = None
+    ai_enabled: Optional[str] = Field(None, max_length=8)
+    ai_api_key: Optional[str] = Field(None, max_length=512)
+    ai_api_url: Optional[str] = Field(None, max_length=2048)
+    ai_default_model: Optional[str] = Field(None, max_length=255)
+    chatbot_enabled: Optional[str] = Field(None, max_length=8)
+    mcp_enabled: Optional[str] = Field(None, max_length=8)
     # GHSA-q4x9-5gmc-fxh5 (a2): admin toggle for write-capable MCP tools.
     # Default false — keep off unless per-call user confirmation lands.
-    ai_write_tools_enabled: Optional[str] = None
+    ai_write_tools_enabled: Optional[str] = Field(None, max_length=8)
 
 
 # ── public: check if AI is enabled ────────────────────────────────────
@@ -472,7 +472,7 @@ async def ai_chat(
 # ── MCP proxy endpoints ──────────────────────────────────────────────
 
 class McpCallToolRequest(BaseModel):
-    tool_name: str
+    tool_name: str = Field(..., max_length=128)
     arguments: dict = {}
 
 

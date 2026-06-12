@@ -2,16 +2,17 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
 from models.discussion import ResourceType
+from schemas._field_limits import TITLE, UUID_FIELD
 
 # Thread Schemas
 class ThreadCreate(BaseModel):
-    engagement_id: str
+    engagement_id: str = Field(..., max_length=UUID_FIELD)
     resource_type: ResourceType
-    resource_id: Optional[str] = None
-    title: str
+    resource_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    title: str = Field(..., max_length=TITLE)
 
 class ThreadUpdate(BaseModel):
-    title: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=TITLE)
     is_resolved: Optional[bool] = None
 
 class ThreadResponse(BaseModel):
@@ -30,7 +31,7 @@ class ThreadResponse(BaseModel):
 
 # Comment Schemas
 class CommentCreate(BaseModel):
-    thread_id: str
+    thread_id: str = Field(..., max_length=UUID_FIELD)
     # GHSA-82jh-8f6p-vgx9: cap body length at the schema layer. The body
     # flows into notify_mentions which runs a regex with O(n) materialized
     # output; without a cap an attacker could drive multi-GB allocations

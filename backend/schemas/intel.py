@@ -3,14 +3,23 @@ from typing import Optional, List
 from datetime import datetime
 from models.intel_item import IntelItemType, IntelSeverity
 from utils.ssrf import validate_outbound_url_sync, OutboundURLError
+from schemas._field_limits import (
+    ENUM_STR,
+    LONG_TEXT,
+    NAME,
+    SHORT_LABEL,
+    SLUG,
+    TITLE,
+    URL,
+)
 
 
 # ── Intel Feed Schemas ───────────────────────────────────────────
 
 class IntelFeedCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    url: str = Field(..., min_length=1)
-    feed_type: str = "RSS"
+    name: str = Field(..., min_length=1, max_length=NAME)
+    url: str = Field(..., min_length=1, max_length=URL)
+    feed_type: str = Field("RSS", max_length=ENUM_STR)
     enabled: bool = True
 
     @field_validator("url")
@@ -40,23 +49,23 @@ class IntelFeedResponse(BaseModel):
 # ── Intel Item Schemas ───────────────────────────────────────────
 
 class IntelItemCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    content: Optional[str] = None
-    source: Optional[str] = "manual"
-    source_url: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=TITLE)
+    content: Optional[str] = Field(None, max_length=LONG_TEXT)
+    source: Optional[str] = Field("manual", max_length=SHORT_LABEL)
+    source_url: Optional[str] = Field(None, max_length=URL)
     item_type: IntelItemType = IntelItemType.OTHER
     severity: Optional[IntelSeverity] = None
-    cve_id: Optional[str] = None
+    cve_id: Optional[str] = Field(None, max_length=SHORT_LABEL)
     published_at: Optional[datetime] = None
 
 class IntelItemUpdate(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
-    source: Optional[str] = None
-    source_url: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=TITLE)
+    content: Optional[str] = Field(None, max_length=LONG_TEXT)
+    source: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    source_url: Optional[str] = Field(None, max_length=URL)
     item_type: Optional[IntelItemType] = None
     severity: Optional[IntelSeverity] = None
-    cve_id: Optional[str] = None
+    cve_id: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 
 class LinkedEntitySummary(BaseModel):
@@ -105,5 +114,5 @@ class IntelItemDetail(IntelItemResponse):
 # ── Link/Unlink Schemas ─────────────────────────────────────────
 
 class IntelLinkRequest(BaseModel):
-    entity_type: str  # "finding", "testcase", "note"
-    entity_id: str
+    entity_type: str = Field(..., max_length=ENUM_STR)  # "finding", "testcase", "note"
+    entity_id: str = Field(..., max_length=SLUG)

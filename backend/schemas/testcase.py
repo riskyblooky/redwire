@@ -3,40 +3,47 @@ from typing import Optional, List
 from datetime import datetime
 from schemas.finding import TagResponse
 from schemas.evidence import EvidenceResponse
+from schemas._field_limits import (
+    ENUM_STR,
+    LONG_TEXT,
+    SHORT_LABEL,
+    TITLE,
+    UUID_FIELD,
+)
 
 class TestCaseBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    category: str
-    description: str
-    steps: Optional[str] = None
-    expected_result: Optional[str] = None
-    actual_result: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=TITLE)
+    category: str = Field(..., max_length=SHORT_LABEL)
+    description: str = Field(..., max_length=LONG_TEXT)
+    steps: Optional[str] = Field(None, max_length=LONG_TEXT)
+    expected_result: Optional[str] = Field(None, max_length=LONG_TEXT)
+    actual_result: Optional[str] = Field(None, max_length=LONG_TEXT)
     is_executed: Optional[bool] = False
     is_successful: Optional[bool] = None
-    notes: Optional[str] = None
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    notes: Optional[str] = Field(None, max_length=LONG_TEXT)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
 class TestCaseCreate(TestCaseBase):
-    engagement_id: str
-    parent_id: Optional[str] = None
+    engagement_id: str = Field(..., max_length=UUID_FIELD)
+    parent_id: Optional[str] = Field(None, max_length=UUID_FIELD)
     tag_ids: list[str] = []
     attack_technique_ids: list[str] = []
 
 class TestCaseUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=500)
-    category: Optional[str] = None
-    description: Optional[str] = None
-    engagement_id: Optional[str] = None
-    parent_id: Optional[str] = None
-    steps: Optional[str] = None
-    expected_result: Optional[str] = None
-    actual_result: Optional[str] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=TITLE)
+    category: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    engagement_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    parent_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    steps: Optional[str] = Field(None, max_length=LONG_TEXT)
+    expected_result: Optional[str] = Field(None, max_length=LONG_TEXT)
+    actual_result: Optional[str] = Field(None, max_length=LONG_TEXT)
     is_executed: Optional[bool] = None
     is_successful: Optional[bool] = None
-    notes: Optional[str] = None
-    classification_level: Optional[str] = Field(None, max_length=20)
-    classification_suffix: Optional[str] = Field(None, max_length=120)
+    notes: Optional[str] = Field(None, max_length=LONG_TEXT)
+    classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
     tag_ids: Optional[list[str]] = None
     attack_technique_ids: Optional[list[str]] = None
 

@@ -21,17 +21,17 @@ router = APIRouter(
     tags=["admin"]
 )
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 from schemas.user import normalize_username
 
 
 class AdminUserCreate(BaseModel):
-    username: str
-    email: str
-    password: str
-    full_name: Optional[str] = ""
+    username: str = Field(..., min_length=2, max_length=50)
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=8, max_length=256)
+    full_name: Optional[str] = Field("", max_length=255)
     role: UserRole = UserRole.OPERATOR
 
     @field_validator("username")

@@ -20,7 +20,7 @@ from models.permission import (
     GLOBAL_PERMISSIONS,
     ENGAGEMENT_PERMISSIONS
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/admin/permissions", tags=["admin", "permissions"])
 
@@ -43,8 +43,8 @@ class PermissionCategoryResponse(BaseModel):
 
 class GroupBase(BaseModel):
     """Base group schema."""
-    name: str
-    description: str | None = None
+    name: str = Field(..., max_length=255)
+    description: str | None = Field(None, max_length=2000)
 
 
 class GroupCreate(GroupBase):
@@ -78,8 +78,8 @@ class GroupResponse(BaseModel):
 
 class EngagementRoleBase(BaseModel):
     """Base engagement role schema."""
-    name: str
-    description: str | None = None
+    name: str = Field(..., max_length=255)
+    description: str | None = Field(None, max_length=2000)
 
 
 class EngagementRoleCreate(EngagementRoleBase):

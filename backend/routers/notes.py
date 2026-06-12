@@ -31,12 +31,12 @@ class NoteCreate(BaseModel):
     # materialized output; without a cap, a single oversized note could
     # drive multi-GB allocations on a worker. 32 KiB is generous.
     content: Optional[str] = Field("", max_length=32768)
-    parent_id: Optional[str] = None
+    parent_id: Optional[str] = Field(None, max_length=64)
 
 class NoteUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=500)
     content: Optional[str] = Field(None, max_length=32768)
-    parent_id: Optional[str] = None
+    parent_id: Optional[str] = Field(None, max_length=64)
 
 class LinkedResourceRef(BaseModel):
     id: str

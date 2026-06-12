@@ -1,16 +1,22 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
+from schemas._field_limits import (
+    DESCRIPTION,
+    HEX_COLOR,
+    NAME,
+    UUID_FIELD,
+)
 
 
 # ── Skill Category ───────────────────────────────────────────────
 class SkillCategoryCreate(BaseModel):
-    name: str
-    color: Optional[str] = "#6366f1"
+    name: str = Field(..., max_length=NAME)
+    color: Optional[str] = Field("#6366f1", max_length=HEX_COLOR)
     sort_order: Optional[int] = 0
 
 class SkillCategoryUpdate(BaseModel):
-    name: Optional[str] = None
-    color: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=NAME)
+    color: Optional[str] = Field(None, max_length=HEX_COLOR)
     sort_order: Optional[int] = None
 
 class SkillCategoryResponse(BaseModel):
@@ -26,15 +32,15 @@ class SkillCategoryResponse(BaseModel):
 
 # ── Skill ────────────────────────────────────────────────────────
 class SkillCreate(BaseModel):
-    category_id: str
-    name: str
-    description: Optional[str] = None
+    category_id: str = Field(..., max_length=UUID_FIELD)
+    name: str = Field(..., max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
     sort_order: Optional[int] = 0
 
 class SkillUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    category_id: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=NAME)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
+    category_id: Optional[str] = Field(None, max_length=UUID_FIELD)
     sort_order: Optional[int] = None
 
 class SkillResponse(BaseModel):

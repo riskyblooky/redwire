@@ -5,6 +5,13 @@ from models.engagement import EngagementStatus
 from schemas.user import UserSummary
 from schemas.rbac import EngagementAssignmentCreate, EngagementAssignmentResponse
 from schemas.client import ClientResponse as ClientSchemaResponse
+from schemas._field_limits import (
+    ENUM_STR,
+    LONG_TEXT,
+    NAME,
+    SHORT_LABEL,
+    UUID_FIELD,
+)
 
 
 # ── Phase Schemas ────────────────────────────────────────────────
@@ -21,7 +28,7 @@ class EngagementPhaseResponse(BaseModel):
         from_attributes = True
 
 class EngagementPhaseUpdate(BaseModel):
-    id: str
+    id: str = Field(..., max_length=UUID_FIELD)
     planned_start: Optional[datetime] = None
     planned_end: Optional[datetime] = None
 
@@ -29,41 +36,41 @@ class EngagementPhaseUpdate(BaseModel):
 # ── Engagement Schemas ───────────────────────────────────────────
 
 class EngagementBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    client_name: str = Field(..., min_length=1, max_length=255)
-    client_id: Optional[str] = None
-    engagement_type: str
+    name: str = Field(..., min_length=1, max_length=NAME)
+    client_name: str = Field(..., min_length=1, max_length=NAME)
+    client_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    engagement_type: str = Field(..., max_length=SHORT_LABEL)
     status: Optional[EngagementStatus] = EngagementStatus.PLANNING
-    description: Optional[str] = None
-    scope: Optional[str] = None
-    objectives: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    scope: Optional[str] = Field(None, max_length=LONG_TEXT)
+    objectives: Optional[str] = Field(None, max_length=LONG_TEXT)
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     # Portion marking
-    marking_profile_id: Optional[str] = None
-    default_classification_level: Optional[str] = Field(None, max_length=20)
-    default_classification_suffix: Optional[str] = Field(None, max_length=120)
-    ceiling_classification_level: Optional[str] = Field(None, max_length=20)
+    marking_profile_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    default_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    default_classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    ceiling_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
 
 class EngagementCreate(EngagementBase):
     assigned_user_ids: Optional[List[str]] = []
     assignments: Optional[List[EngagementAssignmentCreate]] = []
 
 class EngagementUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    client_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    client_id: Optional[str] = None
-    engagement_type: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=NAME)
+    client_name: Optional[str] = Field(None, min_length=1, max_length=NAME)
+    client_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    engagement_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
     status: Optional[EngagementStatus] = None
-    description: Optional[str] = None
-    scope: Optional[str] = None
-    objectives: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    scope: Optional[str] = Field(None, max_length=LONG_TEXT)
+    objectives: Optional[str] = Field(None, max_length=LONG_TEXT)
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    marking_profile_id: Optional[str] = None
-    default_classification_level: Optional[str] = Field(None, max_length=20)
-    default_classification_suffix: Optional[str] = Field(None, max_length=120)
-    ceiling_classification_level: Optional[str] = Field(None, max_length=20)
+    marking_profile_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    default_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    default_classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    ceiling_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     assigned_user_ids: Optional[List[str]] = None
     assignments: Optional[List[EngagementAssignmentCreate]] = None
 

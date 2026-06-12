@@ -2,26 +2,33 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from models.template_status import TemplateStatus
+from schemas._field_limits import (
+    LONG_TEXT,
+    SHORT_LABEL,
+    SLUG,
+    TITLE,
+    UUID_FIELD,
+)
 
 
 class RunbookItemCreate(BaseModel):
-    template_id: str
-    temp_key: str = Field(..., description="Temporary client-side key for referencing parent items during creation")
-    parent_temp_key: Optional[str] = Field(None, description="temp_key of parent item, null for root items")
+    template_id: str = Field(..., max_length=UUID_FIELD)
+    temp_key: str = Field(..., max_length=SLUG, description="Temporary client-side key for referencing parent items during creation")
+    parent_temp_key: Optional[str] = Field(None, max_length=SLUG, description="temp_key of parent item, null for root items")
     sort_order: int = 0
 
 
 class RunbookCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=500)
-    description: Optional[str] = None
-    runbook_type: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=TITLE)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    runbook_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
     items: List[RunbookItemCreate] = []
 
 
 class RunbookUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=500)
-    description: Optional[str] = None
-    runbook_type: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=TITLE)
+    description: Optional[str] = Field(None, max_length=LONG_TEXT)
+    runbook_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
     items: Optional[List[RunbookItemCreate]] = None
 
 

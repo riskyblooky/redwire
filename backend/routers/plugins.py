@@ -13,7 +13,7 @@ GET    /plugins/widgets       — Get all widget defs from active plugins
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from database import get_db
@@ -31,8 +31,10 @@ class PluginToggle(BaseModel):
     enabled: bool
 
 class PluginSettingUpdate(BaseModel):
-    key: str
-    value: Optional[str] = None
+    key: str = Field(..., max_length=128)
+    # Plugin setting values can carry serialized config blobs — pick a cap
+    # that survives larger JSON dumps but blocks the multi-MB-DoS path.
+    value: Optional[str] = Field(None, max_length=65536)
 
 class PluginSettingsUpdate(BaseModel):
     settings: list[PluginSettingUpdate]

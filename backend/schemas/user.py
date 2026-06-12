@@ -35,9 +35,9 @@ def normalize_username(v: str) -> str:
 
 class UserBase(BaseModel):
     username: str = Field(..., min_length=2, max_length=50)
-    email: EmailStr
-    full_name: Optional[str] = None
-    profile_photo: Optional[str] = None
+    email: EmailStr = Field(..., max_length=254)  # RFC 5321
+    full_name: Optional[str] = Field(None, max_length=255)
+    profile_photo: Optional[str] = Field(None, max_length=255)
 
     @field_validator("username")
     @classmethod
@@ -55,9 +55,9 @@ ALLOWED_PALETTES = {"aurora", "operator", "half-dark", "light"}
 
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    profile_photo: Optional[str] = None
+    email: Optional[EmailStr] = Field(None, max_length=254)
+    full_name: Optional[str] = Field(None, max_length=255)
+    profile_photo: Optional[str] = Field(None, max_length=255)
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     group_ids: Optional[List[str]] = None
@@ -67,12 +67,13 @@ class UserUpdate(BaseModel):
     # Required when changing `email` on the self-update endpoint
     # (GHSA-hc9w-hggj-r52w): email is the password-reset identity,
     # so a credential-class proof-of-possession is required.
-    current_password: Optional[str] = None
+    current_password: Optional[str] = Field(None, max_length=256)
     totp_code: Optional[str] = Field(None, min_length=6, max_length=6)
 
 class UserPasswordUpdate(BaseModel):
-    old_password: str
-    new_password: str = Field(..., min_length=8)
+    # max_length caps the per-request allocation. GHSA-8r3m-6x57-pg97 follow-up.
+    old_password: str = Field(..., max_length=256)
+    new_password: str = Field(..., min_length=8, max_length=256)
     totp_code: Optional[str] = Field(None, min_length=6, max_length=6)
 
 class UserResponse(BaseModel):
@@ -132,7 +133,8 @@ class TotpSetupResponse(BaseModel):
     otpauth_uri: str
 
 class TotpSetupRequest(BaseModel):
-    password: str
+    # max_length caps body allocation before the route runs. GHSA-8r3m-6x57-pg97 follow-up.
+    password: str = Field(..., max_length=256)
 
 class TotpVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=6)

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 from database import get_db
@@ -40,7 +40,7 @@ class NotificationPreferenceResponse(BaseModel):
 
 
 class NotificationPreferenceUpdate(BaseModel):
-    event_type: str
+    event_type: str = Field(..., max_length=64)
     site_muted: bool
     email_muted: bool
 

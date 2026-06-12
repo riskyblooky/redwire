@@ -1,24 +1,30 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
+from schemas._field_limits import (
+    DESCRIPTION,
+    LONG_TEXT,
+    NAME,
+    SHORT_LABEL,
+)
 
 
 class InfraVaultItemCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    item_type: str  # CREDENTIAL, KEY, FILE, NOTE
-    username: Optional[str] = None
-    password: Optional[str] = None
-    note: Optional[str] = None
-    description: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=NAME)
+    item_type: str = Field(..., max_length=SHORT_LABEL)  # CREDENTIAL, KEY, FILE, NOTE
+    username: Optional[str] = Field(None, max_length=NAME)
+    password: Optional[str] = Field(None, max_length=4096)
+    note: Optional[str] = Field(None, max_length=LONG_TEXT)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
 
 
 class InfraVaultItemUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    item_type: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    note: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=NAME)
+    item_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    username: Optional[str] = Field(None, max_length=NAME)
+    password: Optional[str] = Field(None, max_length=4096)
+    note: Optional[str] = Field(None, max_length=LONG_TEXT)
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
 
 
 class InfraVaultItemResponse(BaseModel):

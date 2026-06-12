@@ -1,11 +1,15 @@
 from pydantic import BaseModel, Field
 from typing import Optional
+from schemas._field_limits import (
+    DESCRIPTION,
+    HEX_COLOR,
+)
 
 
 class ConfigurableTypeBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = None
-    color: Optional[str] = "#6366f1"
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
+    color: Optional[str] = Field("#6366f1", max_length=HEX_COLOR)
 
 
 class ConfigurableTypeCreate(ConfigurableTypeBase):
@@ -14,8 +18,8 @@ class ConfigurableTypeCreate(ConfigurableTypeBase):
 
 class ConfigurableTypeUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = None
-    color: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=DESCRIPTION)
+    color: Optional[str] = Field(None, max_length=HEX_COLOR)
 
 
 class ConfigurableTypeResponse(ConfigurableTypeBase):
