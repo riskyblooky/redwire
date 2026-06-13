@@ -262,6 +262,10 @@ async def _execute_notify_users(
     for uid in user_ids:
         if not await _can_see_engagement(uid):
             continue
+        # Note: no skip_self_check — the recipient's per-event mute
+        # preference wins over the rule author's choice. There's no
+        # defensible reason an automation rule should override the
+        # recipient's own mute. Follow-up to GHSA-3ccf-qpj4-vpx8.
         await create_notification(
             db=db,
             user_id=uid,
@@ -271,7 +275,6 @@ async def _execute_notify_users(
             link=link,
             actor_id=context.get("user_id"),
             engagement_id=event_engagement_id,
-            skip_self_check=True,
         )
 
 
@@ -433,6 +436,7 @@ async def _execute_email(
     db: AsyncSession, action: dict, context: Dict[str, Any], rule_name: str
 ):
     """Fire an email using the SMTP service."""
+    import os
     from utils.email_service import send_email
 
     recipients = action.get("recipients", [])
@@ -442,6 +446,39 @@ async def _execute_email(
     if not recipients:
         logger.warning(f"Email action in rule '{rule_name}' has no recipients. Skipping.")
         return
+
+    # Fire-time domain allowlist (GHSA-3ccf-qpj4-vpx8 follow-up). The
+    # save-time validator on ActionSchema.recipients already enforces this,
+    # but the env var can tighten after a rule was saved — re-check here so
+    # a previously-saved rule whose recipient now falls outside the list
+    # gets filtered rather than delivered.
+    raw_allow = os.environ.get("AUTOMATION_EMAIL_DOMAIN_ALLOWLIST", "").strip()
+    if raw_allow:
+        allow = {d.strip().lower() for d in raw_allow.split(",") if d.strip()}
+        filtered = []
+        for to_email in recipients:
+            try:
+                domain = to_email.rsplit("@", 1)[1].lower()
+            except IndexError:
+                logger.warning(
+                    f"Email action in rule '{rule_name}': dropping malformed "
+                    f"address {to_email!r}"
+                )
+                continue
+            if domain not in allow:
+                logger.warning(
+                    f"Email action in rule '{rule_name}': dropping {to_email!r} "
+                    f"(domain {domain!r} not on AUTOMATION_EMAIL_DOMAIN_ALLOWLIST)"
+                )
+                continue
+            filtered.append(to_email)
+        recipients = filtered
+        if not recipients:
+            logger.warning(
+                f"Email action in rule '{rule_name}': all recipients filtered by "
+                f"AUTOMATION_EMAIL_DOMAIN_ALLOWLIST. Skipping."
+            )
+            return
 
     subject_template = action.get("subject", f"RedWire Automation: {rule_name}")
     body_template = action.get("body_template", "")
