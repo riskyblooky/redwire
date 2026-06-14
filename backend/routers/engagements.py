@@ -25,6 +25,7 @@ from fastapi import UploadFile, File, Form
 import os
 import uuid
 from utils.storage import storage_service
+from utils.uploads import safe_content_type
 from utils.collaboration import create_activity_log, build_change_summary, manager
 from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
@@ -620,17 +621,22 @@ async def upload_engagement_evidence(
     # Read file content
     content = await file.read()
     file_size = len(content)
-    
+
     # Generate unique filename
     ext = os.path.splitext(file.filename)[1] if file.filename else ""
     storage_filename = f"{uuid.uuid4()}{ext}"
-    
+
+    # GHSA-h77m-pjqc-5cm3 follow-up: server-derived MIME, not the client's
+    # Content-Type header. Same string is stored on MinIO and on the
+    # Evidence row that the frontend reads for inline-preview decisions.
+    safe_mime = safe_content_type(file.filename)
+
     # Upload to MinIO
     try:
-        await storage_service.upload_file(content, storage_filename, content_type=file.content_type)
+        await storage_service.upload_file(content, storage_filename, content_type=safe_mime)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Storage failure: {str(e)}")
-    
+
     # Create record
     new_evidence = Evidence(
         engagement_id=engagement_id,
@@ -638,7 +644,7 @@ async def upload_engagement_evidence(
         original_filename=file.filename or "unknown",
         file_path=storage_filename,
         file_size=file_size,
-        mime_type=file.content_type,
+        mime_type=safe_mime,
         description=description,
         created_by=current_user.id
     )

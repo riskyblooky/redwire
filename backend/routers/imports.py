@@ -24,10 +24,29 @@ from schemas.imports import (
 )
 from utils.parsers import detect_and_parse, ParsedImportData
 from utils.collaboration import create_activity_log
+from utils.uploads import read_upload_capped
+import os
 import uuid
 
 
 router = APIRouter(prefix="/imports", tags=["imports"])
+
+
+def _scanner_import_max_bytes() -> int:
+    """Resolve the per-request size cap for scanner imports. Defaults to
+    50 MB (the pre-cap behaviour) but admins can lower or raise it via
+    ``SCANNER_IMPORT_MAX_BYTES`` without redeploying. GHSA-h77m-pjqc-5cm3
+    follow-up: the previous read-then-check pattern still allocated the
+    full body in memory before tripping the 413, so the cap was a
+    cosmetic gate against the multi-GB DoS — ``read_upload_capped``
+    bails the moment the running total crosses the threshold."""
+    raw = os.environ.get("SCANNER_IMPORT_MAX_BYTES", "").strip()
+    if not raw:
+        return 50 * 1024 * 1024
+    try:
+        return int(raw)
+    except ValueError:
+        return 50 * 1024 * 1024
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,14 +148,14 @@ async def preview_import(
     if engagement_id:
         await _check_import_permission(current_user, engagement_id, db)
 
-    content = await file.read()
+    max_bytes = _scanner_import_max_bytes()
+    content = await read_upload_capped(
+        file,
+        max_bytes,
+        detail=f"Scanner import file too large. Maximum {max_bytes} bytes "
+               "(override with SCANNER_IMPORT_MAX_BYTES).",
+    )
     filename = file.filename or "unknown"
-
-    if len(content) > 50 * 1024 * 1024:  # 50 MB limit
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large. Maximum 50 MB.",
-        )
 
     try:
         parsed = detect_and_parse(content, filename)
@@ -196,14 +215,14 @@ async def commit_import(
 
     await _check_import_permission(current_user, engagement_id, db)
 
-    content = await file.read()
+    max_bytes = _scanner_import_max_bytes()
+    content = await read_upload_capped(
+        file,
+        max_bytes,
+        detail=f"Scanner import file too large. Maximum {max_bytes} bytes "
+               "(override with SCANNER_IMPORT_MAX_BYTES).",
+    )
     filename = file.filename or "unknown"
-
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large. Maximum 50 MB.",
-        )
 
     try:
         parsed = detect_and_parse(content, filename)

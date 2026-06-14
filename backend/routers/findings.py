@@ -21,6 +21,7 @@ from auth.rbac import can_modify_resource, check_engagement_permission
 from models.user import UserRole
 from models.permission import Permission
 from utils.storage import storage_service
+from utils.uploads import safe_content_type
 from utils.collaboration import create_activity_log, build_change_summary
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
@@ -893,24 +894,29 @@ async def upload_evidence(
     # Read file content
     content = await file.read()
     file_size = len(content)
-    
+
     # Generate unique filename for storage
     ext = os.path.splitext(file.filename)[1] if file.filename else ""
     storage_filename = f"{uuid.uuid4()}{ext}"
-    
+
+    # GHSA-h77m-pjqc-5cm3 follow-up: don't trust the client's Content-Type
+    # header for storage metadata or for the stored Evidence.mime_type that
+    # the frontend reads to decide whether to inline-preview the file.
+    safe_mime = safe_content_type(file.filename)
+
     # Upload to MinIO
     try:
         await storage_service.upload_file(
-            content, 
-            storage_filename, 
-            content_type=file.content_type
+            content,
+            storage_filename,
+            content_type=safe_mime,
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload file to storage: {str(e)}"
         )
-    
+
     # Create evidence record in database
     new_evidence = Evidence(
         finding_id=finding_id,
@@ -919,7 +925,7 @@ async def upload_evidence(
         original_filename=file.filename or "unknown",
         file_path=storage_filename,
         file_size=file_size,
-        mime_type=file.content_type,
+        mime_type=safe_mime,
         description=description,
         created_by=current_user.id
     )

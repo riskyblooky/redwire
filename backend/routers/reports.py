@@ -52,6 +52,7 @@ from models.permission import Permission
 from models.user import UserRole
 from utils.report_generator import PDFReportGenerator, MarkdownReportGenerator, HTMLReportGenerator
 from utils.storage import storage_service
+from utils.uploads import safe_content_type
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -529,9 +530,13 @@ async def save_report_to_engagement(
     # 4. Upload to MinIO
     ext = os.path.splitext(filename)[1] if filename else ""
     storage_filename = f"{uuid.uuid4()}{ext}"
+    # GHSA-h77m-pjqc-5cm3 follow-up: server-derived MIME, not the client's
+    # Content-Type header. Stored on MinIO and on the Evidence row that
+    # the frontend reads for inline-preview decisions.
+    safe_mime = safe_content_type(filename)
     try:
         await storage_service.upload_file(
-            content, storage_filename, content_type=file.content_type
+            content, storage_filename, content_type=safe_mime
         )
     except Exception as e:
         logger.error(f"Storage upload failed: {e}")
@@ -547,7 +552,7 @@ async def save_report_to_engagement(
         original_filename=filename,
         file_path=storage_filename,
         file_size=file_size,
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=safe_mime,
         description=f"Generated report: {filename}",
         include_in_report=True,
         created_by=current_user.id,

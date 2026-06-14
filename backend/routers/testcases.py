@@ -760,6 +760,7 @@ async def upload_testcase_evidence(
     from models.evidence import Evidence
     from schemas.evidence import EvidenceResponse
     from utils.storage import storage_service
+    from utils.uploads import safe_content_type
     import os
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
@@ -791,12 +792,17 @@ async def upload_testcase_evidence(
     ext = os.path.splitext(file.filename)[1] if file.filename else ""
     storage_filename = f"{uuid.uuid4()}{ext}"
 
+    # GHSA-h77m-pjqc-5cm3 follow-up: server-derived MIME, not the client's
+    # Content-Type header. Same string is stored on MinIO and on the
+    # Evidence row that the frontend reads for inline-preview decisions.
+    safe_mime = safe_content_type(file.filename)
+
     # Upload to storage
     try:
         await storage_service.upload_file(
             content,
             storage_filename,
-            content_type=file.content_type
+            content_type=safe_mime,
         )
     except Exception as e:
         raise HTTPException(
@@ -812,7 +818,7 @@ async def upload_testcase_evidence(
         original_filename=file.filename or "unknown",
         file_path=storage_filename,
         file_size=file_size,
-        mime_type=file.content_type,
+        mime_type=safe_mime,
         description=description,
         created_by=current_user.id
     )
