@@ -425,24 +425,32 @@ export default function LoginPage() {
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[11px] font-mono font-semibold text-red-400/80 uppercase tracking-widest">
-                                        OTP Token
+                                        OTP Token or Recovery Code
                                     </label>
                                     <input
                                         ref={totpInputRef}
                                         type="text"
-                                        inputMode="numeric"
                                         autoComplete="one-time-code"
-                                        placeholder="000000"
+                                        placeholder="000000  or  XXXX-XXXX"
                                         value={totpCode}
-                                        onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                        maxLength={6}
+                                        // Allow both 6-digit TOTP and 8-char alnum recovery
+                                        // codes (with optional hyphen / spaces). Server
+                                        // dispatches by shape — see
+                                        // backend/auth/recovery_codes.py::looks_like_recovery_code.
+                                        // GHSA-vm6w-9wm5-q367 follow-up.
+                                        onChange={(e) => setTotpCode(e.target.value.slice(0, 16))}
+                                        maxLength={16}
                                         required
-                                        className="w-full px-3 py-3 text-xl font-mono text-white bg-white/[0.03] border border-white/10 rounded-lg outline-none text-center tracking-[0.5em] focus:border-red-500/50 focus:shadow-[0_0_12px_rgba(255,0,0,0.15)] transition-all placeholder:text-white/15"
+                                        className="w-full px-3 py-3 text-xl font-mono text-white bg-white/[0.03] border border-white/10 rounded-lg outline-none text-center tracking-[0.25em] focus:border-red-500/50 focus:shadow-[0_0_12px_rgba(255,0,0,0.15)] transition-all placeholder:text-white/15"
                                     />
+                                    <p className="text-[10px] text-slate-500 text-center">
+                                        Lost your authenticator? Use one of the recovery
+                                        codes you saved at enrollment.
+                                    </p>
                                 </div>
                                 <div className="space-y-2">
-                                    <GlowButton type="submit" disabled={isLoading || totpCode.length !== 6}>
-                                        {isLoading ? 'Verifying...' : 'Verify Token'}
+                                    <GlowButton type="submit" disabled={isLoading || totpCode.replace(/[-\s]/g, '').length < 6}>
+                                        {isLoading ? 'Verifying...' : 'Verify'}
                                     </GlowButton>
                                     <GlowButton type="button" variant="ghost" onClick={handleBack}>
                                         <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Back

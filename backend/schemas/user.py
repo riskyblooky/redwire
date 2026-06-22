@@ -85,6 +85,10 @@ class UserResponse(BaseModel):
     role: UserRole
     is_active: bool
     totp_enabled: bool = False
+    # Number of 2FA recovery codes still available for self-service
+    # account recovery. The settings UI surfaces this so the user
+    # knows when to regenerate. GHSA-vm6w-9wm5-q367 follow-up.
+    recovery_codes_remaining: int = 0
     auth_provider: str = "local"
     must_change_password: bool = False
     created_at: datetime
@@ -138,6 +142,45 @@ class TotpSetupRequest(BaseModel):
 
 class TotpVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=6)
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    """Login-time 2FA submission. Accepts either a 6-digit TOTP code OR
+    an 8-char alnum recovery code (``XXXX-XXXX``); dispatcher in the
+    verify-2fa handler routes based on shape. GHSA-vm6w-9wm5-q367
+    follow-up — replaces the digits-only ``TotpVerifyRequest`` at
+    that endpoint.
+    """
+    # 6-char minimum covers TOTP; 24 is generous headroom for
+    # whitespace/hyphens around an 8-char recovery code.
+    code: str = Field(..., min_length=6, max_length=24)
+
+
+class TotpVerifySetupResponse(BaseModel):
+    """Response shape for ``POST /auth/totp/verify-setup``.
+
+    ``recovery_codes`` is the *only* time the plaintext codes are sent.
+    After this response, only bcrypt hashes are stored. GHSA-vm6w-9wm5-q367.
+    """
+    message: str
+    recovery_codes: List[str] = []
+
+
+class RecoveryCodesRegenerateRequest(BaseModel):
+    """Body for ``POST /auth/totp/recovery-codes/regenerate``.
+    Requires both the password and a valid TOTP code — re-issuing
+    recovery codes is a credential-class event, same shape as
+    ``/totp/disable``.
+    """
+    password: str = Field(..., max_length=256)
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+class RecoveryCodesResponse(BaseModel):
+    """Response shape for the regenerate endpoint. Same one-shot
+    plaintext-then-hash discipline as the verify-setup response."""
+    recovery_codes: List[str] = []
+
 
 class TotpDisableRequest(BaseModel):
     # max_length caps body allocation before the route runs (GHSA-8r3m-6x57-pg97).

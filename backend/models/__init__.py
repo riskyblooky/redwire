@@ -45,6 +45,7 @@ from models.automation import AutomationRule
 from models.plugin import PluginState, PluginSetting
 from models.spray import SprayCampaign, SprayResult
 from models.markdown_image import MarkdownImage
+from models.recovery_code import RecoveryCode
 
 __all__ = [
     "User",
@@ -147,4 +148,5 @@ __all__ = [
     "MarkdownImage",
     "SprayCampaign",
     "SprayResult",
+    "RecoveryCode",
 ]

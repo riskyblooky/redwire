@@ -9,7 +9,9 @@ from models.user import User, UserRole
 from models.auth_settings import AuthSetting
 from schemas.user import (
     UserLogin, Token, UserCreate, UserResponse,
-    TotpSetupResponse, TotpSetupRequest, TotpVerifyRequest, TotpDisableRequest,
+    TotpSetupResponse, TotpSetupRequest, TotpVerifyRequest,
+    TotpVerifySetupResponse, TotpDisableRequest,
+    TwoFactorVerifyRequest, RecoveryCodesRegenerateRequest, RecoveryCodesResponse,
 )
 from schemas.auth_settings import AuthProvidersResponse, ForgotPasswordRequest, ResetPasswordRequest
 from auth import (
@@ -352,18 +354,22 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
 @router.post(
     "/verify-2fa",
     summary="Complete 2FA login",
-    description="Accepts a 2FA-pending token (from /auth/login) and a TOTP code. "
-                "Returns a full JWT pair on success.",
+    description="Accepts a 2FA-pending token (from /auth/login) and either a "
+                "6-digit TOTP code OR an 8-char alnum recovery code "
+                "(XXXX-XXXX). Returns a full JWT pair on success.",
 )
 @limiter.limit("5/minute")
 async def verify_2fa(
     request: Request,
-    body: TotpVerifyRequest,
+    body: TwoFactorVerifyRequest,
     response: Response,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ):
-    """Verify TOTP code using a 2FA-pending token and issue full JWT tokens."""
+    """Verify TOTP code OR recovery code using a 2FA-pending token and
+    issue full JWT tokens. GHSA-vm6w-9wm5-q367 follow-up: recovery
+    codes are the self-service recovery path for a user who has lost
+    their TOTP device but still remembers their password."""
     token = credentials.credentials
 
     # Decode the pending token manually (get_current_user blocks 2fa_pending)
@@ -402,18 +408,66 @@ async def verify_2fa(
             detail="2FA is not configured for this user",
         )
 
-    # Decrypt and verify the TOTP code
-    from auth.crypto import decrypt_totp_secret
-    decrypted_secret = decrypt_totp_secret(user.totp_secret)
-    matched_step = verify_totp_code(
-        decrypted_secret, body.code, user.totp_last_timestep
-    )
-    if matched_step is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or already-used two-factor authentication code",
+    # Dispatch by shape: alphanumeric → recovery code, digits-only →
+    # TOTP. The two are disjoint (TOTP is RFC 6238 digits-only; recovery
+    # codes always contain at least one letter from the displayed
+    # alphabet) so a single endpoint can route without ambiguity.
+    from auth.recovery_codes import looks_like_recovery_code, verify_code as verify_recovery_code, normalise as normalise_recovery_code
+    from models.recovery_code import RecoveryCode
+
+    if looks_like_recovery_code(body.code):
+        # ── Recovery-code path ─────────────────────────────────────
+        # Walk unused rows for this user (bcrypt is constant-time per
+        # row; iterating up to 10 hashes is ~1s worst-case miss).
+        unused = await db.execute(
+            select(RecoveryCode)
+            .where(RecoveryCode.user_id == user.id)
+            .where(RecoveryCode.used_at.is_(None))
         )
-    user.totp_last_timestep = matched_step
+        rows = unused.scalars().all()
+
+        matched: Optional[RecoveryCode] = None
+        for rc in rows:
+            if verify_recovery_code(body.code, rc.code_hash):
+                matched = rc
+                break
+
+        if matched is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or already-used two-factor authentication code",
+            )
+
+        matched.used_at = datetime.utcnow()
+        await db.commit()
+
+        try:
+            from utils.collaboration import create_activity_log
+            await create_activity_log(
+                db,
+                engagement_id=None,
+                user_id=user.id,
+                action="consumed_recovery_code",
+                resource_type="user",
+                resource_id=user.id,
+                resource_name=user.username,
+                details="Consumed a 2FA recovery code at login",
+            )
+        except Exception:
+            pass  # audit best-effort; don't block login
+    else:
+        # ── TOTP path (unchanged) ─────────────────────────────────
+        from auth.crypto import decrypt_totp_secret
+        decrypted_secret = decrypt_totp_secret(user.totp_secret)
+        matched_step = verify_totp_code(
+            decrypted_secret, body.code, user.totp_last_timestep
+        )
+        if matched_step is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or already-used two-factor authentication code",
+            )
+        user.totp_last_timestep = matched_step
 
     # Blacklist the pending token so it can't be reused. A silent failure
     # here would leave the 5-minute pending token live for replay; surface
@@ -695,9 +749,12 @@ async def totp_setup(
 
 @router.post(
     "/totp/verify-setup",
+    response_model=TotpVerifySetupResponse,
     summary="Complete 2FA setup",
     description="Verifies a 6-digit TOTP code against the stored secret to finish enrollment. "
-                "On success, 2FA is permanently enabled for the user.",
+                "On success, 2FA is permanently enabled and 10 single-use "
+                "recovery codes are issued — shown ONCE in this response, "
+                "never recoverable afterwards.",
 )
 @limiter.limit("5/minute")
 async def totp_verify_setup(
@@ -712,13 +769,13 @@ async def totp_verify_setup(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="TOTP setup has not been initiated. Call /auth/totp/setup first.",
         )
-    
+
     if current_user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Two-factor authentication is already enabled",
         )
-    
+
     from auth.crypto import decrypt_totp_secret
     decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
     matched_step = verify_totp_code(
@@ -733,7 +790,30 @@ async def totp_verify_setup(
 
     current_user.totp_enabled = True
     current_user.totp_verified_at = datetime.utcnow()
+
+    # Issue recovery codes. Plaintext is in `codes`; only the bcrypt
+    # hashes are persisted. GHSA-vm6w-9wm5-q367 follow-up.
+    from auth.recovery_codes import generate_codes, hash_code
+    from models.recovery_code import RecoveryCode
+    codes = generate_codes()
+    for plaintext in codes:
+        db.add(RecoveryCode(user_id=current_user.id, code_hash=hash_code(plaintext)))
     await db.commit()
+
+    try:
+        from utils.collaboration import create_activity_log
+        await create_activity_log(
+            db,
+            engagement_id=None,
+            user_id=current_user.id,
+            action="issued_recovery_codes",
+            resource_type="user",
+            resource_id=current_user.id,
+            resource_name=current_user.username,
+            details=f"Issued {len(codes)} 2FA recovery codes at enrollment",
+        )
+    except Exception:
+        pass  # audit best-effort; don't block the 2FA-enable
 
     # MFA boundary changed: invalidate every existing session and
     # long-lived API token so a stolen pre-2FA bearer cannot survive
@@ -753,7 +833,10 @@ async def totp_verify_setup(
     )
     await db.commit()
 
-    return {"message": "Two-factor authentication enabled successfully"}
+    return TotpVerifySetupResponse(
+        message="Two-factor authentication enabled successfully",
+        recovery_codes=codes,
+    )
 
 
 @router.post(
@@ -799,7 +882,31 @@ async def totp_disable(
     current_user.totp_secret = None
     current_user.totp_enabled = False
     current_user.totp_verified_at = None
+
+    # Clear recovery codes — disabling 2FA invalidates the entire
+    # second-factor surface. Re-enabling later issues a fresh batch.
+    # GHSA-vm6w-9wm5-q367 follow-up.
+    from sqlalchemy import delete as _sa_delete
+    from models.recovery_code import RecoveryCode
+    await db.execute(
+        _sa_delete(RecoveryCode).where(RecoveryCode.user_id == current_user.id)
+    )
     await db.commit()
+
+    try:
+        from utils.collaboration import create_activity_log
+        await create_activity_log(
+            db,
+            engagement_id=None,
+            user_id=current_user.id,
+            action="cleared_recovery_codes",
+            resource_type="user",
+            resource_id=current_user.id,
+            resource_name=current_user.username,
+            details="Recovery codes cleared on 2FA disable",
+        )
+    except Exception:
+        pass
 
     # MFA boundary changed: invalidate every existing session and
     # long-lived API token so a stolen post-2FA bearer cannot survive
@@ -820,6 +927,81 @@ async def totp_disable(
     await db.commit()
 
     return {"message": "Two-factor authentication disabled successfully"}
+
+
+@router.post(
+    "/totp/recovery-codes/regenerate",
+    response_model=RecoveryCodesResponse,
+    summary="Regenerate 2FA recovery codes",
+    description="Deletes the user's existing recovery-code set and issues "
+                "10 fresh codes. Requires the current password AND a valid "
+                "TOTP code — re-issuance is a credential-class event, same "
+                "shape as /totp/disable. Plaintext codes are returned ONCE "
+                "in this response and never recoverable afterwards.",
+)
+@limiter.limit("5/minute")
+async def regenerate_recovery_codes(
+    request: Request,
+    body: RecoveryCodesRegenerateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Regenerate recovery codes for a user with 2FA enabled."""
+    if not current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is not enabled",
+        )
+
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+
+    from auth.crypto import decrypt_totp_secret
+    decrypted_secret = decrypt_totp_secret(current_user.totp_secret)
+    matched_step = verify_totp_code(
+        decrypted_secret, body.code, current_user.totp_last_timestep
+    )
+    if matched_step is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or already-used TOTP code",
+        )
+    current_user.totp_last_timestep = matched_step
+
+    from sqlalchemy import delete as _sa_delete
+    from auth.recovery_codes import generate_codes, hash_code
+    from models.recovery_code import RecoveryCode
+
+    # Clear ALL existing rows for this user (used + unused). After this
+    # call, only the freshly-issued codes are valid.
+    await db.execute(
+        _sa_delete(RecoveryCode).where(RecoveryCode.user_id == current_user.id)
+    )
+
+    codes = generate_codes()
+    for plaintext in codes:
+        db.add(RecoveryCode(user_id=current_user.id, code_hash=hash_code(plaintext)))
+    await db.commit()
+
+    try:
+        from utils.collaboration import create_activity_log
+        await create_activity_log(
+            db,
+            engagement_id=None,
+            user_id=current_user.id,
+            action="regenerated_recovery_codes",
+            resource_type="user",
+            resource_id=current_user.id,
+            resource_name=current_user.username,
+            details=f"Regenerated {len(codes)} 2FA recovery codes",
+        )
+    except Exception:
+        pass
+
+    return RecoveryCodesResponse(recovery_codes=codes)
 
 
 # ─── SAML SSO Endpoints ──────────────────────────────────────────────────────

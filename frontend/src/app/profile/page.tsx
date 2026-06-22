@@ -41,7 +41,7 @@ import {
     useUpdatePassword,
     useUploadProfilePhoto
 } from '@/lib/hooks/use-profile';
-import { Loader2, Camera, Mail, User, Lock, CheckCircle2, AlertCircle, Shield, ShieldCheck, ShieldOff, Copy, Eye, EyeOff, AlertTriangle, BellRing, Radar, Save, Target, Palette, Check } from 'lucide-react';
+import { Loader2, Camera, Mail, User, Lock, CheckCircle2, AlertCircle, Shield, ShieldCheck, ShieldOff, Copy, Eye, EyeOff, AlertTriangle, BellRing, Radar, Save, Target, Palette, Check, RefreshCw, Download } from 'lucide-react';
 import { useCheckPassword } from '@/lib/hooks/use-wordlist';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -114,6 +114,19 @@ export default function ProfilePage() {
     // Setup requires the current password (mirrors disable) — see GHSA-vm6w-9wm5-q367
     const [showSetupPrompt, setShowSetupPrompt] = useState(false);
     const [setupPassword, setSetupPassword] = useState('');
+
+    // GHSA-vm6w-9wm5-q367 follow-up: recovery codes shown once after
+    // /totp/verify-setup or /totp/recovery-codes/regenerate. Held in a
+    // modal until the user explicitly confirms they've saved them.
+    // Never re-fetchable — backend stores hashes only.
+    const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+    const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
+
+    // Regenerate flow — same shape as disable (requires password + TOTP).
+    const [showRegenerate, setShowRegenerate] = useState(false);
+    const [regeneratePassword, setRegeneratePassword] = useState('');
+    const [regenerateCode, setRegenerateCode] = useState('');
+    const [regenerateLoading, setRegenerateLoading] = useState(false);
 
     // Wordlist check for new password
     const checkPassword = useCheckPassword();
@@ -238,10 +251,16 @@ export default function ProfilePage() {
     const handleTotpVerify = async () => {
         setTotpLoading(true);
         try {
-            await api.post('/auth/totp/verify-setup', { code: totpCode });
+            const res = await api.post('/auth/totp/verify-setup', { code: totpCode });
             toast.success('Two-factor authentication enabled!');
             setTotpSetup(null);
             setTotpCode('');
+            // Surface the freshly-issued recovery codes — modal blocks
+            // until the user confirms they've saved them.
+            if (Array.isArray(res.data?.recovery_codes)) {
+                setRecoveryCodes(res.data.recovery_codes);
+                setRecoveryAcknowledged(false);
+            }
             // Refresh user data
             const userRes = await api.get('/auth/me');
             setUser(userRes.data);
@@ -251,6 +270,57 @@ export default function ProfilePage() {
         } finally {
             setTotpLoading(false);
         }
+    };
+
+    const handleRegenerateCodes = async () => {
+        setRegenerateLoading(true);
+        try {
+            const res = await api.post('/auth/totp/recovery-codes/regenerate', {
+                password: regeneratePassword,
+                code: regenerateCode,
+            });
+            toast.success('Recovery codes regenerated. Save the new ones — the old set is no longer valid.');
+            setShowRegenerate(false);
+            setRegeneratePassword('');
+            setRegenerateCode('');
+            if (Array.isArray(res.data?.recovery_codes)) {
+                setRecoveryCodes(res.data.recovery_codes);
+                setRecoveryAcknowledged(false);
+            }
+            const userRes = await api.get('/auth/me');
+            setUser(userRes.data);
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || 'Failed to regenerate recovery codes');
+        } finally {
+            setRegenerateLoading(false);
+        }
+    };
+
+    const handleCopyAllCodes = () => {
+        if (!recoveryCodes) return;
+        navigator.clipboard.writeText(recoveryCodes.join('\n'));
+        toast.success('All 10 recovery codes copied to clipboard');
+    };
+
+    const handleDownloadCodes = () => {
+        if (!recoveryCodes) return;
+        const header = [
+            `# RedWire 2FA recovery codes for ${user?.username || 'user'}`,
+            `# Generated: ${new Date().toISOString()}`,
+            `# Each code is single-use. Treat this file like a password — store it`,
+            `# somewhere safe (password manager, printed copy in a sealed envelope).`,
+            ``,
+        ].join('\n');
+        const body = recoveryCodes.join('\n') + '\n';
+        const blob = new Blob([header + body], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `redwire-recovery-codes-${user?.username || 'user'}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     };
 
     const handleTotpDisable = async () => {
@@ -638,6 +708,87 @@ export default function ProfilePage() {
                                                 Disable Two-Factor Authentication
                                             </Button>
                                         )}
+
+                                        {/* Recovery codes — show remaining count + regen affordance */}
+                                        <div className="pt-4 mt-4 border-t border-slate-800/60">
+                                            <div className="flex items-start justify-between gap-4 mb-3">
+                                                <div>
+                                                    <p className="text-sm font-medium text-white">Recovery Codes</p>
+                                                    <p className="text-xs text-slate-400 mt-0.5">
+                                                        Single-use codes for self-service recovery if you lose your authenticator.
+                                                    </p>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <p className={cn(
+                                                        'text-2xl font-bold font-mono',
+                                                        (user?.recovery_codes_remaining ?? 0) <= 3
+                                                            ? 'text-amber-400'
+                                                            : 'text-slate-200',
+                                                    )}>
+                                                        {user?.recovery_codes_remaining ?? 0}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">Remaining</p>
+                                                </div>
+                                            </div>
+                                            {(user?.recovery_codes_remaining ?? 0) <= 3 && (
+                                                <div className="flex items-center gap-2 p-2 mb-3 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+                                                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                                    <span>You're running low. Regenerate to get 10 fresh codes (the old set will be invalidated).</span>
+                                                </div>
+                                            )}
+                                            {showRegenerate ? (
+                                                <div className="space-y-3 p-4 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                                                    <p className="text-sm text-slate-300">
+                                                        Regenerating issues 10 new codes and invalidates your existing set.
+                                                        Enter your password and a current TOTP code:
+                                                    </p>
+                                                    <div className="space-y-2">
+                                                        <Input
+                                                            type="password"
+                                                            placeholder="Current password"
+                                                            value={regeneratePassword}
+                                                            onChange={(e) => setRegeneratePassword(e.target.value)}
+                                                            className="bg-slate-950/50 border-slate-700 text-white"
+                                                        />
+                                                        <Input
+                                                            type="text"
+                                                            inputMode="numeric"
+                                                            placeholder="6-digit TOTP code"
+                                                            value={regenerateCode}
+                                                            onChange={(e) => setRegenerateCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                            maxLength={6}
+                                                            className="bg-slate-950/50 border-slate-700 text-white font-mono tracking-widest"
+                                                        />
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <Button
+                                                            onClick={handleRegenerateCodes}
+                                                            disabled={regenerateLoading || regenerateCode.length !== 6 || !regeneratePassword}
+                                                            className="flex-1 bg-amber-600 hover:bg-amber-500 text-white"
+                                                        >
+                                                            {regenerateLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                                            Regenerate Codes
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            onClick={() => { setShowRegenerate(false); setRegeneratePassword(''); setRegenerateCode(''); }}
+                                                            className="text-slate-400"
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <Button
+                                                    variant="ghost"
+                                                    className="text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                                                    onClick={() => setShowRegenerate(true)}
+                                                >
+                                                    <RefreshCw className="h-4 w-4 mr-2" />
+                                                    Regenerate Recovery Codes
+                                                </Button>
+                                            )}
+                                        </div>
                                     </>
                                 ) : totpSetup ? (
                                     /* Setup in progress */
@@ -777,6 +928,79 @@ export default function ProfilePage() {
                     </div>
                 )}
             </div>
+
+            {/* ═══════ RECOVERY CODES MODAL ═══════ */}
+            {/* Shown once after 2FA enrollment or regeneration. Blocks until
+                the user acknowledges they've saved the codes. Plaintext is
+                never re-fetchable from the server. GHSA-vm6w-9wm5-q367. */}
+            {recoveryCodes && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-lg rounded-xl border-2 border-amber-500/60 bg-slate-950 shadow-2xl overflow-hidden">
+                        <div className="bg-amber-500/10 border-b border-amber-500/30 px-5 py-3 flex items-center gap-3">
+                            <Shield className="w-5 h-5 text-amber-400 shrink-0" />
+                            <span className="text-sm font-semibold text-amber-400">
+                                Save your 2FA recovery codes
+                            </span>
+                        </div>
+                        <div className="px-5 py-4 space-y-4">
+                            <p className="text-sm text-slate-300 leading-relaxed">
+                                These <strong>{recoveryCodes.length}</strong> single-use codes are your
+                                self-service recovery path if you lose your authenticator. Save them
+                                somewhere safe (password manager, printed and locked away).
+                                <br />
+                                <span className="text-amber-300 font-medium">You won't see them again.</span>
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 p-4 rounded-lg bg-slate-900/80 border border-slate-800 font-mono text-sm">
+                                {recoveryCodes.map((code) => (
+                                    <div
+                                        key={code}
+                                        className="text-center text-slate-200 select-all py-1.5 rounded bg-slate-950/60 border border-slate-800/60"
+                                    >
+                                        {code}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    onClick={handleCopyAllCodes}
+                                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-white"
+                                >
+                                    <Copy className="h-4 w-4 mr-2" /> Copy All
+                                </Button>
+                                <Button
+                                    type="button"
+                                    onClick={handleDownloadCodes}
+                                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-white"
+                                >
+                                    <Download className="h-4 w-4 mr-2" /> Download .txt
+                                </Button>
+                            </div>
+                            <label className="flex items-start gap-2 cursor-pointer pt-2 border-t border-slate-800/60">
+                                <input
+                                    type="checkbox"
+                                    checked={recoveryAcknowledged}
+                                    onChange={(e) => setRecoveryAcknowledged(e.target.checked)}
+                                    className="mt-1 accent-amber-500"
+                                />
+                                <span className="text-xs text-slate-300">
+                                    I've saved these codes somewhere safe. I understand they
+                                    won't be shown again, and that each code can be used at
+                                    most once.
+                                </span>
+                            </label>
+                            <Button
+                                type="button"
+                                disabled={!recoveryAcknowledged}
+                                onClick={() => { setRecoveryCodes(null); setRecoveryAcknowledged(false); }}
+                                className="w-full bg-amber-600 hover:bg-amber-500 text-white disabled:bg-slate-800 disabled:text-slate-500"
+                            >
+                                Done
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </DashboardLayout>
     );
 }

@@ -19,6 +19,9 @@ export interface User {
     role: UserRole;
     is_active: boolean;
     totp_enabled?: boolean;
+    // Count of un-consumed 2FA recovery codes. Settings UI warns when
+    // this gets low. GHSA-vm6w-9wm5-q367 follow-up.
+    recovery_codes_remaining?: number;
     auth_provider?: string;
     must_change_password?: boolean;
     created_at: string;
