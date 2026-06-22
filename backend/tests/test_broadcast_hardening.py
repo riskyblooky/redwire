@@ -51,26 +51,56 @@ class _DeadSocket:
         raise RuntimeError("socket closed")
 
 
-def test_dashboard_global_without_db_raises_value_error():
+def test_dashboard_global_with_engagement_id_but_no_db_raises():
+    """Engagement-scoped event on dashboard:global without ``db`` is the
+    exact disclosure shape the fail-closed guard exists to prevent — the
+    filter would have run, but can't, so the loop must not silently
+    fall through to all subscribers."""
     mgr = ConnectionManager()
-    # Register one subscriber via direct state manipulation so we don't
-    # go through `connect()` — its built-in presence_update broadcast
-    # would itself hit the fail-closed guard and the test would crash on
-    # setup. (The presence broadcast supplies db=None today, but the
-    # gate skips presence_update messages by virtue of having no
-    # `engagement_id` field; the cleaner read is that subscribe-time
-    # state setup doesn't belong inside the assertion's blast radius.)
     ws = _LiveSocket()
     mgr.active_connections["dashboard"] = {"global": [ws]}
     mgr.connection_info[ws] = {"id": "u1"}
 
     with pytest.raises(ValueError) as exc:
         _run(mgr.broadcast_to_resource(
-            "dashboard", "global", {"type": "noop", "engagement_id": "eng-A"},
+            "dashboard", "global", {"type": "activity_log", "engagement_id": "eng-A"},
         ))
     assert "requires a db session" in str(exc.value)
     # Subscriber must not have received the message.
     assert ws.sent == []
+
+
+def test_dashboard_global_without_engagement_id_does_not_need_db():
+    """Messages without ``engagement_id`` are intentionally fanned out
+    to every subscriber and don't need filtering. This is the shape
+    that ``ConnectionManager.connect()`` itself produces (the join
+    presence_update has no engagement payload) — the previous version
+    of the guard fired on every dashboard:global subscribe and killed
+    the channel."""
+    mgr = ConnectionManager()
+    ws = _LiveSocket()
+    mgr.active_connections["dashboard"] = {"global": [ws]}
+    mgr.connection_info[ws] = {"id": "u1"}
+
+    # No exception, no db, no engagement_id → broadcast freely.
+    _run(mgr.broadcast_to_resource(
+        "dashboard", "global", {"type": "presence_update", "action": "joined"},
+    ))
+    assert len(ws.sent) == 1
+
+
+def test_dashboard_global_connect_succeeds_without_db():
+    """Regression: ``connect()`` calls broadcast_to_resource for a
+    presence_update without db. Before the guard tightening, that
+    raised ValueError mid-connect and killed every dashboard:global
+    subscription. Pin the fix."""
+    mgr = ConnectionManager()
+    ws = _LiveSocket()
+    # connect() itself triggers a presence_update broadcast; if the
+    # guard regresses this raises and the test fails.
+    _run(mgr.connect(ws, "dashboard", "global", {"id": "u1"}))
+    # The join broadcast was delivered to the new subscriber.
+    assert len(ws.sent) == 1
 
 
 def test_dashboard_engagement_scope_does_not_need_db():

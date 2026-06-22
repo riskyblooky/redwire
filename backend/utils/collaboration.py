@@ -479,25 +479,28 @@ class ConnectionManager:
         db: Optional[AsyncSession] = None,
     ):
         # Fail-closed guard on the cross-engagement notification channel.
-        # ``dashboard:global`` is the only channel that uses per-recipient
-        # engagement-membership filtering at broadcast time (see
-        # ``gating_engagement`` below). Without a ``db`` session we can't
-        # run that filter, and the loop silently falls through to
-        # delivering the event to every subscriber regardless of which
-        # engagement they belong to — the exact disclosure shape the
-        # per-recipient gate was added to prevent (GHSA-pqj4-49q4-rw4f
-        # follow-up). ``create_activity_log`` is the only caller that
-        # uses this channel today and supplies ``db``, so this guard
-        # only fires when a *future* caller forgets the kwarg.
+        # ``dashboard:global`` runs the per-recipient engagement-membership
+        # filter only when the message carries an ``engagement_id``
+        # (see ``gating_engagement`` below). Messages without one
+        # (presence_update from ``connect()``, chat-platform-level
+        # broadcasts) are intentionally fanned out to every subscriber
+        # and don't need ``db``. The guard mirrors that condition:
+        # raise only when filtering would have run and can't.
+        #
+        # ``create_activity_log`` is the only caller that ships
+        # engagement-scoped events on this channel today and supplies
+        # ``db``, so this guard only fires when a future caller of that
+        # shape forgets the kwarg. GHSA-pqj4-49q4-rw4f follow-up.
         if (
             resource_type == "dashboard"
             and resource_id == "global"
+            and message.get("engagement_id")
             and db is None
         ):
             raise ValueError(
-                "broadcast_to_resource('dashboard', 'global', ...) requires "
-                "a db session for the per-recipient engagement-membership "
-                "filter; refusing to broadcast unfiltered."
+                "broadcast_to_resource('dashboard', 'global', ...) with an "
+                "engagement_id requires a db session for the per-recipient "
+                "engagement-membership filter; refusing to broadcast unfiltered."
             )
 
         if resource_type in self.active_connections:

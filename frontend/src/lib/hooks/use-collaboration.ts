@@ -64,11 +64,17 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
             let url = '';
 
+            // Token is intentionally NOT in the URL — the backend reads
+            // it from the first message after accept() (see
+            // routers/websocket.py::_auth_via_first_frame). Putting the
+            // bearer JWT in a query string leaks it to every URL sink:
+            // browser history, nginx access logs, Referer headers,
+            // process listings on CLI clients. CWE-598.
             if (apiUrl && !apiUrl.includes(host)) {
                 const wsBaseUrl = apiUrl.replace(/^http/, 'ws');
-                url = `${wsBaseUrl}/ws/${resourceType}/${resourceId}?token=${token}`;
+                url = `${wsBaseUrl}/ws/${resourceType}/${resourceId}`;
             } else {
-                url = `${protocol}//${host}/api/ws/${resourceType}/${resourceId}?token=${token}`;
+                url = `${protocol}//${host}/api/ws/${resourceType}/${resourceId}`;
             }
 
             console.log(`Connecting to WS: ${url}`);
@@ -89,6 +95,11 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
                     ws.close();
                     return;
                 }
+                // First frame MUST be the auth bearer. Backend has 5s to
+                // receive it before closing with 1008 (see
+                // _AUTH_FRAME_TIMEOUT_S in routers/websocket.py).
+                ws.send(JSON.stringify({ type: 'auth', token }));
+
                 // WS connected — reconnection logic handles retries
                 setIsConnected(true);
                 clearTimeout(userClearTimeout); // Cancel any pending user clear

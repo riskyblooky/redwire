@@ -466,7 +466,6 @@ export default function CollaborativeEditor({
     // Build WebSocket URL
     const wsUrl = useMemo(() => {
         if (typeof window === 'undefined') return '';
-        const token = localStorage.getItem('access_token');
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
@@ -477,7 +476,10 @@ export default function CollaborativeEditor({
         } else {
             base = `${protocol}//${host}/api`;
         }
-        return `${base}/ws/yjs/note/${noteId}?token=${token}`;
+        // Token is intentionally NOT in the URL — backend reads it from
+        // the first message after accept(). CWE-598 (bearer-in-URL).
+        // Auth bearer is sent as the first WS frame in onopen below.
+        return `${base}/ws/yjs/note/${noteId}`;
     }, [noteId]);
 
     // ─── WebSocket + Y.js sync protocol ───────────────────────────────
@@ -560,6 +562,13 @@ export default function CollaborativeEditor({
                 if (isCleaningUp) { ws.close(); return; }
                 setConnectionStatus('connected');
                 retryCount = 0;
+
+                // FIRST frame MUST be the auth bearer. Backend has 5s
+                // to receive it before closing with 1008 (see
+                // _AUTH_FRAME_TIMEOUT_S in routers/websocket.py). The
+                // register/sync/awareness messages below all flow
+                // *after* auth succeeds.
+                ws.send(JSON.stringify({ type: 'auth', token }));
 
                 // 0. Register our Y.js clientID with the server so it can
                 //    notify peers when we disconnect (for cursor cleanup)

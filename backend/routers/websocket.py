@@ -1,5 +1,6 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, status
-from typing import Optional
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status
+from typing import Optional, Tuple
+import asyncio
 import json
 import logging
 from utils.collaboration import manager
@@ -19,90 +20,123 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
 
-async def get_ws_user(
+
+# Window the client has to send the auth frame after `accept()`. Generous
+# enough that a slow mobile network can land it without retry, tight
+# enough that a no-frame opportunistic connection doesn't sit on a
+# manager slot indefinitely.
+_AUTH_FRAME_TIMEOUT_S = 5.0
+
+
+async def _auth_via_first_frame(
     websocket: WebSocket,
-    token: str = Query(...),
-    db: AsyncSession = Depends(get_db)
-) -> Optional[User]:
-    """
-    Authenticate WebSocket connection via Query param.
-    WebSockets don't share HTTP headers easily in JS API.
+    db: AsyncSession,
+) -> Optional[Tuple[User, str]]:
+    """Pull the auth bearer out of the first JSON frame after ``accept()``.
+
+    Replaces the prior ``?token=`` query-param model. Putting the bearer
+    in the URL leaked the JWT to anywhere the URL appeared — browser
+    history, nginx access logs, Referer headers on subresource fetches,
+    process listings on CLI clients (CWE-598). The first-frame shape
+    keeps the credential inside the WebSocket payload so none of those
+    sinks see it.
+
+    Expected frame shape: ``{"type": "auth", "token": "<access-jwt>"}``.
+
+    Returns ``(user, role_value)`` on success. Returns ``None`` AND
+    closes the socket with 1008 on:
+      - timeout (client never sent a frame)
+      - malformed / non-JSON frame
+      - wrong frame type or missing token field
+      - invalid / blacklisted / 2FA-pending JWT
+      - user not found or inactive
+
+    The handler should treat a ``None`` return as "auth failed, the
+    socket is already closed, return."
     """
     try:
-        payload = decode_token(token)
-        if not payload:
-            return None
-
-        # Reject non-access tokens (refresh / password_reset / etc.) so the
-        # WS path can't accept JWTs the REST dependency rejects.
-        if payload.get("type") != "access":
-            return None
-
-        # Reject revoked or 2FA-pending tokens
-        if is_token_blacklisted(token):
-            return None
-        if payload.get("2fa_pending"):
-            return None
-
-        user_id = payload.get("sub")
-        if not user_id:
-            return None
-            
-        # We need a new session context for WS potentially, or just quick check
-        # For simplicity in this demo, we trust the token if valid signature
-        # But let's verify user exists really quick
-        
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        
-        if user and user.is_active:
-            return user
+        raw = await asyncio.wait_for(
+            websocket.receive_text(), timeout=_AUTH_FRAME_TIMEOUT_S
+        )
+    except asyncio.TimeoutError:
+        logger.debug("WS auth: no frame within %ss; closing", _AUTH_FRAME_TIMEOUT_S)
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None
-    except Exception:
+    except WebSocketDisconnect:
         return None
+
+    try:
+        frame = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    if not isinstance(frame, dict) or frame.get("type") != "auth":
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    token = frame.get("token")
+    if not isinstance(token, str) or not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    payload = decode_token(token)
+    if not payload:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    # Reject non-access tokens (refresh / password_reset / etc.) — REST
+    # dependency does the same; WS must not be a softer door.
+    if payload.get("type") != "access":
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    # Reject revoked or 2FA-pending tokens
+    if is_token_blacklisted(token) or payload.get("2fa_pending"):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    user_id = payload.get("sub")
+    if not user_id:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    # Load the User row so role and is_active reflect the live DB state,
+    # not whatever the JWT was minted with. Without this, a freshly
+    # deactivated or demoted user keeps WS access until their access
+    # token naturally expires. GHSA-464j-7qr3-47pj.
+    user_row = (
+        await db.execute(select(User).where(User.id == user_id))
+    ).scalar_one_or_none()
+    if not user_row or not user_row.is_active:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    return user_row, user_row.role.value
 
 @router.websocket("/ws/{resource_type}/{resource_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
     resource_type: str,
     resource_id: str,
-    token: str = Query(...),
     db: AsyncSession = Depends(get_db)
 ):
     """
     WebSocket endpoint for real-time collaboration.
-    Accepts first, then authenticates to avoid proxy timeout/handshake errors.
+    Accepts first, then authenticates via a first-message auth frame
+    (NOT a ?token=... query param — that put the bearer JWT in URLs
+    captured by browser history / nginx logs / Referer headers, CWE-598).
+    Client must send {"type": "auth", "token": "<access-jwt>"} within
+    ``_AUTH_FRAME_TIMEOUT_S`` of the accept().
     """
     await websocket.accept()
 
-    # 1. Authenticate
-    payload = decode_token(token)
-    if not payload:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    # Reject non-access tokens (refresh / password_reset / etc.) — the REST
-    # dependency does the same; WS must not be a softer door.
-    if payload.get("type") != "access":
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    # Reject revoked or 2FA-pending tokens
-    if is_token_blacklisted(token) or payload.get("2fa_pending"):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    user_id = payload.get("sub")
-
-    # Load the User row so role and is_active reflect the live DB state,
-    # not whatever the JWT was minted with. Without this, a freshly
-    # deactivated or demoted user keeps WS access until their access
-    # token naturally expires. GHSA-464j-7qr3-47pj.
-    user_row = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if not user_row or not user_row.is_active:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-    role = user_row.role.value
+    # 1. Authenticate via first-frame
+    authed = await _auth_via_first_frame(websocket, db)
+    if authed is None:
+        return  # helper already closed the socket
+    user_row, role = authed
+    user_id = user_row.id
 
     # 2. Resolve resource and capture its owning engagement_id (where applicable).
     from models.engagement import Engagement
@@ -260,12 +294,16 @@ async def websocket_endpoint(
 async def yjs_websocket_endpoint(
     websocket: WebSocket,
     note_id: str,
-    token: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Y.js binary sync WebSocket for collaborative note editing.
-    
+
+    Authenticates via a first-message JSON auth frame
+    ({"type":"auth","token":"<access-jwt>"}). Bearer must NOT appear in
+    the connect URL — CWE-598. Binary Y.js sync frames flow on every
+    subsequent message.
+
     Handles both binary Y.js sync protocol messages and JSON control
     messages (save responses, awareness updates).
     """
@@ -274,34 +312,12 @@ async def yjs_websocket_endpoint(
 
     await websocket.accept()
 
-    # 1. Authenticate
-    payload = decode_token(token)
-    if not payload:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    # Reject non-access tokens (refresh / password_reset / etc.) so the WS
-    # path can't accept JWTs the REST dependency rejects.
-    if payload.get("type") != "access":
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    # Reject revoked or 2FA-pending tokens
-    if is_token_blacklisted(token) or payload.get("2fa_pending"):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    user_id = payload.get("sub")
-
-    # Load the User row so role and is_active reflect the live DB state,
-    # not whatever the JWT was minted with. Without this, a demoted user
-    # keeps the is_admin = role in (ADMIN, ...) bypass below until their
-    # token expires. GHSA-464j-7qr3-47pj.
-    user_row = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if not user_row or not user_row.is_active:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-    role = user_row.role.value
+    # 1. Authenticate via first-frame
+    authed = await _auth_via_first_frame(websocket, db)
+    if authed is None:
+        return  # helper already closed the socket
+    user_row, role = authed
+    user_id = user_row.id
 
     # 2. Verify note exists
     from models.note import Note
