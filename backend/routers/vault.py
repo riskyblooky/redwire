@@ -13,11 +13,18 @@ from models.user import User, UserRole
 from models.vault import VaultItem
 from models.finding import Finding
 from models.testcase import TestCase
-from schemas.vault import VaultItemCreate, VaultItemUpdate, VaultItemResponse
+from schemas.vault import (
+    VaultItemCreate,
+    VaultItemUpdate,
+    VaultItemResponse,
+    VaultItemRevealResponse,
+)
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
+from utils.hash_utils import identify_hash_type
+from utils.vault_access_log import should_log_vault_access
 from utils.vault_crypto import (
     encrypt_vault_fields,
     decrypt_vault_item,
@@ -29,6 +36,75 @@ from utils.storage import storage_service
 from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix="/vault", tags=["vault"])
+
+
+def _build_metadata_response(
+    item: VaultItem,
+    creator_username: Optional[str] = None,
+    creator_profile_photo: Optional[str] = None,
+) -> VaultItemResponse:
+    """Build the metadata-only response shape from a raw (still-encrypted)
+    VaultItem. Decrypts the password just-in-time to classify hash shape,
+    then drops the plaintext before returning.
+
+    GHSA-fp69-w2mg-4pqp follow-up: list / create / update endpoints
+    return this shape. Only ``GET /vault/{item_id}/reveal`` carries the
+    decrypted username/password/note, and only after writing an audit
+    log row.
+    """
+    # has_* booleans are computed from ciphertext presence — no decrypt
+    # needed for that. Saves a Fernet round-trip per item in the common
+    # case where the password is just a value (not a hash to classify).
+    has_username = item.username is not None
+    has_password = item.password is not None
+    has_note = item.note is not None
+
+    # Classify hash shape only when there's a password to classify. The
+    # frontend uses this boolean to surface a "Crack this hash"
+    # affordance without forcing a reveal call first.
+    password_looks_like_hash = False
+    if has_password:
+        try:
+            from utils.vault_crypto import decrypt_field
+            plain = decrypt_field(item.password)
+            password_looks_like_hash = bool(identify_hash_type(plain or ""))
+        except Exception:
+            # Decryption failure (key rotation pending, corrupt cipher
+            # text) shouldn't tank the whole list — surface the item
+            # without the hash badge.
+            password_looks_like_hash = False
+
+    return VaultItemResponse(
+        id=item.id,
+        engagement_id=item.engagement_id,
+        name=item.name,
+        item_type=item.item_type,
+        description=item.description,
+        has_username=has_username,
+        has_password=has_password,
+        has_note=has_note,
+        password_looks_like_hash=password_looks_like_hash,
+        filename=item.filename,
+        file_path=item.file_path,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        created_by=item.created_by,
+        updated_by=item.updated_by,
+        created_by_username=creator_username,
+        created_by_profile_photo=creator_profile_photo,
+        findings=[
+            {"id": f.id, "title": f.title, "severity": f.severity.value if hasattr(f.severity, "value") else str(f.severity)}
+            for f in (getattr(item, "findings", None) or [])
+        ],
+        testcases=[
+            {"id": t.id, "title": t.title}
+            for t in (getattr(item, "testcases", None) or [])
+        ],
+        assets=[
+            {"id": a.id, "name": a.name, "asset_type": a.asset_type, "identifier": getattr(a, "identifier", None)}
+            for a in (getattr(item, "assets", None) or [])
+        ],
+    )
 
 @router.get("", response_model=List[VaultItemResponse])
 async def get_vault_items(
@@ -52,18 +128,18 @@ async def get_vault_items(
         select(VaultItem, User.username.label("creator_username"), User.profile_photo.label("creator_profile_photo"))
         .outerjoin(User, VaultItem.created_by == User.id)
         .where(VaultItem.engagement_id == engagement_id)
+        .options(
+            selectinload(VaultItem.findings),
+            selectinload(VaultItem.testcases),
+            selectinload(VaultItem.assets),
+        )
         .order_by(VaultItem.created_at.desc())
     )
-    
-    items = []
-    for item, creator_username, creator_profile_photo in result.all():
-        decrypt_vault_item(item)
-        item_dict = VaultItemResponse.model_validate(item).model_dump()
-        item_dict["created_by_username"] = creator_username
-        item_dict["created_by_profile_photo"] = creator_profile_photo
-        items.append(VaultItemResponse(**item_dict))
-    
-    return items
+
+    return [
+        _build_metadata_response(item, creator_username, creator_profile_photo)
+        for item, creator_username, creator_profile_photo in result.all()
+    ]
 
 @router.post("", response_model=VaultItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_vault_item(
@@ -91,7 +167,6 @@ async def create_vault_item(
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
-    decrypt_vault_item(db_item)
 
     # Log activity
     await create_activity_log(
@@ -105,7 +180,10 @@ async def create_vault_item(
         details=f"Created {db_item.item_type} vault item: {db_item.name}"
     )
 
-    return db_item
+    # GHSA-fp69-w2mg-4pqp: create returns metadata-only — the caller
+    # just submitted the plaintext, they don't need it echoed back, and
+    # uniform response shape across endpoints makes the surface clearer.
+    return _build_metadata_response(db_item)
 
 @router.post("/upload", response_model=VaultItemResponse)
 async def upload_vault_file(
@@ -167,7 +245,7 @@ async def upload_vault_file(
         details=f"Uploaded file to vault: {db_item.filename}"
     )
 
-    return db_item
+    return _build_metadata_response(db_item)
 
 @router.patch("/{item_id}", response_model=VaultItemResponse)
 async def update_vault_item(
@@ -250,19 +328,128 @@ async def update_vault_item(
         # Re-fetch with relationships for response serialization
         result = await db.execute(
             select(VaultItem)
-            .options(selectinload(VaultItem.findings), selectinload(VaultItem.testcases))
+            .options(
+                selectinload(VaultItem.findings),
+                selectinload(VaultItem.testcases),
+                selectinload(VaultItem.assets),
+            )
             .where(VaultItem.id == item_id)
         )
         item = result.scalar_one_or_none()
-        if item:
-            decrypt_vault_item(item)
 
-        return item
+        return _build_metadata_response(item) if item else None
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"update_vault_item FAILED: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal error: {type(e).__name__}: {str(e)}")
+
+
+@router.get("/{item_id}", response_model=VaultItemResponse)
+async def get_vault_item(
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get a single vault item (metadata only). Plaintext is never
+    returned by this endpoint — call ``GET /vault/{item_id}/reveal``
+    to fetch decrypted credentials with audit logging."""
+    result = await db.execute(
+        select(VaultItem, User.username.label("creator_username"), User.profile_photo.label("creator_profile_photo"))
+        .outerjoin(User, VaultItem.created_by == User.id)
+        .where(VaultItem.id == item_id)
+        .options(
+            selectinload(VaultItem.findings),
+            selectinload(VaultItem.testcases),
+            selectinload(VaultItem.assets),
+        )
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Vault item not found")
+    item, creator_username, creator_profile_photo = row
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, item.engagement_id, Permission.VAULT_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'vault_view' permission to view vault items.",
+            )
+
+    return _build_metadata_response(item, creator_username, creator_profile_photo)
+
+
+@router.get("/{item_id}/reveal", response_model=VaultItemRevealResponse)
+async def reveal_vault_item(
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reveal the decrypted plaintext (username / password / note) for
+    a single vault item.
+
+    GHSA-fp69-w2mg-4pqp follow-up: this is the only endpoint that
+    carries the decrypted fields on the wire. Every call writes an
+    ``accessed_vault_secret`` activity-log row so an investigator can
+    later see *which* specific credentials a departed operator
+    pulled. Same per-recipient logging is deduped per (user, item)
+    over a 5-minute window via Redis so a chatty UI session doesn't
+    drown the audit signal.
+    """
+    result = await db.execute(
+        select(VaultItem, User.username.label("creator_username"), User.profile_photo.label("creator_profile_photo"))
+        .outerjoin(User, VaultItem.created_by == User.id)
+        .where(VaultItem.id == item_id)
+        .options(
+            selectinload(VaultItem.findings),
+            selectinload(VaultItem.testcases),
+            selectinload(VaultItem.assets),
+        )
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Vault item not found")
+    item, creator_username, creator_profile_photo = row
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, item.engagement_id, Permission.VAULT_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'vault_view' permission to reveal vault credentials.",
+            )
+
+    # Build the metadata shape first (computes has_* + hash classification
+    # against the still-encrypted item), then decrypt + populate plaintext.
+    metadata = _build_metadata_response(item, creator_username, creator_profile_photo)
+    decrypt_vault_item(item)
+    response = VaultItemRevealResponse(
+        **metadata.model_dump(),
+        username=item.username,
+        password=item.password,
+        note=item.note,
+    )
+
+    if should_log_vault_access(current_user.id, item.id):
+        await create_activity_log(
+            db,
+            engagement_id=item.engagement_id,
+            user_id=current_user.id,
+            action="accessed_vault_secret",
+            resource_type="vault",
+            resource_id=item.id,
+            resource_name=item.name,
+            details=f"Revealed vault item: {item.name}",
+        )
+
+    return response
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_vault_item(
@@ -346,17 +533,23 @@ async def download_vault_file(
     if not item.file_path:
         raise HTTPException(status_code=404, detail="File content missing on server")
 
-    # Log access
-    await create_activity_log(
-        db,
-        engagement_id=item.engagement_id,
-        user_id=current_user.id,
-        action="downloaded_vault_file",
-        resource_type="vault",
-        resource_id=item.id,
-        resource_name=item.name,
-        details=f"Downloaded vault file: {item.filename}"
-    )
+    # Log access. Same 5-minute dedup window as the /reveal endpoint —
+    # an operator who clicks download three times in a row (file lost,
+    # browser blocked, retry) shouldn't produce three audit rows. The
+    # first download per (user, item) per window writes; subsequent
+    # downloads inside the window skip the log. GHSA-fp69-w2mg-4pqp
+    # follow-up.
+    if should_log_vault_access(current_user.id, item.id):
+        await create_activity_log(
+            db,
+            engagement_id=item.engagement_id,
+            user_id=current_user.id,
+            action="downloaded_vault_file",
+            resource_type="vault",
+            resource_id=item.id,
+            resource_name=item.name,
+            details=f"Downloaded vault file: {item.filename}"
+        )
 
     # Stream from MinIO. decrypt_bytes falls back to the raw payload
     # if the stored blob isn't Fernet-shaped — covers legacy plaintext

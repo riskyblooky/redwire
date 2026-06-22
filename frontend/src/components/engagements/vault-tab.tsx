@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useVaultItems, VaultItem, useLinkVaultToFinding, useUnlinkVaultFromFinding, useLinkVaultToTestCase, useUnlinkVaultFromTestCase, useLinkVaultToAsset, useUnlinkVaultFromAsset } from '@/lib/hooks/use-vault';
+import { useVaultItems, VaultItem, VaultItemReveal, useLinkVaultToFinding, useUnlinkVaultFromFinding, useLinkVaultToTestCase, useUnlinkVaultFromTestCase, useLinkVaultToAsset, useUnlinkVaultFromAsset } from '@/lib/hooks/use-vault';
 import { useCheckPassword, useLookupHash } from '@/lib/hooks/use-wordlist';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useTestCases } from '@/lib/hooks/use-testcases';
@@ -62,7 +62,8 @@ const VaultItemCard = ({
     handleDeleteItem,
     togglePassword,
     copyToClipboard,
-    revealedPasswords,
+    revealedItems,
+    revealAndGet,
     copiedId,
     handleSecureDownload,
     onEdit,
@@ -72,26 +73,35 @@ const VaultItemCard = ({
     const canEditVault = useCanEdit(engagementId, 'vault', item.created_by);
     const noteCount = item._noteCount || 0;
 
+    // GHSA-fp69-w2mg-4pqp: ``item`` carries metadata only; the
+    // decrypted plaintext lives in ``revealedItems[item.id]`` after the
+    // user toggles the eye. Until then, password renders as bullets and
+    // username renders as "USER SET" (or empty if has_username is
+    // false). The hash-shape badge is driven by the server-computed
+    // ``item.password_looks_like_hash`` so it doesn't force a reveal.
+    const revealed = revealedItems[item.id];
+    const isRevealed = !!revealed;
+
     // Wordlist check state
     const checkPassword = useCheckPassword();
     const lookupHash = useLookupHash();
     const [wordlistResult, setWordlistResult] = useState<'unchecked' | 'checking' | 'found' | 'safe'>('unchecked');
     const [crackResult, setCrackResult] = useState<{ status: 'idle' | 'cracking' | 'cracked' | 'not_found'; password?: string; hashType?: string; note?: string }>({ status: 'idle' });
 
-    // Check if password looks like a hash
-    const passwordLooksLikeHash = (pw: string | undefined) => {
-        if (!pw) return false;
-        const h = pw.trim();
-        if (h.startsWith('$2b$') || h.startsWith('$2a$') || h.startsWith('$2y$') || h.startsWith('$krb5tgs$')) return true;
-        if (/^[a-f0-9]{32}$/i.test(h) || /^[a-f0-9]{40}$/i.test(h)) return true;
-        return false;
-    };
-
+    // Reveal-then-act helpers. Each callback triggers a reveal call if
+    // the plaintext isn't already cached — the server dedups per
+    // (user, item) over 5 minutes so we don't multiply audit rows for
+    // rapid-fire interactions.
     const handleCheckWordlist = async () => {
-        if (!item.password) return;
+        if (!item.has_password) return;
         setWordlistResult('checking');
         try {
-            const res = await checkPassword.mutateAsync(item.password);
+            const data = await revealAndGet(item.id);
+            if (!data?.password) {
+                setWordlistResult('unchecked');
+                return;
+            }
+            const res = await checkPassword.mutateAsync(data.password);
             setWordlistResult(res.found ? 'found' : 'safe');
         } catch {
             setWordlistResult('unchecked');
@@ -99,10 +109,15 @@ const VaultItemCard = ({
     };
 
     const handleCrackHash = async () => {
-        if (!item.password) return;
+        if (!item.has_password) return;
         setCrackResult({ status: 'cracking' });
         try {
-            const res = await lookupHash.mutateAsync(item.password);
+            const data = await revealAndGet(item.id);
+            if (!data?.password) {
+                setCrackResult({ status: 'idle' });
+                return;
+            }
+            const res = await lookupHash.mutateAsync(data.password);
             if (res.found) {
                 setCrackResult({ status: 'cracked', password: res.password, hashType: res.hash_type });
             } else {
@@ -111,6 +126,15 @@ const VaultItemCard = ({
         } catch {
             setCrackResult({ status: 'idle' });
         }
+    };
+
+    // Copy-to-clipboard helper that reveals first if needed. Routes
+    // through the same reveal flow so a user clicking "copy password"
+    // produces an audit row even if they never opened the eye.
+    const handleCopyField = async (field: 'username' | 'password' | 'note', copiedKey: string) => {
+        const data = revealed || (await revealAndGet(item.id));
+        const value = data?.[field];
+        if (value) copyToClipboard(value, copiedKey);
     };
 
     return (
@@ -188,11 +212,13 @@ const VaultItemCard = ({
                             <div className="flex items-center justify-between">
                                 <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Username</span>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs text-white font-medium">{item.username || '—'}</span>
-                                    {item.username && (
+                                    <span className="text-xs text-white font-medium">
+                                        {isRevealed ? (revealed?.username || '—') : (item.has_username ? '•••' : '—')}
+                                    </span>
+                                    {item.has_username && (
                                         <Button
                                             variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0"
-                                            onClick={() => copyToClipboard(item.username!, `${item.id}-usr`)}
+                                            onClick={() => handleCopyField('username', `${item.id}-usr`)}
                                         >
                                             {copiedId === `${item.id}-usr` ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                                         </Button>
@@ -203,19 +229,20 @@ const VaultItemCard = ({
                                 <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Password</span>
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs text-indigo-400 font-mono">
-                                        {revealedPasswords[item.id] ? item.password : '••••••••••••'}
+                                        {isRevealed ? (revealed?.password || '—') : (item.has_password ? '••••••••••••' : '—')}
                                     </span>
                                     <div className="flex items-center gap-1">
                                         <Button
                                             variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0"
                                             onClick={() => togglePassword(item.id)}
+                                            disabled={!item.has_password && !item.has_username && !item.has_note}
                                         >
-                                            {revealedPasswords[item.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                                            {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                                         </Button>
-                                        {item.password && (
+                                        {item.has_password && (
                                             <Button
                                                 variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0"
-                                                onClick={() => copyToClipboard(item.password!, `${item.id}-pwd`)}
+                                                onClick={() => handleCopyField('password', `${item.id}-pwd`)}
                                             >
                                                 {copiedId === `${item.id}-pwd` ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                                             </Button>
@@ -224,7 +251,7 @@ const VaultItemCard = ({
                                 </div>
                             </div>
                             {/* Wordlist Check / Hash Crack Actions */}
-                            {item.password && (
+                            {item.has_password && (
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                     {/* Check against wordlist */}
                                     {wordlistResult === 'unchecked' && (
@@ -253,8 +280,8 @@ const VaultItemCard = ({
                                         </Badge>
                                     )}
 
-                                    {/* Crack hash button (if password looks like a hash) */}
-                                    {passwordLooksLikeHash(item.password) && crackResult.status === 'idle' && (
+                                    {/* Crack hash button (driven by server-side classification — no reveal needed to surface the affordance). */}
+                                    {item.password_looks_like_hash && crackResult.status === 'idle' && (
                                         <Button
                                             variant="outline" size="sm"
                                             className="h-6 text-[10px] px-2 border-amber-700/50 bg-amber-900/20 hover:bg-amber-900/30 text-amber-400"
@@ -316,16 +343,27 @@ const VaultItemCard = ({
                         <div className="flex flex-col gap-2">
                             <div className="flex items-center justify-between">
                                 <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Content</span>
-                                <Button
-                                    variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0"
-                                    onClick={() => copyToClipboard(item.note || '', item.id)}
-                                >
-                                    {copiedId === item.id ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0"
+                                        onClick={() => togglePassword(item.id)}
+                                        disabled={!item.has_note}
+                                    >
+                                        {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                                    </Button>
+                                    {item.has_note && (
+                                        <Button
+                                            variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0"
+                                            onClick={() => handleCopyField('note', item.id)}
+                                        >
+                                            {copiedId === item.id ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                             <div className="bg-slate-900/80 rounded-lg p-2 max-h-24 overflow-y-auto">
                                 <p className="text-[10px] font-mono whitespace-pre-wrap text-slate-300">
-                                    {item.note || 'No content'}
+                                    {isRevealed ? (revealed?.note || 'No content') : (item.has_note ? '••••••••' : 'No content')}
                                 </p>
                             </div>
                         </div>
@@ -377,11 +415,19 @@ const VaultItemCard = ({
 // ── Vault Item Row (Table view) ──
 const VaultItemRow = ({
     item, engagementId, getItemIcon, handleDeleteItem, togglePassword,
-    copyToClipboard, revealedPasswords, copiedId, handleSecureDownload, onEdit, onLink
+    copyToClipboard, revealedItems, revealAndGet, copiedId, handleSecureDownload, onEdit, onLink
 }: any) => {
     const canDeleteVault = useCanDelete(engagementId, 'vault', item.created_by);
     const canEditVault = useCanEdit(engagementId, 'vault', item.created_by);
     const noteCount = item._noteCount || 0;
+    // GHSA-fp69-w2mg-4pqp: see VaultItemCard for the parallel rationale.
+    const revealed = revealedItems[item.id];
+    const isRevealed = !!revealed;
+    const handleCopyField = async (field: 'username' | 'password' | 'note', copiedKey: string) => {
+        const data = revealed || (await revealAndGet(item.id));
+        const value = data?.[field];
+        if (value) copyToClipboard(value, copiedKey);
+    };
     return (
         <div className="group flex items-center gap-3 px-4 py-2.5 bg-slate-900/40 hover:bg-slate-900/70 border border-slate-800 rounded-xl transition-colors">
             {/* Icon + Name */}
@@ -397,23 +443,27 @@ const VaultItemRow = ({
             </div>
             {/* Username / content preview - equal flex share with password */}
             <div className="flex-[2] min-w-0 text-xs text-slate-400 truncate">
-                {item.item_type === 'CREDENTIAL' && (item.username || '—')}
+                {item.item_type === 'CREDENTIAL' && (isRevealed ? (revealed?.username || '—') : (item.has_username ? '•••' : '—'))}
                 {item.item_type === 'FILE' && (item.filename || '—')}
                 {(item.item_type === 'NOTE' || item.item_type === 'KEY') && (
-                    <span className="font-mono text-[10px]">{(item.note || '').slice(0, 40)}{(item.note || '').length > 40 ? '…' : ''}</span>
+                    <span className="font-mono text-[10px]">
+                        {isRevealed
+                            ? ((revealed?.note || '').slice(0, 40) + ((revealed?.note || '').length > 40 ? '…' : ''))
+                            : (item.has_note ? '••••••••' : '')}
+                    </span>
                 )}
             </div>
             {/* Password field - equal flex share with content */}
             {item.item_type === 'CREDENTIAL' ? (
                 <div className="flex items-center gap-1 flex-[2] min-w-0">
                     <span className="text-xs font-mono text-primary truncate max-w-[90px]">
-                        {revealedPasswords[item.id] ? item.password : '••••••••'}
+                        {isRevealed ? (revealed?.password || '—') : (item.has_password ? '••••••••' : '—')}
                     </span>
                     <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0 flex-shrink-0" onClick={() => togglePassword(item.id)}>
-                        {revealedPasswords[item.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                     </Button>
-                    {item.password && (
-                        <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0 flex-shrink-0" onClick={() => copyToClipboard(item.password, `${item.id}-pwd`)}>
+                    {item.has_password && (
+                        <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-500 p-0 flex-shrink-0" onClick={() => handleCopyField('password', `${item.id}-pwd`)}>
                             {copiedId === `${item.id}-pwd` ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                         </Button>
                     )}
@@ -606,7 +656,13 @@ export function VaultTab({ engagementId }: VaultTabProps) {
     });
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+    // GHSA-fp69-w2mg-4pqp follow-up: the list response carries metadata
+    // only. ``revealedItems`` stores the decrypted plaintext for items
+    // the user has explicitly toggled open via the eye-icon. Presence in
+    // the map means "revealed"; absence means "masked". The server
+    // dedups the audit log per (user, item) over 5 minutes so multiple
+    // toggles in quick succession don't multiply the log rows.
+    const [revealedItems, setRevealedItems] = useState<Record<string, VaultItemReveal | undefined>>({});
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -619,14 +675,19 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         description: ''
     });
 
-    const handleEditItem = (item: VaultItem) => {
+    const handleEditItem = async (item: VaultItem) => {
+        // Need plaintext to seed the edit form so the user sees the
+        // current values. Reveal triggers an audit row (deduped per
+        // 5min) — editing a credential is itself an access event.
+        const revealed = await revealAndGet(item.id);
+        if (!revealed) return;
         setEditingItem(item);
         setEditForm({
-            name: item.name || '',
-            username: item.username || '',
-            password: item.password || '',
-            note: item.note || '',
-            description: item.description || ''
+            name: revealed.name || '',
+            username: revealed.username || '',
+            password: revealed.password || '',
+            note: revealed.note || '',
+            description: revealed.description || ''
         });
         setIsEditDialogOpen(true);
     };
@@ -728,8 +789,35 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         }
     };
 
-    const togglePassword = (id: string) => {
-        setRevealedPasswords(prev => ({ ...prev, [id]: !prev[id] }));
+    // Fetch & cache the decrypted plaintext for an item. Used by the
+    // eye-icon toggle, copy-to-clipboard, wordlist/hash actions, and
+    // the edit dialog opener — every path that needs ciphertext-back.
+    const revealAndGet = async (id: string): Promise<VaultItemReveal | null> => {
+        if (revealedItems[id]) return revealedItems[id]!;
+        try {
+            const { data } = await api.get<VaultItemReveal>(`/vault/${id}/reveal`);
+            setRevealedItems(prev => ({ ...prev, [id]: data }));
+            return data;
+        } catch (e) {
+            console.error('Failed to reveal vault item:', e);
+            toast.error('Failed to reveal credential');
+            return null;
+        }
+    };
+
+    const togglePassword = async (id: string) => {
+        if (revealedItems[id]) {
+            // Mask: clear the cached plaintext. A subsequent unmask will
+            // re-fetch — but the server dedups within 5 min so it
+            // won't log a fresh row unless that window has elapsed.
+            setRevealedItems(prev => {
+                const next = { ...prev };
+                delete next[id];
+                return next;
+            });
+        } else {
+            await revealAndGet(id);
+        }
     };
 
     const handleSecureDownload = async (itemId: string, filename: string) => {
@@ -758,10 +846,14 @@ export function VaultTab({ engagementId }: VaultTabProps) {
     };
 
     const processedItems = useMemo(() => {
+        // username search dropped from the client-side filter — the list
+        // response no longer carries the plaintext to match against,
+        // and revealing every item just to match a search would defeat
+        // the audit-log discipline. Name / type / description remain;
+        // those are visible-by-design metadata.
         let result = items.filter(item => {
             const matchesSearch =
                 item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 item.item_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 item.description?.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesType = filterType === 'ALL' || item.item_type === filterType;
@@ -1126,7 +1218,8 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                                 handleDeleteItem={handleDeleteItem}
                                 togglePassword={togglePassword}
                                 copyToClipboard={copyToClipboard}
-                                revealedPasswords={revealedPasswords}
+                                revealedItems={revealedItems}
+                                revealAndGet={revealAndGet}
                                 copiedId={copiedId}
                                 handleSecureDownload={handleSecureDownload}
                                 onEdit={handleEditItem}
@@ -1155,7 +1248,8 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                                 handleDeleteItem={handleDeleteItem}
                                 togglePassword={togglePassword}
                                 copyToClipboard={copyToClipboard}
-                                revealedPasswords={revealedPasswords}
+                                revealedItems={revealedItems}
+                                revealAndGet={revealAndGet}
                                 copiedId={copiedId}
                                 handleSecureDownload={handleSecureDownload}
                                 onEdit={handleEditItem}
