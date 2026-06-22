@@ -308,13 +308,60 @@ def _build_mcp_tools() -> list[dict]:
     ]
 
 
+# ── Write-tool gate (Claude-Code-style approval, GHSA-q4x9 follow-up) ──
+#
+# Today the in-app chatbot's _execute_mcp_tool dispatcher routes ten
+# read tools (list_*, get_*, search, get_*_stats) — no write surface
+# is exposed. The gate below pauses execution on any tool whose name
+# starts with one of these prefixes, so the moment a write tool is
+# added to the dispatcher it gets the per-call user-approval UI for
+# free. Until then the gate is dormant — every tool call falls through
+# the read-fast path.
+_WRITE_TOOL_PREFIXES = ("create_", "update_", "delete_", "remove_", "add_")
+
+
+def _is_write_tool(name: str) -> bool:
+    return any(name.startswith(p) for p in _WRITE_TOOL_PREFIXES)
+
+
+def _sse(event: str, data: dict) -> str:
+    """Encode a typed SSE event. ``event:`` is the discriminator the
+    frontend switch reads; ``data:`` carries a single-line JSON payload
+    so the existing reader.read() loop in ai-chatbot.tsx doesn't have
+    to handle multi-line data: continuation."""
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
 @router.post("/chat")
 async def ai_chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Proxy chat to OpenAI-compatible API with streaming."""
+    """Stream chat to OpenAI-compatible API with per-call MCP tool
+    visibility + write-tool approval gate.
+
+    Event types emitted on the SSE stream:
+      - ``tool_call_pending``  — write tool about to run; blocks on UI
+                                 approval. payload: {call_id, name, arguments}
+      - ``tool_call_result``   — tool finished (read auto-exec OR
+                                 approved write). payload: {call_id,
+                                 name, result_preview}
+      - ``tool_call_denied``   — user denied OR approval timed out.
+                                 payload: {call_id, name, reason}
+      - ``chunk``              — ordinary LLM streaming delta. payload
+                                 is the upstream provider's SSE data
+                                 line unchanged so the existing UI
+                                 streaming parser keeps working.
+      - ``done``               — stream complete.
+
+    Approval flow: backend emits ``tool_call_pending``, then synchronously
+    waits on Redis ``BLPOP redwire:tool_approval:{call_id}`` (5-min
+    timeout). The frontend POSTs to /ai/chat/tool-approval/{call_id}
+    which LPUSHes the decision; the BLPOP wakes; execution either
+    proceeds or skips with a denial reason injected back into the LLM
+    context so the model can adapt rather than re-trying blindly.
+    """
     settings = await _get_ai_settings(db)
 
     if settings.get("ai_enabled", "false").lower() != "true":
@@ -342,59 +389,71 @@ async def ai_chat(
             editor_content=request.editor_content[:8000] if request.editor_content else "(empty)",
         )
 
-    # Build messages array for the API
     api_messages = [{"role": "system", "content": system_prompt}]
     for msg in request.messages:
         api_messages.append({"role": msg.role, "content": msg.content})
 
-    # Determine if we should use tool-use
     mcp_enabled = is_chatbot and settings.get("mcp_enabled", "false").lower() == "true"
     tools = _build_mcp_tools() if mcp_enabled else None
 
-    # ── Tool-use loop ────────────────────────────────────────────────
-    # If MCP is enabled, make a non-streaming call first to check for
-    # tool_calls from the LLM. Execute tools and re-call up to 3 rounds.
-    # Then stream the final answer.
-    if tools:
-        max_rounds = 3
-        for _round in range(max_rounds):
-            try:
-                async with httpx.AsyncClient(timeout=120) as client:
-                    payload = {
-                        "model": model,
-                        "messages": api_messages,
-                        "tools": tools,
-                        "stream": False,
-                    }
-                    resp = await client.post(
-                        f"{api_url}/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json=payload,
-                    )
-                    if resp.status_code != 200:
-                        # Fall through to streaming without tools
-                        logger.warning(f"Tool-use call failed ({resp.status_code}), falling back to plain chat")
-                        tools = None
-                        break
+    # Bind ``current_user`` + ``db`` into the closure since the
+    # generator runs after the route returns. Pinning ``user_id`` to
+    # the call_id makes it possible to scope the approval endpoint's
+    # auth check ("this user can only approve their own calls"); the
+    # call_id includes a uuid suffix so two concurrent tool calls from
+    # the same user don't collide.
+    user_id = current_user.id
 
-                    data = resp.json()
-                    choice = data.get("choices", [{}])[0]
-                    finish_reason = choice.get("finish_reason", "")
-                    message = choice.get("message", {})
+    import asyncio
+    import uuid as _uuid
+    from utils.tool_approval import wait_for_approval, ApprovalDecision
 
-                    # If the model wants to call tools
-                    if finish_reason == "tool_calls" or message.get("tool_calls"):
+    async def stream_response():
+        nonlocal api_messages, tools
+        try:
+            # ── Tool-use loop ────────────────────────────────────────
+            if tools:
+                max_rounds = 3
+                for _round in range(max_rounds):
+                    async with httpx.AsyncClient(timeout=120) as client:
+                        payload = {
+                            "model": model,
+                            "messages": api_messages,
+                            "tools": tools,
+                            "stream": False,
+                        }
+                        resp = await client.post(
+                            f"{api_url}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json=payload,
+                        )
+                        if resp.status_code != 200:
+                            logger.warning(
+                                "Tool-use call failed (%s), falling back to plain chat",
+                                resp.status_code,
+                            )
+                            tools = None
+                            break
+
+                        data = resp.json()
+                        choice = data.get("choices", [{}])[0]
+                        finish_reason = choice.get("finish_reason", "")
+                        message = choice.get("message", {})
+
+                        if finish_reason != "tool_calls" and not message.get("tool_calls"):
+                            # No tool calls — model gave a direct answer.
+                            # Inject it back into the messages list so the
+                            # streaming round picks it up.
+                            break
+
                         tool_calls = message.get("tool_calls", [])
                         if not tool_calls:
                             break
-
-                        # Append the assistant message with tool_calls
                         api_messages.append(message)
 
-                        # Execute each tool call
                         for tc in tool_calls:
                             fn = tc.get("function", {})
                             tool_name = fn.get("name", "")
@@ -403,46 +462,94 @@ async def ai_chat(
                             except json.JSONDecodeError:
                                 tool_args = {}
 
+                            # Generate a call_id that encodes the user so
+                            # the approval endpoint can refuse cross-user
+                            # decisions even if the URL is leaked.
+                            call_id = f"{user_id}:{_uuid.uuid4().hex}"
+
+                            # Read tools: emit a pending event for UI
+                            # visibility, but DON'T wait — auto-execute.
+                            # Write tools: emit pending + wait for the
+                            # user's decision.
+                            if _is_write_tool(tool_name):
+                                yield _sse("tool_call_pending", {
+                                    "call_id": call_id,
+                                    "name": tool_name,
+                                    "arguments": tool_args,
+                                    "requires_approval": True,
+                                })
+                                # Run BLPOP in a thread so we don't
+                                # block the event loop for 5 minutes.
+                                decision = await asyncio.to_thread(
+                                    wait_for_approval, call_id,
+                                )
+                            else:
+                                yield _sse("tool_call_pending", {
+                                    "call_id": call_id,
+                                    "name": tool_name,
+                                    "arguments": tool_args,
+                                    "requires_approval": False,
+                                })
+                                decision = ApprovalDecision.APPROVE
+
+                            if decision != ApprovalDecision.APPROVE:
+                                reason = (
+                                    "User denied this tool call."
+                                    if decision == ApprovalDecision.DENY
+                                    else "Approval timed out (no user decision within 5 minutes)."
+                                )
+                                yield _sse("tool_call_denied", {
+                                    "call_id": call_id,
+                                    "name": tool_name,
+                                    "reason": reason,
+                                })
+                                # Inject a tool-result message so the
+                                # LLM can adapt instead of re-trying.
+                                api_messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "content": _wrap_untrusted(json.dumps({"error": reason})),
+                                })
+                                continue
+
                             try:
-                                result = await _execute_mcp_tool(tool_name, tool_args, current_user, db)
+                                result = await _execute_mcp_tool(
+                                    tool_name, tool_args, current_user, db,
+                                )
                                 result_str = json.dumps(result, default=str)
                             except Exception as e:
                                 result_str = json.dumps({"error": str(e)})
 
-                            # GHSA-q4x9-5gmc-fxh5: wrap untrusted content so
-                            # the model can't be steered by user-authored text
-                            # stored in finding descriptions / notes / etc.
-                            result_str = _wrap_untrusted(result_str)
+                            # Truncated preview for the UI — the full
+                            # result still goes to the LLM via the
+                            # api_messages append below.
+                            preview = result_str[:500] + (
+                                "…" if len(result_str) > 500 else ""
+                            )
+                            yield _sse("tool_call_result", {
+                                "call_id": call_id,
+                                "name": tool_name,
+                                "result_preview": preview,
+                            })
 
-                            # Append tool result message
+                            # GHSA-q4x9-5gmc-fxh5: wrap untrusted content
+                            # so user-authored data in the tool result
+                            # can't steer the model.
                             api_messages.append({
                                 "role": "tool",
                                 "tool_call_id": tc.get("id", ""),
-                                "content": result_str,
+                                "content": _wrap_untrusted(result_str),
                             })
 
-                        # Loop back to let the LLM process the results
-                        continue
-                    else:
-                        # No tool calls — model gave a direct answer, break out
-                        # We'll stream this in the final step
-                        break
-            except Exception as e:
-                logger.error(f"Tool-use round failed: {e}")
-                tools = None
-                break
+                        # Loop back — let the LLM see the tool results.
 
-    # ── Final streaming response ─────────────────────────────────────
-    async def stream_response():
-        try:
+            # ── Final streaming response ─────────────────────────────
             async with httpx.AsyncClient(timeout=120) as client:
                 payload = {
                     "model": model,
                     "messages": api_messages,
                     "stream": True,
                 }
-                # Don't pass tools on the final streaming call — we want a
-                # natural-language answer now, not more tool calls
                 async with client.stream(
                     "POST",
                     f"{api_url}/chat/completions",
@@ -454,19 +561,85 @@ async def ai_chat(
                 ) as resp:
                     if resp.status_code != 200:
                         body = await resp.aread()
-                        yield f'data: {{"error": "API error {resp.status_code}: {body.decode()[:200]}"}}\n\n'
+                        yield _sse("chunk", {
+                            "error": f"API error {resp.status_code}: {body.decode()[:200]}",
+                        })
+                        yield _sse("done", {})
                         return
                     async for line in resp.aiter_lines():
                         if line.startswith("data: "):
-                            yield line + "\n\n"
+                            payload_str = line[6:].strip()
+                            if payload_str == "[DONE]":
+                                continue
+                            # Pass the upstream provider's chunk through
+                            # under our ``chunk`` event type. Frontend
+                            # parses the unchanged OpenAI-style delta.
+                            try:
+                                parsed = json.loads(payload_str)
+                                yield _sse("chunk", parsed)
+                            except json.JSONDecodeError:
+                                # Malformed upstream — surface as error.
+                                yield _sse("chunk", {"error": "malformed upstream chunk"})
+            yield _sse("done", {})
         except Exception as e:
-            yield f'data: {{"error": "{str(e)}"}}\n\n'
+            logger.exception("ai_chat stream failed")
+            yield _sse("chunk", {"error": str(e)})
+            yield _sse("done", {})
 
     return StreamingResponse(
         stream_response(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Per-call tool approval endpoint ──────────────────────────────────
+
+
+class ToolApprovalDecisionBody(BaseModel):
+    decision: Literal["approve", "deny"]
+
+
+@router.post("/chat/tool-approval/{call_id}")
+async def tool_approval(
+    call_id: str,
+    body: ToolApprovalDecisionBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Record the user's per-call decision for a pending write tool.
+
+    The call_id encodes the user who initiated the chat turn (set in
+    /ai/chat when emitting tool_call_pending). Refuse decisions from
+    any other user — a leaked call_id can't be used cross-account to
+    approve someone else's write.
+    """
+    # max length matches our generated shape: ``<user_uuid>:<32-hex>``
+    # → 36 + 1 + 32 = 69 chars; cap at 128 for generous headroom and
+    # to bound the Redis key length.
+    if not call_id or len(call_id) > 128 or ":" not in call_id:
+        raise HTTPException(400, "Invalid call_id")
+
+    owner_user_id, _suffix = call_id.split(":", 1)
+    if owner_user_id != current_user.id:
+        raise HTTPException(
+            403, "This tool call belongs to a different user.",
+        )
+
+    from utils.tool_approval import record_decision, ApprovalDecision
+    decision = (
+        ApprovalDecision.APPROVE if body.decision == "approve"
+        else ApprovalDecision.DENY
+    )
+    ok = record_decision(call_id, decision)
+    if not ok:
+        # Fail-loud so the UI can surface the issue rather than
+        # silently leaving the user waiting on a backend that won't
+        # respond. Common cause: Redis down. The waiter on the chat
+        # side has its own fail-closed timeout, so even without this
+        # signal the user wouldn't hang forever — but the explicit
+        # 503 is better UX than a 5-min spinner.
+        raise HTTPException(503, "Approval substrate unavailable. Please retry.")
+    return {"call_id": call_id, "decision": body.decision}
 
 
 # ── MCP proxy endpoints ──────────────────────────────────────────────

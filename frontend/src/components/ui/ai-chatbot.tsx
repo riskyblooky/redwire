@@ -9,15 +9,37 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
     MessageCircle, Send, Loader2,
-    Sparkles, Trash2, Minus, Square, ChevronDown, ChevronRight, Brain, Plug
+    Sparkles, Trash2, Minus, Square, ChevronDown, ChevronRight, Brain, Plug,
+    Check, X, Wrench, Clock, ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Per-call tool execution state rendered inline with the chat
+// transcript. ``status`` drives the card UI:
+//   - "pending"  : tool_call_pending arrived; for write tools the
+//                  card shows Approve/Deny + Always-allow checkbox
+//                  and blocks the next message until the user clicks.
+//   - "executed" : tool_call_result arrived; collapses to a one-line
+//                  "ran X" summary with an expand-for-args toggle.
+//   - "denied"   : tool_call_denied arrived; renders a muted line
+//                  with the reason (user denied / timed out).
+// GHSA-q4x9-5gmc-fxh5 follow-up: see /ai/chat tool-use loop.
+interface ToolCall {
+    callId: string;
+    name: string;
+    arguments: Record<string, unknown>;
+    requiresApproval: boolean;
+    status: 'pending' | 'executed' | 'denied';
+    resultPreview?: string;
+    deniedReason?: string;
+}
 
 interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
     thinking?: string;
     isMcp?: boolean;
+    toolCalls?: ToolCall[];
 }
 
 // ── Parse <think>...</think> from raw streamed text ─────────────────────
@@ -149,6 +171,145 @@ function MessageContent({ text }: { text: string }) {
     );
 }
 
+// ── Tool Call Card ─────────────────────────────────────────────────────
+// Claude-Code-style inline card. Read tools render in the executed
+// state immediately (collapsed one-liner). Write tools render in the
+// pending state with Approve / Deny buttons + the per-session
+// "Always allow this tool" checkbox, and block the chat input until
+// the user clicks. Auto-approve from the parent's allow-list happens
+// before render; by the time the card mounts in approved mode the
+// approval POST has already been fired.
+function ToolCallCard({
+    call,
+    onDecision,
+    alwaysAllow,
+    setAlwaysAllow,
+}: {
+    call: ToolCall;
+    onDecision: (decision: 'approve' | 'deny') => void;
+    alwaysAllow: boolean;
+    setAlwaysAllow: (v: boolean) => void;
+}) {
+    const [expanded, setExpanded] = useState(call.status === 'pending');
+    const argJson = useMemo(() => {
+        try { return JSON.stringify(call.arguments, null, 2); } catch { return '{}'; }
+    }, [call.arguments]);
+
+    const isPending = call.status === 'pending';
+    const isExecuted = call.status === 'executed';
+    const isDenied = call.status === 'denied';
+
+    return (
+        <div
+            className={cn(
+                "my-2 rounded-lg border text-[12px] transition-colors",
+                isPending && call.requiresApproval && "border-amber-500/40 bg-amber-500/5",
+                isPending && !call.requiresApproval && "border-slate-700/50 bg-slate-900/40",
+                isExecuted && "border-slate-700/40 bg-slate-900/30",
+                isDenied && "border-red-500/30 bg-red-500/5",
+            )}
+        >
+            {/* Header — always visible */}
+            <button
+                type="button"
+                onClick={() => setExpanded(e => !e)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left"
+            >
+                {isPending && call.requiresApproval ? (
+                    <ShieldCheck className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                ) : isExecuted ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                ) : isDenied ? (
+                    <X className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                ) : (
+                    <Wrench className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                )}
+                <span className="font-mono text-slate-200">{call.name}</span>
+                {isPending && call.requiresApproval && (
+                    <span className="ml-1 text-[10px] text-amber-400 uppercase tracking-wider font-semibold">
+                        Awaiting approval
+                    </span>
+                )}
+                {isExecuted && (
+                    <span className="ml-1 text-[10px] text-emerald-400/70 uppercase tracking-wider">Done</span>
+                )}
+                {isDenied && (
+                    <span className="ml-1 text-[10px] text-red-400/80 uppercase tracking-wider">
+                        {call.deniedReason?.includes('timed out') ? 'Timed out' : 'Denied'}
+                    </span>
+                )}
+                {expanded ? (
+                    <ChevronDown className="h-3 w-3 text-slate-500 ml-auto" />
+                ) : (
+                    <ChevronRight className="h-3 w-3 text-slate-500 ml-auto" />
+                )}
+            </button>
+
+            {expanded && (
+                <div className="px-3 pb-3 space-y-2 border-t border-slate-700/40">
+                    {/* Arguments — raw JSON, monospace, as Claude Code does */}
+                    <div className="pt-2">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+                            Arguments
+                        </p>
+                        <pre className="bg-slate-950/60 border border-slate-800/60 rounded p-2 text-[11px] font-mono text-slate-300 leading-relaxed overflow-x-auto whitespace-pre-wrap">
+                            {argJson}
+                        </pre>
+                    </div>
+
+                    {/* Result preview (executed) */}
+                    {isExecuted && call.resultPreview && (
+                        <div>
+                            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+                                Result preview
+                            </p>
+                            <pre className="bg-slate-950/60 border border-slate-800/60 rounded p-2 text-[11px] font-mono text-slate-400 leading-relaxed overflow-x-auto whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                {call.resultPreview}
+                            </pre>
+                        </div>
+                    )}
+
+                    {/* Denial reason */}
+                    {isDenied && call.deniedReason && (
+                        <p className="text-[11px] text-red-400/80 italic">{call.deniedReason}</p>
+                    )}
+
+                    {/* Approval controls (pending write tools only) */}
+                    {isPending && call.requiresApproval && (
+                        <div className="space-y-2 pt-1">
+                            <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={alwaysAllow}
+                                    onChange={(e) => setAlwaysAllow(e.target.checked)}
+                                    className="accent-amber-500"
+                                />
+                                <span>Always allow <code className="bg-slate-800 px-1 rounded">{call.name}</code> this session</span>
+                            </label>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => onDecision('approve')}
+                                    className="flex-1 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-400 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5"
+                                >
+                                    <Check className="h-3.5 w-3.5" /> Approve
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onDecision('deny')}
+                                    className="flex-1 px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-200 text-[12px] font-semibold flex items-center justify-center gap-1.5"
+                                >
+                                    <X className="h-3.5 w-3.5" /> Deny
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function AiChatbot() {
     const pathname = usePathname();
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -192,6 +353,12 @@ export function AiChatbot() {
     const [streaming, setStreaming] = useState(false);
     const [isThinking, setIsThinking] = useState(false);
     const [expanded, setExpanded] = useState(false);
+    // Per-session "always allow" allow-list for write tools. Scoped
+    // to the component instance — lost on page reload (deliberate;
+    // safer default than localStorage persistence). Keyed by tool
+    // name so a user who's approved `update_finding` once doesn't
+    // get re-prompted for every subsequent update in the same turn.
+    const [toolAllowlist, setToolAllowlist] = useState<Set<string>>(new Set());
     const scrollRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -248,41 +415,107 @@ export function AiChatbot() {
             const reader = resp.body?.getReader();
             const decoder = new TextDecoder();
             let rawContent = '';
-            setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
+            let toolCalls: ToolCall[] = [];
+            setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '', toolCalls: [] }]);
+
+            // Helper: push the updated tool-call list into the last
+            // assistant message in-place. Used by every tool_call_*
+            // event handler below.
+            const syncToolCalls = () => {
+                setMessages(prev => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === 'assistant') {
+                        updated[updated.length - 1] = { ...last, toolCalls: [...toolCalls] };
+                    }
+                    return updated;
+                });
+            };
 
             if (reader) {
+                // SSE format from the backend: ``event: <name>\ndata: <json>\n\n``.
+                // The previous parser only handled bare data: lines (no event:
+                // discriminator). New shape pairs an event line with a data
+                // line; we buffer the most recent event name and apply it
+                // when the matching data line arrives.
+                let buffer = '';
+                let currentEvent = 'chunk'; // default if backend omits event:
                 while (true) {
                     const { done, value: chunk } = await reader.read();
                     if (done) break;
-                    const text = decoder.decode(chunk);
-                    const lines = text.split('\n');
+                    buffer += decoder.decode(chunk, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6).trim();
-                            if (data === '[DONE]') continue;
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.error) {
-                                    rawContent += `\nError: ${parsed.error}`;
-                                } else {
-                                    const delta = parsed.choices?.[0]?.delta?.content || '';
-                                    rawContent += delta;
-                                }
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7).trim();
+                            continue;
+                        }
+                        if (!line.startsWith('data: ')) continue;
+                        const data = line.slice(6).trim();
+                        if (!data || data === '[DONE]') continue;
+                        let parsed: any;
+                        try { parsed = JSON.parse(data); } catch { continue; }
 
-                                const { thinking, content, stillThinking } = parseThinking(rawContent);
-                                setIsThinking(stillThinking);
-
-                                setMessages(prev => {
-                                    const updated = [...prev];
+                        if (currentEvent === 'chunk') {
+                            // OpenAI-compat streaming delta (or our own
+                            // {"error":...} envelope on upstream failure).
+                            if (parsed.error) {
+                                rawContent += `\nError: ${parsed.error}`;
+                            } else {
+                                const delta = parsed.choices?.[0]?.delta?.content || '';
+                                rawContent += delta;
+                            }
+                            const { thinking, content, stillThinking } = parseThinking(rawContent);
+                            setIsThinking(stillThinking);
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                const last = updated[updated.length - 1];
+                                if (last && last.role === 'assistant') {
                                     updated[updated.length - 1] = {
-                                        role: 'assistant',
+                                        ...last,
                                         content,
                                         thinking: thinking || undefined,
                                     };
-                                    return updated;
-                                });
-                            } catch { /* skip malformed SSE */ }
+                                }
+                                return updated;
+                            });
+                        } else if (currentEvent === 'tool_call_pending') {
+                            const newCall: ToolCall = {
+                                callId: parsed.call_id,
+                                name: parsed.name,
+                                arguments: parsed.arguments || {},
+                                requiresApproval: !!parsed.requires_approval,
+                                status: 'pending',
+                            };
+                            toolCalls = [...toolCalls, newCall];
+                            syncToolCalls();
+                            // Auto-approve if the user has previously
+                            // ticked "always allow" for this tool name
+                            // this session. Fire-and-forget POST; the
+                            // backend's BLPOP wakes up immediately.
+                            if (newCall.requiresApproval && toolAllowlist.has(newCall.name)) {
+                                api.post(`/ai/chat/tool-approval/${newCall.callId}`, { decision: 'approve' })
+                                    .catch(() => { /* will surface as denied via timeout */ });
+                            }
+                        } else if (currentEvent === 'tool_call_result') {
+                            toolCalls = toolCalls.map(c =>
+                                c.callId === parsed.call_id
+                                    ? { ...c, status: 'executed', resultPreview: parsed.result_preview }
+                                    : c
+                            );
+                            syncToolCalls();
+                        } else if (currentEvent === 'tool_call_denied') {
+                            toolCalls = toolCalls.map(c =>
+                                c.callId === parsed.call_id
+                                    ? { ...c, status: 'denied', deniedReason: parsed.reason }
+                                    : c
+                            );
+                            syncToolCalls();
                         }
+                        // event === 'done' is a no-op; the while loop exits
+                        // on reader done anyway.
                     }
                 }
             }
@@ -410,6 +643,36 @@ export function AiChatbot() {
                                             content={msg.thinking || ''}
                                             isLive={isThinkingThis}
                                         />
+                                    )}
+
+                                    {/* Inline tool call cards (Claude-Code-style) — rendered
+                                        above the message content so the user sees what the
+                                        assistant did before reading its summary. */}
+                                    {msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0 && (
+                                        <div className="mb-1">
+                                            {msg.toolCalls.map((tc) => (
+                                                <ToolCallCard
+                                                    key={tc.callId}
+                                                    call={tc}
+                                                    alwaysAllow={toolAllowlist.has(tc.name)}
+                                                    setAlwaysAllow={(v) => {
+                                                        setToolAllowlist(prev => {
+                                                            const next = new Set(prev);
+                                                            if (v) next.add(tc.name); else next.delete(tc.name);
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    onDecision={async (decision) => {
+                                                        try {
+                                                            await api.post(`/ai/chat/tool-approval/${tc.callId}`, { decision });
+                                                        } catch (e) {
+                                                            // Surface via toast-style inline message
+                                                            console.error('Failed to record tool approval', e);
+                                                        }
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
                                     )}
 
                                     {/* Message content */}
