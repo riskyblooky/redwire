@@ -127,6 +127,21 @@ def process_saml_response(
             logger.warning("SAML response: user not authenticated")
             return None
 
+        # Single-use assertion ID enforcement (GHSA-68hx-hggg-vrr2 follow-up).
+        # Atomic SET NX against Redis with TTL = NotOnOrAfter window. A
+        # capture-and-replay of the same <Response> within the SAML
+        # validity window now lands on the existing key and is refused.
+        # Without this, the saml_request_id cookie binding catches IdP-
+        # initiated and cross-session replays but not same-flow replays.
+        from auth.saml_replay import claim_saml_assertion
+        if not claim_saml_assertion(
+            auth.get_last_assertion_id(),
+            auth.get_last_assertion_not_on_or_after(),
+        ):
+            # claim_saml_assertion already logs the specific reason
+            # (replay / Redis-down / missing-id / expired-window).
+            return None
+
         attributes = auth.get_attributes()
         name_id = auth.get_nameid()
 
