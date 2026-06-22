@@ -45,6 +45,13 @@ class User(Base):
     # Authentication provider: 'local', 'ldap', or 'saml'
     auth_provider = Column(String(16), default="local", nullable=False, server_default="local")
 
+    # IdP-stable identifier for SAML users (the NameID, optionally
+    # qualified). Matched first at /auth/saml/acs so an IdP-side email
+    # rotation no longer orphans the RedWire row. NULL on local/LDAP
+    # users — UNIQUE allows multiple NULLs in Postgres.
+    # GHSA-68hx-hggg-vrr2 follow-up.
+    saml_subject = Column(String(512), nullable=True, unique=True, index=True)
+
     # Dashboard customization
     dashboard_layout = Column(JSON, nullable=True)  # User's widget layout
 

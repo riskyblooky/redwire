@@ -1148,30 +1148,84 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     email = user_info.get("email", "")
     username = user_info.get("username", "")
+    name_id = (user_info.get("name_id") or "").strip()
 
     if not email:
         raise HTTPException(status_code=400, detail="No email in SAML assertion")
 
-    # Find or create user. Match on email only — including username here
-    # lets an assertion with username="admin" adopt an unrelated local row.
-    result = await db.execute(select(User).where(User.email == email))
+    # GHSA-68hx-hggg-vrr2 follow-up: SAML's documented identity is the
+    # NameID, not the email. Refuse the assertion if NameID is missing
+    # — the previous code fell back to email-only matching which means
+    # an IdP-side email rotation orphans the RedWire row, and any
+    # email-collision attack on the IdP side flows straight through.
+    if not name_id:
+        logger.error("SAML ACS: assertion is missing NameID — refusing")
+        raise HTTPException(
+            status_code=400,
+            detail="SAML assertion is missing a NameID",
+        )
+
+    # Match by saml_subject first — the IdP-stable identifier. An IdP
+    # email rotation no longer orphans the row because we don't key on
+    # email at all for returning users.
+    result = await db.execute(select(User).where(User.saml_subject == name_id))
     user = result.scalar_one_or_none()
 
-    if user and (user.auth_provider or "local") != "saml":
-        # An existing local/LDAP user with the same email is a collision,
-        # not the same identity. Adopting the row would hand the assertion
-        # holder that user's role and silently flip their auth_provider.
-        logger.warning(
-            "SAML ACS: assertion email %r collides with existing "
-            "auth_provider=%r user — refusing",
-            email, user.auth_provider,
+    if user is None:
+        # No saml_subject match. Two cases:
+        #   (a) Brand-new user — JIT provision below.
+        #   (b) Existing SAML user provisioned BEFORE this commit landed
+        #       (saml_subject is NULL). Backfill on first post-rollout
+        #       login by matching on email + auth_provider="saml" +
+        #       saml_subject IS NULL.
+        legacy_result = await db.execute(
+            select(User).where(
+                User.email == email,
+                User.auth_provider == "saml",
+                User.saml_subject.is_(None),
+            )
         )
-        raise HTTPException(
-            status_code=403,
-            detail="A non-SAML account already exists for this email",
-        )
+        legacy_user = legacy_result.scalar_one_or_none()
+        if legacy_user is not None:
+            legacy_user.saml_subject = name_id
+            user = legacy_user
+            logger.info(
+                "SAML ACS: backfilled saml_subject for legacy user %r",
+                user.username,
+            )
 
-    if not user:
+    if user is None:
+        # Still no match by saml_subject OR by legacy-email-fallback.
+        # Check the email-collision guard against non-SAML rows before
+        # JIT-provisioning, same as before.
+        collision = await db.execute(select(User).where(User.email == email))
+        existing = collision.scalar_one_or_none()
+        if existing and (existing.auth_provider or "local") != "saml":
+            logger.warning(
+                "SAML ACS: assertion email %r collides with existing "
+                "auth_provider=%r user — refusing",
+                email, existing.auth_provider,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="A non-SAML account already exists for this email",
+            )
+        if existing and (existing.auth_provider or "local") == "saml":
+            # A SAML row with this email exists but its saml_subject is
+            # a *different* value — that means the IdP issued a NameID
+            # change for a user whose email also changed. Two distinct
+            # SAML subjects sharing one email shouldn't be silently
+            # merged; refuse and let the admin resolve.
+            logger.warning(
+                "SAML ACS: assertion NameID %r and email %r conflict "
+                "with existing SAML row whose saml_subject=%r — refusing",
+                name_id, email, existing.saml_subject,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="A different SAML identity already owns this email",
+            )
+
         # JIT provision
         from models.group import Group, user_groups
         user = User(
@@ -1182,6 +1236,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             full_name=user_info.get("full_name", ""),
             role=UserRole.OPERATOR,
             auth_provider="saml",
+            saml_subject=name_id,
             is_active=True,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
@@ -1201,6 +1256,17 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User account is disabled")
+
+    # Sync IdP-mutable attributes on every successful auth so an
+    # IdP-side rename / email rotation reflects in the local row.
+    # We key on saml_subject now, so the email is descriptive
+    # metadata — not the identity. GHSA-68hx-hggg-vrr2 follow-up.
+    if user.auth_provider == "saml":
+        if email and user.email != email:
+            user.email = email
+        full_name = user_info.get("full_name") or ""
+        if full_name and user.full_name != full_name:
+            user.full_name = full_name
 
     user.last_login = datetime.utcnow()
     await db.commit()
