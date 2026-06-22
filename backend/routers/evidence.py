@@ -36,6 +36,21 @@ async def get_evidence_engagement_id(evidence: Evidence, db: AsyncSession) -> Op
     return None
 
 
+# GHSA-287x-h6p3-frfv follow-up: keys of `update_data` that drive report
+# rendering and therefore inherit the byte-level chain-of-custody guard.
+# Touching any of these on evidence whose parent finding is VERIFIED
+# silently changes what the next report regeneration emits as proof for
+# the finding — same chain-of-custody class as a byte mutation, just a
+# different sink. `description` is intentionally *not* in this set: it's
+# an annotation, not load-bearing on the verification, and locking it
+# would block legitimate post-VERIFY commentary.
+EVIDENCE_COC_LOCKED_FIELDS = frozenset({
+    "include_in_report",
+    "classification_level",
+    "classification_suffix",
+})
+
+
 async def _assert_evidence_mutable(
     db: AsyncSession, evidence: Evidence, current_user: User, action: str
 ) -> None:
@@ -155,6 +170,12 @@ async def update_evidence(
                 detail="Insufficient permissions to modify this evidence."
             )
     
+    # GHSA-287x-h6p3-frfv follow-up: extend the chain-of-custody guard to
+    # the metadata flags that drive report rendering. See
+    # EVIDENCE_COC_LOCKED_FIELDS at the top of this module for the list.
+    if EVIDENCE_COC_LOCKED_FIELDS.intersection(update_data):
+        await _assert_evidence_mutable(db, evidence, current_user, "metadata-edit")
+
     # Build specific change details before applying updates
     change_parts = []
     if "description" in update_data:
