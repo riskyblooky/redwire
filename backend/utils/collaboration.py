@@ -234,6 +234,64 @@ def _fmt(val: Any) -> str:
     return str(val)
 
 
+def _normalize_for_match(val: Any) -> Any:
+    """Coerce enum values to their underlying scalar so the changes-dict
+    fallback in ``_match_condition`` lines up with the way top-level
+    ``extra_context`` entries are typed today.
+
+    Routers populating top-level keys explicitly write
+    ``"severity": finding.severity.value.lower()`` — without this
+    coercion, the same lookup via ``context["changes"]["severity"]["new"]``
+    would return the enum object, and ``str(<Severity.CRITICAL>).lower()``
+    is not ``"critical"``. Strings, numbers, bools, None, lists/dicts
+    pass through unchanged.
+    """
+    import enum
+    if isinstance(val, enum.Enum):
+        return val.value
+    return val
+
+
+def compute_changes_dict(old_obj: Any, update_data: dict) -> dict[str, dict[str, Any]]:
+    """Structured counterpart to :func:`build_change_summary`.
+
+    Returns ``{field: {"old": old_val, "new": new_val}}`` for each
+    field whose value actually changed. Vault-redacted fields appear
+    as ``{"changed": True}`` without values (matches the redacted
+    treatment in the prose helper).
+
+    Consumed by ``_match_condition`` in the automation engine so that
+    automation rules can fire on update events without scraping the
+    prose change summary — that scrape was the unsafe regex fallback
+    GHSA-88hm-p8rq-cfw2 deleted, and this dict is the structured
+    replacement.
+
+    Fields whose old/new values are equal are omitted, mirroring the
+    prose helper. Enum values are coerced via ``_normalize_for_match``
+    so condition lookups via the changes-fallback path produce the
+    same scalar shape that callers manually pass into top-level
+    ``extra_context``. Callers normally pass this dict under
+    ``extra_context["changes"]`` to ``create_activity_log``.
+    """
+    changes: dict[str, dict[str, Any]] = {}
+    for field, new_val in update_data.items():
+        old_val = getattr(old_obj, field, None)
+        if field in _REDACTED_FIELDS:
+            # Don't leak old/new values for vault-encrypted fields (the
+            # same ``_REDACTED_FIELDS`` set the prose summary uses).
+            # Surface the *fact* of the change so a condition like
+            # ``has password (changed)`` could still match in the future.
+            changes[field] = {"changed": True}
+            continue
+        if old_val == new_val:
+            continue
+        changes[field] = {
+            "old": _normalize_for_match(old_val),
+            "new": _normalize_for_match(new_val),
+        }
+    return changes
+
+
 async def create_activity_log(
     db: AsyncSession,
     engagement_id: str,

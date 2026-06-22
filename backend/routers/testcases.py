@@ -13,7 +13,7 @@ from auth.rbac import check_engagement_permission
 from models.user import UserRole
 from models.permission import Permission
 import uuid
-from utils.collaboration import create_activity_log, build_change_summary
+from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
 from models.version_history import VersionHistory
@@ -295,6 +295,8 @@ async def update_testcase(
 
     # Capture change summary before applying updates
     change_details = build_change_summary(db_testcase, update_data, label=f"Updated test case '{db_testcase.title}'")
+    # Structured changes for automation matching (GHSA-88hm follow-up).
+    changes = compute_changes_dict(db_testcase, update_data)
     if testcase_update.tag_ids is not None:
         change_details += ", tags updated"
     if testcase_update.attack_technique_ids is not None:
@@ -349,6 +351,7 @@ async def update_testcase(
         details=change_details,
         extra_context={
             "tags": [t.name.lower() for t in (db_testcase.tags or [])],
+            "changes": changes,
         },
     )
 

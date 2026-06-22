@@ -19,7 +19,7 @@ import uuid
 import io
 import csv
 import defusedxml.ElementTree as ET
-from utils.collaboration import create_activity_log, build_change_summary
+from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.uploads import read_upload_capped
 from models.discussion import ResourceType
 
@@ -932,6 +932,8 @@ async def update_asset(
 
     # Capture change summary before applying updates
     change_details = build_change_summary(db_asset, update_data, label=f"Updated asset '{db_asset.name}'")
+    # Structured changes for automation matching (GHSA-88hm follow-up).
+    changes = compute_changes_dict(db_asset, update_data)
 
     for field, value in update_data.items():
         setattr(db_asset, field, value)
@@ -953,6 +955,7 @@ async def update_asset(
         details=change_details,
         extra_context={
             "asset_type": str(db_asset.asset_type).lower() if db_asset.asset_type else None,
+            "changes": changes,
         },
     )
 

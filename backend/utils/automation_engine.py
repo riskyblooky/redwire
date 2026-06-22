@@ -107,6 +107,17 @@ def _match_condition(condition: dict, context: Dict[str, Any]) -> bool:
     actual = context.get(field)
 
     if actual is None:
+        # GHSA-88hm-p8rq-cfw2 follow-up: structured fallback when the
+        # post-update value isn't a top-level context key. ``compute_changes_dict``
+        # puts {field: {"old": …, "new": …}} under ``context["changes"]``;
+        # consult it before giving up. Restores the update-event matching
+        # capability that the deleted prose-regex fallback was trying to
+        # provide, without ever parsing an attacker-influenced string.
+        changes = context.get("changes") or {}
+        if field in changes and isinstance(changes[field], dict):
+            actual = changes[field].get("new")
+
+    if actual is None:
         print(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → field not found in context")
         return False
 

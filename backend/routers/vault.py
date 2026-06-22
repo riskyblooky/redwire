@@ -17,7 +17,7 @@ from schemas.vault import VaultItemCreate, VaultItemUpdate, VaultItemResponse
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
-from utils.collaboration import create_activity_log, build_change_summary
+from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.vault_crypto import (
     encrypt_vault_fields,
     decrypt_vault_item,
@@ -216,6 +216,12 @@ async def update_vault_item(
         # un-edited credential fields back as plaintext on the next commit.
         update_data = item_update.model_dump(exclude_unset=True)
         change_details = build_change_summary(item, update_data, label=f"Updated vault item '{item.name}'")
+        # Structured changes for automation matching (GHSA-88hm follow-up).
+        # compute_changes_dict consults the same _REDACTED_FIELDS set as
+        # build_change_summary, so password/username/note appear as
+        # {"changed": True} rather than leaking plaintext into the
+        # automation context.
+        changes = compute_changes_dict(item, update_data)
 
         encrypted_data = encrypt_vault_fields(update_data)
         for key, value in encrypted_data.items():
@@ -234,7 +240,8 @@ async def update_vault_item(
                 resource_type="vault",
                 resource_id=item.id,
                 resource_name=item.name,
-                details=change_details
+                details=change_details,
+                extra_context={"changes": changes},
             )
         except Exception as log_err:
             logger.warning(f"Vault activity log failed: {log_err}")

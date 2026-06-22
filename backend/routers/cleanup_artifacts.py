@@ -14,7 +14,7 @@ from schemas.cleanup_artifact import CleanupArtifactCreate, CleanupArtifactUpdat
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
-from utils.collaboration import create_activity_log, build_change_summary
+from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix="/cleanup-artifacts", tags=["cleanup-artifacts"])
@@ -216,6 +216,8 @@ async def update_cleanup_artifact(
             update_data["cleaned_by"] = current_user.id
 
     change_details = build_change_summary(artifact, update_data, label=f"Updated cleanup artifact '{artifact.title}'")
+    # Structured changes for automation matching (GHSA-88hm follow-up).
+    changes = compute_changes_dict(artifact, update_data)
 
     for key, value in update_data.items():
         setattr(artifact, key, value)
@@ -235,6 +237,7 @@ async def update_cleanup_artifact(
         details=change_details,
         extra_context={
             "status": artifact.status.value.lower() if artifact.status else None,
+            "changes": changes,
         },
     )
 

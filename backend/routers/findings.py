@@ -22,7 +22,7 @@ from models.user import UserRole
 from models.permission import Permission
 from utils.storage import storage_service
 from utils.uploads import safe_content_type
-from utils.collaboration import create_activity_log, build_change_summary
+from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
 from models.version_history import VersionHistory
@@ -555,6 +555,9 @@ async def update_finding(
 
     # Capture change summary before applying updates
     change_details = build_change_summary(finding, update_data, label=f"Updated finding '{finding.title}'")
+    # Structured changes dict for automation matching (GHSA-88hm follow-up).
+    # Must be computed against the *pre-setattr* state, same as build_change_summary.
+    changes = compute_changes_dict(finding, update_data)
     if finding_data.asset_ids is not None:
         change_details += ", linked assets updated"
     if finding_data.tag_ids is not None:
@@ -628,6 +631,7 @@ async def update_finding(
             "status": finding.status.value.lower() if finding.status else None,
             "cvss_score": float(finding.cvss_score) if finding.cvss_score is not None else None,
             "tags": [t.name.lower() for t in (finding_with_tags.tags or [])],
+            "changes": changes,
         },
     )
 

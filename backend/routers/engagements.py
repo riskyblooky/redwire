@@ -26,7 +26,7 @@ import os
 import uuid
 from utils.storage import storage_service
 from utils.uploads import safe_content_type
-from utils.collaboration import create_activity_log, build_change_summary, manager
+from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict, manager
 from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
@@ -356,6 +356,8 @@ async def update_engagement(
     
     # Capture change summary before applying updates
     change_details = build_change_summary(engagement, update_data, label=f"Updated engagement '{engagement.name}'")
+    # Structured changes for automation matching (GHSA-88hm follow-up).
+    changes = compute_changes_dict(engagement, update_data)
     team_changed = assignments_data is not None or user_ids is not None
     if team_changed:
         change_details += ", team assignments updated"
@@ -427,7 +429,8 @@ async def update_engagement(
         resource_type="engagement",
         resource_id=engagement.id,
         resource_name=engagement.name,
-        details=change_details
+        details=change_details,
+        extra_context={"changes": changes},
     )
 
     # Notify team if engagement status changed
