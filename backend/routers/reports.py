@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -7,6 +8,7 @@ import json
 import os
 import zipfile
 import io
+import tempfile
 import logging
 import traceback
 from datetime import datetime
@@ -15,13 +17,45 @@ logger = logging.getLogger(__name__)
 
 
 # GHSA-q8q6-22jx-7rjj: aggregate-size guard for evidence in JSON_ZIP /
-# JSON_LAYOUT_ZIP exports. The exporter buffers each evidence file fully
-# in memory and ``zip_buffer.getvalue()`` doubles peak RSS for the
-# Response body, so the worst-case footprint is roughly 2× this cap.
-# Default sized for a small container; tune via env without code change.
+# JSON_LAYOUT_ZIP exports. With the SpooledTemporaryFile + StreamingResponse
+# refactor this is now a *policy* limit ("we don't ship reports larger than
+# this to clients") rather than a *safety* limit ("we OOM above this") —
+# the archive rolls to a tempfile above ``_ZIP_SPOOL_THRESHOLD`` and
+# streams chunked from disk, so memory pressure is bounded regardless
+# of evidence aggregate size. Default sized for a typical small
+# engagement; tune via env without code change.
 REPORT_EXPORT_MAX_EVIDENCE_BYTES = int(
     os.getenv("REPORT_EXPORT_MAX_EVIDENCE_BYTES", str(50 * 1024 * 1024))
 )
+
+# In-memory threshold for ``SpooledTemporaryFile``. Archives smaller than
+# this stay in memory (fast path for the common small-export case).
+# Larger archives roll over to a real tempfile under ``/tmp`` and stream
+# chunked from disk on the response side.
+_ZIP_SPOOL_THRESHOLD = 10 * 1024 * 1024
+
+# Per-read chunk size when streaming the archive back to the client.
+# 64 KiB matches the chunking discipline in ``utils.uploads.read_upload_capped``.
+_ZIP_STREAM_CHUNK = 64 * 1024
+
+
+def _stream_spooled_zip(spooled: tempfile.SpooledTemporaryFile):
+    """Generator that yields the archive in fixed-size chunks and closes
+    the spooled tempfile when the iterator is exhausted (or cancelled).
+
+    ``SpooledTemporaryFile`` deletes its on-disk backing file when
+    ``close()`` is called, so cleanup is automatic — but the generator
+    has to run to completion (or get GC'd) for that to fire. Streaming
+    via a ``StreamingResponse`` does run it to completion in the normal
+    case; the ``finally`` covers client-aborts the response."""
+    try:
+        while True:
+            chunk = spooled.read(_ZIP_STREAM_CHUNK)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        spooled.close()
 
 
 def _safe_arcname(name: str) -> str:
@@ -394,84 +428,99 @@ async def _do_generate_report(
                 ],
             }
 
-        # Create ZIP in memory
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            # Write JSON
-            json_content = json.dumps(export_data, indent=2, ensure_ascii=False)
-            zf.writestr("engagement_export.json", json_content)
+        # Build the archive into a spooled tempfile so memory usage stays
+        # bounded regardless of evidence aggregate size — the response
+        # side streams chunks back via ``StreamingResponse`` rather than
+        # materialising the whole archive as one ``bytes`` payload.
+        # Failures unwind via the explicit ``except: close()`` below;
+        # the normal-completion close runs inside ``_stream_spooled_zip``
+        # when the streaming generator exhausts.
+        spooled = tempfile.SpooledTemporaryFile(
+            max_size=_ZIP_SPOOL_THRESHOLD, mode="w+b"
+        )
+        try:
+            with zipfile.ZipFile(spooled, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # Write JSON
+                json_content = json.dumps(export_data, indent=2, ensure_ascii=False)
+                zf.writestr("engagement_export.json", json_content)
 
-            # Download and bundle evidence files
-            if config.include_evidence:
-                # GHSA-q8q6-22jx-7rjj: sum recorded file sizes from the DB row
-                # before any MinIO round-trip. include_in_report mirrors what
-                # the loops below will write, so the cap matches what the
-                # archive would otherwise have grown to.
-                total_evidence_bytes = sum(
-                    (e.file_size or 0)
-                    for f in findings
-                    for e in (f.evidence or [])
-                    if e.include_in_report and e.filename
-                ) + sum(
-                    (e.file_size or 0)
-                    for e in standalone_evidence
-                    if e.include_in_report and e.filename
-                )
-                if total_evidence_bytes > REPORT_EXPORT_MAX_EVIDENCE_BYTES:
-                    logger.warning(
-                        "Refused JSON_ZIP export of engagement %s by user %s: "
-                        "%d evidence bytes > %d cap",
-                        engagement.id, current_user.id,
-                        total_evidence_bytes, REPORT_EXPORT_MAX_EVIDENCE_BYTES,
+                # Download and bundle evidence files
+                if config.include_evidence:
+                    # GHSA-q8q6-22jx-7rjj: sum recorded file sizes from the DB row
+                    # before any MinIO round-trip. include_in_report mirrors what
+                    # the loops below will write, so the cap matches what the
+                    # archive would otherwise have grown to.
+                    total_evidence_bytes = sum(
+                        (e.file_size or 0)
+                        for f in findings
+                        for e in (f.evidence or [])
+                        if e.include_in_report and e.filename
+                    ) + sum(
+                        (e.file_size or 0)
+                        for e in standalone_evidence
+                        if e.include_in_report and e.filename
                     )
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=(
-                            f"Evidence export aggregate "
-                            f"({total_evidence_bytes // (1024*1024)} MiB) exceeds "
-                            f"the {REPORT_EXPORT_MAX_EVIDENCE_BYTES // (1024*1024)} "
-                            "MiB limit. Deselect 'include evidence' or reduce the "
-                            "engagement's evidence set."
-                        ),
-                    )
+                    if total_evidence_bytes > REPORT_EXPORT_MAX_EVIDENCE_BYTES:
+                        logger.warning(
+                            "Refused JSON_ZIP export of engagement %s by user %s: "
+                            "%d evidence bytes > %d cap",
+                            engagement.id, current_user.id,
+                            total_evidence_bytes, REPORT_EXPORT_MAX_EVIDENCE_BYTES,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail=(
+                                f"Evidence export aggregate "
+                                f"({total_evidence_bytes // (1024*1024)} MiB) exceeds "
+                                f"the {REPORT_EXPORT_MAX_EVIDENCE_BYTES // (1024*1024)} "
+                                "MiB limit. Deselect 'include evidence' or reduce the "
+                                "engagement's evidence set."
+                            ),
+                        )
 
-                # Finding evidence
-                for f in findings:
-                    for e in (f.evidence or []):
+                    # Finding evidence
+                    for f in findings:
+                        for e in (f.evidence or []):
+                            if e.include_in_report and e.filename:
+                                try:
+                                    file_bytes = await storage_service.download_file(e.filename)
+                                    safe_name = _safe_arcname(e.original_filename)
+                                    if safe_name != (e.original_filename or ""):
+                                        logger.warning(
+                                            "GHSA-fwvp: sanitized evidence %s original_filename %r → %r for ZIP export",
+                                            e.id, e.original_filename, safe_name,
+                                        )
+                                    zf.writestr(f"attachments/findings/{f.id}/{safe_name}", file_bytes)
+                                except Exception:
+                                    pass  # Skip files that can't be downloaded
+
+                    # Standalone engagement evidence
+                    for e in standalone_evidence:
                         if e.include_in_report and e.filename:
                             try:
                                 file_bytes = await storage_service.download_file(e.filename)
                                 safe_name = _safe_arcname(e.original_filename)
                                 if safe_name != (e.original_filename or ""):
                                     logger.warning(
-                                        "GHSA-fwvp: sanitized evidence %s original_filename %r → %r for ZIP export",
+                                        "GHSA-fwvp: sanitized standalone evidence %s original_filename %r → %r for ZIP export",
                                         e.id, e.original_filename, safe_name,
                                     )
-                                zf.writestr(f"attachments/findings/{f.id}/{safe_name}", file_bytes)
+                                zf.writestr(f"attachments/engagement/{safe_name}", file_bytes)
                             except Exception:
-                                pass  # Skip files that can't be downloaded
+                                pass
+        except Exception:
+            # Anything that escapes the build phase (DB read, MinIO outage,
+            # HTTPException for cap breach) — release the tempfile before
+            # the exception unwinds the request.
+            spooled.close()
+            raise
 
-                # Standalone engagement evidence
-                for e in standalone_evidence:
-                    if e.include_in_report and e.filename:
-                        try:
-                            file_bytes = await storage_service.download_file(e.filename)
-                            safe_name = _safe_arcname(e.original_filename)
-                            if safe_name != (e.original_filename or ""):
-                                logger.warning(
-                                    "GHSA-fwvp: sanitized standalone evidence %s original_filename %r → %r for ZIP export",
-                                    e.id, e.original_filename, safe_name,
-                                )
-                            zf.writestr(f"attachments/engagement/{safe_name}", file_bytes)
-                        except Exception:
-                            pass
-
-        zip_buffer.seek(0)
+        spooled.seek(0)
         filename = f"Export_{safe_name}.zip"
-        return Response(
-            content=zip_buffer.getvalue(),
+        return StreamingResponse(
+            _stream_spooled_zip(spooled),
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     raise HTTPException(
