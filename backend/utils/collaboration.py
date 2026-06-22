@@ -383,16 +383,35 @@ class ConnectionManager:
             if resource_id in self.active_connections[resource_type]:
                 if websocket in self.active_connections[resource_type][resource_id]:
                     self.active_connections[resource_type][resource_id].remove(websocket)
-                    
+
                     # Clean up empty lists
                     if not self.active_connections[resource_type][resource_id]:
                         del self.active_connections[resource_type][resource_id]
-        
+
         user_info = self.connection_info.pop(websocket, None)
-        
-        # We can't await here directly if called from a non-async context, 
+
+        # We can't await here directly if called from a non-async context,
         # but in FastAPI disconnects are typically handled in the endpoint loop.
         return user_info
+
+    def _purge_socket_everywhere(self, websocket: WebSocket) -> None:
+        """Drop ``websocket`` from every channel it's registered in and from
+        ``connection_info``. Used by ``broadcast_to_resource`` when a send
+        fails: a socket dead on one channel is dead on all of them, but
+        before this helper the cleanup was per-channel and the same dead
+        socket would linger in any other channel it was subscribed to
+        until that channel's next broadcast. The lingering entries were
+        the leak the GHSA-c96m-c63f-3f2c follow-up flagged.
+        """
+        for r_type, channels in list(self.active_connections.items()):
+            for r_id, sockets in list(channels.items()):
+                if websocket in sockets:
+                    sockets.remove(websocket)
+                    if not sockets:
+                        del channels[r_id]
+            if not channels:
+                del self.active_connections[r_type]
+        self.connection_info.pop(websocket, None)
 
     async def broadcast_to_resource(
         self,
@@ -401,6 +420,28 @@ class ConnectionManager:
         message: dict,
         db: Optional[AsyncSession] = None,
     ):
+        # Fail-closed guard on the cross-engagement notification channel.
+        # ``dashboard:global`` is the only channel that uses per-recipient
+        # engagement-membership filtering at broadcast time (see
+        # ``gating_engagement`` below). Without a ``db`` session we can't
+        # run that filter, and the loop silently falls through to
+        # delivering the event to every subscriber regardless of which
+        # engagement they belong to — the exact disclosure shape the
+        # per-recipient gate was added to prevent (GHSA-pqj4-49q4-rw4f
+        # follow-up). ``create_activity_log`` is the only caller that
+        # uses this channel today and supplies ``db``, so this guard
+        # only fires when a *future* caller forgets the kwarg.
+        if (
+            resource_type == "dashboard"
+            and resource_id == "global"
+            and db is None
+        ):
+            raise ValueError(
+                "broadcast_to_resource('dashboard', 'global', ...) requires "
+                "a db session for the per-recipient engagement-membership "
+                "filter; refusing to broadcast unfiltered."
+            )
+
         if resource_type in self.active_connections:
             if resource_id in self.active_connections[resource_type]:
                 # Get current active users for this resource to include in presence updates
@@ -433,7 +474,10 @@ class ConnectionManager:
 
                 encoded_message = json.dumps(message)
                 dead_connections = []
-                for connection in self.active_connections[resource_type][resource_id]:
+                # Snapshot before iteration: the gating filter is async and
+                # other tasks may mutate `self.active_connections` while we
+                # await; iterating a list copy keeps the loop deterministic.
+                for connection in list(self.active_connections[resource_type][resource_id]):
                     if gating_engagement is not None:
                         info = self.connection_info.get(connection) or {}
                         recipient_id = info.get("id")
@@ -460,18 +504,15 @@ class ConnectionManager:
                             continue
                     try:
                         await connection.send_text(encoded_message)
-                    except:
+                    except Exception:
+                        # Send failed → socket is dead on every channel it's
+                        # registered in, not just this one. The
+                        # GHSA-c96m-c63f-3f2c follow-up: prune *all*
+                        # registrations now so the leak doesn't have to wait
+                        # for each individual channel to broadcast.
                         dead_connections.append(connection)
-                
-                # Prune dead connections
-                if dead_connections:
-                    for conn in dead_connections:
-                        if conn in self.active_connections[resource_type][resource_id]:
-                            self.active_connections[resource_type][resource_id].remove(conn)
-                        self.connection_info.pop(conn, None)
-                    
-                    # Clean up empty resource lists
-                    if not self.active_connections[resource_type][resource_id]:
-                        del self.active_connections[resource_type][resource_id]
+
+                for conn in dead_connections:
+                    self._purge_socket_everywhere(conn)
 
 manager = ConnectionManager()

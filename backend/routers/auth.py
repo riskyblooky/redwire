@@ -33,6 +33,27 @@ from auth import (
 from datetime import datetime, timedelta
 import os
 import uuid
+
+
+# Reserved usernames refused at the registration boundary. Belt-and-
+# suspenders defense alongside the GHSA-28f5-4wcg-9pwv "any admin exists?"
+# seeder gate: even if that gate fails open (regression, future refactor,
+# bug), an attacker can no longer squat on the configured ADMIN_USERNAME
+# during the brief window before first boot finishes seeding. The set is
+# rebuilt per-request rather than cached at import time so a deployment
+# that rotates ADMIN_USERNAME via env var picks up the new value on the
+# next register call.
+_BASE_RESERVED_USERNAMES = frozenset({
+    "admin", "administrator", "root", "system", "redwire",
+})
+
+
+def _reserved_usernames() -> frozenset[str]:
+    extra: set[str] = set()
+    configured = (os.environ.get("ADMIN_USERNAME") or "").strip().casefold()
+    if configured:
+        extra.add(configured)
+    return _BASE_RESERVED_USERNAMES | extra
 import logging
 from rate_limit import limiter
 
@@ -75,6 +96,17 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 @limiter.limit("3/minute")
 async def register(request: Request, user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """Register a new user."""
+    # GHSA-28f5-4wcg-9pwv follow-up: refuse the bootstrap admin username
+    # (and well-known aliases) at the registration boundary so the seeder
+    # gate isn't load-bearing on its own. UserCreate already runs the
+    # NFKC-normalize + casefold via the username validator, so the value
+    # we compare against the reserved set is in the same canonical form.
+    if user_data.username in _reserved_usernames():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That username is reserved.",
+        )
+
     # Check if username already exists
     result = await db.execute(select(User).where(User.username == user_data.username))
     if result.scalar_one_or_none():

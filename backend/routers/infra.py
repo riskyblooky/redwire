@@ -435,6 +435,17 @@ async def list_infra_vault(
     current_user: User = Depends(get_current_user),
 ):
     """List vault items for an infrastructure item."""
+    # GHSA-jw3p-gjp8-2cf3 follow-up: the FK cascade added in that fix
+    # means orphan rows can no longer accumulate, so this endpoint will
+    # return an empty list once the parent is deleted — but returning
+    # 200 for a deleted/never-existed parent is misleading and out of
+    # step with the rest of the router. Mirror the existence check used
+    # by every other /items/{item_id}/* handler.
+    if not await db.get(InfraItem, item_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Infrastructure item not found",
+        )
     await _check_vault_access(item_id, current_user, db)
 
     result = await db.execute(
