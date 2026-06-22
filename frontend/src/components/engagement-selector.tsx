@@ -44,8 +44,12 @@ export default function EngagementSelector() {
         }
     }, [pathname, selectedEngagementId, setSelectedEngagement]);
 
+    // PLANNING, IN_PROGRESS, REPORTING — the three "still in flight" states
+    // where the operator might want quick context-switching. COMPLETED /
+    // ON_HOLD / PROPOSED are deliberately excluded so the dropdown stays
+    // short; those live on the full engagements list page.
     const activeEngagements = engagements?.filter(
-        (eng) => eng.status === 'IN_PROGRESS' || eng.status === 'PLANNING'
+        (eng) => eng.status === 'IN_PROGRESS' || eng.status === 'PLANNING' || eng.status === 'REPORTING'
     ) || [];
 
     const handleValueChange = (value: string) => {
