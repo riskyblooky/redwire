@@ -130,8 +130,8 @@ function InfraCard({ item, onView, onDelete, canDelete }: {
             <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                            <Server className="h-4 w-4 text-primary" />
+                        <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20 shrink-0">
+                            <Server className="h-4 w-4 text-teal-400" />
                         </div>
                         <div className="min-w-0 flex-1">
                             <h3 className="text-sm font-bold text-white truncate" title={item.name}>{item.name}</h3>
@@ -386,7 +386,7 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
             <DialogContent className="bg-slate-900 border-slate-700 text-white sm:max-w-2xl max-h-[85vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                        <Server className="h-5 w-5 text-primary" />
+                        <Server className="h-5 w-5 text-teal-400" />
                         <span className="truncate" title={item.name}>{item.name}</span>
                     </DialogTitle>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">

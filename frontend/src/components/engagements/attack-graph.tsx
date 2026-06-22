@@ -26,7 +26,7 @@ import api from '@/lib/api';
 import {
     Monitor, AlertTriangle, ClipboardCheck, Sparkles,
     Loader2, Maximize2, Minimize2, LayoutDashboard, X, Eye, EyeOff, RefreshCw,
-    Crosshair, Plus, Trash2, Link, Download, BookMarked, Pencil, Check
+    Crosshair, Plus, Trash2, Link, Download, BookMarked, Pencil, Check, Server
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -130,6 +130,7 @@ const typeConfig: Record<string, { bg: string; border: string; text: string; ico
     finding: { bg: '#1f0a0a', border: '#ef4444', text: '#ef4444', icon: AlertTriangle, accent: 'bg-red-500/20 text-red-400' },
     cleanup: { bg: '#0d1a06', border: '#84cc16', text: '#84cc16', icon: Sparkles, accent: 'bg-lime-500/20 text-lime-400' },
     attacker: { bg: '#1a0d1f', border: '#a855f7', text: '#a855f7', icon: Crosshair, accent: 'bg-primary/20 text-primary' },
+    infra: { bg: '#06201d', border: '#2dd4bf', text: '#2dd4bf', icon: Server, accent: 'bg-teal-500/20 text-teal-300' },
 };
 
 // ── Custom Node ──
@@ -192,6 +193,7 @@ const nodeTypes = {
     finding: (props: any) => <GraphNode data={props.data} type="finding" />,
     cleanup: (props: any) => <GraphNode data={props.data} type="cleanup" />,
     attacker: (props: any) => <GraphNode data={props.data} type="attacker" />,
+    infra: (props: any) => <GraphNode data={props.data} type="infra" />,
 };
 
 // ── Layouts Popover ──
@@ -463,7 +465,7 @@ function DetailPanel({ node, onClose, onDeleteAttacker, onConnectAttacker, onDel
                 {data.subtitle && (
                     <div>
                         <p className="text-xs text-slate-500 uppercase tracking-wider mb-0.5">
-                            {type === 'asset' ? 'Identifier' : type === 'testcase' ? 'Category' : type === 'finding' ? 'Category' : type === 'attacker' ? 'Point of Presence' : 'Type'}
+                            {type === 'asset' ? 'Identifier' : type === 'testcase' ? 'Category' : type === 'finding' ? 'Category' : type === 'attacker' ? 'Point of Presence' : type === 'infra' ? 'Host / IP' : 'Type'}
                         </p>
                         <p className="text-sm text-slate-300">{data.subtitle}</p>
                     </div>
@@ -838,6 +840,7 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
             finding: { bg: '#fee2e2', border: '#ef4444', text: '#7f1d1d' },    // light red
             cleanup: { bg: '#ecfccb', border: '#84cc16', text: '#365314' },    // light lime
             attacker: { bg: '#f3e8ff', border: '#a855f7', text: '#581c87' },    // light purple
+            infra: { bg: '#ccfbf1', border: '#2dd4bf', text: '#134e4a' },    // light teal (matches mention-tag accent)
         };
         const drawioSeverityColors: Record<string, { bg: string; border: string }> = {
             critical: { bg: '#fee2e2', border: '#dc2626' },
@@ -1001,13 +1004,14 @@ ${edgeCells.join('\n')}
 
     // Counts for the legend
     const counts = useMemo(() => {
-        if (!graphData) return { assets: 0, testcases: 0, findings: 0, cleanup: 0, attackers: 0 };
+        if (!graphData) return { assets: 0, testcases: 0, findings: 0, cleanup: 0, attackers: 0, infra: 0 };
         return {
             assets: graphData.nodes.filter((n) => n.type === 'asset').length,
             testcases: graphData.nodes.filter((n) => n.type === 'testcase').length,
             findings: graphData.nodes.filter((n) => n.type === 'finding').length,
             cleanup: graphData.nodes.filter((n) => n.type === 'cleanup').length,
             attackers: graphData.nodes.filter((n) => n.type === 'attacker').length,
+            infra: graphData.nodes.filter((n) => n.type === 'infra').length,
         };
     }, [graphData, showUnlinked, linkedNodeIds]);
 
@@ -1069,12 +1073,19 @@ ${edgeCells.join('\n')}
                 <Panel position="top-left">
                     <div className="flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-lg px-3 py-2 shadow-xl">
                         {Object.entries(typeConfig).map(([type, cfg]) => {
-                            const countKey = type === 'testcase' ? 'testcases' : type === 'finding' ? 'findings' : type === 'asset' ? 'assets' : type === 'attacker' ? 'attackers' : 'cleanup';
+                            const countKey =
+                                type === 'testcase' ? 'testcases'
+                                : type === 'finding' ? 'findings'
+                                : type === 'asset' ? 'assets'
+                                : type === 'attacker' ? 'attackers'
+                                : type === 'infra' ? 'infra'
+                                : 'cleanup';
                             const count = counts[countKey as keyof typeof counts];
+                            const label = type === 'testcase' ? 'Tests' : type === 'infra' ? 'Infra' : type + 's';
                             return (
                                 <div key={type} className="flex items-center gap-1.5">
                                     <div className="w-2.5 h-2.5 rounded-sm" style={{ background: cfg.border }} />
-                                    <span className="text-[10px] text-slate-400 capitalize">{type === 'testcase' ? 'Tests' : type + 's'}</span>
+                                    <span className="text-[10px] text-slate-400 capitalize">{label}</span>
                                     <span className="text-[10px] font-bold text-slate-500">{count}</span>
                                 </div>
                             );

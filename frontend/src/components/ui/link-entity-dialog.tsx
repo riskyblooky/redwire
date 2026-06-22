@@ -34,7 +34,7 @@ const ALL_TABS: { key: LinkResourceType; label: string; icon: React.ElementType;
     { key: 'vault',     label: 'Vault',       icon: Key,    color: 'text-amber-400',   selectedBg: 'bg-amber-500',   selectedBorder: 'border-amber-500/30 bg-amber-500/5' },
     { key: 'cleanup',   label: 'Cleanup',     icon: Trash2, color: 'text-emerald-400', selectedBg: 'bg-emerald-500', selectedBorder: 'border-emerald-500/30 bg-emerald-500/5'},
     { key: 'intel',     label: 'Intel',       icon: Radar,  color: 'text-cyan-400',    selectedBg: 'bg-cyan-500',    selectedBorder: 'border-cyan-500/30 bg-cyan-500/5'   },
-    { key: 'infra',     label: 'Infra',       icon: Server, color: 'text-orange-400',  selectedBg: 'bg-orange-500',  selectedBorder: 'border-orange-500/30 bg-orange-500/5'},
+    { key: 'infra',     label: 'Infra',       icon: Server, color: 'text-teal-400',    selectedBg: 'bg-teal-500',    selectedBorder: 'border-teal-500/30 bg-teal-500/5'   },
 ];
 
 const EXCLUDED_TABS: Record<EntityType, LinkResourceType[]> = {

@@ -13,9 +13,11 @@ from models.cleanup_artifact import CleanupArtifact
 from models.associations import (
     FindingAsset, FindingTestCase, TestCaseAsset,
     CleanupArtifactFinding, CleanupArtifactTestCase, CleanupArtifactAsset,
+    InfraItemFinding, InfraItemTestCase,
 )
 from models.attack_graph_layout import AttackGraphLayout
 from models.attacker_node import AttackerNode, AttackerNodeEdge
+from models.infra_item import InfraItem
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.user import UserRole
@@ -207,6 +209,62 @@ async def get_attack_graph(
             "target": f"cleanup-{row.cleanup_artifact_id}",
             "label": "cleanup",
         })
+
+    # ── Infra Items (auto-surfaced by link) ──
+    # InfraItem is not engagement-scoped (it's a shared pool of attacker
+    # infrastructure — C2s, redirectors, jumpboxes — typically reused
+    # across engagements). To keep the graph engagement-scoped we surface
+    # only the infra items that are linked to a finding or testcase
+    # belonging to this engagement. New items appear automatically the
+    # first time a tester links them to an in-engagement record.
+    infra_finding_rows = (await db.execute(
+        select(InfraItemFinding.infra_item_id, InfraItemFinding.finding_id)
+        .join(Finding, InfraItemFinding.finding_id == Finding.id)
+        .where(Finding.engagement_id == engagement_id)
+    )).all()
+    infra_testcase_rows = (await db.execute(
+        select(InfraItemTestCase.infra_item_id, InfraItemTestCase.testcase_id)
+        .join(TestCase, InfraItemTestCase.testcase_id == TestCase.id)
+        .where(TestCase.engagement_id == engagement_id)
+    )).all()
+
+    in_play_infra_ids = {row.infra_item_id for row in infra_finding_rows} | {
+        row.infra_item_id for row in infra_testcase_rows
+    }
+    if in_play_infra_ids:
+        result = await db.execute(
+            select(
+                InfraItem.id, InfraItem.name, InfraItem.infra_type,
+                InfraItem.status, InfraItem.hostname, InfraItem.ip_address,
+            ).where(InfraItem.id.in_(in_play_infra_ids))
+        )
+        for row in result.all():
+            nodes.append({
+                "id": f"infra-{row.id}",
+                "type": "infra",
+                "data": {
+                    "label": row.name,
+                    "subtitle": row.hostname or row.ip_address or row.infra_type,
+                    "infraType": row.infra_type,
+                    "status": row.status,
+                    "entityId": row.id,
+                },
+            })
+
+        for row in infra_finding_rows:
+            edges.append({
+                "id": f"e-infra-{row.infra_item_id}-finding-{row.finding_id}",
+                "source": f"infra-{row.infra_item_id}",
+                "target": f"finding-{row.finding_id}",
+                "label": "enabled",
+            })
+        for row in infra_testcase_rows:
+            edges.append({
+                "id": f"e-infra-{row.infra_item_id}-tc-{row.testcase_id}",
+                "source": f"infra-{row.infra_item_id}",
+                "target": f"testcase-{row.testcase_id}",
+                "label": "enabled",
+            })
 
     # ── Attacker Nodes ──
     result = await db.execute(
@@ -758,6 +816,18 @@ async def create_attacker_edge(
     if not target_node_id:
         raise HTTPException(status_code=400, detail="target_node_id is required")
 
+    # The frontend posts the React Flow graph id ("testcase-<uuid>", etc.)
+    # which is also what `AttackerNodeEdge.target_node_id` stores (per its
+    # schema comment). Strip the "<type>-" prefix when we need the bare
+    # entity id for an FK lookup, but keep the prefixed form for storage
+    # so existing rows continue to render correctly.
+    _prefix = f"{target_node_type}-"
+    target_entity_id = (
+        target_node_id[len(_prefix):]
+        if target_node_id.startswith(_prefix)
+        else target_node_id
+    )
+
     # Verify the target node belongs to this engagement (mirrors vault.py's
     # cross-engagement guard). Without this an attacker could draw graph
     # edges from a same-engagement attacker node to a foreign testcase /
@@ -766,16 +836,50 @@ async def create_attacker_edge(
     from models.testcase import TestCase as _TC
     from models.finding import Finding as _Finding
     from models.asset import Asset as _Asset
-    _target_models = {"testcase": _TC, "finding": _Finding, "asset": _Asset}
+    from models.infra_item import InfraItem as _Infra
+    _target_models = {"testcase": _TC, "finding": _Finding, "asset": _Asset, "infra": _Infra}
     _model = _target_models.get(target_node_type)
     if _model is None:
         raise HTTPException(status_code=400, detail="Unsupported target_node_type")
     _target = (await db.execute(
-        select(_model).where(_model.id == target_node_id)
+        select(_model).where(_model.id == target_entity_id)
     )).scalar_one_or_none()
     if not _target:
         raise HTTPException(status_code=404, detail=f"{target_node_type.capitalize()} not found")
-    if getattr(_target, "engagement_id", None) != engagement_id:
+    if target_node_type == "infra":
+        # InfraItem is a shared pool with no engagement_id. Mirror the
+        # auto-surface rule from get_attack_graph: the infra item is
+        # "in play" for this engagement iff at least one of its links
+        # points at a finding or testcase scoped to this engagement.
+        # Without this check an attacker could draw an edge from a
+        # same-engagement attacker node to any infra item in the
+        # platform — pulling its hostname/IP/notes through graph reads.
+        linked_here = (await db.execute(
+            select(InfraItemFinding.infra_item_id)
+            .join(Finding, InfraItemFinding.finding_id == Finding.id)
+            .where(
+                InfraItemFinding.infra_item_id == target_entity_id,
+                Finding.engagement_id == engagement_id,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if linked_here is None:
+            linked_here = (await db.execute(
+                select(InfraItemTestCase.infra_item_id)
+                .join(TestCase, InfraItemTestCase.testcase_id == TestCase.id)
+                .where(
+                    InfraItemTestCase.infra_item_id == target_entity_id,
+                    TestCase.engagement_id == engagement_id,
+                ).limit(1)
+            )).scalar_one_or_none()
+        if linked_here is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Infra item is not linked to any finding or testcase in "
+                    "this engagement. Link it to one first, then draw the edge."
+                ),
+            )
+    elif getattr(_target, "engagement_id", None) != engagement_id:
         raise HTTPException(
             status_code=400,
             detail=f"{target_node_type.capitalize()} belongs to a different engagement",

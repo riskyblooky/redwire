@@ -550,7 +550,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                             <div className="space-y-1.5">
                                                 {infraItems.map((item: any) => (
                                                     <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                        <Package className="h-3.5 w-3.5 text-orange-400 shrink-0" />
+                                                        <Server className="h-3.5 w-3.5 text-teal-400 shrink-0" />
                                                         <span className="text-xs font-medium text-white truncate">{item.name}</span>
                                                     </div>
                                                 ))}

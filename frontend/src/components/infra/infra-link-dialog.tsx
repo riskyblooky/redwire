@@ -62,7 +62,7 @@ export function InfraLinkDialog({ open, onOpenChange, entityType, entityId }: In
             <DialogContent className="bg-slate-900 border-slate-700 text-white sm:max-w-lg max-h-[80vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                        <Server className="h-5 w-5 text-orange-400" />
+                        <Server className="h-5 w-5 text-teal-400" />
                         Link Infrastructure
                     </DialogTitle>
                     <DialogDescription className="text-slate-400">
@@ -84,7 +84,7 @@ export function InfraLinkDialog({ open, onOpenChange, entityType, entityId }: In
                 <div className="flex-1 overflow-y-auto space-y-1 min-h-0 max-h-[400px]">
                     {isLoading ? (
                         <div className="flex justify-center py-8">
-                            <Loader2 className="h-6 w-6 animate-spin text-orange-400" />
+                            <Loader2 className="h-6 w-6 animate-spin text-teal-400" />
                         </div>
                     ) : items.length === 0 ? (
                         <div className="text-center py-8 text-slate-500 text-sm">
@@ -101,11 +101,11 @@ export function InfraLinkDialog({ open, onOpenChange, entityType, entityId }: In
                                     className={cn(
                                         'w-full text-left p-3 rounded-lg border transition-colors flex items-center gap-3',
                                         alreadyLinked
-                                            ? 'border-orange-500/30 bg-orange-500/5 opacity-60 cursor-not-allowed'
-                                            : 'border-slate-800 hover:border-orange-500/30 hover:bg-slate-800/50 cursor-pointer'
+                                            ? 'border-teal-500/30 bg-teal-500/5 opacity-60 cursor-not-allowed'
+                                            : 'border-slate-800 hover:border-teal-500/30 hover:bg-slate-800/50 cursor-pointer'
                                     )}
                                 >
-                                    <Server className="h-4 w-4 text-orange-400 shrink-0" />
+                                    <Server className="h-4 w-4 text-teal-400 shrink-0" />
                                     <div className="flex-1 min-w-0">
                                         <span className="text-xs font-bold text-white block truncate">{item.name}</span>
                                         <div className="flex items-center gap-2 mt-0.5">
@@ -122,7 +122,7 @@ export function InfraLinkDialog({ open, onOpenChange, entityType, entityId }: In
                                         </div>
                                     </div>
                                     {alreadyLinked && (
-                                        <Badge className="text-[8px] bg-orange-500/10 text-orange-400 border-none">Linked</Badge>
+                                        <Badge className="text-[8px] bg-teal-500/10 text-teal-400 border-none">Linked</Badge>
                                     )}
                                 </button>
                             );

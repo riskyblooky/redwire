@@ -228,7 +228,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                         <LinkTooltip icon={<Paperclip className="h-3.5 w-3.5" />} count={(finding.evidence || []).length} items={(finding.evidence || []).map((e: any) => ({ name: e.original_filename }))} label="Evidence" colorClass="text-pink-400" />
                         <LinkTooltip icon={<StickyNote className="h-3.5 w-3.5" />} count={noteItems.length} items={noteItems.map((n: any) => ({ name: n.title, href: `/engagements/${engagementId}?tab=notes&noteId=${n.id}` }))} label="Notes" colorClass="text-teal-400" />
                         <LinkTooltip icon={<Radar className="h-3.5 w-3.5" />} count={findingIntelItems.length} items={findingIntelItems.map((i: any) => ({ name: i.title || i.value, onClick: () => setIntelDetailId(i.id) }))} label="Intel" colorClass="text-violet-400" />
-                        <LinkTooltip icon={<Server className="h-3.5 w-3.5" />} count={findingInfraItems.length} items={findingInfraItems.map((i: any) => ({ name: i.name }))} label="Infrastructure" colorClass="text-orange-400" />
+                        <LinkTooltip icon={<Server className="h-3.5 w-3.5" />} count={findingInfraItems.length} items={findingInfraItems.map((i: any) => ({ name: i.name }))} label="Infrastructure" colorClass="text-teal-400" />
                         {(finding.assets || []).length === 0 && (finding.vault_items || []).length === 0 && (finding.cleanup_artifacts || []).length === 0 && (finding.evidence || []).length === 0 && noteItems.length === 0 && findingIntelItems.length === 0 && findingInfraItems.length === 0 && (
                             <span className="text-slate-600 text-sm">—</span>
                         )}
