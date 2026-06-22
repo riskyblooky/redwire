@@ -337,6 +337,28 @@ async def lifespan(app):
         # Never block startup on a seed failure — log and continue.
         print(f"[seed] WARN: seed_all_defaults failed: {e}")
 
+    # ── One-shot vault-file at-rest encryption backfill ──
+    # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up. Walk any vault FILE rows
+    # that were uploaded before RDW-057 (still plaintext in MinIO) and
+    # encrypt them in place. Idempotent — once all rows are at
+    # encryption_version=1, the helper exits before doing any I/O. Wrap
+    # in a broad except so a stuck MinIO doesn't block the boot loop.
+    try:
+        from utils.vault_migration import count_legacy_blobs, backfill_legacy_vault_blobs
+        async with AsyncSessionLocal() as _db:
+            pending = await count_legacy_blobs(_db)
+            if pending:
+                print(f"[vault-encryption] backfilling {pending} legacy vault file(s)...")
+                stats = await backfill_legacy_vault_blobs(_db)
+                print(
+                    f"[vault-encryption] done: checked={stats['checked']} "
+                    f"already_encrypted={stats['already_encrypted']} "
+                    f"encrypted_now={stats['encrypted_now']} "
+                    f"skipped={stats['skipped']}"
+                )
+    except Exception as e:
+        print(f"[vault-encryption] WARN: backfill failed: {e}")
+
     bloom_task = asyncio.create_task(_load_bloom())
     intel_task = asyncio.create_task(_refresh_intel_feeds_background())
     yield

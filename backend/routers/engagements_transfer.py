@@ -557,10 +557,22 @@ async def export_engagement(
                     pass  # skip missing files
 
         # attachments — vault files
+        # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: MinIO blob may be
+        # Fernet ciphertext (vault items uploaded post-RDW-057) or
+        # legacy plaintext. Always run through decrypt_bytes — it
+        # passes plaintext through untouched and decrypts ciphertext.
+        # The export ZIP must carry plaintext to match the existing
+        # "exports ship plaintext with a banner" semantics for the
+        # vault secret fields (username / password / note); shipping
+        # ciphertext would force the importing instance to share our
+        # VAULT_ENCRYPTION_KEY, which is the opposite of the design.
+        from utils.vault_crypto import decrypt_bytes as _decrypt_vault_bytes
         for vi in vault_items:
             if vi.file_path:
                 try:
                     file_bytes = await storage_service.download_file(vi.file_path)
+                    if file_bytes is not None:
+                        file_bytes = _decrypt_vault_bytes(file_bytes)
                     zf.writestr(f"attachments/{vi.file_path}", file_bytes)
                 except Exception:
                     pass
@@ -1029,12 +1041,33 @@ async def import_engagement(
             new_vault_path = None
             if old_path:
                 ext = os.path.splitext(old_path)[1] if old_path else ""
-                new_vault_path = f"{uuid.uuid4()}{ext}"
+                # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: force the .enc
+                # suffix so the new blob has the same on-disk shape as
+                # native uploads. Helps the operator visually distinguish
+                # encrypted blobs from any legacy plaintext still in
+                # MinIO (pre-RDW-057) and matches the .enc convention
+                # in routers/vault.py::upload_vault_file.
+                if not ext.endswith(".enc"):
+                    ext = (ext or "") + ".enc"
+                new_vault_path = f"vault/{uuid.uuid4()}{ext}"
                 zip_path = f"attachments/{old_path}"
                 if zip_path in zf.namelist():
                     file_bytes = zf.read(zip_path)
                     try:
-                        await storage_service.upload_file(file_bytes, new_vault_path, content_type=None)
+                        # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: the export
+                        # path decrypts before zipping, so the archive
+                        # carries plaintext. Encrypt under THIS instance's
+                        # VAULT_ENCRYPTION_KEY before persisting to MinIO.
+                        # Without this, imported vault files would sit in
+                        # the destination bucket as plaintext — the exact
+                        # bug the at-rest fix exists to close.
+                        from utils.vault_crypto import encrypt_bytes as _encrypt_vault_bytes
+                        ciphertext = _encrypt_vault_bytes(file_bytes)
+                        await storage_service.upload_file(
+                            ciphertext,
+                            new_vault_path,
+                            content_type="application/octet-stream",
+                        )
                     except Exception:
                         # GHSA-rcjp-27mp-v69m: drop the file reference rather
                         # than persisting the attacker-supplied path. VaultItem
@@ -1062,6 +1095,9 @@ async def import_engagement(
                 file_path=new_vault_path,
                 filename=vi.get("filename"),
                 description=vi.get("description"),
+                # New row's blob just got encrypted above (if there was
+                # one), so it's at the current scheme.
+                encryption_version=1,
                 created_by=resolve_user(vi.get("created_by")),
                 updated_by=resolve_user(vi.get("updated_by")),
                 created_at=parse_dt(vi.get("created_at")) or datetime.utcnow(),

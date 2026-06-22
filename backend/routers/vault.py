@@ -227,6 +227,9 @@ async def upload_vault_file(
         filename=file.filename,
         file_path=storage_key,
         description=description,
+        # Explicit so future schemes can change the default safely —
+        # this row's blob is at the current Fernet scheme.
+        encryption_version=1,
         created_by=current_user.id
     )
     db.add(db_item)
