@@ -318,6 +318,14 @@ async def lifespan(app):
     # ── Plugin Discovery ──
     print("\n🔌 Discovering plugins...")
     plugin_registry.discover("plugins")
+    # Wire the event-bus enabled-gate before plugins register their
+    # subscribers so the predicate is in place from the very first
+    # emit(). Closes over the live registry so a runtime toggle
+    # takes effect immediately. GHSA-4jrh-3m3r-p448 follow-up.
+    def _plugin_enabled(pid: str) -> bool:
+        p = plugin_registry.plugins.get(pid)
+        return bool(p and p.manifest.enabled and not p.error)
+    event_bus.set_plugin_enabled_check(_plugin_enabled)
     plugin_registry.load_all(app=app, event_bus=event_bus, db_factory=AsyncSessionLocal)
     plugin_registry.mount_routes(app)
     print(f"🔌 {len(plugin_registry.plugins)} plugin(s) loaded\n")
@@ -372,10 +380,11 @@ async def lifespan(app):
 
 
 # Create FastAPI app
+from version import VERSION as _PLATFORM_VERSION
 app = FastAPI(
     title="RedWire - Red Team Reporting Platform",
     description="Secure platform for red team reporting and operations management",
-    version="1.0.0",
+    version=_PLATFORM_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_tags=openapi_tags,

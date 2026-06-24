@@ -33,6 +33,28 @@ class EventBus:
     def __init__(self):
         self._handlers: dict[str, list[Callable]] = defaultdict(list)
         self._plugin_handlers: dict[str, list[tuple[str, Callable]]] = defaultdict(list)
+        # Reverse lookup: handler → owning plugin_id. Populated when
+        # the handler is registered via ``on()`` / ``register()`` with
+        # a plugin_id. Used at emit time by the enabled-gate (below)
+        # so a disabled plugin's subscribers don't fire — mirrors the
+        # route-gate pattern from plugin_loader.mount_routes.
+        # GHSA-4jrh-3m3r-p448 follow-up.
+        self._handler_owner: dict[int, str] = {}
+        # Injected predicate: ``plugin_id -> bool`` (True = enabled).
+        # Set by main.py at startup so the bus doesn't have to import
+        # ``plugin_registry`` (which would be circular through
+        # plugin loader → setup() → event_bus). Default to "everyone
+        # enabled" so non-plugin handlers (core code, tests) keep
+        # firing without any setup.
+        self._enabled_check: Callable[[str], bool] = lambda _pid: True
+
+    def set_plugin_enabled_check(self, predicate: Callable[[str], bool]) -> None:
+        """Wire the per-plugin enabled predicate. Called once at
+        startup with a closure over the live plugin_registry; the
+        closure reads ``manifest.enabled`` on every dispatch so the
+        admin toggle takes effect immediately, no re-subscribe.
+        GHSA-4jrh-3m3r-p448 follow-up."""
+        self._enabled_check = predicate
 
     def on(self, event_type: str, plugin_id: str | None = None):
         """Decorator to register a handler for an event type.
@@ -43,6 +65,7 @@ class EventBus:
             self._handlers[event_type].append(func)
             if plugin_id:
                 self._plugin_handlers[plugin_id].append((event_type, func))
+                self._handler_owner[id(func)] = plugin_id
             return func
         return decorator
 
@@ -51,6 +74,7 @@ class EventBus:
         self._handlers[event_type].append(handler)
         if plugin_id:
             self._plugin_handlers[plugin_id].append((event_type, handler))
+            self._handler_owner[id(handler)] = plugin_id
 
     def unregister_plugin(self, plugin_id: str):
         """Remove all handlers registered by a specific plugin."""
@@ -59,9 +83,18 @@ class EventBus:
                 self._handlers[event_type].remove(handler)
             except ValueError:
                 pass
+            self._handler_owner.pop(id(handler), None)
 
     async def emit(self, event_type: str, data: dict[str, Any]):
-        """Fire all handlers for exact match + wildcard patterns."""
+        """Fire all handlers for exact match + wildcard patterns.
+
+        GHSA-4jrh-3m3r-p448 follow-up: subscribers owned by a plugin
+        whose ``enabled`` flag is False are filtered out here so a
+        toggle-off via ``PUT /plugins/{id}/toggle`` actually silences
+        the plugin's event reactions (previously the routes went 503
+        but the listeners kept firing). Core-code subscribers (no
+        owning plugin_id) always fire.
+        """
         handlers = list(self._handlers.get(event_type, []))
 
         # Check wildcard handlers (e.g. 'asset.*' matches 'asset.created')
@@ -73,12 +106,21 @@ class EventBus:
         # Global wildcard
         handlers.extend(self._handlers.get("*", []))
 
-        if not handlers:
+        # Filter out subscribers whose owning plugin is currently
+        # toggled off. Non-plugin handlers pass through unchanged.
+        active = []
+        for h in handlers:
+            owner = self._handler_owner.get(id(h))
+            if owner is None:
+                active.append(h)
+            elif self._enabled_check(owner):
+                active.append(h)
+        if not active:
             return
 
         # Fire all handlers concurrently, don't let one failure kill others
         results = await asyncio.gather(
-            *[self._safe_call(h, event_type, data) for h in handlers],
+            *[self._safe_call(h, event_type, data) for h in active],
             return_exceptions=True,
         )
         for r in results:

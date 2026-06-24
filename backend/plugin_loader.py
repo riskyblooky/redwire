@@ -150,11 +150,41 @@ class PluginRegistry:
         return discovered
 
     def load_all(self, app: FastAPI, event_bus, db_factory):
-        """Import and initialize all discovered plugins."""
+        """Import and initialize all discovered plugins.
+
+        Two gates run before ``_load_plugin`` actually exec's the
+        plugin module:
+          - ``min_redwire_version`` — refuses to load a plugin
+            authored against a future API. GHSA-2rv7 follow-up.
+          - Signature verification under PLUGIN_VERIFY=preferred /
+            required. Default mode (off) preserves current loading
+            behaviour for in-tree plugins. GHSA-2rv7 follow-up.
+        """
+        from version import VERSION, version_meets
+        from utils.plugin_signature import gate_plugin_load
+
         for plugin_id, plugin in self.plugins.items():
             if not plugin.manifest.enabled:
                 print(f"  ⏸️  Plugin '{plugin.manifest.name}' is disabled, skipping")
                 continue
+
+            # Version gate
+            if not version_meets(plugin.manifest.min_redwire_version, VERSION):
+                plugin.error = (
+                    f"plugin requires RedWire >= {plugin.manifest.min_redwire_version} "
+                    f"but this instance is {VERSION}"
+                )
+                print(f"  ❌ {plugin.manifest.name}: {plugin.error}")
+                continue
+
+            # Signature gate
+            plugin_dir = Path(self._plugins_dir) / plugin.id
+            should_load, reason = gate_plugin_load(plugin_dir, plugin.id)
+            if not should_load:
+                plugin.error = reason or "signature gate refused load"
+                print(f"  ❌ {plugin.manifest.name}: {plugin.error}")
+                continue
+
             try:
                 self._load_plugin(plugin, app, event_bus, db_factory)
                 print(f"  ✅ Loaded plugin: {plugin.manifest.name}")
@@ -243,27 +273,43 @@ class PluginRegistry:
         )
 
     def _load_plugin(self, plugin: LoadedPlugin, app: FastAPI, event_bus, db_factory):
-        """Import plugin module and call its setup function."""
+        """Import plugin module and call its setup function.
+
+        GHSA-2rv7-jv5j-m4jg follow-up: loads each plugin as a proper
+        Python package via ``spec_from_file_location(...,
+        submodule_search_locations=[plugin_dir])`` and does NOT touch
+        ``sys.path``. Result: a plugin's internal modules import each
+        other as relatives (``from .servicenow import ...``) and
+        modules from one plugin can't accidentally satisfy
+        ``import x`` in another plugin or in the backend. Plugin
+        uninstall fully unloads without a path-cleanup step.
+
+        Bare ``from servicenow import ...`` no longer works — plugin
+        authors use relative imports going forward. The two in-tree
+        plugins were migrated as part of this commit.
+        """
         plugin_dir = Path(self._plugins_dir) / plugin.id
-
-        # Add plugin directory to sys.path so a plugin's own internal
-        # modules can import each other by short name. Append rather than
-        # prepend so backend / stdlib modules always win name collisions —
-        # a plugin shipping `auth.py` / `permissions.py` / `jwt.py` no
-        # longer shadows the real module (GHSA-2rv7-jv5j-m4jg).
         plugin_dir_str = str(plugin_dir.resolve())
-        if plugin_dir_str not in sys.path:
-            sys.path.append(plugin_dir_str)
+        pkg_name = f"plugins.{plugin.id}"
 
-        # Import __init__.py
+        # Import __init__.py as a PACKAGE (note submodule_search_locations).
         init_path = plugin_dir / "__init__.py"
         if init_path.exists():
             spec = importlib.util.spec_from_file_location(
-                f"plugins.{plugin.id}", str(init_path)
+                pkg_name,
+                str(init_path),
+                submodule_search_locations=[plugin_dir_str],
             )
             module = importlib.util.module_from_spec(spec)
-            sys.modules[f"plugins.{plugin.id}"] = module
-            spec.loader.exec_module(module)
+            sys.modules[pkg_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                # Best-effort cleanup so a failed exec doesn't leave a
+                # half-initialised package in sys.modules to confuse
+                # later imports.
+                sys.modules.pop(pkg_name, None)
+                raise
             plugin.module = module
 
             # Call setup() if it exists
@@ -279,11 +325,19 @@ class PluginRegistry:
         if plugin.manifest.provides.get("routes", False):
             router_path = plugin_dir / "router.py"
             if router_path.exists():
+                router_mod_name = f"{pkg_name}.router"
                 spec = importlib.util.spec_from_file_location(
-                    f"plugins.{plugin.id}.router", str(router_path)
+                    router_mod_name,
+                    str(router_path),
+                    submodule_search_locations=[plugin_dir_str],
                 )
                 router_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(router_module)
+                sys.modules[router_mod_name] = router_module
+                try:
+                    spec.loader.exec_module(router_module)
+                except Exception:
+                    sys.modules.pop(router_mod_name, None)
+                    raise
                 if hasattr(router_module, "router"):
                     plugin.router = router_module.router
 
