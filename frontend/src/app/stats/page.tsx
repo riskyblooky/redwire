@@ -635,14 +635,18 @@ export default function StatsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {clientStats?.clients.map((c) => (
-                                                    <tr key={c.client} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                                                {clientStats?.clients.map((c, idx) => {
+                                                    // Client name is null in global stats mode for non-admins.
+                                                    const label = c.client ?? '—';
+                                                    const initial = (c.client?.[0] ?? '·').toUpperCase();
+                                                    return (
+                                                    <tr key={c.client ?? `anon-${idx}`} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                                                         <td className="py-2.5 px-3">
                                                             <div className="flex items-center gap-2">
                                                                 <div className="h-7 w-7 rounded-lg bg-violet-500/10 flex items-center justify-center text-[11px] text-violet-400 font-bold shrink-0">
-                                                                    {c.client.charAt(0).toUpperCase()}
+                                                                    {initial}
                                                                 </div>
-                                                                <span className="text-white font-medium">{c.client}</span>
+                                                                <span className="text-white font-medium">{label}</span>
                                                             </div>
                                                         </td>
                                                         <td className="text-center py-2.5 px-2 text-primary font-bold">{c.engagement_count}</td>
@@ -667,7 +671,8 @@ export default function StatsPage() {
                                                             </div>
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>
@@ -777,19 +782,23 @@ export default function StatsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {operators?.operators.map((op) => (
-                                                    <tr key={op.user_id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                                                {operators?.operators.map((op, idx) => {
+                                                    // username / full_name are null in global stats mode for non-admins.
+                                                    const label = op.full_name || op.username || '—';
+                                                    const initial = (op.full_name?.[0] || op.username?.[0] || '·').toUpperCase();
+                                                    return (
+                                                    <tr key={op.user_id ?? `anon-${idx}`} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                                                         <td className="py-2.5 px-3">
                                                             <div className="flex items-center gap-2">
                                                                 {op.profile_photo ? (
                                                                     <img src={getAvatarUrl(op.profile_photo)} className="h-6 w-6 rounded-full object-cover" alt="" />
                                                                 ) : (
                                                                     <div className="h-6 w-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-bold">
-                                                                        {(op.full_name || op.username).charAt(0).toUpperCase()}
+                                                                        {initial}
                                                                     </div>
                                                                 )}
                                                                 <div>
-                                                                    <span className="text-white font-medium">{op.full_name || op.username}</span>
+                                                                    <span className="text-white font-medium">{label}</span>
                                                                     <span className="text-slate-600 ml-1.5 text-[10px]">{op.role}</span>
                                                                 </div>
                                                             </div>
@@ -808,7 +817,8 @@ export default function StatsPage() {
                                                             {op.last_active ? new Date(op.last_active).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>

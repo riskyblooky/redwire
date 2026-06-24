@@ -68,6 +68,7 @@ import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialo
 
 import { RegistrationCodeManagement } from '@/components/admin/registration-codes';
 import { PermissionsManagement } from '@/components/admin/permissions-management';
+import { StatsScopeSettings } from '@/components/admin/stats-scope-settings';
 import { TypeManagement } from '@/components/admin/type-management';
 import { AuthSettingsManagement } from '@/components/admin/auth-settings';
 import { ApiTokenManagement } from '@/components/admin/api-token-management';
@@ -510,6 +511,7 @@ export default function AdminPage() {
                     </TabsContent>
 
                     <TabsContent value="permissions" className="space-y-6">
+                        <StatsScopeSettings />
                         <PermissionsManagement />
                     </TabsContent>
 

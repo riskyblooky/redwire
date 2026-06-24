@@ -137,6 +137,96 @@ def scope_to_assignments(query, column, engagement_id, is_admin, allowed_eng_sub
     return query
 
 
+# ── stats-page scope toggle ──────────────────────────────────────────
+#
+# The post-GHSA-ffmc stats endpoints scope counts to the caller's assigned
+# engagements. An admin can flip the platform-wide STATS_SCOPE_MODE setting
+# to "global" so non-admin operators see platform-wide aggregates instead.
+# To make global-mode safe by default, non-admin responses in global mode
+# are *anonymised*: engagement/client/user names are stripped, only counts
+# and aggregates remain. Scoped mode keeps full identifiers since the data
+# is already restricted to the caller's own engagements.
+
+_STATS_SCOPE_MODE_KEY = "STATS_SCOPE_MODE"
+_STATS_SCOPE_MODE_DEFAULT = "global"
+_STATS_SCOPE_MODE_VALID = {"global", "scoped"}
+
+
+async def get_stats_scope_mode(db: AsyncSession) -> str:
+    """Return the current stats-scope mode ("global" or "scoped").
+
+    Defaults to "global" if the key isn't set yet. Unknown values fall
+    back to the default rather than letting a typo lock the page.
+    """
+    from models.auth_settings import AuthSetting  # avoid import cycle
+
+    result = await db.execute(
+        select(AuthSetting.value).where(AuthSetting.key == _STATS_SCOPE_MODE_KEY)
+    )
+    raw = result.scalar_one_or_none()
+    if raw and raw.strip().lower() in _STATS_SCOPE_MODE_VALID:
+        return raw.strip().lower()
+    return _STATS_SCOPE_MODE_DEFAULT
+
+
+async def apply_stats_scope(
+    engagement_id: Optional[str],
+    db: AsyncSession,
+    current_user,
+):
+    """Resolve the scoping context for a stats/analytics endpoint.
+
+    Returns ``(is_admin_effective, allowed_eng_subq, strip_identifiers)``:
+      - ``is_admin_effective`` — feed straight into ``scope_to_assignments``.
+        True for actual admins, also True for non-admins when the toggle is
+        in "global" mode (their query returns platform-wide counts).
+      - ``allowed_eng_subq`` — same shape as ``resolve_engagement_scope``.
+      - ``strip_identifiers`` — True when the caller is a non-admin in
+        global mode; the handler MUST null out engagement/client/user names
+        before returning so platform-wide counts don't leak identities.
+
+    Admins always see full data. ``engagement_id`` narrowing still 403s
+    a non-admin who isn't on that engagement, regardless of mode — the
+    mode only affects the no-engagement-supplied path.
+    """
+    is_admin = current_user.role in _ADMIN_ROLES
+
+    if engagement_id and not is_admin:
+        member = await db.execute(
+            select(EngagementAssignment.user_id).where(
+                EngagementAssignment.user_id == current_user.id,
+                EngagementAssignment.engagement_id == engagement_id,
+            )
+        )
+        if not member.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this engagement.",
+            )
+
+    allowed_eng_subq = (
+        select(EngagementAssignment.engagement_id)
+        .where(EngagementAssignment.user_id == current_user.id)
+        .scalar_subquery()
+    )
+
+    if is_admin:
+        return True, allowed_eng_subq, False
+
+    # Non-admin path. If they pinned an engagement_id they own, scope
+    # tightly to it (the mode is irrelevant). Otherwise consult the mode.
+    if engagement_id:
+        return False, allowed_eng_subq, False
+
+    mode = await get_stats_scope_mode(db)
+    if mode == "global":
+        # Bypass the scope filter (is_admin_effective=True) but flag
+        # the handler to strip names before returning.
+        return True, allowed_eng_subq, True
+    # scoped mode — behave exactly like resolve_engagement_scope.
+    return False, allowed_eng_subq, False
+
+
 def can_modify_resource(resource_owner_id: str, current_user, engagement_role: Optional[str] = None) -> bool:
     """Check if user can modify a resource."""
     # Admins and Team Leads can modify anything

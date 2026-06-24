@@ -565,3 +565,83 @@ async def delete_engagement_type(
     await db.commit()
     return None
 
+
+# ── stats scope-mode toggle ─────────────────────────────────────────
+#
+# Platform-wide knob controlling whether non-admin callers of the
+# /analytics/* and /stats/* endpoints see aggregates across every
+# engagement ("global") or only those they're assigned to ("scoped").
+# In global mode, identifying fields are stripped from the responses
+# so platform-wide counts don't leak engagement / client / user names.
+
+from models.auth_settings import AuthSetting
+from auth.rbac import _STATS_SCOPE_MODE_KEY, _STATS_SCOPE_MODE_VALID, get_stats_scope_mode
+
+
+class StatsScopeModeResponse(BaseModel):
+    mode: str
+
+
+class StatsScopeModeUpdate(BaseModel):
+    mode: str = Field(..., max_length=16)
+
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v not in _STATS_SCOPE_MODE_VALID:
+            raise ValueError(f"mode must be one of {sorted(_STATS_SCOPE_MODE_VALID)}")
+        return v
+
+
+@router.get(
+    "/settings/stats-scope-mode",
+    response_model=StatsScopeModeResponse,
+    dependencies=[Depends(require_roles(ADMIN_ROLES))],
+)
+async def read_stats_scope_mode(
+    db: AsyncSession = Depends(get_db),
+):
+    return StatsScopeModeResponse(mode=await get_stats_scope_mode(db))
+
+
+@router.put(
+    "/settings/stats-scope-mode",
+    response_model=StatsScopeModeResponse,
+    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+)
+async def update_stats_scope_mode(
+    payload: StatsScopeModeUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(AuthSetting).where(AuthSetting.key == _STATS_SCOPE_MODE_KEY)
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        row.value = payload.mode
+        row.updated_by = current_user.id
+    else:
+        db.add(AuthSetting(
+            key=_STATS_SCOPE_MODE_KEY,
+            value=payload.mode,
+            is_encrypted=False,
+            updated_by=current_user.id,
+        ))
+    await db.commit()
+
+    from utils.collaboration import create_activity_log
+    await create_activity_log(
+        db=db,
+        engagement_id=None,
+        user_id=current_user.id,
+        action="updated_setting",
+        resource_type="auth_setting",
+        resource_id=_STATS_SCOPE_MODE_KEY,
+        resource_name="Stats scope mode",
+        details=f"Stats scope mode set to '{payload.mode}'",
+    )
+
+    return StatsScopeModeResponse(mode=payload.mode)
+

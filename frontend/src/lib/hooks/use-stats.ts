@@ -23,7 +23,9 @@ interface SeverityDistribution {
 }
 
 interface UserActivity {
-    username: string;
+    // username / full_name / profile_photo are nullable: stripped in
+    // global stats mode for non-admin callers (see STATS_SCOPE_MODE).
+    username: string | null;
     full_name: string | null;
     profile_photo: string | null;
     role: string;
@@ -51,8 +53,9 @@ interface EngagementType {
 }
 
 interface EngagementPerformance {
-    engagement: string;
-    client: string;
+    // engagement + client are nullable in global stats mode for non-admins.
+    engagement: string | null;
+    client: string | null;
     findings_count: number;
     avg_cvss: number;
 }
@@ -60,12 +63,12 @@ interface EngagementPerformance {
 interface EngagementMetrics {
     avg_duration_days: number;
     per_engagement: EngagementPerformance[];
-    by_client: { client: string; count: number }[];
+    by_client: { client: string | null; count: number }[];
 }
 
 interface OperatorPerformance {
-    user_id: string;
-    username: string;
+    user_id: string | null;
+    username: string | null;
     full_name: string | null;
     profile_photo: string | null;
     role: string;
@@ -214,7 +217,7 @@ export function useCleanupStats(params?: { startDate?: string; endDate?: string;
 }
 
 interface ClientStat {
-    client: string;
+    client: string | null;
     engagement_count: number;
     avg_duration_days: number;
     total_findings: number;

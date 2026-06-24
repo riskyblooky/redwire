@@ -9,7 +9,7 @@ from models.user import User
 from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
 from models.associations import EngagementAssignment
 from auth.dependencies import get_current_user
-from auth.rbac import resolve_engagement_scope, scope_to_assignments
+from auth.rbac import apply_stats_scope, scope_to_assignments
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -25,14 +25,17 @@ async def get_dashboard_stats(
     active_statuses = [EngagementStatus.IN_PROGRESS, EngagementStatus.PLANNING, EngagementStatus.REPORTING]
 
     # Resolve scoping context up-front. For non-admin callers every aggregate
-    # query below is restricted to engagements they're assigned to; if they
-    # supply an engagement_id they aren't on, this 403s.
-    is_admin, allowed_eng_subq = await resolve_engagement_scope(
+    # query below is restricted to engagements they're assigned to UNLESS the
+    # admin has flipped STATS_SCOPE_MODE to "global" — in which case the
+    # caller sees platform-wide counts but identifying fields are stripped
+    # from list-shaped responses below (top_findings, upcoming_engagements,
+    # recent_activity) to keep names from leaking.
+    is_admin_effective, allowed_eng_subq, strip_identifiers = await apply_stats_scope(
         engagement_id, db, current_user
     )
 
     def _eng_filter(query, column=Finding.engagement_id):
-        return scope_to_assignments(query, column, engagement_id, is_admin, allowed_eng_subq)
+        return scope_to_assignments(query, column, engagement_id, is_admin_effective, allowed_eng_subq)
 
     # Active engagements
     active_eng_query = _eng_filter(
@@ -113,11 +116,17 @@ async def get_dashboard_stats(
     top_findings_db = top_findings_result.scalars().all()
     top_findings = [{
         "id": f.id,
-        "title": f.title,
+        # In global-mode stats for non-admins, strip identifying fields
+        # so platform-wide counts don't leak finding titles / engagement
+        # names across teams. Admins and engagement-scoped callers see
+        # full data.
+        "title": None if strip_identifiers else f.title,
         "severity": f.severity.value if f.severity else None,
         "status": f.status.value if f.status else None,
-        "engagement_id": f.engagement_id,
-        "engagement_name": f.engagement.name if f.engagement else None,
+        "engagement_id": None if strip_identifiers else f.engagement_id,
+        "engagement_name": None if strip_identifiers else (
+            f.engagement.name if f.engagement else None
+        ),
         "created_at": f.created_at.isoformat() if f.created_at else None,
     } for f in top_findings_db]
 
@@ -192,9 +201,9 @@ async def get_dashboard_stats(
     upcoming_result = await db.execute(upcoming_query)
     upcoming_db = upcoming_result.scalars().all()
     upcoming_engagements = [{
-        "id": e.id,
-        "name": e.name,
-        "client_name": e.client_name,
+        "id": None if strip_identifiers else e.id,
+        "name": None if strip_identifiers else e.name,
+        "client_name": None if strip_identifiers else e.client_name,
         "status": e.status.value,
         "start_date": e.start_date.isoformat() if e.start_date else None,
         "end_date": e.end_date.isoformat() if e.end_date else None,
@@ -243,15 +252,23 @@ async def get_dashboard_stats(
         activities.append({
             "id": log.id,
             "type": log.resource_type,
-            "title": log.details or log.action,
-            "user": log.user.username if log.user else "System",
+            # action verb stays (it's a taxonomy, not an identifier); the
+            # human-readable title + user + resource names are stripped
+            # in global mode so the activity feed doesn't reveal what's
+            # happening on other teams' engagements.
+            "title": log.action if strip_identifiers else (log.details or log.action),
+            "user": None if strip_identifiers else (
+                log.user.username if log.user else "System"
+            ),
             "time": log.created_at.isoformat(),
             "severity": None,
             "action": log.action,
-            "resource_id": log.resource_id,
-            "engagement_id": log.engagement_id,
-            "engagement_name": log.engagement.name if log.engagement else None,
-            "resource_name": log.resource_name
+            "resource_id": None if strip_identifiers else log.resource_id,
+            "engagement_id": None if strip_identifiers else log.engagement_id,
+            "engagement_name": None if strip_identifiers else (
+                log.engagement.name if log.engagement else None
+            ),
+            "resource_name": None if strip_identifiers else log.resource_name,
         })
 
     # Personalized Stats

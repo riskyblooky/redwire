@@ -13,7 +13,7 @@ from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
 from models.associations import EngagementAssignment
 from models.discussion import ActivityLog
 from auth.dependencies import get_current_user
-from auth.rbac import resolve_engagement_scope, scope_to_assignments
+from auth.rbac import apply_stats_scope, scope_to_assignments
 import asyncio
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -40,7 +40,7 @@ async def get_overview_stats(
 ):
     """Get high-level overview statistics."""
 
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
 
     # Base queries — evidence joins through Finding so engagement scoping
     # can be applied on Finding.engagement_id uniformly.
@@ -110,7 +110,7 @@ async def get_findings_timeline(
 ):
     """Get findings created over time (grouped by day)."""
 
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
 
     # Determine date range
     if start_date and end_date:
@@ -159,7 +159,7 @@ async def get_severity_distribution(
 ):
     """Get distribution of findings by severity."""
 
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
 
     query = select(
         Finding.severity,
@@ -197,7 +197,7 @@ async def get_user_activity(
 ):
     """Get top contributors by all activity log entries (excluding note auto-saves)."""
 
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
 
     query = select(
         User.username,
@@ -225,9 +225,13 @@ async def get_user_activity(
 
     activity = [
         {
-            "username": row.username,
-            "full_name": row.full_name,
-            "profile_photo": row.profile_photo,
+            # In global-mode stats for non-admins, drop the per-user
+            # identifiers so the top-contributors list shows role and
+            # activity count only — useful for org-wide pulse without
+            # naming specific operators.
+            "username": None if strip_identifiers else row.username,
+            "full_name": None if strip_identifiers else row.full_name,
+            "profile_photo": None if strip_identifiers else row.profile_photo,
             "role": row.role.value,
             "activity_count": row.activity_count,
         }
@@ -247,7 +251,7 @@ async def get_engagement_status(
 ):
     """Get distribution of engagements by status."""
 
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
 
     query = select(
         Engagement.status,
@@ -288,7 +292,7 @@ async def get_findings_by_category(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of findings by category."""
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
 
     query = select(
         func.coalesce(Finding.category, 'Uncategorized').label('category'),
@@ -315,7 +319,7 @@ async def get_findings_by_status(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of findings by status."""
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
 
     query = select(
         Finding.status,
@@ -340,7 +344,7 @@ async def get_engagement_types(
     current_user: User = Depends(get_current_user)
 ):
     """Get distribution of engagements by type."""
-    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(None, db, current_user)
 
     query = select(
         Engagement.engagement_type,
@@ -367,7 +371,7 @@ async def get_engagement_metrics(
 ):
     """Get aggregate engagement metrics: avg duration, findings per engagement, avg CVSS per engagement, by client."""
 
-    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(None, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     # Avg duration of completed engagements (in days)
@@ -403,8 +407,10 @@ async def get_engagement_metrics(
     fpe_result = await db.execute(fpe_query)
     per_engagement = [
         {
-            "engagement": r.engagement,
-            "client": r.client,
+            # Engagement + client names stripped in global mode for non-admins
+            # so platform-wide leaderboards don't reveal who's the customer.
+            "engagement": None if strip_identifiers else r.engagement,
+            "client": None if strip_identifiers else r.client,
             "findings_count": r.findings_count,
             "avg_cvss": round(r.avg_cvss, 1) if r.avg_cvss else 0
         }
@@ -420,7 +426,13 @@ async def get_engagement_metrics(
         client_query = client_query.where(Engagement.created_at >= start, Engagement.created_at <= end)
     client_query = scope_to_assignments(client_query, Engagement.id, None, is_admin, allowed)
     client_result = await db.execute(client_query)
-    by_client = [{"client": r.client, "count": r.count} for r in client_result.all()]
+    by_client = [
+        {
+            "client": None if strip_identifiers else r.client,
+            "count": r.count,
+        }
+        for r in client_result.all()
+    ]
 
     return {
         "avg_duration_days": avg_duration_days,
@@ -438,7 +450,7 @@ async def get_operator_performance(
 ):
     """Per-operator breakdown: findings by severity, engagement count, test cases executed."""
 
-    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(None, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     # Per-user findings with severity breakdown
@@ -497,10 +509,12 @@ async def get_operator_performance(
     for uid, f in user_findings.items():
         tc = user_tc.get(uid)
         operators.append({
-            "user_id": uid,
-            "username": f.username,
-            "full_name": f.full_name,
-            "profile_photo": f.profile_photo,
+            # Per-operator identity stripped in global mode for non-admins —
+            # role + counts give an aggregate view without naming people.
+            "user_id": None if strip_identifiers else uid,
+            "username": None if strip_identifiers else f.username,
+            "full_name": None if strip_identifiers else f.full_name,
+            "profile_photo": None if strip_identifiers else f.profile_photo,
             "role": f.role.value if f.role else "operator",
             "last_active": f.last_active.isoformat() if f.last_active else None,
             "total_findings": f.total_findings,
@@ -531,7 +545,7 @@ async def get_testcase_stats(
 ):
     """Get test case execution and success rates."""
 
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     base = select(
@@ -586,7 +600,7 @@ async def get_cleanup_stats(
 ):
     """Get cleanup artifact status distribution."""
 
-    is_admin, allowed = await resolve_engagement_scope(engagement_id, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(engagement_id, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     query = select(
@@ -622,7 +636,7 @@ async def get_client_stats(
 ):
     """Get comprehensive per-client statistics."""
 
-    is_admin, allowed = await resolve_engagement_scope(None, db, current_user)
+    is_admin, allowed, strip_identifiers = await apply_stats_scope(None, db, current_user)
     start, end = _parse_date_range(start_date, end_date)
 
     # ── Per-client engagement count, avg duration ──
@@ -691,7 +705,10 @@ async def get_client_stats(
         f = client_findings.get(client)
         avg_seconds = e.avg_seconds if e else None
         clients.append({
-            "client": client,
+            # Client name stripped in global mode for non-admins. The page
+            # remains usable as a platform-wide volume view (engagement
+            # count, findings, avg CVSS) without naming customers.
+            "client": None if strip_identifiers else client,
             "engagement_count": e.engagement_count if e else 0,
             "avg_duration_days": round(avg_seconds / 86400, 1) if avg_seconds else 0,
             "total_findings": f.total_findings if f else 0,

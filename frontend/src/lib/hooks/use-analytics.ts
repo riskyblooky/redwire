@@ -25,11 +25,14 @@ export interface DashboardStats {
     };
     top_findings: Array<{
         id: string;
-        title: string;
+        // title / engagement_id / engagement_name are nullable: when the
+        // admin has set STATS_SCOPE_MODE=global, non-admin callers get
+        // platform-wide counts with identifying fields stripped.
+        title: string | null;
         severity: string;
         status: string;
-        engagement_id: string;
-        engagement_name: string;
+        engagement_id: string | null;
+        engagement_name: string | null;
         created_at: string;
     }>;
     pending_cleanup: number;
@@ -45,9 +48,9 @@ export interface DashboardStats {
         testcase_count: number;
     }>;
     upcoming_engagements: Array<{
-        id: string;
-        name: string;
-        client_name: string;
+        id: string | null;
+        name: string | null;
+        client_name: string | null;
         status: string;
         start_date: string | null;
         end_date: string | null;
@@ -61,12 +64,13 @@ export interface DashboardStats {
         id: string;
         type: string;
         title: string;
-        user: string;
+        user: string | null;
         time: string;
         severity: string | null;
         action: string;
-        resource_id: string;
-        engagement_id: string;
+        resource_id: string | null;
+        engagement_id: string | null;
+        engagement_name: string | null;
         resource_name: string | null;
     }>;
     personal_stats: {

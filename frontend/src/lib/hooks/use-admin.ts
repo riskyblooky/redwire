@@ -135,3 +135,36 @@ export function useFetchAiModels() {
     });
 }
 
+
+// ── Stats scope-mode toggle ──────────────────────────────────────────
+//
+// Controls whether non-admin callers of /analytics/* and /stats/* see
+// platform-wide counts (with identifying fields stripped) or only
+// engagements they're assigned to.
+
+export type StatsScopeMode = 'global' | 'scoped';
+
+export function useStatsScopeMode() {
+    return useQuery<{ mode: StatsScopeMode }>({
+        queryKey: ['admin', 'stats-scope-mode'],
+        queryFn: async () => (await api.get('/admin/settings/stats-scope-mode')).data,
+        staleTime: 60_000,
+    });
+}
+
+export function useUpdateStatsScopeMode() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (mode: StatsScopeMode) => {
+            const response = await api.put('/admin/settings/stats-scope-mode', { mode });
+            return response.data as { mode: StatsScopeMode };
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin', 'stats-scope-mode'] });
+            // Stats responses change shape, so blow away the caches.
+            queryClient.invalidateQueries({ queryKey: ['analytics'] });
+            queryClient.invalidateQueries({ queryKey: ['stats'] });
+        },
+    });
+}
+
