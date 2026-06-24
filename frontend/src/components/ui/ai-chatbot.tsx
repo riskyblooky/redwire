@@ -40,6 +40,16 @@ interface ChatMessage {
     thinking?: string;
     isMcp?: boolean;
     toolCalls?: ToolCall[];
+    // GHSA-f4j9-gvm9-frjw follow-up: backend emits context_compacted
+    // events when the conversation prefix gets summarized. Display
+    // a subtle marker so the user knows their earlier context was
+    // compressed (not silently dropped).
+    compactionStats?: {
+        tokens_before: number;
+        tokens_after: number;
+        summarized_count: number;
+        kept_count: number;
+    };
 }
 
 // ── Parse <think>...</think> from raw streamed text ─────────────────────
@@ -513,6 +523,28 @@ export function AiChatbot() {
                                     : c
                             );
                             syncToolCalls();
+                        } else if (currentEvent === 'context_compacted') {
+                            // Stash the stats on the in-flight
+                            // assistant message; the renderer shows
+                            // a small "earlier context compacted"
+                            // marker above the response so the user
+                            // can see what happened.
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                const last = updated[updated.length - 1];
+                                if (last && last.role === 'assistant') {
+                                    updated[updated.length - 1] = {
+                                        ...last,
+                                        compactionStats: {
+                                            tokens_before: parsed.tokens_before,
+                                            tokens_after: parsed.tokens_after,
+                                            summarized_count: parsed.summarized_count,
+                                            kept_count: parsed.kept_count,
+                                        },
+                                    };
+                                }
+                                return updated;
+                            });
                         }
                         // event === 'done' is a no-op; the while loop exits
                         // on reader done anyway.
@@ -643,6 +675,20 @@ export function AiChatbot() {
                                             content={msg.thinking || ''}
                                             isLive={isThinkingThis}
                                         />
+                                    )}
+
+                                    {/* Earlier-context compaction marker — shows when the
+                                        backend summarized older turns to fit the budget.
+                                        Subtle so it doesn't dominate the message, but
+                                        explicit so the user sees what happened. */}
+                                    {msg.role === 'assistant' && msg.compactionStats && (
+                                        <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-500 italic border-l-2 border-violet-500/30 pl-2">
+                                            <Brain className="h-3 w-3 text-violet-400/70 shrink-0" />
+                                            <span>
+                                                Earlier context compacted ({msg.compactionStats.summarized_count} message{msg.compactionStats.summarized_count !== 1 ? 's' : ''} summarized,
+                                                {' '}~{msg.compactionStats.tokens_before} → ~{msg.compactionStats.tokens_after} tokens) to fit the context budget.
+                                            </span>
+                                        </div>
                                     )}
 
                                     {/* Inline tool call cards (Claude-Code-style) — rendered

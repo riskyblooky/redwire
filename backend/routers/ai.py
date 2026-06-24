@@ -63,6 +63,12 @@ class AiSettingsUpdate(BaseModel):
     # GHSA-q4x9-5gmc-fxh5 (a2): admin toggle for write-capable MCP tools.
     # Default false — keep off unless per-call user confirmation lands.
     ai_write_tools_enabled: Optional[str] = Field(None, max_length=8)
+    # GHSA-f4j9-gvm9-frjw follow-up: token-budget compaction settings.
+    # Numeric strings so they share the existing AiSetting (key, value)
+    # KV shape; coerced in the chat handler.
+    ai_max_context_tokens: Optional[str] = Field(None, max_length=8)
+    ai_compact_keep_recent_turns: Optional[str] = Field(None, max_length=4)
+    ai_compact_threshold_pct: Optional[str] = Field(None, max_length=4)
 
 
 # ── public: check if AI is enabled ────────────────────────────────────
@@ -407,10 +413,49 @@ async def ai_chat(
     import asyncio
     import uuid as _uuid
     from utils.tool_approval import wait_for_approval, ApprovalDecision
+    from utils.token_budget import (
+        compact_if_needed,
+        count_messages_tokens,
+        truncate_tool_result,
+    )
+
+    # GHSA-f4j9-gvm9-frjw follow-up: token-budget compaction settings.
+    # Cast at the boundary so the compactor sees real ints regardless
+    # of what the admin typed into the settings UI. Defaults match the
+    # design walkthrough decisions: 8000 tokens / keep last 4 turns /
+    # compact at 75% of the budget.
+    def _int_setting(key: str, default: int) -> int:
+        raw = settings.get(key, "")
+        if not raw:
+            return default
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return default
+
+    max_context_tokens = _int_setting("ai_max_context_tokens", 8000)
+    keep_recent_turns = _int_setting("ai_compact_keep_recent_turns", 4)
+    threshold_pct = max(1, min(99, _int_setting("ai_compact_threshold_pct", 75)))
 
     async def stream_response():
         nonlocal api_messages, tools
         try:
+            # Initial compaction pass — covers the case where the
+            # client posted a very long prior conversation in one shot
+            # (e.g. resumed from local storage). Subsequent passes
+            # happen inside the tool-use loop after each tool result
+            # lands.
+            api_messages, _stats = await compact_if_needed(
+                api_messages,
+                max_context_tokens=max_context_tokens,
+                keep_recent_turns=keep_recent_turns,
+                threshold_pct=threshold_pct,
+                api_url=api_url, api_key=api_key, model=model,
+                model_hint=model,
+            )
+            if _stats["fired"]:
+                yield _sse("context_compacted", _stats)
+
             # ── Tool-use loop ────────────────────────────────────────
             if tools:
                 max_rounds = 3
@@ -532,14 +577,37 @@ async def ai_chat(
                                 "result_preview": preview,
                             })
 
+                            # GHSA-f4j9-gvm9-frjw follow-up: tool
+                            # results are the main token-amplification
+                            # vector (a list_findings on a busy
+                            # engagement can dump tens of KB). Truncate
+                            # in-place before persisting to the LLM
+                            # context — the LLM is told via the
+                            # appended marker that it can ask for a
+                            # narrower query.
+                            truncated_for_llm = truncate_tool_result(result_str)
                             # GHSA-q4x9-5gmc-fxh5: wrap untrusted content
                             # so user-authored data in the tool result
                             # can't steer the model.
                             api_messages.append({
                                 "role": "tool",
                                 "tool_call_id": tc.get("id", ""),
-                                "content": _wrap_untrusted(result_str),
+                                "content": _wrap_untrusted(truncated_for_llm),
                             })
+
+                        # GHSA-f4j9-gvm9-frjw: tool-use rounds keep
+                        # appending — compact before the NEXT round
+                        # spends tokens on a re-call to the LLM.
+                        api_messages, _stats = await compact_if_needed(
+                            api_messages,
+                            max_context_tokens=max_context_tokens,
+                            keep_recent_turns=keep_recent_turns,
+                            threshold_pct=threshold_pct,
+                            api_url=api_url, api_key=api_key, model=model,
+                            model_hint=model,
+                        )
+                        if _stats["fired"]:
+                            yield _sse("context_compacted", _stats)
 
                         # Loop back — let the LLM see the tool results.
 

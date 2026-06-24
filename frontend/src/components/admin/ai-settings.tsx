@@ -37,6 +37,14 @@ export function AiSettingsManagement() {
     const [mcpEnabled, setMcpEnabled] = useState(false);
     const [writeToolsEnabled, setWriteToolsEnabled] = useState(false);
 
+    // GHSA-f4j9-gvm9-frjw follow-up: token-budget compaction settings.
+    // The backend reads these on each /ai/chat call and slides a
+    // summarization window across the oldest turns when the
+    // conversation pushes over threshold_pct% of max_context_tokens.
+    const [maxContextTokens, setMaxContextTokens] = useState('8000');
+    const [keepRecentTurns, setKeepRecentTurns] = useState('4');
+    const [compactThresholdPct, setCompactThresholdPct] = useState('75');
+    const [compactionHasChanges, setCompactionHasChanges] = useState(false);
 
 
     useEffect(() => {
@@ -48,11 +56,29 @@ export function AiSettingsManagement() {
             setMcpEnabled(settings.mcp_enabled === 'true');
             setWriteToolsEnabled(settings.ai_write_tools_enabled === 'true');
 
+            setMaxContextTokens(settings.ai_max_context_tokens || '8000');
+            setKeepRecentTurns(settings.ai_compact_keep_recent_turns || '4');
+            setCompactThresholdPct(settings.ai_compact_threshold_pct || '75');
+
             if (!apiKey) {
                 setApiKey(settings.ai_api_key || '');
             }
         }
     }, [settings]);
+
+    const handleSaveCompaction = async () => {
+        try {
+            await updateSettings.mutateAsync({
+                ai_max_context_tokens: maxContextTokens,
+                ai_compact_keep_recent_turns: keepRecentTurns,
+                ai_compact_threshold_pct: compactThresholdPct,
+            });
+            toast.success('Compaction settings saved');
+            setCompactionHasChanges(false);
+        } catch {
+            toast.error('Failed to save compaction settings');
+        }
+    };
 
     // ── Save: API config ────────────────────────────────────────────────
     const handleSaveApiConfig = async () => {
@@ -384,6 +410,83 @@ export function AiSettingsManagement() {
                             </div>
                         </div>
                     </div>
+                </CardContent>
+            </Card>
+
+
+            {/* Context-budget compaction */}
+            {/* GHSA-f4j9-gvm9-frjw follow-up: token budget + sliding-
+                window summarization. The defaults work well for
+                gpt-4o / Claude 3.x; bump max_context_tokens for
+                higher-context models, drop it for tighter ones. */}
+            <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                <CardHeader>
+                    <CardTitle className="text-white flex items-center gap-2 text-lg">
+                        <Brain className="h-5 w-5 text-violet-400" />
+                        Context budget & compaction
+                    </CardTitle>
+                    <CardDescription>
+                        Bound the size of every AI chat request — older turns are
+                        summarized into a short note before the conversation pushes
+                        over the token budget. Reduces cost and bounds the prompt-injection
+                        blast radius of any single tool result.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                            <Label className="text-slate-300 text-xs">Max context tokens</Label>
+                            <Input
+                                type="number"
+                                min="1000"
+                                max="200000"
+                                value={maxContextTokens}
+                                onChange={(e) => { setMaxContextTokens(e.target.value); setCompactionHasChanges(true); }}
+                                className="bg-slate-950/50 border-slate-700 text-white font-mono"
+                            />
+                            <p className="text-[11px] text-slate-500">
+                                Per-request budget. Suggested: 8000 for most models, 32000+ for high-context variants.
+                            </p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-slate-300 text-xs">Keep last N turns</Label>
+                            <Input
+                                type="number"
+                                min="1"
+                                max="20"
+                                value={keepRecentTurns}
+                                onChange={(e) => { setKeepRecentTurns(e.target.value); setCompactionHasChanges(true); }}
+                                className="bg-slate-950/50 border-slate-700 text-white font-mono"
+                            />
+                            <p className="text-[11px] text-slate-500">
+                                Recent user/assistant pairs always preserved exactly. Higher = less likely to feel forgetful.
+                            </p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-slate-300 text-xs">Compact at (% of budget)</Label>
+                            <Input
+                                type="number"
+                                min="10"
+                                max="95"
+                                value={compactThresholdPct}
+                                onChange={(e) => { setCompactThresholdPct(e.target.value); setCompactionHasChanges(true); }}
+                                className="bg-slate-950/50 border-slate-700 text-white font-mono"
+                            />
+                            <p className="text-[11px] text-slate-500">
+                                Trigger threshold. 75% leaves headroom for the model's response.
+                            </p>
+                        </div>
+                    </div>
+                    {compactionHasChanges && (
+                        <div className="flex items-center justify-end gap-2">
+                            <Button
+                                onClick={handleSaveCompaction}
+                                className="bg-violet-600 hover:bg-violet-500 text-white"
+                            >
+                                <Save className="h-4 w-4 mr-1.5" /> Save compaction settings
+                            </Button>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 

@@ -93,6 +93,12 @@ export interface AiSettings {
     mcp_enabled: string;
     ai_write_tools_enabled: string;
     mcp_url: string;
+    // GHSA-f4j9-gvm9-frjw follow-up: token-budget compaction settings.
+    // Numeric strings — backend stores everything in the AiSetting
+    // (key, value) KV shape and coerces in the chat handler.
+    ai_max_context_tokens?: string;
+    ai_compact_keep_recent_turns?: string;
+    ai_compact_threshold_pct?: string;
 }
 
 export function useAiSettings() {
