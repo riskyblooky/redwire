@@ -48,6 +48,21 @@ export default function SSOCallbackPage() {
             return;
         }
 
+        // Refuse to consume the callback unless the user actually clicked
+        // "SSO Login" on /login (which sets this flag). Belt-and-suspenders
+        // against login-CSRF on top of the backend's saml_request_id cookie
+        // binding (GHSA-68hx-hggg-vrr2). Also catches stale tabs reopened
+        // after a previous SSO flow leaked an access-token fragment.
+        let samlPending = false;
+        try {
+            samlPending = sessionStorage.getItem('saml_pending') === '1';
+            sessionStorage.removeItem('saml_pending');
+        } catch { /* private mode / disabled storage */ }
+        if (!samlPending) {
+            setError('Unexpected SSO callback. Please start sign-in from the login page.');
+            return;
+        }
+
         processedRef.current = true;
 
         // Clear the hash from URL

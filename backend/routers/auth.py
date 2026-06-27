@@ -1055,6 +1055,7 @@ async def saml_login(request: Request, db: AsyncSession = Depends(get_db)):
         "idp_slo_url": cfg.get("saml_idp_slo_url", ""),
         "idp_x509_cert": cfg.get("saml_idp_x509_cert", ""),
         "sp_entity_id": cfg.get("saml_sp_entity_id", ""),
+        "want_messages_signed": cfg.get("saml_want_messages_signed", "false"),
     }
 
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -1130,6 +1131,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
         "idp_slo_url": cfg.get("saml_idp_slo_url", ""),
         "idp_x509_cert": cfg.get("saml_idp_x509_cert", ""),
         "sp_entity_id": cfg.get("saml_sp_entity_id", ""),
+        "want_messages_signed": cfg.get("saml_want_messages_signed", "false"),
     }
     logger.info(f"SAML ACS: sp_entity_id = {saml_cfg['sp_entity_id']}")
     logger.info(f"SAML ACS: idp_entity_id = {saml_cfg['idp_entity_id']}")
@@ -1315,6 +1317,7 @@ async def saml_metadata(db: AsyncSession = Depends(get_db)):
         "idp_slo_url": cfg.get("saml_idp_slo_url", ""),
         "idp_x509_cert": cfg.get("saml_idp_x509_cert", ""),
         "sp_entity_id": cfg.get("saml_sp_entity_id", ""),
+        "want_messages_signed": cfg.get("saml_want_messages_signed", "false"),
     }
 
     metadata = generate_sp_metadata(saml_cfg)

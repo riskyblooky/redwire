@@ -29,7 +29,7 @@ LDAP_KEYS = [
 ]
 SAML_KEYS = [
     "saml_enabled", "saml_idp_entity_id", "saml_idp_sso_url", "saml_idp_slo_url",
-    "saml_idp_x509_cert", "saml_sp_entity_id",
+    "saml_idp_x509_cert", "saml_sp_entity_id", "saml_want_messages_signed",
 ]
 SMTP_KEYS = [
     "smtp_enabled", "smtp_host", "smtp_port", "smtp_username", "smtp_password",
@@ -104,6 +104,7 @@ async def get_auth_settings(
         idp_slo_url=raw.get("saml_idp_slo_url", ""),
         idp_x509_cert=_mask(raw.get("saml_idp_x509_cert", "")),
         sp_entity_id=raw.get("saml_sp_entity_id", ""),
+        want_messages_signed=raw.get("saml_want_messages_signed", "false").lower() == "true",
     )
 
     return AuthSettingsResponse(ldap=ldap, saml=saml)
@@ -166,6 +167,7 @@ async def update_saml_settings(
         "saml_idp_sso_url": settings.idp_sso_url,
         "saml_idp_slo_url": settings.idp_slo_url,
         "saml_sp_entity_id": settings.sp_entity_id,
+        "saml_want_messages_signed": str(settings.want_messages_signed).lower(),
     }
 
     # Only update cert if a new value is provided

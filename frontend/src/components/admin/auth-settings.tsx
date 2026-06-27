@@ -23,6 +23,7 @@ interface SamlSettings {
     idp_slo_url: string;
     idp_x509_cert: string | null;
     sp_entity_id: string;
+    want_messages_signed: boolean;
 }
 
 interface AuthSettings {
@@ -50,6 +51,7 @@ const DEFAULT_SAML: SamlSettings = {
     idp_slo_url: '',
     idp_x509_cert: null,
     sp_entity_id: '',
+    want_messages_signed: false,
 };
 
 export function AuthSettingsManagement() {
@@ -448,6 +450,23 @@ export function AuthSettingsManagement() {
                             rows={4}
                             className="w-full bg-background text-white border border-border rounded-lg px-3 py-2 text-sm font-mono focus:border-primary focus:outline-hidden resize-none"
                         />
+                    </div>
+
+                    <div className="flex items-start gap-3 pt-2">
+                        <input
+                            type="checkbox"
+                            id="saml-want-messages-signed"
+                            checked={saml.want_messages_signed}
+                            onChange={(e) => setSaml({ ...saml, want_messages_signed: e.target.checked })}
+                            className="mt-1 accent-primary"
+                        />
+                        <label htmlFor="saml-want-messages-signed" className="text-sm text-muted-foreground">
+                            Require signed SAML <code className="text-xs bg-muted px-1 rounded">&lt;Response&gt;</code> envelope
+                            <span className="block text-xs text-muted-foreground/70 mt-0.5">
+                                Off by default — most IdPs sign only the inner Assertion. Enable only after confirming your IdP signs the
+                                outer Response message; otherwise SSO logins will fail.
+                            </span>
+                        </label>
                     </div>
 
                     <div className="flex items-center gap-3 pt-4 border-t border-border/50">

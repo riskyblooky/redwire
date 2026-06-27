@@ -54,7 +54,7 @@ def get_saml_settings(db_settings: Dict[str, str]) -> Dict[str, Any]:
             "logoutRequestSigned": False,
             "logoutResponseSigned": False,
             "signMetadata": False,
-            "wantMessagesSigned": False,
+            "wantMessagesSigned": str(db_settings.get("want_messages_signed", "false")).lower() == "true",
             "wantAssertionsSigned": True,
             "wantNameIdEncrypted": False,
             "requestedAuthnContext": False,

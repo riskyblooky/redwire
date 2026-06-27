@@ -35,6 +35,7 @@ class SamlSettings(BaseModel):
     idp_slo_url: str = Field("", max_length=URL)
     idp_x509_cert: Optional[str] = Field(None, max_length=JSON_BLOB)  # None = keep existing
     sp_entity_id: str = Field("", max_length=URL)
+    want_messages_signed: bool = False
 
 
 class AuthSettingsResponse(BaseModel):
