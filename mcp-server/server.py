@@ -735,14 +735,13 @@ def _all_tools() -> list[Tool]:
         ),
         Tool(
             name="get_vault_item",
-            description="Get a single vault item by ID. The backend has no individual GET, so this lists items for the engagement and filters by item_id.",
+            description="Get a single vault item by ID. Returns metadata only (no plaintext credentials); call the reveal endpoint via the UI to fetch decrypted secrets with audit logging.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "item_id": {"type": "string", "description": "The vault item UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
                 },
-                "required": ["item_id", "engagement_id"],
+                "required": ["item_id"],
             },
         ),
         Tool(
@@ -1111,13 +1110,7 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         return await _api_delete(f"/notes/{args['note_id']}")
 
     elif name == "get_vault_item":
-        # Backend has no individual GET; list and filter client-side.
-        items = await _api_get("/vault", params={"engagement_id": args["engagement_id"]})
-        if isinstance(items, list):
-            for it in items:
-                if str(it.get("id")) == args["item_id"]:
-                    return _redact_vault_secrets(it)   # GHSA-q4x9-5gmc-fxh5
-        return {"error": f"vault item {args['item_id']} not found in engagement {args['engagement_id']}"}
+        return await _api_get(f"/vault/{args['item_id']}")
 
     elif name == "delete_vault_item":
         return await _api_delete(f"/vault/{args['item_id']}")
