@@ -583,11 +583,20 @@ async def export_engagement(
         for r in (ane_res.scalars().all() if attacker_nodes else [])
     ]
 
-    # ── attack graph layout ──────────────────────────────────────────
+    # ── attack graph layouts ─────────────────────────────────────────
+    # 1:N — `is_active` flags the currently-selected layout, but an
+    # engagement can carry multiple named layouts. Export them all so the
+    # destination instance reconstructs the full picker, not just the
+    # active one. Old export archives carry `attack_graph_layout` as a
+    # single object; import handles both shapes for backward-compat.
     from models.attack_graph_layout import AttackGraphLayout
-    agl_res = await db.execute(select(AttackGraphLayout).where(AttackGraphLayout.engagement_id == engagement_id))
-    agl = agl_res.scalar_one_or_none()
-    data["attack_graph_layout"] = _row_dict(agl, ["id", "positions", "pinned_at"]) if agl else None
+    agl_res = await db.execute(
+        select(AttackGraphLayout).where(AttackGraphLayout.engagement_id == engagement_id)
+    )
+    data["attack_graph_layouts"] = [
+        _row_dict(agl, ["id", "name", "is_active", "positions", "pinned_at"])
+        for agl in agl_res.scalars().all()
+    ]
 
     # ── report layouts ───────────────────────────────────────────────
     from models.report_layout import ReportLayout, ReportSection
@@ -1393,28 +1402,38 @@ async def import_engagement(
             ))
         await db.flush()
 
-        # ── 14. Attack Graph Layout ──────────────────────────────────
-        agl_data = data.get("attack_graph_layout")
-        if agl_data:
+        # ── 14. Attack Graph Layouts ─────────────────────────────────
+        # New archives ship a list (`attack_graph_layouts`); old archives
+        # ship a single object (`attack_graph_layout`). Normalize to a
+        # list and iterate so both shapes import cleanly.
+        agl_list = data.get("attack_graph_layouts")
+        if agl_list is None:
+            single = data.get("attack_graph_layout")
+            agl_list = [single] if single else []
+        if agl_list:
             from models.attack_graph_layout import AttackGraphLayout
-            # Remap positions JSON keys
-            positions_raw = agl_data.get("positions", "{}")
-            try:
-                positions = json.loads(positions_raw) if isinstance(positions_raw, str) else positions_raw
-                remapped_pos = {}
-                for key, value in positions.items():
-                    remapped_pos[remap(key) or key] = value
-                positions_str = json.dumps(remapped_pos)
-            except Exception:
-                positions_str = positions_raw if isinstance(positions_raw, str) else json.dumps(positions_raw)
+            for agl_data in agl_list:
+                if not agl_data:
+                    continue
+                positions_raw = agl_data.get("positions", "{}")
+                try:
+                    positions = json.loads(positions_raw) if isinstance(positions_raw, str) else positions_raw
+                    remapped_pos = {}
+                    for key, value in positions.items():
+                        remapped_pos[remap(key) or key] = value
+                    positions_str = json.dumps(remapped_pos)
+                except Exception:
+                    positions_str = positions_raw if isinstance(positions_raw, str) else json.dumps(positions_raw)
 
-            db.add(AttackGraphLayout(
-                id=new_id(agl_data["id"]),
-                engagement_id=eng_new_id,
-                positions=positions_str,
-                pinned_by=current_user.id,
-                pinned_at=parse_dt(agl_data.get("pinned_at")) or datetime.utcnow(),
-            ))
+                db.add(AttackGraphLayout(
+                    id=new_id(agl_data["id"]),
+                    engagement_id=eng_new_id,
+                    name=agl_data.get("name") or "Default",
+                    is_active=bool(agl_data.get("is_active", False)),
+                    positions=positions_str,
+                    pinned_by=current_user.id,
+                    pinned_at=parse_dt(agl_data.get("pinned_at")) or datetime.utcnow(),
+                ))
             await db.flush()
 
         # ── 15. Report Layouts ───────────────────────────────────────
