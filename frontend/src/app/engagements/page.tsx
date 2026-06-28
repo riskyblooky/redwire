@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { EngagementExportModal } from '@/components/engagements/engagement-export-modal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import {
@@ -36,7 +37,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X, KeyRound } from 'lucide-react';
 import { useEngagements, useDeleteEngagement } from '@/lib/hooks/use-engagements';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -248,9 +249,12 @@ export default function EngagementsPage() {
     const deleteEngagement = useDeleteEngagement();
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const [isExporting, setIsExporting] = useState<string | null>(null);
+    const [exportTarget, setExportTarget] = useState<{ id: string; name: string } | null>(null);
     const [isImporting, setIsImporting] = useState(false);
     const importInputRef = useRef<HTMLInputElement>(null);
     const [importFile, setImportFile] = useState<File | null>(null);
+    const [importPwPrompt, setImportPwPrompt] = useState<{ file: File } | null>(null);
+    const [importPassphrase, setImportPassphrase] = useState('');
     const [showUserMapping, setShowUserMapping] = useState(false);
     const [userMappingData, setUserMappingData] = useState<{
         engagementName: string;
@@ -339,35 +343,11 @@ export default function EngagementsPage() {
         router.push('/engagements/new');
     };
 
-    const handleExport = async (id: string, name: string) => {
-        setIsExporting(id);
-        try {
-            const token = localStorage.getItem('access_token');
-            const resp = await fetch(`${api.defaults.baseURL}/engagements/${id}/export`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                toast.error(err.detail || 'Export failed');
-                setIsExporting(null);
-                return;
-            }
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const disposition = resp.headers.get('content-disposition');
-            const match = disposition?.match(/filename="(.+)"/);
-            a.download = match?.[1] || `${name.replace(/\s+/g, '_')}_export.zip`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-            toast.success('Engagement exported successfully');
-        } catch (err: any) {
-            toast.error(err.message || 'Export failed');
-        }
-        setIsExporting(null);
+    const handleExport = (id: string, name: string) => {
+        // Hand off to the modal so the user sees the plaintext-secret warning
+        // (when applicable) and can opt into an AES passphrase before the
+        // download fires. The modal owns the actual fetch.
+        setExportTarget({ id, name });
     };
 
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -378,58 +358,83 @@ export default function EngagementsPage() {
             return;
         }
         setImportFile(file);
-        setIsImporting(true);
+        // Encrypted archives carry the `.enc.zip` suffix the export side
+        // writes — surface the passphrase prompt before the upload so we
+        // don't burn a 400 round-trip on the common case. Renamed-out-of-
+        // suffix encrypted archives still get caught by the catch branch
+        // below.
+        if (file.name.endsWith('.enc.zip')) {
+            setImportPassphrase('');
+            setImportPwPrompt({ file });
+            if (importInputRef.current) importInputRef.current.value = '';
+            return;
+        }
+        await runImportPreview(file, undefined);
+        if (importInputRef.current) importInputRef.current.value = '';
+    };
 
-        // Step 1: Preview — check for unmatched users
+    // Shared preview path so both the unencrypted and encrypted entry
+    // points end up in the same place. Passphrase, when supplied, rides
+    // the X-Import-Passphrase header on both the preview and the import
+    // call (server validates length and decrypts).
+    const runImportPreview = async (file: File, passphrase: string | undefined) => {
+        setIsImporting(true);
         try {
             const previewData = new FormData();
             previewData.append('file', file);
-            const preview = await api.post('/engagements/import/preview', previewData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
+            const headers: Record<string, string> = { 'Content-Type': 'multipart/form-data' };
+            if (passphrase) headers['X-Import-Passphrase'] = passphrase;
+            const preview = await api.post('/engagements/import/preview', previewData, { headers });
             const { engagement_name, matched_users, unmatched_users, local_users } = preview.data;
 
             if (unmatched_users.length > 0) {
-                // Show mapping dialog
                 setUserMappingData({
                     engagementName: engagement_name,
                     matchedUsers: matched_users,
                     unmatchedUsers: unmatched_users,
                     localUsers: local_users,
                 });
-                // Pre-populate mapping with empty (will fallback to importer)
                 const initial: Record<string, string> = {};
                 unmatched_users.forEach((u: any) => { initial[u.id] = ''; });
                 setUserMapping(initial);
                 setShowUserMapping(true);
                 setIsImporting(false);
-                if (importInputRef.current) importInputRef.current.value = '';
                 return;
             }
 
-            // No unmatched users — import directly
-            await doImport(file, {});
+            // No unmatched users — import directly (carrying the passphrase too).
+            await doImport(file, {}, passphrase);
         } catch (err: any) {
-            const detail = err?.response?.data?.detail || err.message;
+            const detail = err?.response?.data?.detail || err.message || '';
+            // Backend signals encrypted-without-passphrase / wrong-passphrase
+            // with a 400 + a descriptive detail. Switch to the prompt instead
+            // of just toasting so the user can recover in-flow.
+            const lower = String(detail).toLowerCase();
+            if (lower.includes('encrypted') || lower.includes('decrypt')) {
+                setImportPassphrase('');
+                setImportPwPrompt({ file });
+                setIsImporting(false);
+                return;
+            }
             toast.error(`Import preview failed: ${detail}`);
             setIsImporting(false);
         }
-        if (importInputRef.current) importInputRef.current.value = '';
     };
 
-    const doImport = async (file: File, mapping: Record<string, string>) => {
+    const doImport = async (file: File, mapping: Record<string, string>, passphrase?: string) => {
         setIsImporting(true);
         try {
             const formData = new FormData();
             formData.append('file', file);
             formData.append('user_mapping', JSON.stringify(mapping));
-            const resp = await api.post('/engagements/import', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
+            const headers: Record<string, string> = { 'Content-Type': 'multipart/form-data' };
+            if (passphrase) headers['X-Import-Passphrase'] = passphrase;
+            const resp = await api.post('/engagements/import', formData, { headers });
             toast.success(`Imported: ${resp.data.name}`);
             setShowUserMapping(false);
             setUserMappingData(null);
             setImportFile(null);
+            setImportPassphrase('');
             router.push(`/engagements/${resp.data.id}`);
         } catch (err: any) {
             const detail = err?.response?.data?.detail || err.message;
@@ -447,8 +452,15 @@ export default function EngagementsPage() {
                     cleanedMapping[oldId] = newId;
                 }
             }
-            doImport(importFile, cleanedMapping);
+            doImport(importFile, cleanedMapping, importPassphrase || undefined);
         }
+    };
+
+    const handleImportPwSubmit = async () => {
+        if (!importPwPrompt || importPassphrase.length < 16) return;
+        const file = importPwPrompt.file;
+        setImportPwPrompt(null);
+        await runImportPreview(file, importPassphrase);
     };
 
     return (
@@ -716,6 +728,68 @@ export default function EngagementsPage() {
                 </Card>
 
                 <ConfirmDialog />
+
+                {/* Export modal — plaintext-secret warning + optional AES passphrase */}
+                {exportTarget && (
+                    <EngagementExportModal
+                        engagementId={exportTarget.id}
+                        engagementName={exportTarget.name}
+                        onClose={() => setExportTarget(null)}
+                    />
+                )}
+
+                {/* Import passphrase prompt — opens when an encrypted archive is selected,
+                    or when the backend returns the encrypted/decrypt 400. */}
+                <Dialog open={!!importPwPrompt} onOpenChange={(open) => {
+                    if (!open) {
+                        setImportPwPrompt(null);
+                        setImportPassphrase('');
+                        setImportFile(null);
+                    }
+                }}>
+                    <DialogContent className="sm:max-w-[480px] bg-slate-900 border-slate-700 text-white">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-lg">
+                                <KeyRound className="h-5 w-5 text-violet-400" />
+                                Import passphrase required
+                            </DialogTitle>
+                            <DialogDescription className="text-slate-400">
+                                <span className="text-white font-medium">{importPwPrompt?.file.name}</span> is
+                                an AES-encrypted RedWire export. Enter the passphrase to decrypt and import it.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-2 space-y-1">
+                            <Label htmlFor="import-pw" className="text-xs text-slate-300">Passphrase</Label>
+                            <Input
+                                id="import-pw"
+                                type="password"
+                                autoComplete="off"
+                                value={importPassphrase}
+                                onChange={(e) => setImportPassphrase(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && importPassphrase.length >= 16) {
+                                        handleImportPwSubmit();
+                                    }
+                                }}
+                                className="bg-slate-950 border-slate-700 text-white"
+                                autoFocus
+                            />
+                            {importPassphrase.length > 0 && importPassphrase.length < 16 && (
+                                <p className="text-xs text-red-400">Minimum 16 characters.</p>
+                            )}
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => {
+                                setImportPwPrompt(null);
+                                setImportPassphrase('');
+                                setImportFile(null);
+                            }}>Cancel</Button>
+                            <Button onClick={handleImportPwSubmit} disabled={importPassphrase.length < 16}>
+                                Decrypt &amp; preview
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 {/* User Mapping Dialog */}
                 <Dialog open={showUserMapping} onOpenChange={(open) => {

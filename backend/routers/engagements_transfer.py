@@ -5,7 +5,7 @@ GET  /engagements/{id}/export  →  ZIP download
 POST /engagements/import       →  ZIP upload → new engagement
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, UploadFile, File, Form, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -25,6 +25,9 @@ import io
 import os
 import traceback
 from datetime import datetime
+from typing import Optional
+
+import pyzipper
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,87 @@ IMPORT_MAX_ARCHIVE_BYTES = int(
 IMPORT_MAX_COMPRESSION_RATIO = int(
     os.getenv("ENGAGEMENT_IMPORT_MAX_COMPRESSION_RATIO", "100")
 )
+
+# Optional AES-encrypted-archive support (GHSA-3r7j-7h5r-gxgx follow-up).
+# When the operator supplies a passphrase via the X-Export-Passphrase
+# header on export — or X-Import-Passphrase on import / import preview —
+# the archive is wrapped in pyzipper's AES-256 (WinZip AES extension).
+# Server never persists the passphrase; it is a one-shot wrap.
+MIN_EXPORT_PASSPHRASE_LEN = 16
+
+
+def _validate_passphrase(passphrase: Optional[str], *, kind: str) -> Optional[str]:
+    """Length-validate a passphrase coming off an export/import header.
+
+    Returns the passphrase verbatim when non-empty, ``None`` when absent.
+    Refuses too-short input up front rather than producing an archive
+    that nobody can decrypt later, or accepting one with weak protection.
+    """
+    if not passphrase:
+        return None
+    if len(passphrase) < MIN_EXPORT_PASSPHRASE_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{kind.capitalize()} passphrase must be at least "
+                f"{MIN_EXPORT_PASSPHRASE_LEN} characters."
+            ),
+        )
+    return passphrase
+
+
+def _zip_is_aes_encrypted(zf: zipfile.ZipFile) -> bool:
+    """True when any central-directory entry has the encrypted flag set.
+
+    We only ever produce all-or-nothing archives (every entry encrypted
+    or none), but scanning the whole central directory keeps us honest
+    against hand-crafted hybrid archives an attacker might upload — any
+    hint of encryption demands the passphrase path.
+    """
+    for info in zf.infolist():
+        if info.flag_bits & 0x1:
+            return True
+    return False
+
+
+def _open_engagement_archive(content: bytes, passphrase: Optional[str]) -> zipfile.ZipFile:
+    """Return a read-ready ZipFile (or pyzipper AESZipFile) for the
+    uploaded engagement archive bytes. Caller uses the result
+    transparently — both expose ``namelist`` / ``read`` / ``infolist``.
+
+    Raises HTTPException(400) on:
+      - malformed ZIP container
+      - encrypted archive with no passphrase supplied
+      - encrypted archive with the wrong passphrase
+    """
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    if not _zip_is_aes_encrypted(zf):
+        return zf
+    zf.close()
+    if not passphrase:
+        raise HTTPException(
+            status_code=400,
+            detail="Archive is encrypted — supply the import passphrase to decrypt.",
+        )
+    azf = pyzipper.AESZipFile(io.BytesIO(content))
+    azf.setpassword(passphrase.encode("utf-8"))
+    # Probe the smallest non-empty entry so a wrong passphrase fails
+    # here with a clear 400 instead of mid-import.
+    try:
+        for info in azf.infolist():
+            if info.file_size > 0:
+                azf.read(info.filename)
+                break
+    except RuntimeError as exc:
+        azf.close()
+        raise HTTPException(
+            status_code=400,
+            detail="Could not decrypt archive — check the import passphrase.",
+        ) from exc
+    return azf
 
 
 def _reject_zip_bomb(zf: zipfile.ZipFile) -> None:
@@ -93,15 +177,59 @@ def _row_dict(obj, fields: list[str]) -> dict:
 #  EXPORT
 # ═════════════════════════════════════════════════════════════════════════
 
+@router.get("/{engagement_id}/export/preview")
+async def export_engagement_preview(
+    engagement_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cheap probe used by the export modal to decide whether to surface
+    the plaintext-secret warning + acknowledgement before triggering the
+    real export. Returns the same flag the manifest will carry so the UI
+    and the archive can't disagree.
+    """
+    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+        raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
+
+    from models.engagement import Engagement
+    from models.vault import VaultItem
+
+    eng_res = await db.execute(select(Engagement.id).where(Engagement.id == engagement_id))
+    if eng_res.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    vi_res = await db.execute(
+        select(VaultItem).where(VaultItem.engagement_id == engagement_id)
+    )
+    vault_items = vi_res.scalars().all()
+    contains = any(
+        (vi.username or vi.password or vi.note or vi.file_path) for vi in vault_items
+    )
+    return {
+        "vault_item_count": len(vault_items),
+        "contains_plaintext_secrets": contains,
+    }
+
+
 @router.get("/{engagement_id}/export")
 async def export_engagement(
     engagement_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    x_export_passphrase: Optional[str] = Header(default=None, alias="X-Export-Passphrase"),
 ):
-    """Export an engagement as a ZIP archive with all data and attachments."""
+    """Export an engagement as a ZIP archive with all data and attachments.
+
+    When ``X-Export-Passphrase`` is supplied the resulting archive is
+    AES-256 encrypted via pyzipper (WinZip AES extension). The server
+    never persists the passphrase; the operator hands it off out-of-band.
+    Filename gains a ``.enc.zip`` suffix as a UX cue and so the import
+    flow has a hint to prompt for a passphrase before upload.
+    """
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
+
+    passphrase = _validate_passphrase(x_export_passphrase, kind="export")
 
     # ── load engagement ──────────────────────────────────────────────
     from models.engagement import Engagement
@@ -496,7 +624,14 @@ async def export_engagement(
     # Build ZIP in memory
     # ═══════════════════════════════════════════════════════════════════
     zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+    if passphrase:
+        zf_ctx = pyzipper.AESZipFile(
+            zip_buf, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES,
+        )
+        zf_ctx.setpassword(passphrase.encode("utf-8"))
+    else:
+        zf_ctx = zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED)
+    with zf_ctx as zf:
         # manifest — flag plaintext-secret contents so callers (and a
         # future signed-import path) can detect it programmatically.
         _has_vault_secrets = any(
@@ -579,16 +714,19 @@ async def export_engagement(
 
     zip_buf.seek(0)
     safe_name = eng.name.replace(" ", "_").replace("/", "-")[:50]
-    filename = f"redwire_export_{safe_name}_{datetime.utcnow().strftime('%Y%m%d')}.zip"
+    _suffix = "enc.zip" if passphrase else "zip"
+    filename = f"redwire_export_{safe_name}_{datetime.utcnow().strftime('%Y%m%d')}.{_suffix}"
 
     # GHSA-3r7j-7h5r-gxgx: audit-log every export, flagging when it
     # carries plaintext vault material so the engagement's activity
     # feed records who pulled secrets and when.
     from utils.collaboration import create_activity_log
     _action = "exported_engagement_with_secrets" if _has_vault_secrets else "exported_engagement"
+    _enc_note = " (AES-encrypted)" if passphrase else ""
     _details = (
-        f"Exported engagement archive (contains plaintext vault secrets): {filename}"
-        if _has_vault_secrets else f"Exported engagement archive: {filename}"
+        f"Exported engagement archive{_enc_note} (contains plaintext vault secrets): {filename}"
+        if _has_vault_secrets
+        else f"Exported engagement archive{_enc_note}: {filename}"
     )
     await create_activity_log(
         db=db,
@@ -616,6 +754,7 @@ async def preview_import(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    x_import_passphrase: Optional[str] = Header(default=None, alias="X-Import-Passphrase"),
 ):
     """Preview a ZIP archive: return matched & unmatched users so the admin can map them."""
     # GHSA-f826-6226-4rfw: READ_ONLY_ADMIN dropped — import is a write path
@@ -626,14 +765,12 @@ async def preview_import(
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")
 
+    passphrase = _validate_passphrase(x_import_passphrase, kind="import")
     content = await read_upload_capped(
         file, IMPORT_MAX_ARCHIVE_BYTES,
         detail=f"Engagement-import archive exceeds the {IMPORT_MAX_ARCHIVE_BYTES}-byte size limit.",
     )
-    try:
-        zf = zipfile.ZipFile(io.BytesIO(content))
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    zf = _open_engagement_archive(content, passphrase)
     _reject_zip_bomb(zf)
 
     if "manifest.json" not in zf.namelist():
@@ -701,6 +838,7 @@ async def import_engagement(
     user_mapping: str = Form(default="{}"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    x_import_passphrase: Optional[str] = Header(default=None, alias="X-Import-Passphrase"),
 ):
     """Import an engagement from a ZIP archive. Accepts optional user_mapping JSON."""
     # GHSA-f826-6226-4rfw: READ_ONLY_ADMIN dropped — see preview_import note.
@@ -710,14 +848,12 @@ async def import_engagement(
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")
 
+    passphrase = _validate_passphrase(x_import_passphrase, kind="import")
     content = await read_upload_capped(
         file, IMPORT_MAX_ARCHIVE_BYTES,
         detail=f"Engagement-import archive exceeds the {IMPORT_MAX_ARCHIVE_BYTES}-byte size limit.",
     )
-    try:
-        zf = zipfile.ZipFile(io.BytesIO(content))
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    zf = _open_engagement_archive(content, passphrase)
     _reject_zip_bomb(zf)
 
     # Read manifest

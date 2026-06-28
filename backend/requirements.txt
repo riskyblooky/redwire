@@ -52,3 +52,6 @@ defusedxml>=0.7.1
 
 # Plugin System
 pyyaml>=6.0
+
+# AES-encrypted ZIP for optional engagement export/import passphrase
+pyzipper>=0.3.6
