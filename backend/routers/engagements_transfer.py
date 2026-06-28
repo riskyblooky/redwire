@@ -794,7 +794,8 @@ async def preview_import(
     zf.close()
 
     exported_users: dict = data.get("users", {})
-    engagement_name = data.get("engagement", {}).get("name", "Unknown")
+    engagement_payload = data.get("engagement", {}) or {}
+    engagement_name = engagement_payload.get("name", "Unknown")
 
     # Check which user IDs exist locally
     matched = []
@@ -830,8 +831,45 @@ async def preview_import(
         for u in all_users_res.scalars().all()
     ]
 
+    # Surface a content summary to the operator BEFORE the import fires —
+    # the archive may have been built weeks ago, renamed, or handed over
+    # blind. Counts come straight off the bundled lists so they reflect
+    # exactly what the import endpoint will create, including any 1:N
+    # tables (findings, evidence, etc.).
+    def _len(key: str) -> int:
+        v = data.get(key)
+        return len(v) if isinstance(v, list) else 0
+
+    counts = {
+        "findings": _len("findings"),
+        "assets": _len("assets"),
+        "testcases": _len("testcases"),
+        "evidence": _len("evidence"),
+        "vault_items": _len("vault_items"),
+        "notes": _len("notes"),
+        "cleanup_artifacts": _len("cleanup_artifacts"),
+        "threads": _len("threads"),
+        "attacker_nodes": _len("attacker_nodes"),
+        "report_layouts": _len("report_layouts"),
+    }
+
     return {
         "engagement_name": engagement_name,
+        "engagement": {
+            "name": engagement_name,
+            "client_name": engagement_payload.get("client_name"),
+            "engagement_type": engagement_payload.get("engagement_type"),
+            "status": engagement_payload.get("status"),
+            "start_date": engagement_payload.get("start_date"),
+            "end_date": engagement_payload.get("end_date"),
+            "description": engagement_payload.get("description"),
+        },
+        "archive": {
+            "exported_at": manifest.get("exported_at"),
+            "source_version": manifest.get("version"),
+            "contains_plaintext_secrets": bool(manifest.get("contains_plaintext_secrets")),
+        },
+        "counts": counts,
         "matched_users": matched,
         "unmatched_users": unmatched,
         "local_users": local_users,

@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EngagementExportModal } from '@/components/engagements/engagement-export-modal';
+import { EngagementImportPreviewModal, type ImportPreview } from '@/components/engagements/engagement-import-preview-modal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import {
@@ -259,6 +260,7 @@ export default function EngagementsPage() {
     const [importFile, setImportFile] = useState<File | null>(null);
     const [importPwPrompt, setImportPwPrompt] = useState<{ file: File } | null>(null);
     const [importPassphrase, setImportPassphrase] = useState('');
+    const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
     const [showUserMapping, setShowUserMapping] = useState(false);
     const [userMappingData, setUserMappingData] = useState<{
         engagementName: string;
@@ -377,10 +379,12 @@ export default function EngagementsPage() {
         if (importInputRef.current) importInputRef.current.value = '';
     };
 
-    // Shared preview path so both the unencrypted and encrypted entry
-    // points end up in the same place. Passphrase, when supplied, rides
-    // the X-Import-Passphrase header on both the preview and the import
-    // call (server validates length and decrypts).
+    // Shared preview path. Both the unencrypted entry and the encrypted
+    // entry (after the passphrase prompt) end here. The passphrase rides
+    // the X-Import-Passphrase header on both the preview and the
+    // subsequent import call (server validates length and decrypts).
+    // On success the preview modal opens so the operator can review
+    // archive contents before committing the import.
     const runImportPreview = async (file: File, passphrase: string | undefined) => {
         setIsImporting(true);
         try {
@@ -388,26 +392,9 @@ export default function EngagementsPage() {
             previewData.append('file', file);
             const headers: Record<string, string> = { 'Content-Type': 'multipart/form-data' };
             if (passphrase) headers['X-Import-Passphrase'] = passphrase;
-            const preview = await api.post('/engagements/import/preview', previewData, { headers });
-            const { engagement_name, matched_users, unmatched_users, local_users } = preview.data;
-
-            if (unmatched_users.length > 0) {
-                setUserMappingData({
-                    engagementName: engagement_name,
-                    matchedUsers: matched_users,
-                    unmatchedUsers: unmatched_users,
-                    localUsers: local_users,
-                });
-                const initial: Record<string, string> = {};
-                unmatched_users.forEach((u: any) => { initial[u.id] = ''; });
-                setUserMapping(initial);
-                setShowUserMapping(true);
-                setIsImporting(false);
-                return;
-            }
-
-            // No unmatched users — import directly (carrying the passphrase too).
-            await doImport(file, {}, passphrase);
+            const resp = await api.post('/engagements/import/preview', previewData, { headers });
+            setImportPreview(resp.data as ImportPreview);
+            setIsImporting(false);
         } catch (err: any) {
             const detail = err?.response?.data?.detail || err.message || '';
             // Backend signals encrypted-without-passphrase / wrong-passphrase
@@ -423,6 +410,34 @@ export default function EngagementsPage() {
             toast.error(`Import preview failed: ${detail}`);
             setIsImporting(false);
         }
+    };
+
+    // User confirmed the preview. Either jump to the mapping dialog
+    // (unmatched users present) or fire the import directly.
+    const handleConfirmPreview = () => {
+        const preview = importPreview;
+        if (!preview || !importFile) return;
+        setImportPreview(null);
+        if (preview.unmatched_users.length > 0) {
+            setUserMappingData({
+                engagementName: preview.engagement_name,
+                matchedUsers: preview.matched_users,
+                unmatchedUsers: preview.unmatched_users,
+                localUsers: preview.local_users,
+            });
+            const initial: Record<string, string> = {};
+            preview.unmatched_users.forEach((u: any) => { initial[u.id] = ''; });
+            setUserMapping(initial);
+            setShowUserMapping(true);
+        } else {
+            doImport(importFile, {}, importPassphrase || undefined);
+        }
+    };
+
+    const handleCancelPreview = () => {
+        setImportPreview(null);
+        setImportFile(null);
+        setImportPassphrase('');
     };
 
     const doImport = async (file: File, mapping: Record<string, string>, passphrase?: string) => {
@@ -739,6 +754,16 @@ export default function EngagementsPage() {
                         engagementId={exportTarget.id}
                         engagementName={exportTarget.name}
                         onClose={() => setExportTarget(null)}
+                    />
+                )}
+
+                {/* Import preview modal — shows archive contents before commit */}
+                {importPreview && (
+                    <EngagementImportPreviewModal
+                        preview={importPreview}
+                        onCancel={handleCancelPreview}
+                        onConfirm={handleConfirmPreview}
+                        isImporting={isImporting}
                     />
                 )}
 
