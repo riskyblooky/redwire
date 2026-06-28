@@ -7,6 +7,7 @@ and executes matched actions.
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote as _url_quote
@@ -28,19 +29,65 @@ _BLOCKED_WEBHOOK_HEADERS = {
 }
 
 
+# Receiver-rendered chat-platform tokens — neutralised inside JSON-body
+# webhook substitutions. GHSA-rvcc follow-up: the original fix closed the
+# *structural* breakout primitive (escape `"` so a substituted value can't
+# inject sibling JSON keys), but tokens like Slack `<!channel>` and
+# `<https://x|click>` are valid JSON string content and survive any JSON
+# escape — once delivered, the receiver renders the broadcast / phishing
+# hyperlink under the platform integration's identity. Defang is
+# conservative: replace the rendering token with a readable literal so
+# the textual signal is preserved, only the side effect is removed.
+_SLACK_BROADCAST_RE = re.compile(r"<!(channel|here|everyone)>", re.IGNORECASE)
+_SLACK_USER_RE = re.compile(r"<@[UW][A-Z0-9]+(?:\|[^>]*)?>")
+_SLACK_GROUP_RE = re.compile(r"<!subteam\^[A-Z0-9]+(?:\|([^>]*))?>", re.IGNORECASE)
+_SLACK_CHANNEL_RE = re.compile(r"<#[CG][A-Z0-9]+(?:\|([^>]*))?>")
+_MRKDWN_LINK_RE = re.compile(r"<(https?://[^|>\s]+)\|([^>]*)>")
+_TEAMS_AT_RE = re.compile(r"<at(?:\s+id=\"[^\"]*\")?\s*>([^<]*)</at>", re.IGNORECASE)
+
+
+def _defang_chat_tokens(val: str) -> str:
+    """Neutralise receiver-rendered chat-platform tokens in ``val``.
+
+    Applied before JSON-escaping in :func:`_escape_template_value` so a
+    low-privileged user-authored string (finding title, asset name, etc.)
+    can't smuggle Slack broadcasts (`<!channel>`), `@user` pings,
+    Teams `<at>` mentions, or `<url|text>` hyperlinks past the webhook
+    boundary. Defangs in place rather than rejecting so legitimate
+    content reads naturally to the recipient.
+    """
+    if not val or "<" not in val:
+        return val
+    val = _SLACK_BROADCAST_RE.sub(lambda m: f"[@{m.group(1).lower()}]", val)
+    val = _SLACK_USER_RE.sub("[user mention]", val)
+    val = _SLACK_GROUP_RE.sub(
+        lambda m: f"[group mention: {m.group(1)}]" if m.group(1) else "[group mention]", val
+    )
+    val = _SLACK_CHANNEL_RE.sub(
+        lambda m: f"[channel mention: {m.group(1)}]" if m.group(1) else "[channel mention]", val
+    )
+    val = _MRKDWN_LINK_RE.sub(lambda m: f"{m.group(2)} ({m.group(1)})", val)
+    val = _TEAMS_AT_RE.sub(
+        lambda m: f"[mention: {m.group(1).strip()}]" if m.group(1).strip() else "[mention]", val
+    )
+    return val
+
+
 def _escape_template_value(val: str, content_type: Optional[str]) -> str:
     """Escape ``val`` for substitution into a webhook body of the given content type.
 
     Used by :func:`_execute_webhook` to keep low-privileged user input
     (finding/asset/discussion titles, etc.) from breaking out of the
     string position the admin's template placed it in
-    (GHSA-rvcc-9pr2-v23q).
+    (GHSA-rvcc-9pr2-v23q). JSON-body callsites additionally run the value
+    through :func:`_defang_chat_tokens` so receiver-rendered Slack/Teams
+    tokens can't ride a substituted string into a chat-platform broadcast.
     """
     ct = (content_type or "").lower().split(";", 1)[0].strip()
     if ct == "application/json" or ct.endswith("+json"):
         # json.dumps wraps in quotes; strip them so the admin's surrounding
         # "…" in the template is preserved.
-        return json.dumps(val)[1:-1]
+        return json.dumps(_defang_chat_tokens(val))[1:-1]
     if ct in ("application/xml", "text/xml") or ct.endswith("+xml"):
         return _xml_escape(val, {'"': "&quot;", "'": "&apos;"})
     if ct == "application/x-www-form-urlencoded":
