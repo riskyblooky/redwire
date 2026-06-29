@@ -28,7 +28,11 @@ from schemas.infra_vault import (
     InfraVaultItemCreate, InfraVaultItemUpdate, InfraVaultItemResponse,
     InfraVaultAccessResponse,
 )
-from utils.vault_crypto import encrypt_vault_fields, decrypt_vault_item, encrypt_bytes, decrypt_bytes
+# EncryptedText on InfraVaultItem handles vault-secret column crypt
+# transparently — encrypt_vault_fields / decrypt_vault_item are no
+# longer needed in this router. encrypt_bytes / decrypt_bytes still
+# wrap the MinIO blob (separate at-rest layer for FILE-type vault items).
+from utils.vault_crypto import encrypt_bytes, decrypt_bytes
 from utils.storage import storage_service
 
 router = APIRouter(prefix="/infra", tags=["infrastructure"])
@@ -457,7 +461,7 @@ async def list_infra_vault(
 
     responses = []
     for vi in items:
-        decrypt_vault_item(vi)
+        # EncryptedText already decrypts on ORM read.
         resp = InfraVaultItemResponse.model_validate(vi)
         if vi.created_by:
             user = await db.get(User, vi.created_by)
@@ -482,17 +486,16 @@ async def create_infra_vault_item(
     if not infra:
         raise HTTPException(status_code=404, detail="Infra item not found")
 
-    encrypted = encrypt_vault_fields(data.model_dump())
+    # EncryptedText on the column types encrypts on bind, decrypts on
+    # refresh — no per-router wrapping required.
     db_item = InfraVaultItem(
         infra_item_id=item_id,
-        **encrypted,
+        **data.model_dump(),
         created_by=current_user.id,
     )
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
-
-    decrypt_vault_item(db_item)
     return db_item
 
 
@@ -715,15 +718,14 @@ async def update_infra_vault_item(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     updates = data.model_dump(exclude_unset=True)
-    encrypted = encrypt_vault_fields(updates)
-    for field, value in encrypted.items():
+    # EncryptedText encrypts each bound value on commit; subsequent
+    # refresh decrypts on read.
+    for field, value in updates.items():
         setattr(vi, field, value)
     vi.updated_by = current_user.id
     vi.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(vi)
-
-    decrypt_vault_item(vi)
     return vi
 
 

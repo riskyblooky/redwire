@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
+from utils.encrypted_types import EncryptedText
 import uuid
 
 
@@ -23,12 +24,13 @@ class InfraVaultItem(Base, AuditMixin):
     name = Column(String(255), nullable=False)
     item_type = Column(String(100), nullable=False)  # CREDENTIAL, KEY, FILE, NOTE
 
-    # Credential/Key fields — encrypted at rest via Fernet
-    username = Column(Text, nullable=True)
-    password = Column(Text, nullable=True)
+    # Credential/Key fields — encrypted at rest via Fernet (handled
+    # by the EncryptedText column type on bind/result).
+    username = Column(EncryptedText, nullable=True)
+    password = Column(EncryptedText, nullable=True)
 
-    # Generic content / Note — encrypted at rest
-    note = Column(Text, nullable=True)
+    # Generic content / Note — encrypted at rest.
+    note = Column(EncryptedText, nullable=True)
 
     # File fields (stored in MinIO)
     file_path = Column(String(500), nullable=True)

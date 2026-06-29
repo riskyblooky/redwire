@@ -379,8 +379,24 @@ async def lifespan(app):
         from utils.vault_field_migration import (
             count_legacy_field_rows,
             backfill_legacy_vault_fields,
+            unwrap_double_encrypted_fields,
         )
         async with AsyncSessionLocal() as _db:
+            # First: undo any double-Fernet wrap from an earlier dev
+            # transient state (EncryptedText was introduced while routers
+            # still called encrypt_field explicitly — that combo produced
+            # double-wrapped rows). Idempotent: once data is clean the
+            # helper no-ops on subsequent boots.
+            unwrap_stats = await unwrap_double_encrypted_fields(_db)
+            if unwrap_stats["unwrapped"]:
+                print(
+                    f"[vault-fields] unwrapped {unwrap_stats['unwrapped']} "
+                    f"double-encrypted field(s) across "
+                    f"{unwrap_stats['rows_checked']} row(s)."
+                )
+
+            # Then: encrypt any remaining legacy-plaintext rows in place
+            # so the fail-closed decrypt_field flip is safe.
             pending = await count_legacy_field_rows(_db)
             if pending:
                 print(f"[vault-fields] backfilling {pending} row(s) with unencrypted secret columns...")

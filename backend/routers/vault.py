@@ -25,13 +25,11 @@ from models.permission import Permission
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.hash_utils import identify_hash_type
 from utils.vault_access_log import should_log_vault_access
-from utils.vault_crypto import (
-    encrypt_vault_fields,
-    decrypt_vault_item,
-    encrypt_field,
-    encrypt_bytes,
-    decrypt_bytes,
-)
+# VaultItem.{username,password,note} are EncryptedText columns —
+# encrypt-on-write / decrypt-on-read happens at the ORM type layer.
+# Only the file-blob helpers (encrypt_bytes / decrypt_bytes) need an
+# explicit wrap in this router; the secret-text columns no longer do.
+from utils.vault_crypto import encrypt_bytes, decrypt_bytes
 from utils.storage import storage_service
 from sqlalchemy.orm import selectinload
 
@@ -43,36 +41,29 @@ def _build_metadata_response(
     creator_username: Optional[str] = None,
     creator_profile_photo: Optional[str] = None,
 ) -> VaultItemResponse:
-    """Build the metadata-only response shape from a raw (still-encrypted)
-    VaultItem. Decrypts the password just-in-time to classify hash shape,
-    then drops the plaintext before returning.
+    """Build the metadata-only response shape from a VaultItem. The
+    decrypted secret values are inspected to compute ``has_*`` flags
+    and the hash-shape badge, but neither is returned in the
+    response — only ``GET /vault/{item_id}/reveal`` carries the
+    plaintext to callers (with an audit log row).
 
-    GHSA-fp69-w2mg-4pqp follow-up: list / create / update endpoints
-    return this shape. Only ``GET /vault/{item_id}/reveal`` carries the
-    decrypted username/password/note, and only after writing an audit
-    log row.
+    GHSA-fp69-w2mg-4pqp follow-up. ``item.username`` / ``item.password``
+    / ``item.note`` are already plaintext at this point because the
+    EncryptedText column type decrypted on ORM read; the strict
+    decrypt_field returns ``None`` on InvalidToken so a corrupted
+    or wrong-keyed row surfaces as has_* = False (rather than
+    silently round-tripping ciphertext).
     """
-    # has_* booleans are computed from ciphertext presence — no decrypt
-    # needed for that. Saves a Fernet round-trip per item in the common
-    # case where the password is just a value (not a hash to classify).
-    has_username = item.username is not None
-    has_password = item.password is not None
-    has_note = item.note is not None
+    has_username = bool(item.username)
+    has_password = bool(item.password)
+    has_note = bool(item.note)
 
     # Classify hash shape only when there's a password to classify. The
     # frontend uses this boolean to surface a "Crack this hash"
     # affordance without forcing a reveal call first.
-    password_looks_like_hash = False
-    if has_password:
-        try:
-            from utils.vault_crypto import decrypt_field
-            plain = decrypt_field(item.password)
-            password_looks_like_hash = bool(identify_hash_type(plain or ""))
-        except Exception:
-            # Decryption failure (key rotation pending, corrupt cipher
-            # text) shouldn't tank the whole list — surface the item
-            # without the hash badge.
-            password_looks_like_hash = False
+    password_looks_like_hash = (
+        bool(identify_hash_type(item.password)) if has_password else False
+    )
 
     return VaultItemResponse(
         id=item.id,
@@ -159,9 +150,9 @@ async def create_vault_item(
                 detail="Insufficient permissions. You need the 'vault_create' permission to create vault items."
             )
 
-    encrypted_data = encrypt_vault_fields(item_data.model_dump())
+    # EncryptedText handles the field-level Fernet wrap at bind time.
     db_item = VaultItem(
-        **encrypted_data,
+        **item_data.model_dump(),
         created_by=current_user.id
     )
     db.add(db_item)
@@ -304,8 +295,8 @@ async def update_vault_item(
         # automation context.
         changes = compute_changes_dict(item, update_data)
 
-        encrypted_data = encrypt_vault_fields(update_data)
-        for key, value in encrypted_data.items():
+        # EncryptedText encrypts each bound value at commit time.
+        for key, value in update_data.items():
             setattr(item, key, value)
         
         item.updated_by = current_user.id
@@ -429,10 +420,9 @@ async def reveal_vault_item(
                 detail="Insufficient permissions. You need the 'vault_view' permission to reveal vault credentials.",
             )
 
-    # Build the metadata shape first (computes has_* + hash classification
-    # against the still-encrypted item), then decrypt + populate plaintext.
+    # The EncryptedText column type already returned plaintext from
+    # the ORM read; metadata + reveal both consume the same values.
     metadata = _build_metadata_response(item, creator_username, creator_profile_photo)
-    decrypt_vault_item(item)
     response = VaultItemRevealResponse(
         **metadata.model_dump(),
         username=item.username,

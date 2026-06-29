@@ -17,7 +17,9 @@ from schemas.spray import (
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
-from utils.vault_crypto import encrypt_field
+# SprayCampaign.password_used and SprayResult.username/password are
+# EncryptedText columns — encrypt-on-write happens at the ORM type
+# layer, so this router passes raw plaintext into the constructors.
 from utils.collaboration import create_activity_log
 
 logger = logging.getLogger(__name__)
@@ -133,10 +135,8 @@ async def commit_spray(
         if not has_perm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    # Encrypt password if provided
-    encrypted_password = encrypt_field(data.password_used) if data.password_used else None
-
-    # Create campaign
+    # Create campaign — password_used is encrypted on bind by the
+    # EncryptedText column type.
     total = len(data.results)
     successful = sum(1 for r in data.results if r.result.startswith("success"))
     locked_out = sum(1 for r in data.results if r.result == "locked")
@@ -150,7 +150,7 @@ async def commit_spray(
         target_port=data.target_port,
         target_hostname=data.target_hostname,
         domain=data.domain,
-        password_used=encrypted_password,
+        password_used=data.password_used,
         total_attempts=total,
         successful=successful,
         locked_out=locked_out,
@@ -198,8 +198,8 @@ async def commit_spray(
         if created_assets:
             await db.flush()  # populate IDs before referencing as FK
 
-    # Create result rows. Per-result password is encrypted with the same
-    # vault Fernet key as campaign.password_used.
+    # Create result rows. EncryptedText encrypts username + password
+    # at bind time under the same Fernet key as campaign.password_used.
     linked_results = 0
     for r in data.results:
         linked_asset = asset_by_identifier.get(r.target_host) if r.target_host else None
@@ -214,7 +214,7 @@ async def commit_spray(
             is_admin=r.is_admin,
             target_host=r.target_host,
             target_port=r.target_port,
-            password=encrypt_field(r.password) if r.password else None,
+            password=r.password,
             asset_id=linked_asset.id if linked_asset else None,
         ))
 
@@ -265,15 +265,7 @@ async def list_spray_campaigns(
     )
     campaigns = result.scalars().all()
 
-    # Decrypt passwords for display
-    from utils.vault_crypto import decrypt_field
-    for c in campaigns:
-        if c.password_used:
-            try:
-                c.password_used = decrypt_field(c.password_used)
-            except Exception:
-                c.password_used = "[encrypted]"
-
+    # EncryptedText already decrypted password_used at ORM-read time.
     return campaigns
 
 
@@ -304,14 +296,7 @@ async def get_spray_campaign(
         if not has_perm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    # Decrypt password
-    from utils.vault_crypto import decrypt_field
-    if campaign.password_used:
-        try:
-            campaign.password_used = decrypt_field(campaign.password_used)
-        except Exception:
-            campaign.password_used = "[encrypted]"
-
+    # EncryptedText already decrypted password_used at ORM-read time.
     return campaign
 
 
@@ -383,16 +368,10 @@ async def vault_spray_hits(
         if not has_perm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    # Decrypt campaign-level password as a fallback for older results that
-    # don't have per-result passwords stored (campaigns imported before the
-    # per-result schema was added).
-    from utils.vault_crypto import decrypt_field
-    campaign_password = None
-    if campaign.password_used:
-        try:
-            campaign_password = decrypt_field(campaign.password_used)
-        except Exception:
-            campaign_password = None
+    # EncryptedText already decrypted campaign.password_used at ORM-read.
+    # Kept as a fallback for older per-result rows that didn't store
+    # their own password (pre per-result-schema imports).
+    campaign_password = campaign.password_used
 
     # Find successful results not yet vaulted
     to_vault = [
@@ -414,16 +393,10 @@ async def vault_spray_hits(
     vaulted = 0
     for spray_result in to_vault:
         # Resolve the actual password for this specific hit:
-        #   1. Per-result encrypted password (correct for wordlist runs)
-        #   2. Campaign-level password (fallback for legacy/single-password runs)
-        result_password = None
-        if spray_result.password:
-            try:
-                result_password = decrypt_field(spray_result.password)
-            except Exception:
-                result_password = None
-        if not result_password:
-            result_password = campaign_password
+        #   1. Per-result password (correct for wordlist runs) — already
+        #      decrypted by EncryptedText on ORM read.
+        #   2. Campaign-level password (fallback for legacy/single-pwd runs).
+        result_password = spray_result.password or campaign_password
 
         username_display = f"{spray_result.domain}\\{spray_result.username}" if spray_result.domain else spray_result.username
         host_tag = f"@{spray_result.target_host}" if spray_result.target_host else ""
@@ -439,12 +412,13 @@ async def vault_spray_hits(
         # search/filter without it cluttering the vault item title.
         admin_note = " (admin shell)" if spray_result.is_admin else ""
 
+        # EncryptedText on VaultItem.{username,password} encrypts on bind.
         vault_item = VaultItem(
             engagement_id=campaign.engagement_id,
             name=f"{username_display}{host_tag}",
             item_type="CREDENTIAL",
-            username=encrypt_field(username_display),
-            password=encrypt_field(result_password) if result_password else None,
+            username=username_display,
+            password=result_password,
             description=f"Auto-vaulted from spray campaign: {campaign.name}{admin_note}",
             created_by=current_user.id,
             assets=[matching_asset] if matching_asset else [],

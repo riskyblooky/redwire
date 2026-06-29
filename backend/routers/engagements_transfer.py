@@ -15,7 +15,10 @@ from auth.dependencies import get_current_user
 from models.user import User, UserRole
 from utils.storage import storage_service
 from utils.uploads import read_upload_capped
-from utils.vault_crypto import encrypt_field, decrypt_field
+# Note: vault secret columns are encrypted at rest via the EncryptedText
+# column type — reads come back as plaintext, writes encrypt on bind.
+# Export and import paths therefore pass plain str values; no per-call
+# encrypt_field / decrypt_field wrapping required.
 
 import json
 import logging
@@ -461,14 +464,10 @@ async def export_engagement(
     # instance (different VAULT_ENCRYPTION_KEY). The archive is loudly
     # flagged as containing plaintext secrets via SECURITY_WARNING.txt
     # and the manifest below.
-    _vault_secret_cols = ("username", "password", "note")
-    def _vault_row_dict(v):
-        d = _row_dict(v, vi_fields)
-        for col in _vault_secret_cols:
-            if col in d:
-                d[col] = decrypt_field(d[col])
-        return d
-    data["vault_items"] = [_vault_row_dict(v) for v in vault_items]
+    # EncryptedText decrypts on ORM read, so _row_dict already pulls
+    # plaintext for username / password / note. No per-export decrypt
+    # wrap needed.
+    data["vault_items"] = [_row_dict(v, vi_fields) for v in vault_items]
     for v in vault_items:
         _collect_user_ids(v, "created_by", "updated_by")
 
@@ -1261,20 +1260,19 @@ async def import_engagement(
 
             # GHSA-3r7j-7h5r-gxgx: persist vault text columns under the
             # destination instance's Fernet key. The archive carries
-            # plaintext (see export side) so a different instance can
-            # re-encrypt under its own key. encrypt_field handles None
-            # cleanly. Legacy archives whose columns were Fernet
-            # ciphertext from the source instance get re-encrypted into
-            # double-encrypted garbage — visibly wrong but no security
-            # regression; operator re-exports from a patched source.
+            # plaintext (see export side); the EncryptedText column type
+            # on VaultItem encrypts on bind, so we hand it the raw
+            # plaintext from the archive and let the type layer do the
+            # work. Same applies to the file blob above (encrypted via
+            # encrypt_bytes before MinIO upload).
             db.add(VaultItem(
                 id=new_id(vi["id"]),
                 engagement_id=eng_new_id,
                 name=vi["name"],
                 item_type=vi.get("item_type", "Note"),
-                username=encrypt_field(vi.get("username")),
-                password=encrypt_field(vi.get("password")),
-                note=encrypt_field(vi.get("note")),
+                username=vi.get("username"),
+                password=vi.get("password"),
+                note=vi.get("note"),
                 file_path=new_vault_path,
                 filename=vi.get("filename"),
                 description=vi.get("description"),

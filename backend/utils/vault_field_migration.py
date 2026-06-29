@@ -1,25 +1,26 @@
 """One-shot backfill for legacy unencrypted vault SECRET COLUMNS.
 
-GHSA-3r7j-7h5r-gxgx follow-up. ``encrypt_field`` writes a Fernet token
-into the username / password / note columns on the vault tables, but
-the matching ``decrypt_field`` silently returned the raw value on any
-decrypt failure — so a write path that ever forgot to encrypt (3r7j
-itself was one such bug on the import side) wrote plaintext into the
-column and the read-back path silently confirmed it. The vault UI
-looked normal; the bug was invisible.
+GHSA-3r7j-7h5r-gxgx follow-up. The vault secret columns
+(username/password/note across four tables) are now Fernet-encrypted
+at the SQLAlchemy column-type layer via ``EncryptedText`` —
+encrypt-on-bind, decrypt-on-read. Routers see plaintext on both
+sides. Once that wiring is in place, any legacy row that still holds
+plaintext at rest will fail-closed to ``None`` on read (per
+``decrypt_field``'s stricter contract). This backfill is what makes
+that flip safe on an upgrade — it walks every secret column once,
+detects rows storing plaintext, and re-encrypts in place.
 
-This module's job: walk every row in the four tables that store
-Fernet-encrypted secret columns, try to decrypt each non-empty value
-under the current ``VAULT_ENCRYPTION_KEY``, and on failure encrypt as
-legacy plaintext. Idempotent — safe to re-run on every boot, fast
-when there's nothing to do (Fernet decrypt is microseconds per value).
+Implementation note: the helper uses **raw SQL** (``sa.text(...)``)
+intentionally. Going through the ORM would route reads/writes
+through ``EncryptedText``, which would (a) decrypt every read so a
+plaintext value would appear "broken" rather than detectable, and
+(b) re-encrypt every write so an in-place fix would land double-
+wrapped. Raw SQL bypasses the column type and operates on the
+literal cell bytes — the only safe substrate for a migration of the
+crypto layer itself.
 
-Once this has run cleanly across the deployment, ``decrypt_field`` can
-be flipped to fail-closed (return ``None`` + log) so any future
-write-path bug surfaces in the UI instead of being round-tripped.
-
-Tables covered (matching every callsite of ``encrypt_field`` /
-``decrypt_field``):
+Tables covered (matching every Fernet-encrypted secret column in the
+schema):
 
   - ``vault_items`` — username / password / note
   - ``infra_vault_items`` — username / password / note
@@ -27,21 +28,20 @@ Tables covered (matching every callsite of ``encrypt_field`` /
   - ``spray_results`` — username / password
 
 A value that *looks* like a Fernet token (begins with ``gAAAAA``,
-the base64-url framing of the version byte) but fails to decrypt is
-treated as wrong-keyed / corrupted ciphertext and **skipped**, not
-re-wrapped. Wrapping ciphertext-as-plaintext would produce
+the base64-url framing of the version byte) but fails to decrypt
+is treated as wrong-keyed / corrupted ciphertext and **skipped**,
+not re-wrapped. Wrapping ciphertext-as-plaintext would produce
 unrecoverable nested ciphertext — better to leave the row visibly
-broken so the operator notices and can investigate (key rotation
-mishap, restored backup with stale key, etc.).
+broken so the operator notices.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Tuple
+from typing import List, Tuple
 
 from cryptography.fernet import InvalidToken
-from sqlalchemy import select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from utils.vault_crypto import _get_fernet
@@ -49,89 +49,96 @@ from utils.vault_crypto import _get_fernet
 logger = logging.getLogger(__name__)
 
 
-# A Fernet token, base64-url-encoded, always begins with "gAAAAA" — that
-# is the base64 framing of the version byte 0x80 plus zero-padding for
-# the leading bytes of the timestamp. A value with this prefix that
-# nevertheless fails to decrypt is almost certainly wrong-keyed Fernet
-# (or corrupted) — NOT plaintext that happens to start with `g`. Skip
-# those rather than wrapping them.
+# Fernet token framing — see _is_already_fernet in vault_migration.py
+# for the blob analogue. A column value starting with this prefix
+# that does NOT decrypt is almost certainly wrong-keyed Fernet, not
+# plaintext that happens to start with "g".
 _FERNET_PREFIX = "gAAAAA"
 
 
-_FieldsForRow = Tuple[str, ...]
+# (table_name, secret_columns). Kept in one place so a future encrypted
+# column added elsewhere has a single registry entry to update — tests
+# pin this list so a missed entry shows up as a noisy failure.
+_TABLE_SPECS: List[Tuple[str, Tuple[str, ...]]] = [
+    ("vault_items", ("username", "password", "note")),
+    ("infra_vault_items", ("username", "password", "note")),
+    ("spray_campaigns", ("password_used",)),
+    ("spray_results", ("username", "password")),
+]
 
 
-def _backfill_row_fields(row, columns: _FieldsForRow, f, stats: dict) -> bool:
-    """Walk the named columns on ``row``. Returns True if any column on
-    the row was mutated (caller commits)."""
-    changed = False
-    for col in columns:
-        v = getattr(row, col, None)
-        if v is None or v == "":
-            continue
-        if not isinstance(v, str):
-            # Defensive — every encrypted column is Text, so this should
-            # never fire. Log + skip rather than mutate.
-            logger.warning(
-                "vault-field backfill: skipping %s.%s on row %s — "
-                "non-str value of type %s",
-                type(row).__name__, col, getattr(row, "id", "?"), type(v).__name__,
-            )
-            stats["skipped"] += 1
-            continue
-        try:
-            f.decrypt(v.encode("utf-8"))
-            stats["fields_already_encrypted"] += 1
-        except InvalidToken:
+def _is_decryptable(f, value: str) -> bool:
+    try:
+        f.decrypt(value.encode("utf-8"))
+        return True
+    except InvalidToken:
+        return False
+
+
+async def _walk_table(
+    db: AsyncSession, table: str, columns: Tuple[str, ...], f, stats: dict
+) -> None:
+    """Raw-SQL pass: SELECT each row's id + secret columns, evaluate
+    decrypt-status, UPDATE the row in place for any legacy-plaintext
+    columns. Skips empty / None / wrong-keyed-Fernet values."""
+    cols_sql = ", ".join(["id"] + list(columns))
+    select_sql = f"SELECT {cols_sql} FROM {table}"  # noqa: S608 — table+cols from a constant registry, not user input
+    result = await db.execute(sa_text(select_sql))
+
+    for row in result.fetchall():
+        row_id = row[0]
+        # Map column name → value, indexed in the same order as cols_sql.
+        col_values = dict(zip(columns, row[1:]))
+
+        updates: dict[str, str] = {}
+        for col in columns:
+            v = col_values[col]
+            if v is None or v == "" or not isinstance(v, str):
+                continue
+            if _is_decryptable(f, v):
+                stats["fields_already_encrypted"] += 1
+                continue
             if v.startswith(_FERNET_PREFIX):
-                # Looks like Fernet but didn't decrypt under our key —
-                # likely wrong-keyed ciphertext (rotation mistake, restored
-                # backup with a stale key, corruption). Leave it alone so
-                # operator can investigate / recover with the right key.
                 logger.warning(
                     "vault-field backfill: SKIPPING %s.%s on row %s — "
                     "value looks like Fernet but failed to decrypt. "
                     "Not re-wrapping (would lose recoverability). "
                     "Investigate wrong-key / restored-backup / corruption.",
-                    type(row).__name__, col, getattr(row, "id", "?"),
+                    table, col, row_id,
                 )
                 stats["skipped"] += 1
                 continue
-            # Legacy plaintext — encrypt in place.
+            # Legacy plaintext — schedule re-encrypt in this row's UPDATE.
             try:
-                new = f.encrypt(v.encode("utf-8")).decode("utf-8")
-                setattr(row, col, new)
-                changed = True
-                stats["fields_re_encrypted"] += 1
+                updates[col] = f.encrypt(v.encode("utf-8")).decode("utf-8")
             except Exception as exc:
                 logger.warning(
                     "vault-field backfill: skipping %s.%s on row %s — "
-                    "re-encrypt failed: %s",
-                    type(row).__name__, col, getattr(row, "id", "?"), exc,
+                    "re-encrypt failed: %s", table, col, row_id, exc,
                 )
                 stats["skipped"] += 1
-    return changed
 
+        if updates:
+            # One UPDATE per row touched. SET clause is built from the
+            # registry-derived `updates` keys (never user input).
+            set_sql = ", ".join(f"{col} = :{col}" for col in updates)
+            params = {**updates, "row_id": row_id}
+            await db.execute(
+                sa_text(f"UPDATE {table} SET {set_sql} WHERE id = :row_id"),
+                params,
+            )
+            stats["fields_re_encrypted"] += len(updates)
 
-# Each entry: (model class, columns to walk). Kept in one place so the
-# boot hook + tests + future maintainers see the full scope at a glance.
-def _table_specs():
-    from models.vault import VaultItem
-    from models.infra_vault_item import InfraVaultItem
-    from models.spray import SprayCampaign, SprayResult
-    return [
-        (VaultItem, ("username", "password", "note")),
-        (InfraVaultItem, ("username", "password", "note")),
-        (SprayCampaign, ("password_used",)),
-        (SprayResult, ("username", "password")),
-    ]
+        stats["rows_checked"] += 1
 
 
 async def backfill_legacy_vault_fields(db: AsyncSession) -> dict:
     """Idempotent walk of every Fernet-encrypted secret column across
-    the four vault tables. On failure-to-decrypt: re-encrypt as legacy
-    plaintext, or skip if the value looks like a wrong-keyed Fernet
-    token. Returns a stats dict for the caller to log."""
+    the four vault tables. Plaintext rows get re-encrypted in place
+    via raw SQL (so the EncryptedText column type doesn't interfere).
+    Wrong-keyed Fernet values are preserved. Returns a stats dict for
+    the caller to log.
+    """
     stats = {
         "rows_checked": 0,
         "fields_already_encrypted": 0,
@@ -139,16 +146,11 @@ async def backfill_legacy_vault_fields(db: AsyncSession) -> dict:
         "skipped": 0,
     }
     f = _get_fernet()
-    any_changed = False
 
-    for model, columns in _table_specs():
-        result = await db.execute(select(model))
-        for row in result.scalars().all():
-            stats["rows_checked"] += 1
-            if _backfill_row_fields(row, columns, f, stats):
-                any_changed = True
+    for table, columns in _TABLE_SPECS:
+        await _walk_table(db, table, columns, f, stats)
 
-    if any_changed:
+    if stats["fields_re_encrypted"]:
         await db.commit()
     if stats["fields_re_encrypted"] or stats["skipped"]:
         logger.info(
@@ -160,26 +162,99 @@ async def backfill_legacy_vault_fields(db: AsyncSession) -> dict:
     return stats
 
 
-async def count_legacy_field_rows(db: AsyncSession) -> int:
-    """Count of distinct rows that carry at least one secret column
-    which doesn't decrypt under the current key. Used by the boot
-    hook to print a meaningful "backfilling N rows..." line vs
-    silently no-op'ing when there's nothing to do.
+async def unwrap_double_encrypted_fields(db: AsyncSession) -> dict:
+    """One-shot recovery for vault rows that were accidentally double-
+    Fernet-encrypted. Idempotent: a single-encrypted value decrypts
+    once to plaintext (not another Fernet token) and is left alone.
 
-    Walks the same row set the backfill would — but stops at the first
-    bad column per row so the cost is bounded."""
+    Triggered by an earlier transient state in this codebase where the
+    column-type EncryptedText was introduced while routers still
+    called ``encrypt_field()`` explicitly, producing rows wrapped
+    twice. Once fixed, the helper no-ops on subsequent boots
+    (decrypt-once → plaintext for healthy single-encrypted rows).
+
+    Operates via raw SQL to bypass the EncryptedText column type —
+    going through the ORM would itself decrypt once on read and
+    encrypt once on write, masking the corruption and re-introducing
+    it on commit.
+    """
+    stats = {"rows_checked": 0, "unwrapped": 0, "left_alone": 0}
     f = _get_fernet()
-    bad = 0
-    for model, columns in _table_specs():
-        result = await db.execute(select(model))
-        for row in result.scalars().all():
-            for col in columns:
-                v = getattr(row, col, None)
+
+    for table, columns in _TABLE_SPECS:
+        cols_sql = ", ".join(["id"] + list(columns))
+        result = await db.execute(sa_text(f"SELECT {cols_sql} FROM {table}"))  # noqa: S608
+        for row in result.fetchall():
+            row_id = row[0]
+            updates: dict[str, str] = {}
+            for col, v in zip(columns, row[1:]):
                 if v is None or v == "" or not isinstance(v, str):
                     continue
                 try:
-                    f.decrypt(v.encode("utf-8"))
+                    once = f.decrypt(v.encode("utf-8")).decode("utf-8")
                 except InvalidToken:
+                    # Not decryptable under our key — outside scope of
+                    # this unwrap pass.
+                    continue
+                # If the once-decrypted value still looks like a Fernet
+                # token AND decrypts under our key, the row was wrapped
+                # twice. Replace with the once-decrypted (correctly-
+                # single-encrypted) form.
+                if once.startswith(_FERNET_PREFIX) and _is_decryptable(f, once):
+                    updates[col] = once
+                    stats["unwrapped"] += 1
+                else:
+                    stats["left_alone"] += 1
+            if updates:
+                set_sql = ", ".join(f"{col} = :{col}" for col in updates)
+                params = {**updates, "row_id": row_id}
+                await db.execute(
+                    sa_text(f"UPDATE {table} SET {set_sql} WHERE id = :row_id"),
+                    params,
+                )
+            stats["rows_checked"] += 1
+
+    if stats["unwrapped"]:
+        await db.commit()
+        logger.info(
+            "vault-field unwrap: rows_checked=%d unwrapped=%d left_alone=%d",
+            stats["rows_checked"], stats["unwrapped"], stats["left_alone"],
+        )
+    return stats
+
+
+async def count_legacy_field_rows(db: AsyncSession) -> int:
+    """Count rows carrying at least one secret column that doesn't
+    decrypt under the current key. Cheap probe used by the boot hook
+    to decide whether to print the backfill banner."""
+    f = _get_fernet()
+    bad = 0
+    for table, columns in _TABLE_SPECS:
+        cols_sql = ", ".join(["id"] + list(columns))
+        result = await db.execute(sa_text(f"SELECT {cols_sql} FROM {table}"))  # noqa: S608
+        for row in result.fetchall():
+            for value in row[1:]:
+                if value is None or value == "" or not isinstance(value, str):
+                    continue
+                if not _is_decryptable(f, value):
                     bad += 1
-                    break  # one bad column already disqualifies the row
+                    break
     return bad
+
+
+# Legacy alias for the pre-rewrite tests that imported the row-level
+# helper directly. The new implementation is table-level (raw SQL is
+# the cleanest way to bypass the EncryptedText column type), so
+# call-sites that want per-row behaviour should use _walk_table on a
+# bind-bound table. Kept as a no-op stub for import-time compatibility
+# until the old tests are migrated.
+def _backfill_row_fields(*_args, **_kwargs):  # pragma: no cover — see note above
+    raise NotImplementedError(
+        "_backfill_row_fields was removed when the backfill moved to raw SQL; "
+        "use _walk_table or the public backfill_legacy_vault_fields helper."
+    )
+
+
+# Public re-export so tests can introspect the registry.
+def _table_specs():  # pragma: no cover — passthrough
+    return _TABLE_SPECS

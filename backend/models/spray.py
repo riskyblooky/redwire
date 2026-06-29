@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
+from utils.encrypted_types import EncryptedText
 import uuid
 
 
@@ -19,8 +20,10 @@ class SprayCampaign(Base, AuditMixin):
     target_hostname = Column(String(255), nullable=True)   # NetBIOS / DNS name
     domain = Column(String(255), nullable=True)            # AD domain
 
-    # The password sprayed — encrypted at rest via Fernet (same as vault)
-    password_used = Column(Text, nullable=True)
+    # The password sprayed — encrypted at rest via Fernet through the
+    # EncryptedText column type (transparent encrypt-on-write /
+    # decrypt-on-read).
+    password_used = Column(EncryptedText, nullable=True)
 
     # Aggregate stats
     total_attempts = Column(Integer, default=0)
@@ -46,7 +49,10 @@ class SprayResult(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     campaign_id = Column(String, ForeignKey("spray_campaigns.id", ondelete="CASCADE"), nullable=False)
 
-    username = Column(String(255), nullable=False)
+    # Encrypted at rest — same Fernet-at-rest treatment as the
+    # campaign password. Ciphertext can exceed 255 chars so the
+    # underlying column is Text, not String(255).
+    username = Column(EncryptedText, nullable=False)
     domain = Column(String(255), nullable=True)
     result = Column(String(50), nullable=False)         # success, success_admin, failed, locked, disabled
     status_code = Column(String(255), nullable=True)    # raw nxc status e.g. STATUS_LOGON_FAILURE
@@ -62,7 +68,7 @@ class SprayResult(Base):
     # auto-vault when the campaign-level password_used is null.
     target_host = Column(String(255), nullable=True)
     target_port = Column(Integer, nullable=True)
-    password = Column(Text, nullable=True)              # Fernet-encrypted
+    password = Column(EncryptedText, nullable=True)     # Fernet-encrypted at rest
 
     created_at = Column(DateTime, server_default="now()")
 

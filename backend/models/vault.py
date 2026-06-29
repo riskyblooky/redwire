@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.orm import relationship, backref
 from database import Base, AuditMixin
+from utils.encrypted_types import EncryptedText
 import uuid
 
 class VaultItem(Base, AuditMixin):
@@ -11,12 +12,14 @@ class VaultItem(Base, AuditMixin):
     name = Column(String(255), nullable=False)
     item_type = Column(String(100), nullable=False)
 
-    # Credential/Key fields — encrypted at rest via Fernet
-    username = Column(Text, nullable=True)
-    password = Column(Text, nullable=True)
+    # Credential/Key fields — encrypted at rest via Fernet (EncryptedText
+    # handles encrypt-on-write / decrypt-on-read transparently; routers
+    # see plaintext str on read and pass plaintext str on write).
+    username = Column(EncryptedText, nullable=True)
+    password = Column(EncryptedText, nullable=True)
 
-    # Generic content/Note
-    note = Column(Text, nullable=True)
+    # Generic content / Note — same Fernet-at-rest treatment.
+    note = Column(EncryptedText, nullable=True)
 
     # File fields
     file_path = Column(String(500), nullable=True)
