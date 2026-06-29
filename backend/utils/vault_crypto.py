@@ -67,16 +67,32 @@ def encrypt_field(value: Optional[str]) -> Optional[str]:
 
 
 def decrypt_field(value: Optional[str]) -> Optional[str]:
-    """Decrypt a ciphertext string.  Gracefully returns the raw value if
-    decryption fails (handles legacy unencrypted data)."""
+    """Decrypt a Fernet ciphertext string.
+
+    Fail-closed: returns ``None`` and logs a warning on ``InvalidToken``
+    (corrupted ciphertext, wrong key, or unmigrated legacy plaintext).
+    The previous behaviour was to round-trip the raw value, which let
+    a write-path bug (e.g. the import-side plaintext write the 3r7j
+    advisory caught) silently confirm itself at read-back. The vault
+    UI now renders ``None`` instead — which is exactly the bug
+    signal we want to surface.
+
+    Boot-time ``backfill_legacy_vault_fields`` ensures any pre-existing
+    legacy plaintext rows are re-encrypted before this fail-closed
+    path can affect them on an upgrade.
+    """
     if value is None:
         return None
     try:
         f = _get_fernet()
         return f.decrypt(value.encode("utf-8")).decode("utf-8")
-    except (InvalidToken, Exception):
-        # Legacy plaintext — return as-is
-        return value
+    except InvalidToken:
+        logger.warning(
+            "decrypt_field: InvalidToken — value not decryptable under "
+            "the current VAULT_ENCRYPTION_KEY. Returning None. Investigate "
+            "wrong-key / restored-backup / corruption."
+        )
+        return None
 
 
 def encrypt_bytes(data: bytes) -> bytes:

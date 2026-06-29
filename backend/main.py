@@ -367,6 +367,33 @@ async def lifespan(app):
     except Exception as e:
         print(f"[vault-encryption] WARN: backfill failed: {e}")
 
+    # ── One-shot vault-COLUMN at-rest encryption backfill ──
+    # GHSA-3r7j-7h5r-gxgx follow-up — prerequisite for flipping
+    # decrypt_field to fail-closed. Walks vault_items / infra_vault_items /
+    # spray_campaigns / spray_results, encrypts any column that doesn't
+    # decrypt under the current key (legacy plaintext from an early
+    # write-path bug), skips wrong-keyed Fernet tokens. Idempotent +
+    # cheap when nothing's pending. Boot-safe via the same broad except
+    # as the blob backfill above.
+    try:
+        from utils.vault_field_migration import (
+            count_legacy_field_rows,
+            backfill_legacy_vault_fields,
+        )
+        async with AsyncSessionLocal() as _db:
+            pending = await count_legacy_field_rows(_db)
+            if pending:
+                print(f"[vault-fields] backfilling {pending} row(s) with unencrypted secret columns...")
+                stats = await backfill_legacy_vault_fields(_db)
+                print(
+                    f"[vault-fields] done: rows_checked={stats['rows_checked']} "
+                    f"already_encrypted={stats['fields_already_encrypted']} "
+                    f"re_encrypted={stats['fields_re_encrypted']} "
+                    f"skipped={stats['skipped']}"
+                )
+    except Exception as e:
+        print(f"[vault-fields] WARN: backfill failed: {e}")
+
     bloom_task = asyncio.create_task(_load_bloom())
     intel_task = asyncio.create_task(_refresh_intel_feeds_background())
     yield
