@@ -70,19 +70,18 @@ they would for core, and Next's file-based router picks up the pages.
 frontend container at `/backend-plugins:ro`, so the sync script always
 sees the latest source. The pre-hooks run on every `next dev` restart.
 
-**Prod:** the frontend Docker build context is scoped to `frontend/`, so
-plugin sources aren't directly reachable at image build time. Two paths:
+**Prod:** the frontend Docker build context is the repo root (see
+`docker-compose.prod.yml`), and `frontend/Dockerfile` `COPY
+backend/plugins/ /backend-plugins/` in its builder stage. So `next
+build` runs `sync-plugin-frontends.mjs` with plugin sources in scope,
+and plugin pages are baked into the resulting image. **A plugin
+change requires rebuilding the frontend image** (`docker compose -f
+docker-compose.prod.yml build frontend && docker compose -f
+docker-compose.prod.yml up -d frontend`).
 
-1. **Sync on the host before build** (simplest):
-   ```bash
-   node frontend/scripts/sync-plugin-frontends.mjs   # populates src/app/plugins
-   docker compose -f docker-compose.prod.yml build frontend
-   ```
-   The synced dirs land in the build context via the existing
-   `COPY . .` step. Requires Node on the deploy host.
-
-2. **Expand the build context** to the repo root and adjust COPY paths in
-   `frontend/Dockerfile`. Larger change, catches all cases.
+`.dockerignore` at the repo root keeps the build context lean —
+without it the daemon would ship `.git`, `node_modules`, `.next`,
+`evidence/`, backups, etc. before COPY ran.
 
 `frontend/src/app/plugins/.gitignore` excludes synced dirs from git;
 each synced dir carries a `.plugin-managed` marker so the cleanup pass
