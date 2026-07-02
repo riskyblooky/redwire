@@ -35,7 +35,7 @@ import { apiErrorMessage } from '@/lib/api';
 export default function NewAssetPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const engagementIdParam = searchParams.get('engagementId');
+    const engagementIdParam = searchParams?.get('engagementId');
 
     const createAsset = useCreateAsset();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();

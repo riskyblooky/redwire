@@ -98,8 +98,8 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     const { id } = useParams(params);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const returnEngagementId = searchParams.get('engagementId');
-    const returnTab = searchParams.get('tab') || 'assets';
+    const returnEngagementId = searchParams?.get('engagementId');
+    const returnTab = searchParams?.get('tab') || 'assets';
     const { user } = useAuthStore();
 
     const { data: asset, isLoading: isLoadingAsset, error: assetError } = useAsset(id);

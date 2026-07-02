@@ -595,7 +595,7 @@ function SearchInput({ value, onChange, onSubmit, isLoading }: {
 function SearchPageContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const urlQuery = searchParams.get('q') || '';
+    const urlQuery = searchParams?.get('q') || '';
     const [localQuery, setLocalQuery] = useState(urlQuery);
     const [sort, setSort] = useState<'relevance' | 'updated'>('relevance');
     const [previewItem, setPreviewItem] = useState<SearchResultItem | null>(null);

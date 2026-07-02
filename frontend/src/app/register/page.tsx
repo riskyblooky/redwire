@@ -230,17 +230,7 @@ export default function RegisterPage() {
             toast.success('Registration successful! Please sign in.');
             router.push('/login');
         } catch (err: any) {
-            const detail = apiErrorMessage(err);
-            let message = 'Registration failed';
-            if (typeof detail === 'string') {
-                message = detail;
-            } else if (Array.isArray(detail)) {
-                message = detail.map((d: any) => {
-                    const field = d.loc?.slice(-1)[0];
-                    const msg = d.msg?.replace(/^Value error, /i, '').replace(/^String /i, '');
-                    return field ? `${field}: ${msg}` : msg;
-                }).join(', ');
-            }
+            const message = apiErrorMessage(err, 'Registration failed');
             toast.error(message);
             setStatusText('Registration rejected');
         } finally {

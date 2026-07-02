@@ -56,8 +56,8 @@ export function EvidenceCard({ evidence, findingId }: EvidenceCardProps) {
         e?.stopPropagation();
         const params = new URLSearchParams();
         params.set('source', 'finding');
-        const returnEngagementId = searchParams.get('engagementId');
-        const returnTab = searchParams.get('tab');
+        const returnEngagementId = searchParams?.get('engagementId');
+        const returnTab = searchParams?.get('tab');
         if (returnEngagementId) params.set('returnEngagementId', returnEngagementId);
         if (returnTab) params.set('returnTab', returnTab);
         router.push(`/engagements/${evidence.engagement_id || 'global'}/evidence/${evidence.id}?${params.toString()}`);

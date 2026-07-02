@@ -117,7 +117,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     const { id } = useParams(params);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const fromPlanning = searchParams.get('from') === 'planning';
+    const fromPlanning = searchParams?.get('from') === 'planning';
     const returnUrl = fromPlanning ? '/planning' : `/engagements/${id}`;
 
     const { data: engagement, isLoading } = useEngagement(id);

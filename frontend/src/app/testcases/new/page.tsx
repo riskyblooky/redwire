@@ -61,8 +61,8 @@ const categories = [
 export default function NewTestCasePage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const engagementIdParam = searchParams.get('engagementId');
-    const parentIdParam = searchParams.get('parentId');
+    const engagementIdParam = searchParams?.get('engagementId');
+    const parentIdParam = searchParams?.get('parentId');
 
     const createTestCase = useCreateTestCase();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();

@@ -123,8 +123,8 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const { id } = useParams(params);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const returnEngagementId = searchParams.get('engagementId');
-    const returnTab = searchParams.get('tab') || 'findings';
+    const returnEngagementId = searchParams?.get('engagementId');
+    const returnTab = searchParams?.get('tab') || 'findings';
     const { user } = useAuthStore();
 
     const { data: finding, isLoading, error } = useFinding(id);

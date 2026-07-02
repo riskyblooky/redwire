@@ -103,7 +103,7 @@ function ColorField({ label, value, onChange, description }: ColorFieldProps) {
 export default function ReportThemeEditPage() {
     const router = useRouter();
     const params = useParams();
-    const themeId = params.id as string;
+    const themeId = params?.id as string;
     const isNew = themeId === 'new';
 
     const { data: existing, isLoading } = useReportTheme(isNew ? null : themeId);

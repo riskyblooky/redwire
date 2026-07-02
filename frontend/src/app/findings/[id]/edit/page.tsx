@@ -83,8 +83,8 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     const { id } = useParams(params);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const returnEngagementId = searchParams.get('engagementId');
-    const returnTab = searchParams.get('tab') || 'findings';
+    const returnEngagementId = searchParams?.get('engagementId');
+    const returnTab = searchParams?.get('tab') || 'findings';
 
     const { data: finding, isLoading: isLoadingFinding } = useFinding(id);
     const { data: engagements = [] } = useEngagements();
@@ -363,10 +363,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
             router.push(`/findings/${id}${query}`);
         } catch (error: any) {
             console.error('Failed to update finding:', error);
-            const detail = apiErrorMessage(error);
-            const message = typeof detail === 'string' ? detail :
-                Array.isArray(detail) ? detail.map((d: any) => `${d.loc.join('.')}: ${d.msg}`).join('\n') :
-                    'Verification failed. Ensure all fields are valid.';
+            const message = apiErrorMessage(error, 'Verification failed. Ensure all fields are valid.');
             toast.error(`Update Failed: ${message}`);
         }
     };

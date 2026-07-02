@@ -185,7 +185,7 @@ export default function RunbookEditorPage() {
     const router = useRouter();
     const params = useParams();
     const { user } = useAuthStore();
-    const runbookId = params.id as string;
+    const runbookId = params?.id as string;
     const isNew = runbookId === 'new';
     const canManage = user?.role === UserRole.ADMIN || user?.role === UserRole.TEAM_LEAD;
 

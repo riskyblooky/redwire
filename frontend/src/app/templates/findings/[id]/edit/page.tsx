@@ -66,8 +66,8 @@ export default function FindingTemplateEditPage() {
     const params = useParams();
     const router = useRouter();
     const { user } = useAuthStore();
-    const isNew = params.id === 'new';
-    const templateId = isNew ? undefined : params.id as string;
+    const isNew = params?.id === 'new';
+    const templateId = isNew ? undefined : params?.id as string;
 
     const canManage = user?.role === UserRole.ADMIN || user?.role === UserRole.TEAM_LEAD;
 
@@ -138,8 +138,7 @@ export default function FindingTemplateEditPage() {
             }
             router.push('/templates?tab=findings');
         } catch (err: any) {
-            const detail = apiErrorMessage(err);
-            const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((e: any) => e.msg).join(', ') : `Failed to ${isNew ? 'create' : 'update'} template`;
+            const message = apiErrorMessage(err, `Failed to ${isNew ? 'create' : 'update'} template`);
             toast.error(message);
         }
     };

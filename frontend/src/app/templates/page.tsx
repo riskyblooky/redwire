@@ -873,7 +873,7 @@ export default function TemplatesPage() {
                 </div>
 
                 {/* Tabs */}
-                <Tabs defaultValue={searchParams.get('tab') || 'findings'} className="space-y-4">
+                <Tabs defaultValue={searchParams?.get('tab') || 'findings'} className="space-y-4">
                     <TabsList className="bg-slate-800/50 border border-slate-700">
                         <TabsTrigger value="findings" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <FileText className="h-4 w-4" />

@@ -91,8 +91,8 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const { id } = useParams(params);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const returnEngagementId = searchParams.get('engagementId');
-    const returnTab = searchParams.get('tab') || 'testcases';
+    const returnEngagementId = searchParams?.get('engagementId');
+    const returnTab = searchParams?.get('tab') || 'testcases';
     const { user } = useAuthStore();
 
     const { data: testcase, isLoading: isLoadingTC, error, refetch } = useTestCase(id);

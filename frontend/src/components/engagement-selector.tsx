@@ -22,17 +22,17 @@ export default function EngagementSelector() {
 
     // Only show on dashboard, engagements, findings, assets, testcases and stats pages
     const isDashboard = pathname === '/dashboard';
-    const isEngagements = pathname.startsWith('/engagements');
-    const isFindings = pathname.startsWith('/findings');
-    const isAssets = pathname.startsWith('/assets');
-    const isTestcases = pathname.startsWith('/testcases');
-    const isStats = pathname.startsWith('/stats');
+    const isEngagements = pathname?.startsWith('/engagements');
+    const isFindings = pathname?.startsWith('/findings');
+    const isAssets = pathname?.startsWith('/assets');
+    const isTestcases = pathname?.startsWith('/testcases');
+    const isStats = pathname?.startsWith('/stats');
     const shouldShow = isDashboard || isEngagements || isFindings || isAssets || isTestcases || isStats;
 
     // Sync store with URL on mount or path change
     useEffect(() => {
-        if (pathname.startsWith('/engagements/')) {
-            const id = pathname.split('/')[2];
+        if (pathname?.startsWith('/engagements/')) {
+            const id = pathname?.split('/')[2];
             if (id && id !== selectedEngagementId) {
                 setSelectedEngagement(id);
             }
@@ -53,7 +53,7 @@ export default function EngagementSelector() {
     ) || [];
 
     const handleValueChange = (value: string) => {
-        const currentTab = searchParams.get('tab');
+        const currentTab = searchParams?.get('tab');
 
         if (value === 'global') {
             setSelectedEngagement('global');
@@ -61,7 +61,7 @@ export default function EngagementSelector() {
                 // On dashboard/stats, just update store — no navigation
                 return;
             }
-            if (pathname.startsWith('/engagements/')) {
+            if (pathname?.startsWith('/engagements/')) {
                 router.push('/engagements');
             }
         } else {
@@ -71,7 +71,7 @@ export default function EngagementSelector() {
                 return;
             }
             // If we're on an engagement detail page, navigate to the new one while preserving the tab
-            if (pathname.startsWith('/engagements/')) {
+            if (pathname?.startsWith('/engagements/')) {
                 const tabQuery = currentTab ? `?tab=${currentTab}` : '';
                 router.push(`/engagements/${value}${tabQuery}`);
             } else {

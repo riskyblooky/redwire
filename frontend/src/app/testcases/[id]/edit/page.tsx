@@ -69,8 +69,8 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
     const { id } = useParams(params);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const returnEngagementId = searchParams.get('engagementId');
-    const returnTab = searchParams.get('tab') || 'testcases';
+    const returnEngagementId = searchParams?.get('engagementId');
+    const returnTab = searchParams?.get('tab') || 'testcases';
 
     const { data: testcase, isLoading: isLoadingTC } = useTestCase(id);
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();

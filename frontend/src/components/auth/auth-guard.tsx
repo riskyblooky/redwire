@@ -20,7 +20,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     }, [checkAuth, isLoading, isAuthenticated]);
 
     useEffect(() => {
-        const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
+        const isPublicRoute = PUBLIC_ROUTES.includes(pathname || '');
 
         if (!isLoading) {
             if (needsRedirect && !isPublicRoute) {

@@ -368,12 +368,12 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     }, [sortFieldTestCases, sortOrderTestCases]);
 
     useEffect(() => {
-        const tab = searchParams.get('tab') || 'overview';
+        const tab = searchParams?.get('tab') || 'overview';
         setActiveTab(tab);
     }, [searchParams]);
 
     const handleTabChange = (tab: string) => {
-        const params = new URLSearchParams(searchParams.toString());
+        const params = new URLSearchParams(searchParams?.toString() || "");
         params.set('tab', tab);
         router.push(`?${params.toString()}`, { scroll: false });
     };
@@ -1441,7 +1441,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                     </TabsContent>
 
                     <TabsContent value="notes" className="mt-8 focus-visible:outline-hidden focus-visible:ring-0">
-                        <NotesTab engagementId={id} initialNoteId={searchParams.get('noteId')} />
+                        <NotesTab engagementId={id} initialNoteId={searchParams?.get('noteId')} />
                     </TabsContent>
 
                     {/* Overview Tab */}

@@ -93,7 +93,7 @@ import {
 
 export default function AdminPage() {
     const searchParams = useSearchParams();
-    const defaultTab = searchParams.get('tab') || 'users';
+    const defaultTab = searchParams?.get('tab') || 'users';
     const { data: users, isLoading: usersLoading } = useAdminUsers();
     const { data: groups, isLoading: groupsLoading } = useGroups();
     const { data: adminConfig } = useAdminConfig();
@@ -762,7 +762,7 @@ export default function AdminPage() {
                                 <Label className="text-slate-300 text-xs">Role</Label>
                                 <Select
                                     value={createForm.role}
-                                    onValueChange={(val) => setCreateForm({ ...createForm, role: val })}
+                                    onValueChange={(val) => setCreateForm({ ...createForm, role: val as UserRole })}
                                 >
                                     <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
                                         <SelectValue />

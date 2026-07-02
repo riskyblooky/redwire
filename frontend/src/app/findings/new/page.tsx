@@ -73,8 +73,8 @@ const statuses = [
 export default function NewFindingPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const engagementIdParam = searchParams.get('engagementId');
-    const testCaseIdParam = searchParams.get('testCaseId');
+    const engagementIdParam = searchParams?.get('engagementId');
+    const testCaseIdParam = searchParams?.get('testCaseId');
 
     const createFinding = useCreateFinding();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
@@ -255,10 +255,7 @@ export default function NewFindingPage() {
             router.push(`/findings/${newFinding.id}?engagementId=${formData.engagement_id}&tab=findings`);
         } catch (error: any) {
             console.error('Failed to create finding:', error);
-            const detail = apiErrorMessage(error);
-            const message = typeof detail === 'string' ? detail :
-                Array.isArray(detail) ? detail.map((d: any) => `${d.loc.join('.')}: ${d.msg}`).join('\n') :
-                    'Verification failed. Ensure all fields are valid.';
+            const message = apiErrorMessage(error, 'Verification failed. Ensure all fields are valid.');
             toast.error(`Creation Failed: ${message}`);
         }
     };

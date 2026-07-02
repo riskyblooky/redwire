@@ -42,8 +42,8 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     const { id } = useParams(params);
     const router = useRouter();
     const searchParams = useSearchParams();
-    const returnEngagementId = searchParams.get('engagementId');
-    const returnTab = searchParams.get('tab') || 'assets';
+    const returnEngagementId = searchParams?.get('engagementId');
+    const returnTab = searchParams?.get('tab') || 'assets';
 
     const { data: asset, isLoading: isLoadingAsset } = useAsset(id);
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();

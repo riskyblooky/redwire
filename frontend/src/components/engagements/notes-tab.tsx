@@ -99,7 +99,7 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
     // Update URL when selecting a note
     const handleSelectNote = useCallback((noteId: string | null) => {
         setSelectedNoteId(noteId);
-        const params = new URLSearchParams(searchParams.toString());
+        const params = new URLSearchParams(searchParams?.toString() || "");
         if (noteId) {
             params.set('noteId', noteId);
         } else {

@@ -160,7 +160,7 @@ function SortableSectionCard({
 export default function ReportLayoutTemplateEditPage() {
     const router = useRouter();
     const params = useParams();
-    const templateId = params.id as string;
+    const templateId = params?.id as string;
     const isNew = templateId === 'new';
 
     const { data: existingTemplate, isLoading } = useReportLayoutTemplate(isNew ? undefined : templateId);

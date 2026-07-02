@@ -335,7 +335,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     <nav className="space-y-1">
                         {filteredNavItems.map((item) => {
                             const Icon = item.icon;
-                            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                            const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
 
                             return (
                                 <Link key={item.href} href={item.href}>
@@ -371,7 +371,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                     <span className="px-3 text-[10px] font-semibold tracking-wider text-slate-600 uppercase">Plugins</span>
                                 )}
                                 {pluginNavItems.map((item) => {
-                                    const isActive = pathname === item.path || pathname.startsWith(item.path + '/');
+                                    const isActive = pathname === item.path || pathname?.startsWith(item.path + '/');
 
                                     return (
                                         <Link key={item.path} href={item.path}>
