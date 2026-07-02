@@ -818,12 +818,18 @@ export default function CollaborativeEditor({
                                 cursorBuilder: (user: any) => {
                                     const cursor = document.createElement('span');
                                     cursor.classList.add('collaboration-cursor__caret');
-                                    cursor.setAttribute('style', `border-color: ${user.color}`);
+                                    // GHSA-82vg-f3qp-gv8v: `user.color` is peer-supplied via
+                                    // Y.js awareness and the backend relay forwards it byte-for-byte.
+                                    // Assigning to the typed CSSOM property makes the browser parse
+                                    // the value as a single CSS token \u2014 a multi-declaration payload
+                                    // like `red;position:fixed;\u2026` is rejected and the property is
+                                    // left unset. Do NOT go back to setAttribute('style', \u2026).
+                                    cursor.style.borderColor = user.color;
                                     const wj1 = document.createTextNode('\u2060');
                                     const wj2 = document.createTextNode('\u2060');
                                     const label = document.createElement('div');
                                     label.classList.add('collaboration-cursor__label');
-                                    label.setAttribute('style', `background-color: ${user.color}`);
+                                    label.style.backgroundColor = user.color;
                                     label.textContent = user.name;
                                     cursor.appendChild(wj1);
                                     cursor.appendChild(label);

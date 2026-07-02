@@ -124,12 +124,25 @@ export function fixedCursorPlugin(
 
 /* ──────── default builders matching upstream ──────── */
 
+// GHSA-82vg-f3qp-gv8v: `user.color` here is peer-supplied via Y.js
+// awareness \u2014 the backend relay forwards awareness frames byte-for-byte.
+// safeColor() clamps it to `#RRGGBB[AA]` for the ONE remaining string-
+// interpolated sink (defaultSelectionBuilder, whose return value is a
+// {style: string} handed to ProseMirror's Decoration.inline \u2014 we can't
+// bypass string interpolation there). Every DOM-property sink below
+// uses typed CSSOM (`element.style.borderColor = \u2026`) so the browser's
+// CSS parser rejects any multi-declaration payload; safeColor() is a
+// belt-and-braces layer for the one string-interpolation path.
+function safeColor(c: any): string {
+    return typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '#888888';
+}
+
 function defaultCursorBuilder(user: any): HTMLElement {
     const cursor = document.createElement('span');
     cursor.classList.add('ProseMirror-yjs-cursor');
-    cursor.setAttribute('style', `border-color: ${user.color}`);
+    cursor.style.borderColor = user.color;
     const div = document.createElement('div');
-    div.setAttribute('style', `background-color: ${user.color}`);
+    div.style.backgroundColor = user.color;
     div.insertBefore(document.createTextNode(user.name), null);
     cursor.insertBefore(document.createTextNode('\u2060'), null);
     cursor.insertBefore(div, null);
@@ -138,5 +151,5 @@ function defaultCursorBuilder(user: any): HTMLElement {
 }
 
 function defaultSelectionBuilder(user: any) {
-    return { style: `background-color: ${user.color}70`, class: 'ProseMirror-yjs-selection' };
+    return { style: `background-color: ${safeColor(user.color)}70`, class: 'ProseMirror-yjs-selection' };
 }
