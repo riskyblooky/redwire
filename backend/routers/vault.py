@@ -335,8 +335,15 @@ async def update_vault_item(
     except HTTPException:
         raise
     except Exception as e:
+        # GHSA-7x2f-ff7r-h388 #4 (CWE-209): the previous 500 response
+        # body reflected the exception type + str(e) directly. For a
+        # SQLAlchemy IntegrityError that string carries table names,
+        # column names, and the row values that violated the
+        # constraint — sensitive schema detail for a low-priv user to
+        # see. Server log keeps the full traceback for operator
+        # debugging; the client just gets a generic message.
         logger.error(f"update_vault_item FAILED: {type(e).__name__}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error updating vault item.")
 
 
 @router.get("/{item_id}", response_model=VaultItemResponse)
@@ -554,11 +561,24 @@ async def download_vault_file(
 
     file_bytes = decrypt_bytes(file_bytes)
 
+    # GHSA-7x2f-ff7r-h388 #2 (CWE-116): the previous format string
+    # interpolated `item.filename` verbatim into the header. A
+    # filename containing `"` or `\r` could break out of the quoted
+    # value and inject sibling headers (CRLF injection at the response
+    # level) or produce a malformed header that some clients render as
+    # HTML in an error banner. Use RFC 6266's dual-emission shape
+    # (`filename=` ASCII-fallback + `filename*=UTF-8''<pct-encoded>`)
+    # so clients get a safe rendering regardless of the original name.
+    from urllib.parse import quote as _pq
+    _raw = (item.filename or "download").replace("\r", "").replace("\n", "")
+    _ascii_fallback = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in _raw)
+    _utf8_encoded = _pq(_raw, safe="")
+    disposition = f'attachment; filename="{_ascii_fallback}"; filename*=UTF-8\'\'{_utf8_encoded}'
     return Response(
         content=file_bytes,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{item.filename}"',
+            "Content-Disposition": disposition,
             "X-Content-Type-Options": "nosniff"
         }
     )

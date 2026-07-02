@@ -50,10 +50,40 @@ function onRefreshFailed() {
     refreshSubscribers = [];
 }
 
+// GHSA-7x2f-ff7r-h388 #15 (CWE-532): scrub the Authorization header
+// from any axios error object BEFORE it propagates to a downstream
+// `.catch(err => console.error(err))` (~32 sites across the frontend)
+// or a React error boundary. The axios error carries `error.config`
+// with the request's raw `headers.Authorization: "Bearer <JWT>"` —
+// logging that object to the browser console persisted the caller's
+// JWT into DevTools and any error-tracking sink hooked up. Runs on
+// every rejected response, not just 401 — a 500 or network error
+// carries the same bearer in the same slot.
+function _redactAuthOnError(err: any): any {
+    try {
+        if (err?.config?.headers?.Authorization) {
+            err.config.headers.Authorization = '<redacted>';
+        }
+        if (err?.request?.config?.headers?.Authorization) {
+            err.request.config.headers.Authorization = '<redacted>';
+        }
+        // Some axios shapes stash the original request inside
+        // response.request.config too — belt-and-suspenders.
+        if (err?.response?.config?.headers?.Authorization) {
+            err.response.config.headers.Authorization = '<redacted>';
+        }
+    } catch {
+        // Never let the redactor itself throw — the caller's business
+        // error must still propagate.
+    }
+    return err;
+}
+
 // Response interceptor to handle token expiration
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
+        _redactAuthOnError(error);
         const originalRequest = error.config;
 
         // Handle 401 Unauthorized (Token expiration)
@@ -105,7 +135,7 @@ api.interceptors.response.use(
                 localStorage.removeItem('access_token');
                 document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
                 window.location.href = '/login';
-                return Promise.reject(refreshError);
+                return Promise.reject(_redactAuthOnError(refreshError));
             }
         }
 

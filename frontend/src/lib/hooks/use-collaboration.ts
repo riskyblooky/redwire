@@ -77,7 +77,15 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
                 url = `${protocol}//${host}/api/ws/${resourceType}/${resourceId}`;
             }
 
-            console.log(`Connecting to WS: ${url}`);
+            // GHSA-7x2f-ff7r-h388 #3 (CWE-532): don't log the WS URL to
+            // the browser console. The token is intentionally NOT in the
+            // URL (see comment above and _auth_via_first_frame on the
+            // backend), but keeping this debug print out of production
+            // browser DevTools reduces the noise surface an attacker
+            // shoulder-surfing (or logging with a compromised extension)
+            // could use to fingerprint session state. If we need this
+            // back for local debugging, guard it on
+            // `process.env.NODE_ENV === 'development'`.
 
             // Create WebSocket only in browser environment
             // Using globalThis to avoid referencing WebSocket class during SSR
