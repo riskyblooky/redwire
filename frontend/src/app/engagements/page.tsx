@@ -39,7 +39,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X, KeyRound } from 'lucide-react';
-import { useEngagements, useDeleteEngagement } from '@/lib/hooks/use-engagements';
+import { useEngagementsPage, useDeleteEngagement } from '@/lib/hooks/use-engagements';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
@@ -47,7 +47,6 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { relevanceComparator } from '@/lib/search-relevance';
 import api, { apiErrorMessage } from '@/lib/api';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
@@ -203,6 +202,10 @@ export default function EngagementsPage() {
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
+    // Filter row is collapsed by default so search is the primary control.
+    // The Filter button toggles it; auto-opens when a filter is already active
+    // (e.g. reload with a persisted status filter) so the state is visible.
+    const [showFilters, setShowFilters] = useState<boolean>(false);
 
     // PROPOSED engagements normally live on the Planning page. Admins,
     // read-only admins, and team leads can opt to mix them in here too.
@@ -247,9 +250,38 @@ export default function EngagementsPage() {
         localStorage.setItem('redwire_sort_engagements_order', sortOrder);
     }, [sortField, sortOrder]);
 
-    const { data: engagements = [], isLoading, error } = useEngagements({
+    // Server-side pagination. Search/status/type filters below still run
+    // against the current page only — see the page footer note. Page size is
+    // persisted so power users can bump it up when they want to search.
+    const [page, setPage] = useState<number>(1);
+    // Page size defaults to 25 on every load. Mid-session changes still
+    // apply until the next refresh — persistence was intentionally dropped
+    // so every fresh visit starts at 25 regardless of prior sessions.
+    const [pageSize, setPageSize] = useState<number>(25);
+    // Any filter/sort/search change resets to page 1 so the user isn't
+    // stranded on an empty tail page (e.g. was on page 8/10, applies a
+    // filter that leaves 2 pages of results).
+    useEffect(() => {
+        setPage(1);
+    }, [showProposed, pageSize, searchTerm, statusFilter, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
+
+    const engagementsQuery = useEngagementsPage({
         includeProposed: canSeeProposed && showProposed,
+        page,
+        pageSize,
+        q: searchTerm,
+        status: statusFilter,
+        type: typeFilter,
+        startDateFrom: dateFrom,
+        startDateTo: dateTo,
+        sortBy: sortField as any,
+        sortOrder,
     });
+    const engagements = engagementsQuery.data?.items ?? [];
+    const totalEngagements = engagementsQuery.data?.total ?? 0;
+    const totalPages = Math.max(1, Math.ceil(totalEngagements / pageSize));
+    const isLoading = engagementsQuery.isLoading;
+    const error = engagementsQuery.error;
     const { data: engagementTypes = [] } = useEngagementTypes();
     const deleteEngagement = useDeleteEngagement();
     const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -276,37 +308,9 @@ export default function EngagementsPage() {
 
     const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || searchTerm !== '' || dateFrom !== '' || dateTo !== '';
 
-    const filteredEngagements = [...engagements]
-        .filter((engagement) => {
-            const q = searchTerm.toLowerCase();
-            const matchesSearch = !q ||
-                engagement.name.toLowerCase().includes(q) ||
-                (engagement.description?.toLowerCase().includes(q) ?? false) ||
-                (engagement.client_name?.toLowerCase().includes(q) ?? false);
-            const matchesStatus = statusFilter === 'all' || engagement.status === statusFilter;
-            const matchesType = typeFilter === 'all' || engagement.engagement_type === typeFilter;
-            const startTs = new Date(engagement.start_date).getTime();
-            const matchesFrom = !dateFrom || startTs >= new Date(dateFrom).getTime();
-            const matchesTo   = !dateTo   || startTs <= new Date(dateTo).getTime();
-            return matchesSearch && matchesStatus && matchesType && matchesFrom && matchesTo;
-        })
-        .sort(relevanceComparator(
-            searchTerm,
-            [item => item.name, item => item.description || ''],
-            (a, b) => {
-                let comparison = 0;
-                if (sortField === 'start_date') {
-                    comparison = new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
-                } else if (sortField === 'end_date') {
-                    const aEnd = a.end_date ? new Date(a.end_date).getTime() : 0;
-                    const bEnd = b.end_date ? new Date(b.end_date).getTime() : 0;
-                    comparison = aEnd - bEnd;
-                } else {
-                    comparison = String((a as any)[sortField]).localeCompare(String((b as any)[sortField]));
-                }
-                return sortOrder === 'asc' ? comparison : -comparison;
-            }
-        ));
+    // Server does search/filter/sort now — see useEngagementsPage. Anything
+    // rendered from the list should reference `engagements` directly.
+    const filteredEngagements = engagements;
 
     const handleSort = (field: SortField) => {
         if (sortField === field) {
@@ -482,6 +486,73 @@ export default function EngagementsPage() {
         await runImportPreview(file, importPassphrase);
     };
 
+    // Rendered above AND below the table so the rows selector and page
+    // indicator stay in reach whether the user is at the top or bottom of a
+    // long list. Both instances read the same state, so page/size changes
+    // stay in sync.
+    const paginationBar = !isLoading && totalEngagements > 0 ? (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-400">
+            <div>
+                Showing <span className="text-slate-200 font-medium">{(page - 1) * pageSize + 1}</span>
+                {' – '}
+                <span className="text-slate-200 font-medium">{Math.min(page * pageSize, totalEngagements)}</span>
+                {' of '}
+                <span className="text-slate-200 font-medium">{totalEngagements}</span>
+            </div>
+            <div className="flex items-center gap-2">
+                <label className="text-xs uppercase tracking-wider text-slate-500 mr-1">Rows</label>
+                <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
+                    className="h-8 rounded-md border border-slate-800 bg-slate-950 px-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                >
+                    {[25, 50, 100, 250].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                    ))}
+                </select>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(1)}
+                    disabled={page <= 1 || engagementsQuery.isFetching}
+                    className="h-8"
+                >
+                    « First
+                </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1 || engagementsQuery.isFetching}
+                    className="h-8"
+                >
+                    Prev
+                </Button>
+                <span className="text-slate-300 tabular-nums px-2">
+                    Page {page} of {totalPages}
+                </span>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages || engagementsQuery.isFetching}
+                    className="h-8"
+                >
+                    Next
+                </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page >= totalPages || engagementsQuery.isFetching}
+                    className="h-8"
+                >
+                    Last »
+                </Button>
+            </div>
+        </div>
+    ) : null;
+
     return (
         <DashboardLayout>
             <div className="p-6 space-y-6">
@@ -527,9 +598,11 @@ export default function EngagementsPage() {
                 <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
                     <CardContent className="pt-6">
                         <div className="flex flex-col gap-3">
-                            {/* Row 1: Search */}
-                            <div className="flex gap-3">
-                                <div className="flex-1 relative">
+                            {/* Row 1: Search + Filter toggle (search stays narrower
+                                than full width so the toggle sits next to it on the
+                                same line, matching the assets/findings/testcases pages). */}
+                            <div className="flex items-center gap-3">
+                                <div className="relative w-full max-w-md">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                                     <Input
                                         placeholder="Search by name, description, or client…"
@@ -546,10 +619,34 @@ export default function EngagementsPage() {
                                         </button>
                                     )}
                                 </div>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setShowFilters(v => !v)}
+                                    className={cn(
+                                        'border-slate-700 text-slate-300 gap-2',
+                                        (showFilters || hasActiveFilters) && 'border-primary/40 text-primary bg-primary/10 hover:bg-primary/15',
+                                    )}
+                                    aria-expanded={showFilters}
+                                >
+                                    <Filter className="h-4 w-4" />
+                                    Filters
+                                    {hasActiveFilters && (
+                                        <span className="rounded-full bg-primary/20 text-primary text-xs px-1.5 min-w-[1.25rem] text-center leading-4">
+                                            {[
+                                                statusFilter !== 'all',
+                                                typeFilter !== 'all',
+                                                !!dateFrom,
+                                                !!dateTo,
+                                            ].filter(Boolean).length}
+                                        </span>
+                                    )}
+                                </Button>
                             </div>
-                            {/* Row 2: Filters */}
+                            {/* Row 2: Filters — hidden by default, toggled by the Filter button
+                                above. Auto-shows implicitly once the user opens it; hasActiveFilters
+                                stays visible via the badge count on the toggle when collapsed. */}
+                            {showFilters && (
                             <div className="flex flex-wrap items-center gap-2">
-                                <Filter className="h-4 w-4 text-slate-400 flex-shrink-0" />
                                 {/* Status filter */}
                                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                                     <SelectTrigger className="w-[160px] bg-slate-800/50 border-slate-700 text-slate-300 h-9 text-sm">
@@ -645,22 +742,19 @@ export default function EngagementsPage() {
                                     </button>
                                 )}
                                 <span className="ml-auto text-xs text-slate-500">
-                                    {filteredEngagements.length} result{filteredEngagements.length !== 1 ? 's' : ''}
+                                    {totalEngagements} result{totalEngagements !== 1 ? 's' : ''}
                                 </span>
                             </div>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
 
                 {/* Engagements Table */}
                 <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
-                    <CardHeader>
-                        <CardTitle className="text-white">
-                            All Engagements {!isLoading && `(${filteredEngagements.length})`}
-                        </CardTitle>
-                        <CardDescription>View and manage your security engagements</CardDescription>
-                    </CardHeader>
-                    <CardContent>
+                    <CardContent className="pt-6">
+                        {paginationBar && <div className="pb-3">{paginationBar}</div>}
+
                         {isLoading ? (
                             <div className="flex items-center justify-center py-10">
                                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -743,6 +837,8 @@ export default function EngagementsPage() {
                                 </Table>
                             </div>
                         )}
+
+                        {paginationBar && <div className="pt-4 border-t border-slate-800">{paginationBar}</div>}
                     </CardContent>
                 </Card>
 

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, delete as sa_delete
+from sqlalchemy import case, select, func, and_, or_, delete as sa_delete
 from typing import List, Optional
 import logging
 from database import get_db
@@ -78,16 +78,68 @@ async def auto_create_default_phases(db: AsyncSession, engagement: Engagement):
         ))
 
 
+def _inject_response(response: Response) -> Response:
+    """Trivial dependency so ``response: Response`` can be injected into GET
+    endpoints. FastAPI needs a marker (Depends/Query/Body) on the parameter
+    to know it isn't a body — declaring `response: Response` directly on a
+    GET (no body param present) makes it try to parse it as the request
+    body and 422 on every call. See auth.py's login/verify_2fa for the
+    pattern that works when a body IS present."""
+    return response
+
+
+# Whitelist of columns the client is allowed to sort on. Keys are exactly
+# what the frontend's ``sortField`` state stores. Prevents ORDER BY
+# injection and keeps the API contract explicit — anything not in this
+# map is refused with a 400.
+_SORTABLE = {
+    "name": Engagement.name,
+    "engagement_type": Engagement.engagement_type,
+    "status": Engagement.status,
+    "start_date": Engagement.start_date,
+    "end_date": Engagement.end_date,
+    "created_at": Engagement.created_at,
+}
+
+
 @router.get("", response_model=List[EngagementResponse])
 async def get_engagements(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    skip: int = 0,
-    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=MAX_LIST_LIMIT),
     include_proposed: bool = Query(False, description="Include PROPOSED engagements in results"),
+    q: Optional[str] = Query(None, max_length=200,
+                             description="Case-insensitive substring search over name, description, client_name"),
+    engagement_status: Optional[str] = Query(None, alias="status",
+                                             description="Exact match on EngagementStatus value"),
+    engagement_type: Optional[str] = Query(None, alias="type", max_length=100,
+                                            description="Exact match on engagement_type"),
+    start_date_from: Optional[str] = Query(None, description="Lower bound (inclusive) on start_date, ISO date"),
+    start_date_to: Optional[str] = Query(None, description="Upper bound (inclusive) on start_date, ISO date"),
+    sort_by: str = Query("start_date", description="Sort field — one of name|engagement_type|status|start_date|end_date|created_at"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
+    response: Response = Depends(_inject_response),
 ):
     """Get engagements. Admins/Team Leads see all, others see assigned ones.
-    PROPOSED engagements are excluded by default (they live on the Planning page)."""
+    PROPOSED engagements are excluded by default (they live on the Planning page).
+
+    Paginated via ``skip`` and ``limit``. The total row count (matching the
+    same filters, ignoring pagination) is returned in the ``X-Total-Count``
+    response header so the client can render page controls. Header is
+    exposed via CORS ``expose_headers`` in main.py.
+
+    Server-side search/filter/sort so the returned page reflects the whole
+    dataset, not just the current window:
+      * ``q`` — case-insensitive substring on name / description / client_name.
+        When present, results are ordered by a relevance bucket first
+        (exact > starts-with > contains) with ``sort_by`` as the tiebreaker.
+        This matches the client-side ``relevanceComparator`` semantics.
+      * ``status`` / ``type`` — exact match filters.
+      * ``start_date_from`` / ``start_date_to`` — inclusive ISO date bounds
+        on ``start_date``.
+      * ``sort_by`` / ``sort_order`` — whitelisted columns only.
+    """
     # TODO: replace this hardcoded role trio with a proper permission
     # (e.g. `engagement_view_proposed`) — see /proposed below.
     if include_proposed and current_user.role not in [
@@ -98,27 +150,112 @@ async def get_engagements(
             detail="Only admins and team leads can include proposed engagements",
         )
 
+    if sort_by not in _SORTABLE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid sort_by: {sort_by}. Allowed: {sorted(_SORTABLE)}",
+        )
+
+    # Build the shared filter WHERE first so the count and the paged list
+    # apply exactly the same predicate. Eager-loads and ordering are only
+    # attached to the paged query — the count doesn't need them.
+    base_filters = []
+    if not include_proposed:
+        base_filters.append(Engagement.status != EngagementStatus.PROPOSED)
+
+    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+        from routers.clients import get_accessible_client_ids
+        accessible_client_ids = await get_accessible_client_ids(current_user.id, db)
+        conditions = [Engagement.assigned_users.any(User.id == current_user.id)]
+        if accessible_client_ids:
+            conditions.append(Engagement.client_id.in_(accessible_client_ids))
+        base_filters.append(or_(*conditions))
+
+    # Text search — mirror client-side behavior (name / description / client_name,
+    # case-insensitive substring, all three OR'd).
+    if q:
+        needle = f"%{q.lower()}%"
+        base_filters.append(or_(
+            func.lower(Engagement.name).like(needle),
+            func.lower(Engagement.description).like(needle),
+            func.lower(Engagement.client_name).like(needle),
+        ))
+
+    if engagement_status:
+        # Bind to the enum by value so a bad string 400s instead of tripping
+        # asyncpg with an invalid enum literal at execute time.
+        try:
+            status_enum = EngagementStatus(engagement_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status: {engagement_status}",
+            )
+        base_filters.append(Engagement.status == status_enum)
+
+    if engagement_type:
+        base_filters.append(Engagement.engagement_type == engagement_type)
+
+    from datetime import datetime as _dt
+    if start_date_from:
+        try:
+            dt_from = _dt.fromisoformat(start_date_from)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid start_date_from: {start_date_from}")
+        base_filters.append(Engagement.start_date >= dt_from)
+    if start_date_to:
+        try:
+            dt_to = _dt.fromisoformat(start_date_to)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid start_date_to: {start_date_to}")
+        base_filters.append(Engagement.start_date <= dt_to)
+
+    count_stmt = select(func.count()).select_from(Engagement)
+    for f in base_filters:
+        count_stmt = count_stmt.where(f)
+    total = (await db.execute(count_stmt)).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+
     query = select(Engagement).options(
         selectinload(Engagement.assigned_users),
         selectinload(Engagement.assignment_details).selectinload(EngagementAssignment.role),
         selectinload(Engagement.client).selectinload(Client.client_type),
         selectinload(Engagement.phases),
     )
+    for f in base_filters:
+        query = query.where(f)
 
-    # Exclude PROPOSED unless explicitly requested
-    if not include_proposed:
-        query = query.where(Engagement.status != EngagementStatus.PROPOSED)
-    
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        # Also include engagements from clients the user has been granted access to
-        from routers.clients import get_accessible_client_ids
-        accessible_client_ids = await get_accessible_client_ids(current_user.id, db)
-        conditions = [Engagement.assigned_users.any(User.id == current_user.id)]
-        if accessible_client_ids:
-            conditions.append(Engagement.client_id.in_(accessible_client_ids))
-        query = query.where(or_(*conditions))
-    
-    query = query.offset(skip).limit(limit).order_by(Engagement.created_at.desc())
+    sort_col = _SORTABLE[sort_by]
+    primary = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+
+    if q:
+        # Mirror getSearchRelevance from the frontend: 0=exact, 1=starts-with,
+        # 2=contains, 3=none. Use LEAST() across the same three fields the
+        # search filter above OR'd on, so the best-matching field per row
+        # dictates the bucket. Rows failing the search WHERE never enter
+        # here (relevance would be 3), so LEAST across 0/1/2 is well-defined.
+        exact = q.lower()
+        starts = f"{q.lower()}%"
+        contains = f"%{q.lower()}%"
+
+        def _rel(col):
+            return case(
+                (func.lower(col) == exact, 0),
+                (func.lower(col).like(starts), 1),
+                (func.lower(col).like(contains), 2),
+                else_=3,
+            )
+        relevance = func.least(
+            _rel(Engagement.name),
+            _rel(Engagement.client_name),
+            _rel(Engagement.description),
+        )
+        query = query.order_by(relevance.asc(), primary)
+    else:
+        query = query.order_by(primary)
+
+    query = query.offset(skip).limit(limit)
+
     result = await db.execute(query)
     engagements = result.scalars().all()
     return engagements
@@ -212,14 +349,23 @@ async def create_engagement(
     # Strip empty client_id to prevent UUID DataError
     if not data.get("client_id"):
         data["client_id"] = None
-    
-    # Auto-populate client_name from client_id if provided
+
+    # Validate the client link. Previously we auto-populated client_name from
+    # a matching Client row but silently kept the given client_id when it
+    # didn't match anything, which created dangling FKs (the column is
+    # nullable so no DB constraint fires). Now: if client_id is provided,
+    # the client MUST exist. `client_name` still comes from the row so the
+    # denormalised copy stays in sync with the client record.
     if data.get("client_id"):
         from models.client import Client
         client_result = await db.execute(select(Client).where(Client.id == data["client_id"]))
         client = client_result.scalar_one_or_none()
-        if client:
-            data["client_name"] = client.name
+        if client is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Client not found: {data['client_id']}",
+            )
+        data["client_name"] = client.name
     
     # Strip timezone info from dates (asyncpg requires naive datetimes for DateTime columns)
     for date_field in ('start_date', 'end_date'):
@@ -342,13 +488,18 @@ async def update_engagement(
     # Capture old status before applying updates (for notification)
     old_eng_status = engagement.status if engagement.status else None
 
-    # Auto-populate client_name from client_id if provided
+    # Client link validation on update — same rule as create: if client_id
+    # is being set to a value, that value must reference a real Client.
     if update_data.get("client_id"):
         from models.client import Client
         client_result = await db.execute(select(Client).where(Client.id == update_data["client_id"]))
         client_obj = client_result.scalar_one_or_none()
-        if client_obj:
-            update_data["client_name"] = client_obj.name
+        if client_obj is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Client not found: {update_data['client_id']}",
+            )
+        update_data["client_name"] = client_obj.name
     
     # Capture old assigned user IDs BEFORE processing changes
     old_assigned_user_ids = set()

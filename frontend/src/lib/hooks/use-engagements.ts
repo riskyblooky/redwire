@@ -87,11 +87,88 @@ export function useEngagements(options?: { includeProposed?: boolean }) {
     return useQuery({
         queryKey: ['engagements', { includeProposed }],
         queryFn: async () => {
-            const url = includeProposed ? '/engagements?include_proposed=true' : '/engagements';
-            const { data } = await api.get<Engagement[]>(url);
+            // Callers of this hook expect the full engagement list for
+            // pickers/dropdowns (asset new, finding new, calendar, dashboard,
+            // etc.). Pull the max page size in one request — the paginated
+            // /engagements list page uses `useEngagementsPage` instead.
+            const params = new URLSearchParams();
+            params.set('limit', '500');
+            if (includeProposed) params.set('include_proposed', 'true');
+            const { data } = await api.get<Engagement[]>(`/engagements?${params.toString()}`);
             return data;
         },
         staleTime: 30_000,
+    });
+}
+
+export interface EngagementsPage {
+    items: Engagement[];
+    total: number;
+    page: number;      // 1-indexed for display
+    pageSize: number;
+}
+
+export interface EngagementsPageQuery {
+    includeProposed?: boolean;
+    page?: number;      // 1-indexed
+    pageSize?: number;
+    q?: string;
+    status?: string;    // exact EngagementStatus value; omit or 'all' for no filter
+    type?: string;      // exact engagement_type; omit or 'all' for no filter
+    startDateFrom?: string;   // ISO date
+    startDateTo?: string;     // ISO date
+    sortBy?: 'name' | 'engagement_type' | 'status' | 'start_date' | 'end_date' | 'created_at';
+    sortOrder?: 'asc' | 'desc';
+}
+
+/**
+ * Paginated engagements list, used by the /engagements page. Backend sets
+ * ``X-Total-Count`` with the pre-pagination row count so the client can
+ * render page controls; the header is exposed via CORS in main.py.
+ * ``placeholderData`` keeps the prior page visible during the next fetch
+ * so page-flip doesn't flicker.
+ *
+ * Search / filter / sort all execute server-side (see
+ * ``backend/routers/engagements.py::get_engagements``) — the returned page
+ * already reflects the whole matching dataset, not just the current window.
+ */
+export function useEngagementsPage(options?: EngagementsPageQuery) {
+    const includeProposed = !!options?.includeProposed;
+    const page = Math.max(1, options?.page ?? 1);
+    const pageSize = options?.pageSize ?? 25;
+    const skip = (page - 1) * pageSize;
+    const q = options?.q?.trim() || '';
+    const statusFilter = options?.status && options.status !== 'all' ? options.status : '';
+    const typeFilter = options?.type && options.type !== 'all' ? options.type : '';
+    const dateFrom = options?.startDateFrom || '';
+    const dateTo = options?.startDateTo || '';
+    const sortBy = options?.sortBy || 'start_date';
+    const sortOrder = options?.sortOrder || 'desc';
+
+    return useQuery<EngagementsPage>({
+        queryKey: ['engagements', 'page', {
+            includeProposed, page, pageSize, q, statusFilter, typeFilter,
+            dateFrom, dateTo, sortBy, sortOrder,
+        }],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            params.set('skip', String(skip));
+            params.set('limit', String(pageSize));
+            if (includeProposed) params.set('include_proposed', 'true');
+            if (q) params.set('q', q);
+            if (statusFilter) params.set('status', statusFilter);
+            if (typeFilter) params.set('type', typeFilter);
+            if (dateFrom) params.set('start_date_from', dateFrom);
+            if (dateTo) params.set('start_date_to', dateTo);
+            params.set('sort_by', sortBy);
+            params.set('sort_order', sortOrder);
+            const res = await api.get<Engagement[]>(`/engagements?${params.toString()}`);
+            const totalHeader = res.headers?.['x-total-count'] ?? res.headers?.['X-Total-Count'];
+            const total = totalHeader ? Number(totalHeader) : res.data.length;
+            return { items: res.data, total, page, pageSize };
+        },
+        staleTime: 30_000,
+        placeholderData: (prev) => prev,
     });
 }
 
