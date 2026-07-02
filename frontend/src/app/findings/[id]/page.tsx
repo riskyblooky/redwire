@@ -854,7 +854,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                             <span className="text-xs font-bold text-white truncate block" title={item.title}>{item.title}</span>
                                                             {item.cve_id && <span className="text-[9px] font-mono text-red-400">{item.cve_id}</span>}
                                                         </div>
-                                                        {item.source_url && (
+                                                        {/* GHSA-7f5w-xj7p-cjj4: scheme gate defends in depth against
+                                                            a legacy javascript:/data: URI that predates the backend
+                                                            Pydantic validator on IntelItemCreate/Update.source_url. */}
+                                                        {item.source_url && /^https?:\/\//i.test(item.source_url) && (
                                                             <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-cyan-400 transition-colors" onClick={(e) => e.stopPropagation()}>
                                                                 <ExternalLink className="h-3 w-3" />
                                                             </a>

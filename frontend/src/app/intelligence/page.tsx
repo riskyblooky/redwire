@@ -704,12 +704,18 @@ function IntelCard({ item, onView, onDelete, canDelete = false }: { item: IntelI
                     <Badge className={`text-[10px] py-0 ${typeConf.color}`}>
                         {typeConf.label}
                     </Badge>
-                    {item.source_url && (
+                    {item.source_url && /^https?:\/\//i.test(item.source_url) && (
                         <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-slate-500 hover:text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={e => { e.stopPropagation(); window.open(item.source_url, '_blank'); }}
+                            // GHSA-7f5w-xj7p-cjj4: 'noopener,noreferrer' severs the
+                            // window.opener back-reference so the destination cannot
+                            // navigate the original tab (reverse tabnabbing). The
+                            // scheme gate above defends in depth against a legacy
+                            // javascript:/data: value that predates the backend
+                            // Pydantic validator.
+                            onClick={e => { e.stopPropagation(); window.open(item.source_url, '_blank', 'noopener,noreferrer'); }}
                         >
                             <ExternalLink className="h-3.5 w-3.5" />
                         </Button>

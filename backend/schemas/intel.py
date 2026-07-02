@@ -48,6 +48,23 @@ class IntelFeedResponse(BaseModel):
 
 # ── Intel Item Schemas ───────────────────────────────────────────
 
+# GHSA-7f5w-xj7p-cjj4: constrain source_url to safe web schemes at the
+# API boundary. Prior to this the field was `Optional[str]` with no
+# scheme check, so an operator could store a `javascript:` URI that
+# the finding-detail page then rendered verbatim as `<a href=...>`,
+# producing stored XSS on click. Backend rejection is the single load-
+# bearing gate; frontend defensive gates layer on top of it.
+_SAFE_SOURCE_URL_SCHEMES = ("http://", "https://")
+
+
+def _validate_source_url(v: Optional[str]) -> Optional[str]:
+    if v is None or v == "":
+        return v
+    if not v.lower().startswith(_SAFE_SOURCE_URL_SCHEMES):
+        raise ValueError("source_url must be an http:// or https:// URL")
+    return v
+
+
 class IntelItemCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=TITLE)
     content: Optional[str] = Field(None, max_length=LONG_TEXT)
@@ -58,6 +75,9 @@ class IntelItemCreate(BaseModel):
     cve_id: Optional[str] = Field(None, max_length=SHORT_LABEL)
     published_at: Optional[datetime] = None
 
+    _v_source_url = field_validator("source_url")(_validate_source_url)
+
+
 class IntelItemUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=TITLE)
     content: Optional[str] = Field(None, max_length=LONG_TEXT)
@@ -66,6 +86,8 @@ class IntelItemUpdate(BaseModel):
     item_type: Optional[IntelItemType] = None
     severity: Optional[IntelSeverity] = None
     cve_id: Optional[str] = Field(None, max_length=SHORT_LABEL)
+
+    _v_source_url = field_validator("source_url")(_validate_source_url)
 
 
 class LinkedEntitySummary(BaseModel):
