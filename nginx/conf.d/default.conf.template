@@ -10,7 +10,14 @@ server {
     }
 
     location / {
-        return 301 https://$http_host$request_uri;
+        # GHSA-9mgf-6qrf-qfvg: redirect target is the deployment-configured
+        # DOMAIN_NAME, NOT the client-supplied Host header. Using $http_host
+        # here made this the phishing primitive it was — an attacker curling
+        # `Host: attacker.example` on port 80 got back a 301 to their site
+        # from the genuine RedWire nginx. envsubst rewrites ${DOMAIN_NAME}
+        # at container start (see docker-compose.prod.yml env), so the
+        # target is fixed at deploy time.
+        return 301 https://${DOMAIN_NAME}$request_uri;
     }
 }
 
