@@ -1,0 +1,41 @@
+name: servicenow-cmdb
+version: 1.0.0
+author: "RedWire Team"
+description: "Looks up assets in ServiceNow CMDB and provides a direct link to the Configuration Item"
+min_redwire_version: "1.0.0"
+
+provides:
+  routes: true
+  event_listeners: true
+  widgets: false
+  nav_items: false
+
+settings:
+  - key: INSTANCE_URL
+    label: "ServiceNow Instance URL"
+    type: string
+    required: true
+    description: "Full URL to your ServiceNow instance (e.g. https://mycompany.service-now.com)"
+  - key: USERNAME
+    label: "Username"
+    type: string
+    required: true
+    description: "ServiceNow account with read access to CMDB tables"
+  - key: PASSWORD
+    label: "Password"
+    type: secret
+    required: true
+    description: "Password for the ServiceNow account"
+  - key: CMDB_TABLE
+    label: "CMDB Table"
+    type: string
+    default: "cmdb_ci"
+    description: "Table to query (e.g. cmdb_ci, cmdb_ci_server, cmdb_ci_ip_address)"
+  - key: AUTO_LOOKUP
+    label: "Auto-lookup new assets"
+    type: boolean
+    default: "true"
+    description: "Automatically look up assets in ServiceNow CMDB when they are created"
+
+required_permissions:
+  - ASSET_VIEW

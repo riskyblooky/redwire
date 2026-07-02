@@ -1,3 +1,9 @@
-*
+# Plugin directories are ignored by default so operators can drop in
+# third-party or private plugins without them showing up in `git status`.
+# The example plugins shipped with RedWire are whitelisted so they
+# actually make it into fresh installs.
+/*
 !.gitignore
 !README.md
+!servicenow_cmdb/
+!shodan_enricher/

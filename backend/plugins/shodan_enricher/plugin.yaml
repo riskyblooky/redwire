@@ -1,0 +1,41 @@
+name: shodan-enricher
+version: 1.0.0
+author: "RedWire Team"
+description: "Auto-enriches assets with Shodan host intelligence (open ports, services, vulns, geolocation)"
+min_redwire_version: "1.0.0"
+
+provides:
+  routes: true
+  event_listeners: true
+  widgets: true
+  nav_items: false
+
+settings:
+  - key: SHODAN_API_KEY
+    label: "Shodan API Key"
+    type: secret
+    required: true
+    description: "Get your API key from https://account.shodan.io"
+  - key: AUTO_ENRICH
+    label: "Auto-enrich new assets"
+    type: boolean
+    default: "true"
+    description: "Automatically enrich IP assets when they are created"
+  - key: MAX_ENRICHMENTS_PER_MINUTE
+    label: "Rate limit (per minute)"
+    type: number
+    default: "10"
+    description: "Maximum Shodan API calls per minute"
+
+widgets:
+  - id: "enrichment-stats"
+    name: "Shodan Enrichments"
+    widget_type: "stat_card"
+    data_source: "plugin:shodan_enricher:stats"
+    size: "small"
+    category: "intelligence"
+    icon: "Globe"
+    description: "Total assets enriched with Shodan intel"
+
+required_permissions:
+  - ASSET_VIEW
