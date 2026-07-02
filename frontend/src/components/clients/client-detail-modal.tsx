@@ -98,9 +98,14 @@ export function ClientDetailModal({
     const breadcrumb = buildBreadcrumb(client, allClients);
     const children = allClients.filter(c => c.parent_id === client.id);
 
-    // Users already granted (direct) — can't add them again
+    // Users already granted (direct) — can't add them again. The
+    // `is_active` predicate was removed here for the same reason as in
+    // team-management-dialog: `/users` returns UserSummary which omits
+    // is_active by design (GHSA-52gv-wf4c-7qmm), so the client-side
+    // filter dropped every user. The backend query already excludes
+    // disabled accounts, so the visible list is correct without it.
     const directUserIds = new Set(directAccess.map(a => a.user_id));
-    const availableUsers = allUsers.filter(u => u.is_active && !directUserIds.has(u.id));
+    const availableUsers = allUsers.filter(u => !directUserIds.has(u.id));
 
     const handleGrant = async () => {
         if (!selectedUserId || !client) return;

@@ -347,9 +347,17 @@ async def get_users(
     """Team picker — returns lightweight UserSummary rows visible to any
     authenticated user. The full UserResponse (with auth_provider,
     totp_enabled, last_login etc.) is reserved for /api/admin/users
-    (GHSA-52gv-wf4c-7qmm)."""
+    (GHSA-52gv-wf4c-7qmm).
+
+    Filters to `is_active=True` at the query level so disabled accounts
+    don't clutter the team-assignment picker. The frontend used to
+    filter client-side but the switch to UserSummary (which
+    intentionally omits is_active) turned that filter into a no-op
+    that dropped every row.
+    """
     result = await db.execute(
         select(User)
+        .where(User.is_active == True)
         .offset(skip).limit(limit)
     )
     return result.scalars().all()

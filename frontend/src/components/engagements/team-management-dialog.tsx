@@ -90,7 +90,13 @@ export function TeamManagementDialog({ engagement, open, onOpenChange }: TeamMan
         }
     };
 
-    const availableUsers = users.filter(u => u.is_active);
+    // Backend `/users` now filters to is_active=True at the query layer
+    // (users.py::get_users), so the frontend can render the response
+    // directly. Previously we filtered `u.is_active` here, but the
+    // switch to UserSummary (which omits is_active by design — see
+    // GHSA-52gv-wf4c-7qmm) turned that predicate into a no-op that
+    // dropped every row and left the picker dropdowns blank.
+    const availableUsers = users;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
