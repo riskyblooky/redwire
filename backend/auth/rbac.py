@@ -229,8 +229,16 @@ async def apply_stats_scope(
 
 def can_modify_resource(resource_owner_id: str, current_user, engagement_role: Optional[str] = None) -> bool:
     """Check if user can modify a resource."""
-    # Admins and Team Leads can modify anything
-    if current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    # GHSA-rq7c-4v9x-mjfp issue 1 (CWE-269): READ_ONLY_ADMIN was previously
+    # in this allow-list, letting a read-only auditor role silently mutate
+    # any resource that routed through can_modify_resource. Dropped here.
+    # Read-only administrators keep the aggregate-read bypass in
+    # resolve_engagement_scope() below but no longer get modify rights on
+    # anything. The broader "sweep READ_ONLY_ADMIN out of write-route admin
+    # triplets" cleanup across the ~18 router files that still spell out
+    # the tuple explicitly is tracked as a separate todo — this fix closes
+    # the specific rq7c sink, not the whole class.
+    if current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         return True
     
     # Check engagement-level role if provided

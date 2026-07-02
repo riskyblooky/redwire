@@ -23,6 +23,17 @@ from models.permission import Permission
 router = APIRouter(prefix="/clients", tags=["clients"])
 
 
+# GHSA-rq7c-4v9x-mjfp issue 3 (CWE-835): defence against parent-chain
+# cycles in the client tree. Every DB-backed parent walk in this file
+# (single-node update-time check, batch reorder pre-commit check, ancestor
+# lookups) is bounded by this depth. Legitimate client trees never come
+# close — RedWire deployments almost always have a two- or three-level
+# hierarchy — so this cap is effectively "impossible for real data" but
+# small enough that even a 1000-cycle write can't hang a worker for more
+# than a handful of milliseconds.
+_MAX_CLIENT_TREE_DEPTH = 1000
+
+
 # ============ Helper: Check manage_clients permission ============
 
 async def require_manage_clients(current_user: User, db: AsyncSession):
@@ -355,15 +366,25 @@ async def update_client(
         new_parent = update_data["parent_id"]
         if new_parent == client_id:
             raise HTTPException(status_code=400, detail="A client cannot be its own parent.")
-        # Check if the new parent is a descendant of this client
+        # Check if the new parent is a descendant of this client.
+        # GHSA-rq7c-4v9x-mjfp issue 3: bound the walk. A legitimate tree
+        # is never this deep — if we hit the cap it's either a cycle in
+        # legacy bad data or an attempt to write one; refuse either way.
         if new_parent:
             current_check = new_parent
-            while current_check:
+            for _ in range(_MAX_CLIENT_TREE_DEPTH):
+                if current_check is None:
+                    break
                 p_result = await db.execute(select(Client.parent_id).where(Client.id == current_check))
                 p_row = p_result.scalar_one_or_none()
                 if p_row == client_id:
                     raise HTTPException(status_code=400, detail="Cannot set parent: would create circular reference.")
                 current_check = p_row
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Ancestor walk exceeded depth cap — suspected cycle in existing client tree.",
+                )
 
     for field, value in update_data.items():
         setattr(client, field, value)
@@ -419,6 +440,66 @@ async def delete_client(
     await db.commit()
 
 
+async def _assert_no_reorder_cycle(
+    items: list, db: AsyncSession
+) -> None:
+    """GHSA-rq7c-4v9x-mjfp issue 3: refuse a batch reorder that would
+    introduce a parent-chain cycle in the client tree.
+
+    The reorder handler writes ``(sort_order, parent_id)`` for many
+    clients at once. Previously it committed the writes without any
+    cycle check, so a payload like ``[{A→B}, {B→A}]`` created a
+    self-referential loop that hung the next tree walk at 100% CPU.
+
+    Approach: build the POST-COMMIT parent-map first (current DB state
+    overlaid with the incoming batch), then walk each mutated id's
+    chain to root bounded by ``_MAX_CLIENT_TREE_DEPTH``. Any revisit of
+    a starting id, or hitting the depth cap, is a cycle → refuse the
+    whole batch before any writes.
+    """
+    # Load the current parent for every client — cheap, one query.
+    result = await db.execute(select(Client.id, Client.parent_id))
+    parent_of: dict[str, str | None] = {row[0]: row[1] for row in result.all()}
+
+    # Overlay the proposed batch. Reject unknown ids and self-parents up
+    # front for a cleaner error than surfacing them via the walk.
+    for item in items:
+        if item.id not in parent_of:
+            raise HTTPException(status_code=400, detail=f"Unknown client id: {item.id}")
+        if item.parent_id == item.id:
+            raise HTTPException(status_code=400, detail=f"Client {item.id} cannot be its own parent.")
+        if item.parent_id is not None and item.parent_id not in parent_of:
+            raise HTTPException(status_code=400, detail=f"Unknown parent_id: {item.parent_id}")
+        parent_of[item.id] = item.parent_id
+
+    # Walk each mutated id's ancestor chain. A cycle either revisits the
+    # starting id or blows the depth cap.
+    for item in items:
+        seen: set[str] = {item.id}
+        current = parent_of[item.id]
+        for _ in range(_MAX_CLIENT_TREE_DEPTH):
+            if current is None:
+                break
+            if current in seen:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Reorder would create a parent-chain cycle involving "
+                        f"client {item.id}. Refusing the whole batch."
+                    ),
+                )
+            seen.add(current)
+            current = parent_of.get(current)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Client {item.id}'s ancestor chain exceeded "
+                    f"{_MAX_CLIENT_TREE_DEPTH} — refusing as a suspected cycle."
+                ),
+            )
+
+
 @router.post("/reorder", status_code=status.HTTP_200_OK)
 async def reorder_clients(
     data: ClientReorderRequest,
@@ -427,6 +508,10 @@ async def reorder_clients(
 ):
     """Batch reorder clients (drag-and-drop)."""
     await require_manage_clients(current_user, db)
+
+    # GHSA-rq7c-4v9x-mjfp: refuse cycles up front so a payload like
+    # [{A→B}, {B→A}] can't land in the DB.
+    await _assert_no_reorder_cycle(list(data.items), db)
 
     for item in data.items:
         await db.execute(
