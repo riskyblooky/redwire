@@ -13,6 +13,27 @@ from schemas.rbac import GroupResponse
 _USERNAME_ALLOWED = re.compile(r"^[a-z0-9][a-z0-9._-]{0,48}[a-z0-9]$")
 
 
+# GHSA-fp33-983q-99r9 #4 (CWE-1240): bcrypt truncates inputs at 72 bytes
+# and silently ignores anything beyond that. A user setting a password
+# longer than 72 bytes actually only had the first 72 bytes protecting
+# their account — anyone typing a different string with the same first
+# 72 bytes could log in. Cap at the source (schema layer) rather than
+# rely on the caller to enforce.
+#
+# The cap is on the UTF-8-encoded byte length, not the character count,
+# because bcrypt operates on bytes. A 60-character emoji password would
+# be well over 72 bytes and get truncated even though its len() reads
+# below the cap.
+def _validate_password_bcrypt_safe(v: str) -> str:
+    encoded_len = len(v.encode("utf-8"))
+    if encoded_len > 72:
+        raise ValueError(
+            f"Password exceeds bcrypt's 72-byte limit ({encoded_len} bytes). "
+            "Choose a shorter password or one with fewer multi-byte characters."
+        )
+    return v
+
+
 def normalize_username(v: str) -> str:
     """NFKC-normalize + casefold + strict ASCII allowlist.
 
@@ -47,8 +68,12 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     # max_length caps unauth body allocation before the route runs (GHSA-8r3m-6x57-pg97).
     # bcrypt truncates at 72 bytes, but 256 leaves headroom for future hashes (argon2 etc.).
+    # The _validate_password_bcrypt_safe validator enforces the ACTUAL bcrypt-safe
+    # byte cap of 72 (GHSA-fp33-983q-99r9 #4) — max_length is the alloc guard only.
     password: str = Field(..., min_length=8, max_length=256)
     registration_code: Optional[str] = Field(default=None, max_length=64)
+
+    _v_password_bcrypt = field_validator("password")(_validate_password_bcrypt_safe)
 
 ALLOWED_THEMES = {"purple", "crimson", "blue", "emerald", "amber", "custom"}
 ALLOWED_PALETTES = {"aurora", "operator", "half-dark", "light"}
@@ -75,6 +100,12 @@ class UserPasswordUpdate(BaseModel):
     old_password: str = Field(..., max_length=256)
     new_password: str = Field(..., min_length=8, max_length=256)
     totp_code: Optional[str] = Field(None, min_length=6, max_length=6)
+
+    # GHSA-fp33-983q-99r9 #4: new_password gets the bcrypt-safe byte-length
+    # check. old_password intentionally does NOT — legacy passwords set
+    # before this validator landed may exceed 72 bytes; rejecting them at
+    # verify time would lock the operator out of the password-change flow.
+    _v_new_password_bcrypt = field_validator("new_password")(_validate_password_bcrypt_safe)
 
 class UserResponse(BaseModel):
     id: str

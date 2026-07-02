@@ -64,6 +64,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer()
 
+# GHSA-fp33-983q-99r9 #1 (CWE-208): the login handler used to short-circuit
+# on `if user and verify_password(...)`. When the username didn't exist the
+# bcrypt cost was skipped entirely, so the response time revealed whether an
+# account existed — a username-enumeration oracle for the unauth login
+# surface. Precompute a valid Fernet-safe bcrypt hash at module import so
+# the "no such user" branch can burn the same round of bcrypt work,
+# producing a constant-time login response regardless of whether the
+# username exists. The plaintext behind it is UUID4 random and never
+# stored anywhere; only its hash is used.
+_DUMMY_PASSWORD_HASH = get_password_hash(uuid.uuid4().hex)
+
 # Refresh token is set as an HttpOnly, SameSite=Strict cookie scoped to "/"
 # (the browser-visible path; Nginx may rewrite /api/auth -> /auth on the way
 # to the backend, so the cookie has to be set at the browser's path root).
@@ -98,43 +109,42 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 @limiter.limit("3/minute")
 async def register(request: Request, user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """Register a new user."""
+    # GHSA-fp33-983q-99r9 #2 (CWE-204): validate the registration code
+    # BEFORE any per-user existence check, and use a single generic
+    # error for every pre-create failure. Prior order revealed:
+    #   1. distinct 400s for "username taken" vs "email taken" — email
+    #      enumeration vector for the unauth registration surface;
+    #   2. registration-code validity was checked LAST, so an attacker
+    #      without a code could still probe username/email existence.
+    # Restructured: no-code / bad-code / stale-code / expired-code all
+    # fail with "Registration failed" before we touch the users table.
+    # The reserved-username check runs first so a well-known false
+    # positive on the internal ADMIN name doesn't leak either.
+    _GENERIC_REGISTER_ERROR = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Registration failed",
+    )
+
     # GHSA-28f5-4wcg-9pwv follow-up: refuse the bootstrap admin username
     # (and well-known aliases) at the registration boundary so the seeder
     # gate isn't load-bearing on its own. UserCreate already runs the
     # NFKC-normalize + casefold via the username validator, so the value
     # we compare against the reserved set is in the same canonical form.
+    # Keep the specific "That username is reserved" message — the
+    # reserved set is publicly documented and the value doesn't leak
+    # anything an attacker couldn't already guess.
     if user_data.username in _reserved_usernames():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="That username is reserved.",
         )
 
-    # Check if username already exists
-    result = await db.execute(select(User).where(User.username == user_data.username))
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
-    
-    # Check if email already exists
-    result = await db.execute(select(User).where(User.email == user_data.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    # Validate registration code
-    # We require a code unless strictly disabled (which we won't do for now)
+    # Validate registration code FIRST.
     if not user_data.registration_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Registration code is required"
-        )
-    
+        raise _GENERIC_REGISTER_ERROR
+
     from models.registration_code import RegistrationCode
-    
+
     # Check code validity. .with_for_update() takes an exclusive PostgreSQL
     # row lock so concurrent registrations for the same code serialize at
     # the SELECT instead of all reading the same pre-increment used_count
@@ -146,18 +156,27 @@ async def register(request: Request, user_data: UserCreate, db: AsyncSession = D
         .with_for_update()
     )
     reg_code = reg_code.scalar_one_or_none()
-    
-    if not reg_code:
-        raise HTTPException(status_code=400, detail="Invalid registration code")
-        
-    if not reg_code.is_active:
-        raise HTTPException(status_code=400, detail="Registration code is inactive")
-        
-    if reg_code.expires_at and reg_code.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="Registration code has expired")
-        
-    if reg_code.used_count >= reg_code.max_uses:
-        raise HTTPException(status_code=400, detail="Registration code usage limit reached")
+
+    if (
+        not reg_code
+        or not reg_code.is_active
+        or (reg_code.expires_at and reg_code.expires_at < datetime.utcnow())
+        or reg_code.used_count >= reg_code.max_uses
+    ):
+        raise _GENERIC_REGISTER_ERROR
+
+    # Now the code is known-good; check user uniqueness with a unified
+    # error so username / email cases are indistinguishable to the
+    # caller. An attacker with a valid registration code IS a
+    # semi-trusted user (they were given the code by an admin) but the
+    # enumeration risk still exists at the registration surface, so
+    # keep the response uniform.
+    result = await db.execute(select(User).where(User.username == user_data.username))
+    if result.scalar_one_or_none():
+        raise _GENERIC_REGISTER_ERROR
+    result = await db.execute(select(User).where(User.email == user_data.email))
+    if result.scalar_one_or_none():
+        raise _GENERIC_REGISTER_ERROR
     
     # Create new user
     hashed_password = get_password_hash(user_data.password)
@@ -228,7 +247,21 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
     # exists (because they migrated from local, or an admin reset
     # their password) can bypass the IdP indefinitely
     # (GHSA-39x9-f79h-rh4r issue 1).
-    if user and provider == "local" and verify_password(credentials.password, user.hashed_password):
+    #
+    # GHSA-fp33-983q-99r9 #1: run bcrypt EXACTLY ONCE per request so
+    # response time doesn't reveal user existence. Structure: pick the
+    # hash to check against BEFORE running bcrypt (real hash when the
+    # user is local, dummy otherwise), then gate the authenticated
+    # flag on both the verify result AND the user-exists-and-is-local
+    # conditions. The naive "if user and verify" short-circuits when
+    # user is None, and adding "else: verify(dummy)" would pay TWO
+    # bcrypt rounds on the wrong-password case (real hash + dummy)
+    # which still leaks — hence this single-call shape.
+    hash_to_check = (
+        user.hashed_password if (user and provider == "local") else _DUMMY_PASSWORD_HASH
+    )
+    verify_ok = verify_password(credentials.password, hash_to_check)
+    if user and provider == "local" and verify_ok:
         authenticated = True
 
     # Try LDAP if local failed and LDAP is enabled
