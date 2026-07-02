@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
+type TlsMode = 'none' | 'ldaps' | 'starttls';
+
 interface LdapSettings {
     enabled: boolean;
     server_url: string;
@@ -13,7 +15,8 @@ interface LdapSettings {
     username_attribute: string;
     email_attribute: string;
     fullname_attribute: string;
-    tls_enabled: boolean;
+    tls_mode: TlsMode;
+    tls_verify: boolean;
 }
 
 interface SamlSettings {
@@ -41,7 +44,8 @@ const DEFAULT_LDAP: LdapSettings = {
     username_attribute: 'uid',
     email_attribute: 'mail',
     fullname_attribute: 'cn',
-    tls_enabled: true,
+    tls_mode: 'ldaps',
+    tls_verify: true,
 };
 
 const DEFAULT_SAML: SamlSettings = {
@@ -324,16 +328,47 @@ export function AuthSettingsManagement() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-4 pt-2">
-                        <label className="flex items-center gap-2 text-sm text-foreground/80 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={ldap.tls_enabled}
-                                onChange={(e) => setLdap({ ...ldap, tls_enabled: e.target.checked })}
-                                className="rounded bg-secondary border-border text-primary focus:ring-primary"
-                            />
-                            Use TLS / STARTTLS
-                        </label>
+                    <div className="pt-2 space-y-3">
+                        <div>
+                            <label className="block text-sm text-foreground/80 mb-1.5">TLS mode</label>
+                            <select
+                                value={ldap.tls_mode}
+                                onChange={(e) => setLdap({ ...ldap, tls_mode: e.target.value as TlsMode })}
+                                className="w-full max-w-xs bg-background text-white border border-border rounded-lg px-3 py-2 text-sm focus:border-primary focus:outline-hidden"
+                            >
+                                <option value="ldaps">LDAPS (TLS from connect) — use with ldaps:// URL</option>
+                                <option value="starttls">StartTLS — plain ldap:// then upgrade</option>
+                                <option value="none">None — plain LDAP, no encryption (not recommended)</option>
+                            </select>
+                            {ldap.tls_mode === 'none' && (
+                                <p className="mt-1.5 text-xs text-amber-400">
+                                    Credentials will cross the network in cleartext. Use only on trusted internal networks.
+                                </p>
+                            )}
+                        </div>
+
+                        {ldap.tls_mode !== 'none' && (
+                            <label className="flex items-start gap-2 text-sm text-foreground/80 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={ldap.tls_verify}
+                                    onChange={(e) => setLdap({ ...ldap, tls_verify: e.target.checked })}
+                                    className="mt-0.5 rounded bg-secondary border-border text-primary focus:ring-primary"
+                                />
+                                <span>
+                                    Verify server certificate
+                                    {!ldap.tls_verify && (
+                                        <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                            insecure
+                                        </span>
+                                    )}
+                                    <span className="block text-xs text-foreground/60 mt-0.5">
+                                        Uncheck for self-signed / internal CA servers when you can't ship a CA cert.
+                                        Vulnerable to MITM on the LDAP connection when disabled.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-3 pt-4 border-t border-border/50">

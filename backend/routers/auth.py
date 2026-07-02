@@ -275,6 +275,11 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
             "username_attribute": auth_cfg.get("ldap_username_attribute", "uid"),
             "email_attribute": auth_cfg.get("ldap_email_attribute", "mail"),
             "fullname_attribute": auth_cfg.get("ldap_fullname_attribute", "cn"),
+            # New TLS controls — _resolve_tls_mode falls back to
+            # ``tls_enabled`` when ``tls_mode`` is absent, so older installs
+            # still authenticate as they did before.
+            "tls_mode": auth_cfg.get("ldap_tls_mode", ""),
+            "tls_verify": auth_cfg.get("ldap_tls_verify", "true"),
             "tls_enabled": auth_cfg.get("ldap_tls_enabled", "true"),
             "tls_ca_cert": auth_cfg.get("ldap_tls_ca_cert", ""),
         }

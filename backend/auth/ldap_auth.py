@@ -28,11 +28,31 @@ def _escape_ldap_filter(value: str) -> str:
     return value
 
 
+def _resolve_tls_mode(settings: Dict[str, str]) -> str:
+    """Return one of ``none`` / ``ldaps`` / ``starttls``.
+
+    Reads the new ``tls_mode`` first. Falls back to the legacy
+    ``tls_enabled`` bool for installs that haven't re-saved settings
+    since the migration — true → ``ldaps``, false → ``none``. That's
+    the safest interpretation given the old bool never actually invoked
+    StartTLS anyway; installs that were relying on ``true`` + ``ldap://``
+    were plaintext in practice, so mapping them to ``ldaps`` at least
+    fails loudly if the port is wrong instead of silently leaking.
+    """
+    mode = (settings.get("tls_mode") or "").strip().lower()
+    if mode in ("none", "ldaps", "starttls"):
+        return mode
+    legacy = settings.get("tls_enabled")
+    if legacy is None:
+        return "ldaps"
+    return "ldaps" if str(legacy).lower() == "true" else "none"
+
+
 def _build_tls_config(settings: Dict[str, str]):
     """Build an ldap3 Tls object from settings.
 
     Uses CERT_REQUIRED when a CA cert is provided or by default.
-    Falls back to CERT_NONE only when tls_verify is explicitly 'false'.
+    Falls back to CERT_NONE when ``tls_verify`` is explicitly ``'false'``.
     """
     try:
         from ldap3 import Tls
@@ -41,23 +61,79 @@ def _build_tls_config(settings: Dict[str, str]):
         return None
 
     ca_cert_pem = settings.get("tls_ca_cert", "").strip()
-    tls_verify = settings.get("tls_verify", "true").lower() != "false"
+    tls_verify = str(settings.get("tls_verify", "true")).lower() != "false"
+
+    if not tls_verify:
+        logger.warning("LDAP TLS certificate validation is DISABLED (tls_verify=false)")
+        return Tls(validate=ssl.CERT_NONE)
 
     if ca_cert_pem:
         # Write CA cert to temp file for ssl context
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem", mode="w")
         tmp.write(ca_cert_pem)
         tmp.close()
-        tls_config = Tls(
-            validate=ssl.CERT_REQUIRED,
-            ca_certs_file=tmp.name,
-        )
-        return tls_config
-    elif tls_verify:
-        return Tls(validate=ssl.CERT_REQUIRED)
-    else:
-        logger.warning("LDAP TLS certificate validation is DISABLED")
-        return Tls(validate=ssl.CERT_NONE)
+        return Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=tmp.name)
+
+    return Tls(validate=ssl.CERT_REQUIRED)
+
+
+def _open_server_and_connection(
+    settings: Dict[str, str],
+    user: Optional[str],
+    password: Optional[str],
+    *,
+    connect_timeout: Optional[int] = None,
+):
+    """Open a Server + Connection with the correct TLS mode.
+
+    Handles all three modes uniformly so ``authenticate_ldap`` and
+    ``test_ldap_connection`` can't drift from each other:
+      * ``none``     — plain LDAP; no TLS config, no start_tls().
+      * ``ldaps``    — TLS from connect. TLS config attached to Server;
+                       ldap3 negotiates TLS on the wire immediately when
+                       the URL is ``ldaps://``.
+      * ``starttls`` — plain connect, then Connection.start_tls() before
+                       any bind or search. auto_bind is deliberately off
+                       here — we need to insert start_tls() between the
+                       socket connect and the bind so credentials don't
+                       cross the wire in the clear. Caller is expected
+                       to invoke ``.bind()`` after this returns.
+
+    Returns ``(server, connection)``. Connection is always unbound and
+    the caller must ``.bind()`` (or ``.rebind()`` for the second step of
+    two-stage auth). For ``ldaps`` and ``none`` we still let auto_bind
+    do its thing when caller passes it, but the shared path here does
+    the connect + optional start_tls only.
+    """
+    from ldap3 import Server, Connection, ALL
+
+    mode = _resolve_tls_mode(settings)
+    server_url = settings["server_url"]
+
+    server_kwargs: Dict[str, Any] = {"get_info": ALL}
+    if connect_timeout is not None:
+        server_kwargs["connect_timeout"] = connect_timeout
+
+    if mode in ("ldaps", "starttls"):
+        server_kwargs["tls"] = _build_tls_config(settings)
+
+    server = Server(server_url, **server_kwargs)
+
+    # For starttls: connect + upgrade BEFORE binding, so the bind
+    # password isn't leaked over plaintext.
+    if mode == "starttls":
+        conn = Connection(server, user=user, password=password, auto_bind=False)
+        if not conn.open():
+            raise RuntimeError(f"LDAP connect failed: {conn.result}")
+        if not conn.start_tls():
+            raise RuntimeError(f"LDAP StartTLS failed: {conn.result}")
+        if not conn.bind():
+            raise RuntimeError(f"LDAP bind failed: {conn.result}")
+        return server, conn
+
+    # ldaps or plain: single-step auto_bind is fine.
+    conn = Connection(server, user=user, password=password, auto_bind=True)
+    return server, conn
 
 
 def authenticate_ldap(
@@ -67,12 +143,12 @@ def authenticate_ldap(
 ) -> Optional[Dict[str, Any]]:
     """
     Authenticate a user against LDAP.
-    
+
     Returns a dict with user info (username, email, full_name) on success,
     or None on failure.
     """
     try:
-        from ldap3 import Server, Connection, ALL, SUBTREE
+        from ldap3 import SUBTREE
     except ImportError:
         logger.error("ldap3 package not installed")
         return None
@@ -85,20 +161,16 @@ def authenticate_ldap(
     username_attr = settings.get("username_attribute", "uid")
     email_attr = settings.get("email_attribute", "mail")
     fullname_attr = settings.get("fullname_attribute", "cn")
-    use_tls = settings.get("tls_enabled", "true").lower() == "true"
 
     if not server_url or not search_base:
         logger.error("LDAP server_url or search_base not configured")
         return None
 
     try:
-        # Build server with optional TLS
-        tls_config = _build_tls_config(settings) if use_tls else None
-
-        server = Server(server_url, get_info=ALL, tls=tls_config)
-
         # Step 1: Bind with service account to search for user DN
-        search_conn = Connection(server, user=bind_dn, password=bind_password, auto_bind=True)
+        server, search_conn = _open_server_and_connection(
+            settings, user=bind_dn, password=bind_password,
+        )
 
         # Escape username to prevent LDAP filter injection, then substitute
         safe_username = _escape_ldap_filter(username)
@@ -119,11 +191,14 @@ def authenticate_ldap(
         user_dn = str(user_entry.entry_dn)
         search_conn.unbind()
 
-        # Step 2: Bind as the user to verify password
-        user_conn = Connection(server, user=user_dn, password=password, auto_bind=True)
+        # Step 2: Bind as the user to verify password. Reopen with the
+        # same TLS mode so the user bind is protected the same way as
+        # the service bind above.
+        _, user_conn = _open_server_and_connection(
+            settings, user=user_dn, password=password,
+        )
         user_conn.unbind()
 
-        # Extract attributes
         user_info = {
             "username": str(getattr(user_entry, username_attr, username)),
             "email": str(getattr(user_entry, email_attr, "")),
@@ -144,30 +219,25 @@ def test_ldap_connection(settings: Dict[str, str]) -> Dict[str, Any]:
     Returns {"success": bool, "message": str}
     """
     try:
-        from ldap3 import Server, Connection, ALL
+        import ldap3  # noqa: F401
     except ImportError:
         return {"success": False, "message": "ldap3 package not installed"}
 
     server_url = settings.get("server_url", "")
     bind_dn = settings.get("bind_dn", "")
     bind_password = settings.get("bind_password", "")
-    use_tls = settings.get("tls_enabled", "true").lower() == "true"
 
     if not server_url:
         return {"success": False, "message": "Server URL is required"}
 
     try:
-        tls_config = _build_tls_config(settings) if use_tls else None
-
-        server = Server(server_url, get_info=ALL, tls=tls_config, connect_timeout=10)
-        conn = Connection(server, user=bind_dn, password=bind_password, auto_bind=True)
-
-        server_info = str(server.info) if server.info else "Connected"
+        _, conn = _open_server_and_connection(
+            settings, user=bind_dn, password=bind_password, connect_timeout=10,
+        )
         conn.unbind()
-
         return {
             "success": True,
-            "message": f"Successfully connected to {server_url}",
+            "message": f"Successfully connected to {server_url} (tls_mode={_resolve_tls_mode(settings)})",
         }
     except Exception as e:
         return {"success": False, "message": str(e)}

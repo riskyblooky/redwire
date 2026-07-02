@@ -1,6 +1,8 @@
 """Pydantic schemas for LDAP and SAML SSO configuration."""
-from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
 from schemas._field_limits import (
     EMAIL,
     HOSTNAME,
@@ -10,6 +12,16 @@ from schemas._field_limits import (
     TITLE,
     URL,
 )
+
+# Explicit tri-state instead of the old `tls_enabled` bool. The bool was
+# ambiguous: `true` + an ``ldap://`` URL used to *silently* leave the
+# connection plaintext because the code set the TLS config on the Server
+# object but never invoked StartTLS. Modes now map 1:1 to what actually
+# happens on the wire:
+#   * ``none``     — plain LDAP, no TLS at all
+#   * ``ldaps``    — direct TLS from connect (URL should be ldaps://)
+#   * ``starttls`` — plain LDAP connect, then Connection.start_tls() upgrade
+TlsMode = Literal["none", "ldaps", "starttls"]
 
 
 class LdapSettings(BaseModel):
@@ -23,8 +35,22 @@ class LdapSettings(BaseModel):
     username_attribute: str = Field("uid", max_length=SHORT_LABEL)
     email_attribute: str = Field("mail", max_length=SHORT_LABEL)
     fullname_attribute: str = Field("cn", max_length=SHORT_LABEL)
-    tls_enabled: bool = True
+    tls_mode: TlsMode = "ldaps"
+    # When false, the TLS handshake accepts any certificate (CERT_NONE).
+    # For internal / self-signed servers where you can't ship a CA cert.
+    # Logged loudly at auth time.
+    tls_verify: bool = True
     tls_ca_cert: Optional[str] = Field(None, max_length=JSON_BLOB)  # PEM CA certificate, None = keep existing
+
+    @field_validator("tls_mode", mode="before")
+    @classmethod
+    def _coerce_tls_mode(cls, v):
+        # Backward compat with older payloads that only had ``tls_enabled``:
+        # a plain bool arrives here (True/False), so map it to the closest
+        # equivalent mode. The router's read path also does this on GET.
+        if isinstance(v, bool):
+            return "ldaps" if v else "none"
+        return v
 
 
 class SamlSettings(BaseModel):
