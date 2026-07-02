@@ -42,6 +42,7 @@ import {
     FileText,
 } from 'lucide-react';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { apiErrorMessage } from '@/lib/api';
 
 const FINDING_CATEGORIES = [
     { value: 'Web Application', label: 'Web Application' },
@@ -137,7 +138,7 @@ export default function FindingTemplateEditPage() {
             }
             router.push('/templates?tab=findings');
         } catch (err: any) {
-            const detail = err.response?.data?.detail;
+            const detail = apiErrorMessage(err);
             const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((e: any) => e.msg).join(', ') : `Failed to ${isNew ? 'create' : 'update'} template`;
             toast.error(message);
         }

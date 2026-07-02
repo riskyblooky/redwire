@@ -179,3 +179,38 @@ if (typeof window !== 'undefined') {
 
 export { startProactiveRefresh, stopProactiveRefresh };
 export default api;
+
+/**
+ * Extract a human-readable message from an axios/FastAPI error.
+ *
+ * FastAPI returns two error shapes:
+ *   - 4xx with a string detail: {"detail": "Not found"}
+ *   - 422 with a Pydantic validation array: {"detail": [{"type","loc","msg","input","ctx"}, ...]}
+ *
+ * The array shape is what crashes React when rendered directly. This
+ * helper flattens both shapes to a string suitable for toast.error() or
+ * setState in error banners. Falls back to the supplied default if it
+ * can't find anything meaningful.
+ */
+export function apiErrorMessage(err: any, fallback = 'Something went wrong'): string {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+        return detail
+            .map((d) => {
+                if (typeof d === 'string') return d;
+                if (d && typeof d === 'object' && typeof d.msg === 'string') {
+                    const field = Array.isArray(d.loc) ? d.loc.filter((p: any) => p !== 'body').join('.') : '';
+                    return field ? `${field}: ${d.msg}` : d.msg;
+                }
+                return String(d);
+            })
+            .join('; ');
+    }
+    if (detail && typeof detail === 'object') {
+        if (typeof (detail as any).msg === 'string') return (detail as any).msg;
+        return fallback;
+    }
+    if (typeof err?.message === 'string') return err.message;
+    return fallback;
+}

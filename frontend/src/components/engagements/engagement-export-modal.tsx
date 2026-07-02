@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Download, ShieldAlert, KeyRound, ChevronDown, ChevronRight } from 'lucide-react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { toast } from 'sonner';
 
 const MIN_PW_LEN = 16;
@@ -36,7 +36,7 @@ export function EngagementExportModal({
                 setVaultCount(r.data.vault_item_count || 0);
             })
             .catch((err: any) => {
-                toast.error(err?.response?.data?.detail || 'Failed to load export preview');
+                toast.error(apiErrorMessage(err, 'Failed to load export preview'));
             })
             .finally(() => setPreviewLoading(false));
     }, [engagementId]);

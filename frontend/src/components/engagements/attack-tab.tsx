@@ -68,6 +68,7 @@ import {
 } from '@/lib/hooks/use-attack';
 import { useUpdateFinding } from '@/lib/hooks/use-findings';
 import { CheckSquare } from 'lucide-react';
+import { apiErrorMessage } from '@/lib/api';
 
 export type AttackTabSource = 'finding' | 'testcase';
 
@@ -219,7 +220,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                 toast.info('No findings to process');
             }
         } catch (err: any) {
-            const msg = err?.response?.data?.detail || 'Failed to get AI suggestions';
+            const msg = apiErrorMessage(err, 'Failed to get AI suggestions');
             toast.error(msg);
         }
     }, [aiSuggest]);

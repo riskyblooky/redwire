@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, Fragment } from 'react';
+import { apiErrorMessage } from '@/lib/api';
 import {
     DndContext,
     closestCenter,
@@ -766,16 +767,18 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             setPreviewBlobUrl(url);
             setPreviewOpen(true);
         } catch (error: any) {
-            let msg = 'Failed to generate report. Please check if findings exist.';
+            const fallback = 'Failed to generate report. Please check if findings exist.';
+            let msg = fallback;
             try {
                 // responseType is 'blob', so an error body arrives as a Blob.
                 const data = error?.response?.data;
+                let parsed: any = data;
                 if (data instanceof Blob) {
-                    const parsed = JSON.parse(await data.text());
-                    if (parsed?.detail) msg = parsed.detail;
-                } else if (data?.detail) {
-                    msg = data.detail;
+                    parsed = JSON.parse(await data.text());
                 }
+                // Synthesize an axios-shaped error so apiErrorMessage can
+                // flatten either a string detail or a Pydantic 422 array.
+                msg = apiErrorMessage({ response: { data: parsed } }, fallback);
             } catch { /* keep the default message */ }
             toast.error(msg);
         } finally {

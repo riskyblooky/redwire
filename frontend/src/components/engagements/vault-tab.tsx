@@ -35,7 +35,7 @@ import {
     MoreVertical, Loader2, Download, Search, Check, CheckCircle, AlertCircle, User as UserIcon, FileKey, Bug, CheckSquare, Link as LinkIcon, X, XCircle, StickyNote, Zap, AlertTriangle, Hash,
     LayoutGrid, List, ArrowUpDown, Server, Target,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import {
@@ -702,7 +702,7 @@ export function VaultTab({ engagementId }: VaultTabProps) {
             setEditingItem(null);
             refetch();
         } catch (error: any) {
-            const detail = error?.response?.data?.detail || error.message;
+            const detail = apiErrorMessage(error) || error.message;
             console.error('Failed to update vault item:', detail, error);
             toast.error(`Failed to update: ${detail}`);
         } finally {
@@ -763,7 +763,7 @@ export function VaultTab({ engagementId }: VaultTabProps) {
             refetch();
         } catch (error: any) {
             console.error('Failed to add vault item:', error);
-            const detail = error?.response?.data?.detail;
+            const detail = apiErrorMessage(error);
             const msg = Array.isArray(detail)
                 ? detail.map((d: any) => d.msg || String(d)).join('; ')
                 : (typeof detail === 'string' ? detail : 'Failed to add item to vault');

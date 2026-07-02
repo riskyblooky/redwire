@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { usePermission } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
+import { apiErrorMessage } from '@/lib/api';
 
 interface SprayTrackerProps {
     engagementId: string;
@@ -94,7 +95,7 @@ export function SprayTracker({ engagementId }: SprayTrackerProps) {
             setImportName(parts.length ? `Spray: ${parts.join(' · ')}` : `Import: ${file.name}`);
             setImportStep('preview');
         } catch (error: any) {
-            const detail = error?.response?.data?.detail || error.message;
+            const detail = apiErrorMessage(error) || error.message;
             toast.error(`Parse failed: ${detail}`);
         }
     }, [engagementId, importSpray]);
@@ -126,7 +127,7 @@ export function SprayTracker({ engagementId }: SprayTrackerProps) {
             toast.success('Spray campaign imported successfully');
             closeImportDialog();
         } catch (error: any) {
-            toast.error(`Import failed: ${error?.response?.data?.detail || error.message}`);
+            toast.error(`Import failed: ${apiErrorMessage(error) || error.message}`);
         }
     };
 

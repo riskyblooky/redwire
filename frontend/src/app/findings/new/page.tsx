@@ -52,6 +52,7 @@ import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { CvssCalculatorModal } from '@/components/findings/cvss-calculator-modal';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { severityRating } from '@/lib/cvss31';
+import { apiErrorMessage } from '@/lib/api';
 
 const severities = [
     { value: 'CRITICAL', label: 'Critical', color: 'text-red-500 bg-red-500/10 border-red-500/20' },
@@ -254,7 +255,7 @@ export default function NewFindingPage() {
             router.push(`/findings/${newFinding.id}?engagementId=${formData.engagement_id}&tab=findings`);
         } catch (error: any) {
             console.error('Failed to create finding:', error);
-            const detail = error.response?.data?.detail;
+            const detail = apiErrorMessage(error);
             const message = typeof detail === 'string' ? detail :
                 Array.isArray(detail) ? detail.map((d: any) => `${d.loc.join('.')}: ${d.msg}`).join('\n') :
                     'Verification failed. Ensure all fields are valid.';

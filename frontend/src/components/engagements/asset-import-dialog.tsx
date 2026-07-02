@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useImportAssets, ImportResult } from '@/lib/hooks/use-assets';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 interface AssetImportDialogProps {
     open: boolean;
@@ -115,7 +116,7 @@ export function AssetImportDialog({ open, onOpenChange, engagementId }: AssetImp
                 toast.success(`Imported ${importResult.created} asset${importResult.created !== 1 ? 's' : ''}`);
             }
         } catch (error: any) {
-            toast.error(error?.response?.data?.detail || 'Failed to import assets');
+            toast.error(apiErrorMessage(error, 'Failed to import assets'));
         }
     };
 

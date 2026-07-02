@@ -20,7 +20,7 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import Collaboration from '@tiptap/extension-collaboration';
 import { fixedCursorPlugin } from '@/lib/fixed-cursor-plugin';
 import { yCursorPluginKey } from '@tiptap/y-tiptap';
@@ -111,7 +111,7 @@ async function uploadAndInsertImage(view: any, file: File, pos: number, engageme
         });
         view.dispatch(view.state.tr.insert(pos, node));
     } catch (err: any) {
-        toast.error(err?.response?.data?.detail || 'Failed to upload image');
+        toast.error(apiErrorMessage(err, 'Failed to upload image'));
     }
 }
 

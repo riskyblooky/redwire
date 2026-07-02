@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api,  apiErrorMessage } from '@/lib/api';
 import { Ticket, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -230,7 +230,7 @@ export default function RegisterPage() {
             toast.success('Registration successful! Please sign in.');
             router.push('/login');
         } catch (err: any) {
-            const detail = err.response?.data?.detail;
+            const detail = apiErrorMessage(err);
             let message = 'Registration failed';
             if (typeof detail === 'string') {
                 message = detail;

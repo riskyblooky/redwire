@@ -31,6 +31,7 @@ import {
     Shield, ClipboardCheck, ChevronDown, ChevronUp, Zap, LineChart,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 import {
     ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip,
     XAxis, YAxis, CartesianGrid, AreaChart, Area, LineChart as RLineChart, Line, Legend,
@@ -256,7 +257,7 @@ export function WidgetManagement() {
             const result = await queryPreview.mutateAsync(queryDef);
             setPreviewData(result);
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Query failed');
+            toast.error(apiErrorMessage(err, 'Query failed'));
         }
     };
 
@@ -319,7 +320,7 @@ export function WidgetManagement() {
             await deleteWidget.mutateAsync(id);
             toast.success('Widget deleted');
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to delete widget');
+            toast.error(apiErrorMessage(err, 'Failed to delete widget'));
         }
     };
 

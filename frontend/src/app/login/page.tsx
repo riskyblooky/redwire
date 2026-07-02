@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth-store';
 import { Shield, ArrowLeft, LogIn, Zap, AlertTriangle } from 'lucide-react';
+import { apiErrorMessage } from '@/lib/api';
 
 interface AuthProviders {
     local: boolean;
@@ -289,7 +290,7 @@ export default function LoginPage() {
                 window.location.href = '/dashboard';
             }
         } catch (err: any) {
-            const msg = err.response?.data?.detail || 'Authentication failed.';
+            const msg = apiErrorMessage(err, 'Authentication failed.');
             setError(msg);
             setPassword('');
             setStatusText('Connection refused');
@@ -309,7 +310,7 @@ export default function LoginPage() {
             setStatusText('Verified');
             window.location.href = '/dashboard';
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Invalid token.');
+            setError(apiErrorMessage(err, 'Invalid token.'));
             setTotpCode('');
             setStatusText('Token rejected');
         } finally {

@@ -117,6 +117,7 @@ import {
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { apiErrorMessage } from '@/lib/api';
 
 // ── Constants ────────────────────────────────────────────────────────
 const testCaseCategoryStyles: Record<string, { color: string; icon: any }> = {
@@ -874,7 +875,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                                                 setIsImportRunbookOpen(false);
                                                 setPreviewRunbook(null);
                                             } catch (err: any) {
-                                                toast.error(err?.response?.data?.detail || 'Failed to apply runbook');
+                                                toast.error(apiErrorMessage(err, 'Failed to apply runbook'));
                                             } finally {
                                                 setImportingRunbookId(null);
                                             }

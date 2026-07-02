@@ -38,6 +38,7 @@ import { useUsers } from '@/lib/hooks/use-users';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 interface ClientDetailModalProps {
     client: Client | null;
@@ -108,7 +109,7 @@ export function ClientDetailModal({
             setSelectedUserId('');
             toast.success('Access granted');
         } catch (e: any) {
-            toast.error(e.response?.data?.detail || 'Failed to grant access');
+            toast.error(apiErrorMessage(e, 'Failed to grant access'));
         }
     };
 
@@ -118,7 +119,7 @@ export function ClientDetailModal({
             await revokeAccess.mutateAsync({ clientId: client.id, userId });
             toast.success('Access revoked');
         } catch (e: any) {
-            toast.error(e.response?.data?.detail || 'Failed to revoke access');
+            toast.error(apiErrorMessage(e, 'Failed to revoke access'));
         }
     };
 

@@ -41,6 +41,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 /* ── Severity badge helper ──────────────────────────────────────── */
 
@@ -164,7 +165,7 @@ export default function ImportsPage() {
             setStep(1);
         } catch (err: any) {
             toast.error('Parse failed', {
-                description: err?.response?.data?.detail || err?.message || 'Unknown error',
+                description: apiErrorMessage(err) || err?.message || 'Unknown error',
             });
         }
     }, [previewMutation, selectedEngagement]);
@@ -193,7 +194,7 @@ export default function ImportsPage() {
             toast.success('Import complete!');
         } catch (err: any) {
             toast.error('Import failed', {
-                description: err?.response?.data?.detail || err?.message || 'Unknown error',
+                description: apiErrorMessage(err) || err?.message || 'Unknown error',
             });
         }
     }, [selectedFile, selectedEngagement, importAssets, importFindings, selectedAssets, selectedFindings, commitMutation]);

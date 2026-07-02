@@ -29,6 +29,7 @@ import { useCreateAsset } from '@/lib/hooks/use-assets';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 
 export default function NewAssetPage() {
@@ -66,7 +67,7 @@ export default function NewAssetPage() {
             router.push(`/engagements/${formData.engagement_id}?tab=assets`);
         } catch (error: any) {
             console.error('Failed to create asset:', error);
-            toast.error(error.response?.data?.detail || 'Failed to create asset');
+            toast.error(apiErrorMessage(error, 'Failed to create asset'));
         }
     };
 

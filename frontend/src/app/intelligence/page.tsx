@@ -89,6 +89,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
+import { apiErrorMessage } from '@/lib/api';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -190,7 +191,7 @@ export default function IntelligencePage() {
             setNewItem({ title: '', content: '', source_url: '', item_type: 'OTHER', severity: '', cve_id: '' });
             setPendingFiles([]);
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || 'Failed to create intel item');
+            toast.error(apiErrorMessage(err, 'Failed to create intel item'));
         }
     };
 
@@ -205,7 +206,7 @@ export default function IntelligencePage() {
             setAddFeedOpen(false);
             setNewFeed({ name: '', url: '', feed_type: 'RSS' });
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || 'Failed to add feed');
+            toast.error(apiErrorMessage(err, 'Failed to add feed'));
         }
     };
 

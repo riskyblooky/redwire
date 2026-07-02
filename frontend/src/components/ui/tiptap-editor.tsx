@@ -26,7 +26,7 @@ import tippy, { Instance as TippyInstance } from 'tippy.js';
 import { common, createLowlight } from 'lowlight';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import MentionList, { MentionListRef, MentionSuggestionItem } from './mention-list';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { useQuery } from '@tanstack/react-query';
 
@@ -693,7 +693,7 @@ async function uploadAndInsertImage(view: any, file: File, pos: number, engageme
         });
         view.dispatch(view.state.tr.insert(pos, node));
     } catch (err: any) {
-        const detail = err?.response?.data?.detail || 'Failed to upload image';
+        const detail = apiErrorMessage(err, 'Failed to upload image');
         toast.error(detail);
     }
 }
@@ -1002,7 +1002,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             const resultText = JSON.stringify(resp.data.result, null, 2);
             setAiMessages(prev => [...prev, { role: 'assistant', content: `📊 **${toolName}** result:\n\`\`\`json\n${resultText}\n\`\`\`` }]);
         } catch (err: any) {
-            const detail = err?.response?.data?.detail || err.message;
+            const detail = apiErrorMessage(err) || err.message;
             setAiMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${detail}` }]);
         }
         setMcpLoading(false);

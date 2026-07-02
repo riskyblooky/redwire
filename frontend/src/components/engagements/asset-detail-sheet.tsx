@@ -36,6 +36,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { apiErrorMessage } from '@/lib/api';
 
 const assetTypeColors: Record<string, string> = {
     IP_ADDRESS: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -212,7 +213,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
             setShowAddPort(false);
             toast.success('Port added');
         } catch (error: any) {
-            toast.error(error?.response?.data?.detail || 'Failed to add port');
+            toast.error(apiErrorMessage(error, 'Failed to add port'));
         }
     };
 

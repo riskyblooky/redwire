@@ -55,6 +55,7 @@ import {
     DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { useAuthStore } from '@/stores/auth-store';
+import { apiErrorMessage } from '@/lib/api';
 import { format, formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
 import { User, UserRole } from '@/lib/hooks/use-auth';
@@ -110,7 +111,7 @@ export default function AdminPage() {
         email: '',
         password: '',
         full_name: '',
-        role: 'OPERATOR',
+        role: UserRole.OPERATOR,
     });
     const [createFormError, setCreateFormError] = useState<string | null>(null);
 
@@ -124,10 +125,9 @@ export default function AdminPage() {
             await createUser.mutateAsync(createForm);
             toast.success(`User '${createForm.username}' created successfully`);
             setIsCreateDialogOpen(false);
-            setCreateForm({ username: '', email: '', password: '', full_name: '', role: 'OPERATOR' });
+            setCreateForm({ username: '', email: '', password: '', full_name: '', role: UserRole.OPERATOR });
         } catch (error: any) {
-            const msg = error?.response?.data?.detail || 'Failed to create user';
-            setCreateFormError(msg);
+            setCreateFormError(apiErrorMessage(error, 'Failed to create user'));
         }
     };
 
@@ -768,9 +768,9 @@ export default function AdminPage() {
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent className="bg-slate-950 border-slate-800">
-                                        <SelectItem value="OPERATOR" className="text-slate-300">Operator</SelectItem>
-                                        <SelectItem value="READ_ONLY_ADMIN" className="text-slate-300">Read-Only Admin</SelectItem>
-                                        <SelectItem value="ADMIN" className="text-slate-300">Admin</SelectItem>
+                                        <SelectItem value={UserRole.OPERATOR} className="text-slate-300">Operator</SelectItem>
+                                        <SelectItem value={UserRole.READ_ONLY_ADMIN} className="text-slate-300">Read-Only Admin</SelectItem>
+                                        <SelectItem value={UserRole.ADMIN} className="text-slate-300">Admin</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -831,7 +831,7 @@ function SkillsAdminPanel() {
             setNewCatName('');
             toast.success('Category created');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to create category');
+            toast.error(apiErrorMessage(error, 'Failed to create category'));
         }
     };
 
@@ -841,7 +841,7 @@ function SkillsAdminPanel() {
             setEditingCat(null);
             toast.success('Category updated');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to update category');
+            toast.error(apiErrorMessage(error, 'Failed to update category'));
         }
     };
 
@@ -850,7 +850,7 @@ function SkillsAdminPanel() {
             await deleteCategory.mutateAsync(catId);
             toast.success('Category deleted');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to delete category');
+            toast.error(apiErrorMessage(error, 'Failed to delete category'));
         }
     };
 
@@ -862,7 +862,7 @@ function SkillsAdminPanel() {
             setNewSkillCatId('');
             toast.success('Skill created');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to create skill');
+            toast.error(apiErrorMessage(error, 'Failed to create skill'));
         }
     };
 
@@ -871,7 +871,7 @@ function SkillsAdminPanel() {
             await deleteSkill.mutateAsync(skillId);
             toast.success('Skill deleted');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to delete skill');
+            toast.error(apiErrorMessage(error, 'Failed to delete skill'));
         }
     };
 
@@ -880,7 +880,7 @@ function SkillsAdminPanel() {
             await seedSkills.mutateAsync();
             toast.success('Default skills seeded successfully!');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to seed skills');
+            toast.error(apiErrorMessage(error, 'Failed to seed skills'));
         }
     };
 

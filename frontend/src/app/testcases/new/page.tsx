@@ -42,6 +42,7 @@ import { useTags } from '@/lib/hooks/use-tags';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { apiErrorMessage } from '@/lib/api';
 
 const categories = [
     { value: 'RECONNAISSANCE', label: 'Reconnaissance' },
@@ -139,7 +140,7 @@ export default function NewTestCasePage() {
             router.push(`/testcases/${newTC.id}?engagementId=${formData.engagement_id}&tab=testcases`);
         } catch (error: any) {
             console.error('Failed to create test case:', error);
-            toast.error(error.response?.data?.detail || 'Failed to create test case');
+            toast.error(apiErrorMessage(error, 'Failed to create test case'));
         }
     };
 

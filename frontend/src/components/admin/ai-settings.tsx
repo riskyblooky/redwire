@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 export function AiSettingsManagement() {
     const { data: settings, isLoading } = useAiSettings();
@@ -116,7 +117,7 @@ export function AiSettingsManagement() {
             setAvailableModels(result.models);
             toast.success(`Found ${result.models.length} model(s)`);
         } catch (error: any) {
-            toast.error(error?.response?.data?.detail || 'Failed to fetch models');
+            toast.error(apiErrorMessage(error, 'Failed to fetch models'));
         }
     };
 

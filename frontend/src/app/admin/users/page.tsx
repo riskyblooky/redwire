@@ -37,7 +37,7 @@ import {
     Clock, CheckCircle, XCircle, Loader2, ArrowLeft, Key, Activity
 } from 'lucide-react';
 import { useUsers, useUpdateUser, useCreateUser } from '@/lib/hooks/use-users';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { UserRole } from '@/lib/types';
 import { format, formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
@@ -74,7 +74,7 @@ export default function AdminUsersPage() {
             });
         } catch (err: any) {
             console.error('Failed to create user:', err);
-            toast.error(err.response?.data?.detail || 'Failed to create user');
+            toast.error(apiErrorMessage(err, 'Failed to create user'));
         }
     };
 

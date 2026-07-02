@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils';
 import { UserAssignmentField } from '@/components/engagements/user-assignment-field';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { apiErrorMessage } from '@/lib/api';
 
 const ENGAGEMENT_STATUSES = [
     { value: 'PLANNING',    label: 'Planning'    },
@@ -109,7 +110,7 @@ export default function NewEngagementPage() {
             if (created?.id) router.push(`/engagements/${created.id}`);
             else router.push('/engagements');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to create engagement');
+            toast.error(apiErrorMessage(error, 'Failed to create engagement'));
         }
     };
 

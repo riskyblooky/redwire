@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { Mail, ArrowLeft, Send } from 'lucide-react';
 
 /* ── reused components from login page ── */
@@ -65,7 +65,7 @@ export default function ForgotPasswordPage() {
             setSuccessMsg(data.message);
             setEmail('');
         } catch (err: any) {
-            setErrorMsg(err.response?.data?.detail || 'An unexpected error occurred');
+            setErrorMsg(apiErrorMessage(err, 'An unexpected error occurred'));
         } finally {
             setIsLoading(false);
         }

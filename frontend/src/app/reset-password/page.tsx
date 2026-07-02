@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { KeyRound, ArrowLeft } from 'lucide-react';
 
 /* ── reused components ── */
@@ -91,7 +91,7 @@ export default function ResetPasswordPage() {
                 router.push('/login');
             }, 3000);
         } catch (err: any) {
-            setErrorMsg(err.response?.data?.detail || 'Failed to reset password. The link may have expired.');
+            setErrorMsg(apiErrorMessage(err, 'Failed to reset password. The link may have expired.'));
         } finally {
             setIsLoading(false);
         }

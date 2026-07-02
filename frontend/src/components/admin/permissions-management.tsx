@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Users, UserCog, Trash2, Edit, Plus, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
+import { apiErrorMessage } from '@/lib/api';
 
 export function PermissionsManagement() {
     const [activeTab, setActiveTab] = useState('groups');
@@ -50,7 +51,7 @@ export function PermissionsManagement() {
             setCreateGroupOpen(false);
             (e.target as HTMLFormElement).reset();
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to create group');
+            toast.error(apiErrorMessage(error, 'Failed to create group'));
         }
     };
 
@@ -67,7 +68,7 @@ export function PermissionsManagement() {
             setCreateRoleOpen(false);
             (e.target as HTMLFormElement).reset();
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to create role');
+            toast.error(apiErrorMessage(error, 'Failed to create role'));
         }
     };
 
@@ -76,7 +77,7 @@ export function PermissionsManagement() {
             await deleteGroup.mutateAsync(groupId);
             toast.success('Group deleted successfully');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to delete group');
+            toast.error(apiErrorMessage(error, 'Failed to delete group'));
         }
     };
 
@@ -85,7 +86,7 @@ export function PermissionsManagement() {
             await deleteRole.mutateAsync(roleId);
             toast.success('Role deleted successfully');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to delete role');
+            toast.error(apiErrorMessage(error, 'Failed to delete role'));
         }
     };
 
@@ -101,7 +102,7 @@ export function PermissionsManagement() {
                 permissions: newPermissions,
             });
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to update permissions');
+            toast.error(apiErrorMessage(error, 'Failed to update permissions'));
         }
     };
 
@@ -117,7 +118,7 @@ export function PermissionsManagement() {
                 permissions: newPermissions,
             });
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to update permissions');
+            toast.error(apiErrorMessage(error, 'Failed to update permissions'));
         }
     };
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -70,7 +70,7 @@ export default function EmailSettings() {
             toast.success('Email settings saved');
             setDirty(false);
         } catch (e: any) {
-            toast.error(e.response?.data?.detail || 'Failed to save email settings');
+            toast.error(apiErrorMessage(e, 'Failed to save email settings'));
         } finally {
             setSaving(false);
         }
@@ -90,7 +90,7 @@ export default function EmailSettings() {
                 toast.error(data.message);
             }
         } catch (e: any) {
-            toast.error(e.response?.data?.detail || 'Failed to send test email');
+            toast.error(apiErrorMessage(e, 'Failed to send test email'));
         } finally {
             setTesting(false);
         }

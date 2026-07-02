@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { apiErrorMessage } from '@/lib/api';
 import {
     ArrowLeft,
     Save,
@@ -128,7 +129,7 @@ export default function TestCaseTemplateEditPage() {
             }
             router.push('/templates?tab=testcases');
         } catch (err: any) {
-            const detail = err.response?.data?.detail;
+            const detail = apiErrorMessage(err);
             const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((e: any) => e.msg).join(', ') : `Failed to ${isNew ? 'create' : 'update'} template`;
             toast.error(message);
         }

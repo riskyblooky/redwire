@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Paperclip, UploadCloud, X, FileIcon } from 'lucide-react';
 import { useUploadEvidence } from '@/lib/hooks/use-evidence';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 interface AttachmentQuickAddDialogProps {
     open: boolean;
@@ -70,7 +71,7 @@ export function AttachmentQuickAddDialog({
             toast.success('Attachment uploaded');
             onOpenChange(false);
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to upload attachment');
+            toast.error(apiErrorMessage(err, 'Failed to upload attachment'));
         }
     };
 

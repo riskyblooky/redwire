@@ -20,7 +20,7 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/dashboard-layout';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -298,7 +298,7 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
             setNewVault({ name: '', item_type: 'CREDENTIAL', username: '', password: '', note: '', description: '' });
             setSelectedFile(null);
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || 'Failed to add vault item');
+            toast.error(apiErrorMessage(err, 'Failed to add vault item'));
         }
     };
 
@@ -343,7 +343,7 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
             toast.success('Credential updated');
             setEditingId(null);
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || 'Failed to update');
+            toast.error(apiErrorMessage(err, 'Failed to update'));
         }
     };
 
@@ -850,7 +850,7 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                                             await revokeAccess.mutateAsync({ infraItemId: itemId, userId: a.user_id });
                                                                             toast.success('Access revoked');
                                                                         } catch (err: any) {
-                                                                            toast.error(err.response?.data?.detail || 'Failed to revoke access');
+                                                                            toast.error(apiErrorMessage(err, 'Failed to revoke access'));
                                                                         }
                                                                     }}
                                                                     className="text-slate-600 hover:text-red-400 transition-colors"
@@ -880,7 +880,7 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                                 toast.success(grantAsManager ? 'Granted with manage' : 'Access granted');
                                                                 setGrantAsManager(false);
                                                             } catch (err: any) {
-                                                                toast.error(err.response?.data?.detail || 'Failed to grant access');
+                                                                toast.error(apiErrorMessage(err, 'Failed to grant access'));
                                                             }
                                                         }}>
                                                             <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 text-white">
@@ -1011,7 +1011,7 @@ export default function InfrastructurePage() {
             setCreateOpen(false);
             setForm(emptyForm);
         } catch (err: any) {
-            toast.error(err.response?.data?.detail || 'Failed to create');
+            toast.error(apiErrorMessage(err, 'Failed to create'));
         }
     };
 

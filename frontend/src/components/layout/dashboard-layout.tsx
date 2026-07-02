@@ -56,7 +56,7 @@ import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import api, { startProactiveRefresh } from '@/lib/api';
+import api, {  startProactiveRefresh, apiErrorMessage } from '@/lib/api';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNotifications, useUnreadCount, useMarkRead, useMarkAllRead, useClearAllNotifications, useNotificationPreferences, useUpdateNotificationPreferences } from '@/lib/hooks/use-notifications';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -144,7 +144,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             useAuthStore.getState().setUser(userResponse.data);
             toast.success('Password changed successfully');
         } catch (err: any) {
-            setFpError(err?.response?.data?.detail || 'Failed to change password');
+            setFpError(apiErrorMessage(err, 'Failed to change password'));
         } finally {
             setFpLoading(false);
         }

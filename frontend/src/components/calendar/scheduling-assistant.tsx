@@ -36,6 +36,7 @@ import { useEngagementRoles } from '@/lib/hooks/use-rbac';
 import { useEngagementSkills, useFocusFit, SKILL_LEVELS, type EngagementSkill } from '@/lib/hooks/use-skills';
 import { getAvatarUrl } from '@/lib/utils';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 import {
     format, parseISO, differenceInDays,
     max as dateMax, min as dateMin,
@@ -322,7 +323,7 @@ export function SchedulingAssistant({
             });
         } catch (error: any) {
             toast.error('Failed to save assignments', {
-                description: error.response?.data?.detail || 'An error occurred.',
+                description: apiErrorMessage(error, 'An error occurred.'),
             });
         }
     };

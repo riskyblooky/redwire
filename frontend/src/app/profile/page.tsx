@@ -44,7 +44,7 @@ import {
 import { Loader2, Camera, Mail, User, Lock, CheckCircle2, AlertCircle, Shield, ShieldCheck, ShieldOff, Copy, Eye, EyeOff, AlertTriangle, BellRing, Radar, Save, Target, Palette, Check, RefreshCw, Download } from 'lucide-react';
 import { useCheckPassword } from '@/lib/hooks/use-wordlist';
 import { cn } from '@/lib/utils';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { toast } from 'sonner';
 import { ApiTokensCard } from '@/components/profile/api-tokens-card';
 import { useNotificationPreferences, useUpdateNotificationPreferences } from '@/lib/hooks/use-notifications';
@@ -180,7 +180,7 @@ export default function ProfilePage() {
                 }, 1200);
             }
         } catch (error: any) {
-            setProfileMessage({ type: 'error', text: error.response?.data?.detail || 'Failed to update profile' });
+            setProfileMessage({ type: 'error', text: apiErrorMessage(error, 'Failed to update profile') });
             setEmailChangePassword('');
             setEmailChangeTotpCode('');
         }
@@ -217,7 +217,7 @@ export default function ProfilePage() {
             }, 1200);
             return;
         } catch (error: any) {
-            setPasswordMessage({ type: 'error', text: error.response?.data?.detail || 'Failed to change password' });
+            setPasswordMessage({ type: 'error', text: apiErrorMessage(error, 'Failed to change password') });
         }
     };
 
@@ -242,7 +242,7 @@ export default function ProfilePage() {
             setShowSetupPrompt(false);
             setSetupPassword('');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to start 2FA setup');
+            toast.error(apiErrorMessage(error, 'Failed to start 2FA setup'));
         } finally {
             setTotpLoading(false);
         }
@@ -265,7 +265,7 @@ export default function ProfilePage() {
             const userRes = await api.get('/auth/me');
             setUser(userRes.data);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Invalid code. Please try again.');
+            toast.error(apiErrorMessage(error, 'Invalid code. Please try again.'));
             setTotpCode('');
         } finally {
             setTotpLoading(false);
@@ -290,7 +290,7 @@ export default function ProfilePage() {
             const userRes = await api.get('/auth/me');
             setUser(userRes.data);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to regenerate recovery codes');
+            toast.error(apiErrorMessage(error, 'Failed to regenerate recovery codes'));
         } finally {
             setRegenerateLoading(false);
         }
@@ -334,7 +334,7 @@ export default function ProfilePage() {
             const userRes = await api.get('/auth/me');
             setUser(userRes.data);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to disable 2FA');
+            toast.error(apiErrorMessage(error, 'Failed to disable 2FA'));
         } finally {
             setTotpLoading(false);
         }
@@ -1051,7 +1051,7 @@ function AppearanceCard() {
             await updateProfile.mutateAsync(payload);
             toast.success(`Accent set to ${label}`);
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to update accent');
+            toast.error(apiErrorMessage(err, 'Failed to update accent'));
         }
     };
 
@@ -1061,7 +1061,7 @@ function AppearanceCard() {
         try {
             await updateProfile.mutateAsync({ theme_preference: 'custom', theme_accent_custom: hex });
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to update custom accent');
+            toast.error(apiErrorMessage(err, 'Failed to update custom accent'));
         }
     };
 
@@ -1072,7 +1072,7 @@ function AppearanceCard() {
             await updateProfile.mutateAsync({ theme_palette: palette });
             toast.success(`Palette set to ${label}`);
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to update palette');
+            toast.error(apiErrorMessage(err, 'Failed to update palette'));
         }
     };
 
@@ -1272,7 +1272,7 @@ function SkillsTab({ userId }: { userId: string | undefined }) {
             toast.success('Skills updated successfully');
             setHasChanges(false);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to save skills');
+            toast.error(apiErrorMessage(error, 'Failed to save skills'));
         }
     };
 

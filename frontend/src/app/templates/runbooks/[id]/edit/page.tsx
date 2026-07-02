@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 import {
     ArrowLeft,
     Save,
@@ -448,7 +449,7 @@ export default function RunbookEditorPage() {
             }
             router.push('/templates?tab=runbooks');
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to save runbook');
+            toast.error(apiErrorMessage(err, 'Failed to save runbook'));
         } finally {
             setSaving(false);
         }

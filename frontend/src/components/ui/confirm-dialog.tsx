@@ -12,6 +12,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle, Trash2, ShieldAlert } from 'lucide-react';
+import { apiErrorMessage } from '@/lib/api';
 
 interface ConfirmDialogState {
     open: boolean;
@@ -142,7 +143,7 @@ export function useConfirmDialog() {
 export function getErrorMessage(error: any, fallback: string): string {
     // Check for Axios-style error response
     const status = error?.response?.status;
-    const detail = error?.response?.data?.detail;
+    const detail = apiErrorMessage(error);
 
     if (status === 403) {
         // Permission denied - use the backend's detail message if available

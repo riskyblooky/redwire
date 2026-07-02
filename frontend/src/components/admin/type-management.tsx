@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Palette, Pencil, Trash2, Loader2, Server, FileText, Shield, Lock, Wrench, Target, FolderOpen, Radar, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 import {
     useClientTypes,
@@ -68,7 +69,7 @@ function TypeManagerSection({ title, description, types, isLoading, onSave, onDe
             await onSave(formData, editingType?.id || null);
             resetForm();
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || `Failed to save ${title.toLowerCase()}`);
+            toast.error(apiErrorMessage(error) || `Failed to save ${title.toLowerCase()}`);
         } finally {
             setIsSaving(false);
         }
@@ -79,7 +80,7 @@ function TypeManagerSection({ title, description, types, isLoading, onSave, onDe
             await onDelete(type.id);
             toast.success('Type deleted');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to delete type');
+            toast.error(apiErrorMessage(error, 'Failed to delete type'));
         }
     };
 

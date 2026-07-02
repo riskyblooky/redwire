@@ -49,6 +49,7 @@ import { PresenceIndicator } from '@/components/collaboration/presence-indicator
 import { EditLockBanner } from '@/components/collaboration/edit-lock-banner';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { useAuthStore } from '@/stores/auth-store';
+import { apiErrorMessage } from '@/lib/api';
 
 const categories = [
     { value: 'RECONNAISSANCE', label: 'Reconnaissance' },
@@ -186,7 +187,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
             router.push(`/testcases/${id}`);
         } catch (error: any) {
             console.error('Failed to update test case:', error);
-            toast.error(error.response?.data?.detail || 'Failed to update test case');
+            toast.error(apiErrorMessage(error, 'Failed to update test case'));
         }
     };
 

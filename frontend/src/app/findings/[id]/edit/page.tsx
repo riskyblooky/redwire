@@ -61,6 +61,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { severityRating } from '@/lib/cvss31';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
+import { apiErrorMessage } from '@/lib/api';
 
 const severities = [
     { value: 'CRITICAL', label: 'Critical', color: 'text-red-500 bg-red-500/10 border-red-500/20' },
@@ -362,7 +363,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
             router.push(`/findings/${id}${query}`);
         } catch (error: any) {
             console.error('Failed to update finding:', error);
-            const detail = error.response?.data?.detail;
+            const detail = apiErrorMessage(error);
             const message = typeof detail === 'string' ? detail :
                 Array.isArray(detail) ? detail.map((d: any) => `${d.loc.join('.')}: ${d.msg}`).join('\n') :
                     'Verification failed. Ensure all fields are valid.';

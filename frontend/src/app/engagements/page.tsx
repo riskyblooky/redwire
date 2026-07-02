@@ -48,7 +48,7 @@ import { cn } from '@/lib/utils';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { relevanceComparator } from '@/lib/search-relevance';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -396,7 +396,7 @@ export default function EngagementsPage() {
             setImportPreview(resp.data as ImportPreview);
             setIsImporting(false);
         } catch (err: any) {
-            const detail = err?.response?.data?.detail || err.message || '';
+            const detail = apiErrorMessage(err) || err.message || '';
             // Backend signals encrypted-without-passphrase / wrong-passphrase
             // with a 400 + a descriptive detail. Switch to the prompt instead
             // of just toasting so the user can recover in-flow.
@@ -456,7 +456,7 @@ export default function EngagementsPage() {
             setImportPassphrase('');
             router.push(`/engagements/${resp.data.id}`);
         } catch (err: any) {
-            const detail = err?.response?.data?.detail || err.message;
+            const detail = apiErrorMessage(err) || err.message;
             toast.error(`Import failed: ${detail}`);
         }
         setIsImporting(false);

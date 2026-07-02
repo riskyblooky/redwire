@@ -88,6 +88,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { ClientDetailModal } from '@/components/clients/client-detail-modal';
 import { ClientStatsPanel } from '@/components/clients/client-stats-panel';
+import { apiErrorMessage } from '@/lib/api';
 
 // ============ Client Tree Node Component ============
 
@@ -410,7 +411,7 @@ export default function ClientsPage() {
             await reorderClients.mutateAsync(items);
             toast.success('Client order updated');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to reorder');
+            toast.error(apiErrorMessage(error, 'Failed to reorder'));
         }
 
         setDraggedNode(null);
@@ -470,7 +471,7 @@ export default function ClientsPage() {
             }
             setIsCreateDialogOpen(false);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to save client');
+            toast.error(apiErrorMessage(error, 'Failed to save client'));
         }
     };
 
@@ -483,7 +484,7 @@ export default function ClientsPage() {
             if (selectedClient?.id === deleteTarget.id) setSelectedClient(null);
             setDeleteTarget(null);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to delete client');
+            toast.error(apiErrorMessage(error, 'Failed to delete client'));
         }
     };
 

@@ -37,6 +37,7 @@ import {
     ArrowLeft, Save, Loader2, Palette, Image as ImageIcon, X, Upload, Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 import {
     useReportTheme,
     useCreateReportTheme,
@@ -295,7 +296,7 @@ export default function ReportThemeEditPage() {
             }
             router.push('/templates?tab=report-themes');
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || 'Failed to save theme');
+            toast.error(apiErrorMessage(err, 'Failed to save theme'));
         }
     };
 

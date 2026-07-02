@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
+import { apiErrorMessage } from '@/lib/api';
 
 /**
  * SSO Callback Page
@@ -105,7 +106,7 @@ export default function SSOCallbackPage() {
             await verifySsoTotp(totpCode, pendingToken);
             router.push('/dashboard');
         } catch (err: any) {
-            const detail = err?.response?.data?.detail || 'Invalid code. Please try again.';
+            const detail = apiErrorMessage(err, 'Invalid code. Please try again.');
             setError(detail);
             setTotpCode('');
             setVerifying(false);

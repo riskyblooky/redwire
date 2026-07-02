@@ -35,6 +35,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { apiErrorMessage } from '@/lib/api';
 
 
 export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
@@ -88,7 +89,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             setEditingPortId(null);
             toast.success('Port updated');
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to update port');
+            toast.error(apiErrorMessage(error, 'Failed to update port'));
         }
     };
 
@@ -115,7 +116,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             setShowPortForm(false);
             toast.success(`Port ${portNum}/${newPort.protocol} added`);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to add port');
+            toast.error(apiErrorMessage(error, 'Failed to add port'));
         }
     };
 
@@ -187,7 +188,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
             router.push(`/assets/${id}`);
         } catch (error: any) {
             console.error('Failed to update asset:', error);
-            toast.error(error.response?.data?.detail || 'Failed to update asset');
+            toast.error(apiErrorMessage(error, 'Failed to update asset'));
         }
     };
 

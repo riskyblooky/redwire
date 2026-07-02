@@ -46,6 +46,7 @@ import { useSkillCategories, useEngagementSkills, useSetEngagementSkills, SKILL_
 import { useCanEdit } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { apiErrorMessage } from '@/lib/api';
 
 // ── Phase colors ────────────────────────────────────────────────────
 const PHASE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -282,7 +283,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
             setDetailsDirty(false);
             setPhasesEdited(false);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to save changes');
+            toast.error(apiErrorMessage(error, 'Failed to save changes'));
         }
     };
 
@@ -624,7 +625,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                                         await generatePhases.mutateAsync(engagement.id);
                                                         toast.success('Phases generated!');
                                                     } catch (error: any) {
-                                                        toast.error(error.response?.data?.detail || 'Failed to generate phases');
+                                                        toast.error(apiErrorMessage(error, 'Failed to generate phases'));
                                                     }
                                                 }}
                                                 disabled={generatePhases.isPending}
@@ -801,7 +802,7 @@ function RequiredSkillsCard({ engagementId, onDirtyChange, saveRef }: {
             await setEngagementSkills.mutateAsync({ engagementId, skills });
             markDirty(false);
         } catch (error: any) {
-            toast.error(error.response?.data?.detail || 'Failed to save skills');
+            toast.error(apiErrorMessage(error, 'Failed to save skills'));
         }
     };
 
