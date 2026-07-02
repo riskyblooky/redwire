@@ -2,6 +2,8 @@
 Email service utility — sends emails via SMTP using settings from auth_settings table.
 """
 import smtplib
+import ssl
+import tempfile
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -21,6 +23,58 @@ async def _get_smtp_settings(db: AsyncSession) -> Dict[str, str]:
     return {s.key: s.value or "" for s in result.scalars().all()}
 
 
+def _build_smtp_tls_context(settings: Dict[str, str]) -> ssl.SSLContext:
+    """GHSA-6j38-7gfm-ch45: build a verifying SSL context for SMTP.
+
+    Mirrors the LDAP TLS pattern in ``auth.ldap_auth._build_tls_config``:
+    strict-by-default with two operator opt-ins for on-prem setups whose
+    SMTP relay isn't backed by a public CA.
+
+      - ``smtp_tls_ca_cert`` (PEM text): loaded into the context so a
+        private-CA-issued cert is verified against the operator-supplied
+        chain rather than the system bundle. Written to a temp file
+        because ``load_verify_locations`` doesn't accept in-memory PEM
+        on older Pythons; unlinked after loading.
+      - ``smtp_tls_verify=false``: last-resort disable. Emits a WARNING
+        so the operator sees the state in logs and monitoring.
+
+    Absent both settings: ``ssl.create_default_context()`` — the
+    system CA bundle, ``CERT_REQUIRED``, ``check_hostname=True``. That
+    reverses the pre-fix behaviour where ``smtplib`` silently fell
+    back to ``_create_stdlib_context()`` (``CERT_NONE``) whenever
+    ``context=`` was omitted — the actual defect the CVE names.
+    """
+    ca_cert_pem = settings.get("smtp_tls_ca_cert", "").strip()
+    tls_verify = settings.get("smtp_tls_verify", "true").lower() != "false"
+
+    if ca_cert_pem:
+        ctx = ssl.create_default_context()
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem", mode="w")
+        try:
+            tmp.write(ca_cert_pem)
+            tmp.close()
+            ctx.load_verify_locations(cafile=tmp.name)
+        finally:
+            try:
+                import os as _os
+                _os.unlink(tmp.name)
+            except OSError:
+                pass
+        return ctx
+
+    if not tls_verify:
+        logger.warning(
+            "SMTP TLS certificate validation is DISABLED "
+            "(smtp_tls_verify=false). Outbound mail can be intercepted."
+        )
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+    return ssl.create_default_context()
+
+
 def _send_smtp(
     host: str,
     port: int,
@@ -33,6 +87,7 @@ def _send_smtp(
     subject: str,
     html_body: str,
     text_body: Optional[str] = None,
+    tls_context: Optional[ssl.SSLContext] = None,
 ) -> bool:
     """Low-level SMTP send.  Returns True on success."""
     msg = MIMEMultipart("alternative")
@@ -44,14 +99,21 @@ def _send_smtp(
         msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
+    # GHSA-6j38-7gfm-ch45: fall back to a verifying default context if the
+    # caller didn't supply one — treat "no context passed" as "verify
+    # against the system CA bundle", never as "accept any cert" which is
+    # what smtplib does when context= is omitted entirely.
+    if tls_context is None:
+        tls_context = ssl.create_default_context()
+
     try:
         if use_tls and port == 465:
             # Implicit TLS (SMTPS)
-            server = smtplib.SMTP_SSL(host, port, timeout=15)
+            server = smtplib.SMTP_SSL(host, port, timeout=15, context=tls_context)
         else:
             server = smtplib.SMTP(host, port, timeout=15)
             if use_tls:
-                server.starttls()
+                server.starttls(context=tls_context)
 
         if username and password:
             server.login(username, password)
@@ -91,10 +153,13 @@ async def send_email(
         logger.error("SMTP host or from_email not configured")
         return False
 
+    tls_context = _build_smtp_tls_context(cfg) if use_tls else None
+
     return _send_smtp(
         host=host,
         port=port,
         username=username,
+        tls_context=tls_context,
         password=password,
         use_tls=use_tls,
         from_email=from_email,
