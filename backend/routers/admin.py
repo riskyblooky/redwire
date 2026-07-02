@@ -21,7 +21,7 @@ router = APIRouter(
     tags=["admin"]
 )
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 
 from schemas.user import normalize_username
@@ -29,7 +29,15 @@ from schemas.user import normalize_username
 
 class AdminUserCreate(BaseModel):
     username: str = Field(..., min_length=2, max_length=50)
-    email: str = Field(..., max_length=254)
+    # GHSA-7x2f-ff7r-h388 #11 (CWE-178): admin-create previously used
+    # `str` (raw text) for the email field while self-register uses
+    # `EmailStr` — the two paths validated to different rules, so an
+    # admin could create "Foo@BAR.com" while a subsequent self-register
+    # of "foo@bar.com" would slip through the case-sensitive equality
+    # check in the uniqueness query and create a shadow account.
+    # Switched to EmailStr for shape parity and force-lowercase for
+    # canonicalisation across both paths.
+    email: EmailStr = Field(..., max_length=254)
     password: str = Field(..., min_length=8, max_length=256)
     full_name: Optional[str] = Field("", max_length=255)
     role: UserRole = UserRole.OPERATOR
@@ -41,6 +49,13 @@ class AdminUserCreate(BaseModel):
         # go through the same NFKC + casefold + ASCII allowlist.
         # GHSA-2hrj-c2v3-8p2v.
         return normalize_username(v)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        # GHSA-7x2f-ff7r-h388 #11: canonicalise so uniqueness checks
+        # match self-register's post-normalize form.
+        return v.strip().lower()
 
 
 @router.get("/config")

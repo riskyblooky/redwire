@@ -30,6 +30,27 @@ def require_roles(allowed_roles: List[UserRole]):
         return wrapper
     return decorator
 
+async def is_engagement_member(user_id: str, engagement_id: str, db: AsyncSession) -> bool:
+    """GHSA-7x2f-ff7r-h388 #1 (CWE-863): does this user currently hold
+    an EngagementAssignment on this engagement?
+
+    The is_creator bypass at several router sites (discussions, testcases,
+    findings) let a user who created a resource keep writing to it
+    forever, including after they were removed from the engagement.
+    Gating the creator bypass on this membership predicate makes an
+    ex-member's write attempts 403 while preserving the "creator can
+    edit their own content without a specific role permission" flow
+    for current members.
+    """
+    result = await db.execute(
+        select(EngagementAssignment.user_id).where(
+            EngagementAssignment.user_id == user_id,
+            EngagementAssignment.engagement_id == engagement_id,
+        ).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def check_engagement_role(user_id: str, engagement_id: str, allowed_role_names: List[str], db: AsyncSession) -> bool:
     """Check if a user has one of the allowed roles on a specific engagement."""
     from models.engagement_role import EngagementRole

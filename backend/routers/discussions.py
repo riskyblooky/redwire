@@ -13,7 +13,7 @@ from schemas.discussion import (
     ActivityLogResponse
 )
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, is_engagement_member
 from models.permission import Permission
 from datetime import datetime
 from utils.collaboration import create_activity_log
@@ -222,15 +222,27 @@ async def update_thread(
     # Check permissions - only creator, admins, or those with discussion_edit permission
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     is_creator = thread.created_by == current_user.id
-    
-    if not (is_admin or is_creator):
-        has_permission = await check_engagement_permission(current_user.id, thread.engagement_id, Permission.DISCUSSION_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'discussion_edit' permission to modify threads."
-            )
-    
+
+    if not is_admin:
+        # GHSA-7x2f-ff7r-h388 #1 (CWE-863): the previous
+        # `if not (is_admin or is_creator)` short-circuit let a user
+        # who created a thread keep editing it forever, including
+        # after they were removed from the engagement. Gate the
+        # creator bypass on current engagement membership.
+        if is_creator:
+            if not await is_engagement_member(current_user.id, thread.engagement_id, db):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are no longer a member of this engagement.",
+                )
+        else:
+            has_permission = await check_engagement_permission(current_user.id, thread.engagement_id, Permission.DISCUSSION_EDIT.value, db)
+            if not has_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. You need the 'discussion_edit' permission to modify threads."
+                )
+
     update_data = thread_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(thread, field, value)
@@ -278,15 +290,23 @@ async def resolve_thread(
     # Check permissions
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     is_creator = thread.created_by == current_user.id
-    
-    if not (is_admin or is_creator):
-        has_permission = await check_engagement_permission(current_user.id, thread.engagement_id, Permission.DISCUSSION_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to resolve this thread."
-            )
-    
+
+    if not is_admin:
+        # GHSA-7x2f-ff7r-h388 #1: same ex-member gate as update_thread above.
+        if is_creator:
+            if not await is_engagement_member(current_user.id, thread.engagement_id, db):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are no longer a member of this engagement.",
+                )
+        else:
+            has_permission = await check_engagement_permission(current_user.id, thread.engagement_id, Permission.DISCUSSION_EDIT.value, db)
+            if not has_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions to resolve this thread."
+                )
+
     thread.is_resolved = not thread.is_resolved
     await db.commit()
     await db.refresh(thread)

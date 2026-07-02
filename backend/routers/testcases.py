@@ -10,7 +10,7 @@ from models.user import User
 from models.testcase import TestCase
 from schemas.testcase import TestCaseCreate, TestCaseUpdate, TestCaseResponse
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, is_engagement_member
 from models.user import UserRole
 from models.permission import Permission
 import uuid
@@ -780,13 +780,24 @@ async def upload_testcase_evidence(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     is_creator = testcase.created_by == current_user.id
 
-    if not (is_admin or is_creator):
-        has_permission = await check_engagement_permission(current_user.id, testcase.engagement_id, Permission.EVIDENCE_CREATE.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this test case."
-            )
+    if not is_admin:
+        # GHSA-7x2f-ff7r-h388 #1: the is_creator bypass let an
+        # ex-member keep adding evidence to a testcase they created
+        # even after they were removed from the engagement. Gate on
+        # current membership.
+        if is_creator:
+            if not await is_engagement_member(current_user.id, testcase.engagement_id, db):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are no longer a member of this engagement.",
+                )
+        else:
+            has_permission = await check_engagement_permission(current_user.id, testcase.engagement_id, Permission.EVIDENCE_CREATE.value, db)
+            if not has_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this test case."
+                )
 
     # Read file content
     content = await file.read()

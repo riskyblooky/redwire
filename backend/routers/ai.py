@@ -386,6 +386,20 @@ async def ai_chat(
     field_name = field_ctx.get("fieldName", "content")
 
     is_chatbot = resource_type == "chatbot"
+    # GHSA-7x2f-ff7r-h388 #5 (CWE-602): the client picks
+    # `resourceType` in request.field_context to select chatbot vs
+    # editor mode. The admin can turn the chatbot off via the
+    # `chatbot_enabled` setting, but before this fix the /chat
+    # handler only checked `ai_enabled` — a client could still POST
+    # with `resourceType: "chatbot"` and get chatbot behaviour even
+    # when the admin had it disabled. Enforce the feature flag at
+    # the entry so the admin toggle means what it says.
+    # (mcp_enabled is already correctly enforced below at line ~402.)
+    if is_chatbot and settings.get("chatbot_enabled", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="AI chatbot is disabled on this instance.",
+        )
     if is_chatbot:
         system_prompt = CHATBOT_SYSTEM_PROMPT
     else:

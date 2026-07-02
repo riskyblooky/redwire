@@ -65,6 +65,16 @@ class UserBase(BaseModel):
     def _validate_username(cls, v: str) -> str:
         return normalize_username(v)
 
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        # GHSA-7x2f-ff7r-h388 #11 (CWE-178): canonicalise so the
+        # uniqueness check at /auth/register can't be bypassed by
+        # varying case. Both self-register (UserCreate → UserBase)
+        # and admin-create (routers/admin.py::AdminUserCreate) apply
+        # the same `.strip().lower()`.
+        return v.strip().lower()
+
 class UserCreate(UserBase):
     # max_length caps unauth body allocation before the route runs (GHSA-8r3m-6x57-pg97).
     # bcrypt truncates at 72 bytes, but 256 leaves headroom for future hashes (argon2 etc.).

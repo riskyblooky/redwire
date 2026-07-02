@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 from database import get_db
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES
 from models.user import User
 from models.plugin import PluginSetting, PluginState
 from plugin_loader import plugin_registry
@@ -42,9 +42,18 @@ class PluginSettingsUpdate(BaseModel):
 
 # ── List all plugins ─────────────────────────────────────────────────
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(require_roles(ADMIN_ROLES))])
 async def list_plugins(current_user: User = Depends(get_current_user)):
-    """List all discovered plugins with their status."""
+    """List all discovered plugins with their status.
+
+    GHSA-7x2f-ff7r-h388 #7 (CWE-200): the response includes each
+    plugin's manifest, which contains admin-configurable settings
+    including default values for secrets. Previously exposed to any
+    authenticated user — now admin-only (read-only-admin included via
+    ADMIN_ROLES). The nav-items and widgets endpoints below stay
+    open because they only return purely UI-relevant metadata (icon,
+    label, path) that any user needs to render the sidebar.
+    """
     return [p.to_dict() for p in plugin_registry.plugins.values()]
 
 
@@ -62,12 +71,17 @@ async def get_plugin_widgets(current_user: User = Depends(get_current_user)):
 
 # ── Plugin details ───────────────────────────────────────────────────
 
-@router.get("/{plugin_id}")
+@router.get("/{plugin_id}", dependencies=[Depends(require_roles(ADMIN_ROLES))])
 async def get_plugin(
     plugin_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Get details for a specific plugin."""
+    """Get details for a specific plugin.
+
+    GHSA-7x2f-ff7r-h388 #7: same admin-only gate as the list endpoint —
+    the response is `plugin.to_dict()` which includes the manifest with
+    admin-configurable settings.
+    """
     plugin = plugin_registry.plugins.get(plugin_id)
     if not plugin:
         raise HTTPException(404, f"Plugin '{plugin_id}' not found")

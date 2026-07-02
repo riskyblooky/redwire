@@ -134,6 +134,25 @@ async def commit_spray(
         )
         if not has_perm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
+        # GHSA-7x2f-ff7r-h388 #6 (CWE-862): the auto-inventory path
+        # below creates Asset rows for each host in the spray run,
+        # but the gate above only asked for VAULT_CREATE. That let a
+        # user with VAULT_CREATE but not ASSET_CREATE add assets to
+        # the engagement via the spray-commit side channel. Require
+        # ASSET_CREATE too when the caller opts into the auto-create.
+        if data.create_missing_assets:
+            has_asset_perm = await check_engagement_permission(
+                current_user.id, data.engagement_id, Permission.ASSET_CREATE.value, db
+            )
+            if not has_asset_perm:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Insufficient permissions. You need the 'asset_create' "
+                        "permission to auto-inventory new hosts on the spray run. "
+                        "Set create_missing_assets=false to commit without asset creation."
+                    ),
+                )
 
     # Create campaign — password_used is encrypted on bind by the
     # EncryptedText column type.
