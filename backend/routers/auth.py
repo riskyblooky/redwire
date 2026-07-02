@@ -330,6 +330,21 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
                 authenticated = False
 
     if not authenticated or not user:
+        # Lifecycle hook — plugins can subscribe for audit / SIEM /
+        # brute-force detection. Emit BEFORE raising so a slow subscriber
+        # can't block the 401 (event_bus.emit gathers concurrently and
+        # logs errors, no back-pressure). Payload omits password entirely
+        # and reports only the attempted username + client hint.
+        try:
+            from utils.event_bus import event_bus
+            await event_bus.emit("auth.login.failed", {
+                "username": credentials.username,
+                "reason": "invalid_credentials",
+                "client_ip": (request.headers.get("X-Real-IP")
+                              or (request.client.host if request.client else None)),
+            })
+        except Exception as _e:
+            print(f"[auth] failed-login event emit error (non-fatal): {_e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -373,12 +388,30 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
     # Update last login
     user.last_login = datetime.utcnow()
     await db.commit()
-    
+
     # Create tokens
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
     refresh_token = create_refresh_token(data={"sub": user.id})
 
     _set_refresh_cookie(response, request, refresh_token)
+
+    # Lifecycle hook — plugins subscribe to react to successful auth
+    # (audit trail, SIEM push, "welcome back" notifications). Fired
+    # after commit so subscribers see last_login updated. Payload
+    # deliberately excludes tokens.
+    try:
+        from utils.event_bus import event_bus
+        await event_bus.emit("auth.login.success", {
+            "user_id": user.id,
+            "username": user.username,
+            "role": user.role.value,
+            "auth_provider": (user.auth_provider or "local"),
+            "client_ip": (request.headers.get("X-Real-IP")
+                          or (request.client.host if request.client else None)),
+        })
+    except Exception as _e:
+        print(f"[auth] success-login event emit error (non-fatal): {_e}")
+
     return {
         "access_token": access_token,
         "refresh_token": "",

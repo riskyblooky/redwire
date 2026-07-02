@@ -436,7 +436,26 @@ async def create_user(
         )
     
     await db.commit()
-    
+
+    # Lifecycle hook — plugins can subscribe for provisioning
+    # (Slack invite, LDAP mirror, welcome email). Fired after commit
+    # so subscribers can safely re-fetch the user. Password hash and
+    # any secrets are deliberately omitted from the payload.
+    try:
+        from utils.event_bus import event_bus
+        await event_bus.emit("user.created", {
+            "resource_id": new_user.id,
+            "resource_type": "user",
+            "user_id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email,
+            "full_name": new_user.full_name,
+            "role": new_user.role.value if new_user.role else None,
+            "actor_id": current_user.id,
+        })
+    except Exception as _e:
+        print(f"[users] user.created event emit error (non-fatal): {_e}")
+
     # Re-fetch with groups loaded
     from sqlalchemy.orm import selectinload
     result = await db.execute(

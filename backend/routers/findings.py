@@ -653,6 +653,25 @@ async def update_finding(
             )
             await db.commit()
 
+        # Lifecycle hook — plugins can subscribe for workflow automation
+        # (e.g. push to Jira when a finding hits VERIFIED). finding.updated
+        # already fires from create_activity_log but doesn't carry the
+        # old/new transition; this event does.
+        try:
+            from utils.event_bus import event_bus
+            await event_bus.emit("finding.status_changed", {
+                "resource_id": finding.id,
+                "resource_type": "finding",
+                "engagement_id": finding.engagement_id,
+                "user_id": current_user.id,
+                "title": finding.title,
+                "severity": finding.severity.value if finding.severity else None,
+                "old_status": old_status,
+                "new_status": new_status,
+            })
+        except Exception as _e:
+            print(f"[findings] status_changed event emit error (non-fatal): {_e}")
+
     return finding
 
 

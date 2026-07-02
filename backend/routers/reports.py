@@ -269,6 +269,29 @@ async def _do_generate_report(
         for row in md_img_result.scalars().all()
     }
 
+    # Lifecycle hook — plugins can subscribe to react to a completed
+    # report (push to a document store, notify a Slack channel, etc.).
+    # Fired BEFORE the rendered bytes leave the process so any exception
+    # in a subscriber becomes visible before we commit to the response.
+    # Payload deliberately omits the rendered bytes themselves — those
+    # can be gigabytes; give subscribers the metadata to fetch or
+    # re-render as needed.
+    try:
+        from utils.event_bus import event_bus
+        await event_bus.emit("report.generated", {
+            "engagement_id": engagement.id,
+            "engagement_name": engagement.name,
+            "user_id": current_user.id,
+            "layout_id": layout.id,
+            "layout_name": getattr(layout, "name", None),
+            "theme_id": theme.id if theme else None,
+            "marking_profile_id": chosen_profile_id,
+            "format": config.report_format.value,
+            "finding_count": len(findings),
+        })
+    except Exception as _e:
+        print(f"[reports] report.generated event emit error (non-fatal): {_e}")
+
     if config.report_format == ReportFormat.PDF:
         generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile)
         pdf_content = generator.generate()
