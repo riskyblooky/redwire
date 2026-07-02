@@ -58,9 +58,17 @@ async def list_plugins(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/nav-items")
-async def get_plugin_nav_items(current_user: User = Depends(get_current_user)):
-    """Get sidebar nav items from all active plugins."""
-    return plugin_registry.get_all_nav_items()
+async def get_plugin_nav_items(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get sidebar nav items from all active plugins, filtered by the
+    caller's global permissions. See ``PluginRegistry.get_all_nav_items``:
+    each nav_item entry can declare its own ``required_permissions``
+    (falling back to the plugin-level list); anything the user can't
+    satisfy is omitted so the sidebar doesn't render links that always
+    403."""
+    return await plugin_registry.get_all_nav_items(current_user, db)
 
 
 @router.get("/widgets")

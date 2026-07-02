@@ -492,8 +492,16 @@ widgets:
 
 nav_items:
   - label: "My Plugin"
-    icon: "Globe"
-    path: "/plugins/my-plugin"`}</pre>
+    icon: "Globe"                # Any name from lib/plugin-icons.tsx; falls back to Plug
+    path: "/plugins/my-plugin"
+    required_permissions:        # Optional — hide from users without these
+      - "engagement_view"
+
+# Optional plugin-wide gate. Applied to every route mounted by
+# this plugin AND inherited by any nav_item that doesn't declare its
+# own required_permissions.
+required_permissions:
+  - "engagement_view"`}</pre>
                         </div>
                     </div>
 

@@ -37,6 +37,7 @@ import {
     Upload,
     Plug,
 } from 'lucide-react';
+import { getPluginIcon } from '@/lib/plugin-icons';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -372,6 +373,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                 )}
                                 {pluginNavItems.map((item) => {
                                     const isActive = pathname === item.path || pathname?.startsWith(item.path + '/');
+                                    // Resolve the manifest's `icon:` string to a
+                                    // real lucide-react component. Falls back to
+                                    // Plug when omitted or unrecognized. See
+                                    // frontend/src/lib/plugin-icons.tsx for the
+                                    // whitelist.
+                                    const Icon = getPluginIcon(item.icon);
 
                                     return (
                                         <Link key={item.path} href={item.path}>
@@ -383,7 +390,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                                         : "text-slate-400 hover:bg-slate-800 hover:text-white"
                                                 )}
                                             >
-                                                <Plug className="h-5 w-5 shrink-0" />
+                                                <Icon className="h-5 w-5 shrink-0" />
                                                 {expanded && (
                                                     <span className="flex-1">{item.label}</span>
                                                 )}

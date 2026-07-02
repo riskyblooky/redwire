@@ -111,6 +111,77 @@ def _make_enabled_check(plugin: "LoadedPlugin"):
     return _check_enabled
 
 
+def _resolve_permission(name: str):
+    """Look up a Permission by either its value or its member name.
+
+    Plugin authors write permissions in yaml, and different sources use
+    different conventions — the auth/permissions module refers to
+    ``Permission.ASSET_VIEW`` (member name, uppercase), while the
+    stored enum value is ``"asset_view"`` (lowercase snake_case).
+    Accept either so a manifest doesn't fail on casing.
+    """
+    from models.permission import Permission
+    if not isinstance(name, str):
+        raise ValueError(f"not a string: {name!r}")
+    key = name.strip()
+    # Value form (lowercase) — the canonical DB representation.
+    try:
+        return Permission(key.lower())
+    except ValueError:
+        pass
+    # Member-name form (uppercase) — how it reads in Python code.
+    try:
+        return Permission[key.upper()]
+    except KeyError:
+        raise ValueError(f"unknown permission: {name!r}")
+
+
+def _make_permission_check(plugin: "LoadedPlugin"):
+    """Build a per-plugin route dependency that enforces the manifest's
+    ``required_permissions`` list.
+
+    Each entry is a global :class:`Permission` — either the enum value
+    (``"finding_view"``) or the member name (``"FINDING_VIEW"``). A
+    caller must hold ALL listed permissions to reach any route mounted
+    by the plugin. Empty/missing list = no additional gate beyond the
+    mount-level ``get_current_user``.
+
+    An unknown permission name in the manifest aborts every request to
+    the plugin with 403 — a plugin author's typo shouldn't silently
+    become "no restriction".
+    """
+    from auth.dependencies import get_current_user
+    from database import get_db
+
+    required = list(plugin.manifest.required_permissions or [])
+
+    async def _check(
+        current_user=Depends(get_current_user),
+        db=Depends(get_db),
+    ):
+        if not required:
+            return
+        from auth.permissions import has_global_permission
+        try:
+            required_enum = [_resolve_permission(p) for p in required]
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Plugin '{plugin.id}' declares an unknown "
+                    f"required_permission: {e}"
+                ),
+            )
+        for perm in required_enum:
+            if not await has_global_permission(current_user, perm, db):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Missing required permission: {perm.value}",
+                )
+
+    return _check
+
+
 class PluginRegistry:
     """Central registry of all discovered plugins."""
 
@@ -220,6 +291,9 @@ class PluginRegistry:
                     dependencies=[
                         Depends(get_current_user),
                         Depends(_make_enabled_check(plugin)),
+                        # RBAC gate — no-op when required_permissions is empty
+                        # (the common case). See _make_permission_check.
+                        Depends(_make_permission_check(plugin)),
                     ],
                 )
                 print(f"  🔌 Mounted routes: {prefix}")
@@ -238,18 +312,55 @@ class PluginRegistry:
                     })
         return widgets
 
-    def get_all_nav_items(self) -> list[dict]:
-        """Collect nav items from all active plugins."""
+    async def get_all_nav_items(self, user=None, db=None) -> list[dict]:
+        """Collect nav items from all active plugins, filtered by permissions.
+
+        Each nav_item entry MAY declare its own ``required_permissions``
+        list. If a user is supplied, entries the user can't satisfy are
+        omitted — otherwise the sidebar would show links that always
+        403. The plugin-level ``required_permissions`` list is inherited
+        by every nav_item unless the item explicitly overrides.
+
+        Called with ``user=None`` (e.g. an internal caller collecting
+        the full catalog) returns everything unfiltered.
+        """
         items = []
+        # Import lazily so this module stays importable at loader init.
+        _has_perm = None
+        if user is not None and db is not None:
+            from auth.permissions import has_global_permission as _has_perm
+
         for plugin in self.plugins.values():
-            if plugin.manifest.enabled and not plugin.error and plugin.has_nav_items:
-                for nav in plugin.manifest.nav_items:
-                    items.append({
-                        **nav,
-                        "plugin_id": plugin.id,
-                        "plugin_name": plugin.manifest.name,
-                        "path": nav.get("path", f"/plugins/{plugin.slug}"),
-                    })
+            if not (plugin.manifest.enabled and not plugin.error and plugin.has_nav_items):
+                continue
+            plugin_perms = list(plugin.manifest.required_permissions or [])
+            for nav in plugin.manifest.nav_items:
+                # Per-item permissions win when present; otherwise fall
+                # back to the manifest-level list.
+                required = list(nav.get("required_permissions") or plugin_perms)
+
+                if user is not None and required:
+                    ok = True
+                    for pname in required:
+                        try:
+                            perm = _resolve_permission(pname)
+                        except ValueError:
+                            # Unknown permission — hide the item rather
+                            # than show a link the user can never use.
+                            ok = False
+                            break
+                        if not await _has_perm(user, perm, db):
+                            ok = False
+                            break
+                    if not ok:
+                        continue
+
+                items.append({
+                    **nav,
+                    "plugin_id": plugin.id,
+                    "plugin_name": plugin.manifest.name,
+                    "path": nav.get("path", f"/plugins/{plugin.slug}"),
+                })
         return items
 
     def _parse_manifest(self, dir_name: str, path: Path) -> PluginManifest:
