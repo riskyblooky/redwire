@@ -410,6 +410,33 @@ async def lifespan(app):
     except Exception as e:
         print(f"[vault-fields] WARN: backfill failed: {e}")
 
+    # ── One-shot TOTP-secret at-rest encryption backfill ──
+    # GHSA-rp23-74j3-mqmq follow-up (TOTP half) — prerequisite for
+    # the fail-closed flip on decrypt_totp_secret. Alembic revision
+    # d7e8f9a0b1c2 (2026-02-20) widened users.totp_secret for Fernet
+    # ciphertext but did not touch existing rows, so any user that
+    # enrolled 2FA before that revision still holds plaintext base32
+    # in the column. Idempotent + cheap when nothing's pending; boot-
+    # safe via the same broad except pattern as the vault backfill.
+    try:
+        from utils.totp_field_migration import (
+            count_legacy_totp_rows,
+            backfill_legacy_totp_secrets,
+        )
+        async with AsyncSessionLocal() as _db:
+            pending = await count_legacy_totp_rows(_db)
+            if pending:
+                print(f"[totp-secrets] backfilling {pending} user(s) with unencrypted totp_secret...")
+                stats = await backfill_legacy_totp_secrets(_db)
+                print(
+                    f"[totp-secrets] done: rows_checked={stats['rows_checked']} "
+                    f"already_encrypted={stats['fields_already_encrypted']} "
+                    f"re_encrypted={stats['fields_re_encrypted']} "
+                    f"skipped={stats['skipped']}"
+                )
+    except Exception as e:
+        print(f"[totp-secrets] WARN: backfill failed: {e}")
+
     bloom_task = asyncio.create_task(_load_bloom())
     intel_task = asyncio.create_task(_refresh_intel_feeds_background())
     yield

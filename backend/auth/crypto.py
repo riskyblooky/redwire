@@ -57,23 +57,41 @@ def encrypt_totp_secret(plaintext: str) -> str:
     return f.encrypt(plaintext.encode()).decode()
 
 
-def decrypt_totp_secret(stored: str) -> str:
+def decrypt_totp_secret(stored):
     """Decrypt a TOTP secret from the database.
 
-    Handles backward compatibility: if the value doesn't look like a
-    Fernet token (no 'gAAAAA' prefix), it's returned as-is (legacy
-    plaintext secret).
+    GHSA-rp23-74j3-mqmq: fail-closed. Returns ``None`` on any value
+    that is not a Fernet ciphertext decryptable under the current
+    TOTP_ENCRYPTION_KEY — including legacy plaintext left behind by
+    the pre-2026-02-20 storage rollout. The previous behaviour was
+    to return the raw value on both the "no gAAAAA prefix" (legacy
+    plaintext) branch and the InvalidToken branch, so legacy TOTP
+    seeds continued to work through the API and the at-rest
+    encryption guarantee silently did not apply to them.
+
+    The boot-time ``backfill_legacy_totp_secrets`` helper walks
+    ``users`` and re-encrypts any legacy plaintext seed before this
+    fail-closed path can affect it on an upgrade. Wrong-key
+    ciphertext (Fernet-shaped but not decryptable under our key —
+    restored backup / rotated key) also returns ``None`` so an
+    operator notices the mismatch rather than the seed silently
+    round-tripping.
+
+    Callers that read ``user.totp_secret`` and see ``None`` here
+    should treat the row as missing a valid seed — the 2FA verify
+    will correctly refuse, forcing re-enrollment.
     """
+    from cryptography.fernet import InvalidToken
     if not stored:
         return stored
-
-    # Fernet tokens always start with 'gAAAAA' (base64 of version byte 0x80)
-    if not stored.startswith("gAAAAA"):
-        return stored  # legacy plaintext — still works
-
     try:
         f = _get_fernet()
         return f.decrypt(stored.encode()).decode()
-    except Exception:
-        logger.error("Failed to decrypt TOTP secret — returning raw value")
-        return stored
+    except InvalidToken:
+        logger.warning(
+            "decrypt_totp_secret: InvalidToken — value is not decryptable "
+            "under the current TOTP_ENCRYPTION_KEY. Returning None. "
+            "Investigate legacy plaintext (backfill should have caught "
+            "this) / wrong-key / restored-backup / corruption."
+        )
+        return None
