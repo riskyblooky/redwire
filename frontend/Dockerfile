@@ -1,13 +1,24 @@
+# Build context is the repo root for BOTH dev and prod builds (see
+# docker-compose.yml / .prod.yml). This lets us COPY plugin sources
+# out of ../backend/plugins/ into the image so the prebuild sync
+# script (frontend/scripts/sync-plugin-frontends.mjs) can bake plugin
+# React pages into the Next.js app tree at image build time.
+#
+# In dev, /backend-plugins is also bind-mounted at runtime — that
+# runtime mount transparently shadows the COPY'd copy, so live
+# plugin edits show up on the next ``next dev`` restart without
+# rebuilding the image.
 FROM node:22-alpine AS base
 
 # Development stage
 FROM base AS development
 WORKDIR /app
 
-COPY package*.json ./
+COPY frontend/package*.json ./
 RUN npm install
 
-COPY . .
+COPY frontend/ .
+COPY backend/plugins/ /backend-plugins/
 
 ENV PATH /app/node_modules/.bin:$PATH
 
@@ -20,7 +31,7 @@ CMD ["sh", "-c", "if [ ! -f ./node_modules/.bin/next ]; then npm install; fi && 
 FROM base AS deps
 WORKDIR /app
 
-COPY package*.json ./
+COPY frontend/package*.json ./
 # Force fresh install for production deps too
 RUN npm install --only=production
 
@@ -28,11 +39,17 @@ RUN npm install --only=production
 FROM base AS builder
 WORKDIR /app
 
-COPY package*.json ./
+COPY frontend/package*.json ./
 # Force install to ensure we get all dependencies even if lockfile is stale
 RUN npm install
 
-COPY . .
+COPY frontend/ .
+# Plugin sources — the ``prebuild`` npm script (sync-plugin-frontends.mjs)
+# reads this path and mirrors plugin frontend/ dirs into src/app/plugins/
+# so Next's file-based router picks them up at build time. Baked into
+# the image so no host-side sync step is needed on the deploy target.
+# Updating plugins requires a frontend rebuild — expected trade-off.
+COPY backend/plugins/ /backend-plugins/
 
 # Accept API URL as build argument so client-side calls are baked correctly
 ARG NEXT_PUBLIC_API_URL

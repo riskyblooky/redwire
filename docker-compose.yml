@@ -101,8 +101,12 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      # Repo-root context — matches prod so the Dockerfile is single-sourced
+      # (COPY frontend/... and COPY backend/plugins/). Dev additionally
+      # bind-mounts ./frontend and ./backend/plugins at runtime below, so
+      # what's baked into the image is only used for the first cold start.
+      context: .
+      dockerfile: frontend/Dockerfile
       target: development
     image: redwire-frontend:dev
     container_name: redwire-frontend

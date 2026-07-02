@@ -108,8 +108,12 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      # Build context is the repo root so the frontend image can COPY
+      # ../backend/plugins into the build stage — the prebuild sync
+      # script bakes plugin React pages into the Next.js app tree.
+      # Requires the repo-root .dockerignore to keep the context lean.
+      context: .
+      dockerfile: frontend/Dockerfile
       target: production
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}

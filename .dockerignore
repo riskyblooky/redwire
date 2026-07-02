@@ -1,0 +1,61 @@
+# Docker build-context excludes. Applies whenever any service uses the
+# repo root as its build context (see docker-compose.yml / .prod.yml
+# frontend service). Without this the frontend build would ship the
+# entire repo — .git, node_modules, .next, __pycache__, evidence
+# uploads, backups — through the daemon before COPY even runs.
+
+# Version control
+.git
+.gitignore
+.github
+
+# JS build artifacts
+**/node_modules
+**/.next
+**/out
+**/coverage
+
+# Python build artifacts
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/*.egg-info
+backend/venv
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Local secrets / creds
+.env
+.env.*
+credentials_DO_NOT_SHARE.txt
+
+# Deploy artifacts
+redwire_migration_package.zip
+redwire_images.tar
+redwire_backup.sql
+
+# Runtime data — never in an image
+evidence
+uploads
+backend/uploads
+backend/evidence
+nginx/certbot/conf
+
+# Local-only tooling
+.claude
+scripts/stress_results
+scripts/stress_test.py
+scripts/stress_test.README.md
+backend/seed_bulk.py
+
+# Docs (not needed in runtime images)
+docs
+
+# Frontend TS build cache — regenerated every build
+frontend/tsconfig.tsbuildinfo
