@@ -20,13 +20,14 @@ from utils.uploads import read_upload_capped
 # Export and import paths therefore pass plain str values; no per-call
 # encrypt_field / decrypt_field wrapping required.
 
+import hashlib
+import io
 import json
 import logging
-import uuid
-import zipfile
-import io
 import os
 import traceback
+import uuid
+import zipfile
 from datetime import datetime
 from typing import Optional
 
@@ -54,6 +55,19 @@ IMPORT_MAX_COMPRESSION_RATIO = int(
 # the archive is wrapped in pyzipper's AES-256 (WinZip AES extension).
 # Server never persists the passphrase; it is a one-shot wrap.
 MIN_EXPORT_PASSPHRASE_LEN = 16
+
+# GHSA-vwgf-r8qp-8gwr (CWE-353): manifest content-hash bound to every
+# archive member. Version 1.2 exports carry a SHA-256 per file plus a
+# root digest over the sorted map; import verifies every entry and
+# rejects any mismatch. Legacy 1.0/1.1 archives have no digest — imports
+# refuse them by default so a forged v1.1-labelled archive can't
+# downgrade past the check. Operators with pre-1.2 archives that
+# genuinely need re-importing can set the env var below to False for
+# one-shot use.
+MANIFEST_VERSION = "1.2"
+IMPORT_REQUIRE_DIGEST = os.getenv(
+    "ENGAGEMENT_IMPORT_REQUIRE_DIGEST", "true"
+).lower() not in ("false", "0", "no")
 
 
 def _validate_passphrase(passphrase: Optional[str], *, kind: str) -> Optional[str]:
@@ -128,6 +142,127 @@ def _open_engagement_archive(content: bytes, passphrase: Optional[str]) -> zipfi
             detail="Could not decrypt archive — check the import passphrase.",
         ) from exc
     return azf
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _compute_root_digest(digests: dict[str, str]) -> str:
+    """SHA-256 over the sorted ``name\\thex\\n`` lines of the per-file
+    digest map. Deterministic — sorting the map means two archives with
+    the same content but different member-write order produce the same
+    root digest. This is what the manifest's ``root_digest`` field
+    carries and what the preview modal displays to the operator for
+    out-of-band verification.
+    """
+    payload = "".join(f"{name}\t{digest}\n" for name, digest in sorted(digests.items()))
+    return _sha256_hex(payload.encode("utf-8"))
+
+
+def _verify_archive_digests(zf: zipfile.ZipFile, manifest: dict) -> None:
+    """GHSA-vwgf-r8qp-8gwr: recompute the SHA-256 of every archive
+    member listed in the manifest's ``digests`` map and refuse the
+    import if any digest is missing, unexpected, or mismatches the
+    stored value. Also refuses when the manifest has no ``digests``
+    field at all (legacy pre-1.2 archive) unless the operator has
+    opted into legacy behaviour via ``ENGAGEMENT_IMPORT_REQUIRE_DIGEST=false``.
+
+    The check is bind-to-content, not bind-to-metadata: we read each
+    member out of the ZIP and hash the bytes rather than trusting
+    ``ZipInfo.CRC``. A hand-crafted archive that ships a valid digest
+    map alongside tampered content still gets caught because the
+    recomputed hash won't match.
+    """
+    digests = manifest.get("digests")
+    # Strict shape validation: every key a non-empty str, every value a
+    # 64-char lower-hex digest. An attacker who ships a valid-looking
+    # manifest with bogus digest shapes (list values, uppercase hex,
+    # truncated hashes) shouldn't drop through with a confusing
+    # mismatch error; refuse the archive outright.
+    if isinstance(digests, dict):
+        for name, digest in digests.items():
+            if not isinstance(name, str) or not name:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Archive manifest.digests contains a non-string key.",
+                )
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or not all(c in "0123456789abcdef" for c in digest)
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Archive manifest.digests['{name}'] is not a valid "
+                        "64-char lower-hex SHA-256 digest."
+                    ),
+                )
+    if not isinstance(digests, dict) or not digests:
+        if IMPORT_REQUIRE_DIGEST:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Archive is missing manifest.digests (pre-1.2 export). "
+                    "Refusing import — set ENGAGEMENT_IMPORT_REQUIRE_DIGEST=false "
+                    "on the backend to accept legacy archives, or re-export "
+                    "the source engagement from a current RedWire instance."
+                ),
+            )
+        logger.warning(
+            "Engagement import: archive %s carries no digest map (version=%s). "
+            "Integrity check skipped per ENGAGEMENT_IMPORT_REQUIRE_DIGEST=false.",
+            manifest.get("engagement_name"), manifest.get("version"),
+        )
+        return
+
+    # Every named member must exist. Extras are permitted (they're
+    # ignored on import anyway) but every declared digest MUST resolve
+    # to a present-and-matching file. This ordering is the important
+    # one — a tampered archive that adds extras alongside a valid
+    # digest map is caught by the size/ratio caps and by the fact
+    # that the extras don't participate in the import.
+    namelist = set(zf.namelist())
+    for name, expected in digests.items():
+        if name not in namelist:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Archive integrity check failed: manifest lists "
+                    f"'{name}' but the file is missing from the archive."
+                ),
+            )
+        actual = _sha256_hex(zf.read(name))
+        if not isinstance(expected, str) or actual != expected:
+            logger.warning(
+                "Engagement import: digest mismatch on %r (expected=%s actual=%s)",
+                name, expected, actual,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Archive integrity check failed: '{name}' does not "
+                    f"match the digest recorded in the manifest. The archive "
+                    f"has been tampered with, corrupted in transit, or is "
+                    f"not a genuine RedWire export."
+                ),
+            )
+
+    # Also verify the root digest — the digest map itself could have
+    # been tampered with by an attacker who recomputed the per-file
+    # entries. The root is a self-check that pins the map's shape,
+    # not just the values.
+    expected_root = manifest.get("root_digest")
+    computed_root = _compute_root_digest(digests)
+    if expected_root and expected_root != computed_root:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Archive integrity check failed: manifest root_digest does "
+                "not match the recomputed digest of the digest map. Refusing."
+            ),
+        )
 
 
 def _reject_zip_bomb(zf: zipfile.ZipFile) -> None:
@@ -640,62 +775,65 @@ async def export_engagement(
     else:
         zf_ctx = zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED)
     with zf_ctx as zf:
-        # manifest — flag plaintext-secret contents so callers (and a
-        # future signed-import path) can detect it programmatically.
+        # GHSA-vwgf-r8qp-8gwr: build every member's bytes in memory
+        # first so we can compute a SHA-256 for each before writing the
+        # manifest. The manifest carries the digest map and a root
+        # digest over the sorted map; on import, verification catches
+        # any tampering-in-transit or storage corruption. Fabricated
+        # archives are handled by the manifest-content hardening
+        # follow-up (users[] auto-map, evidence path prefix-check,
+        # decompression caps) — the digest layer here is specifically
+        # bind-content-to-manifest.
         _has_vault_secrets = any(
             (vi.username or vi.password or vi.note or vi.file_path)
             for vi in vault_items
         )
-        manifest = {
-            "version": "1.1",
-            "exported_at": datetime.utcnow().isoformat(),
-            "engagement_name": eng.name,
-            "source": "redwire",
-            "contains_plaintext_secrets": _has_vault_secrets,
-        }
-        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+
+        members: dict[str, bytes] = {}
 
         # GHSA-3r7j-7h5r-gxgx: human-readable banner so anyone who
         # touches this archive (curl, scp, backup, share-drive viewer)
         # sees the plaintext warning even without opening manifest.json.
         if _has_vault_secrets:
-            zf.writestr(
-                "SECURITY_WARNING.txt",
-                (
-                    "================================================================\n"
-                    "  REDWIRE EXPORT — CONTAINS PLAINTEXT SECRETS\n"
-                    "================================================================\n"
-                    "\n"
-                    "This archive contains plaintext credentials and/or vault file\n"
-                    "attachments from an engagement (vault item username/password/\n"
-                    "note columns and any uploaded FILE-type vault attachments).\n"
-                    "\n"
-                    "Vault encryption-at-rest is intentionally stripped on export so\n"
-                    "the destination RedWire instance can re-encrypt under its own\n"
-                    "key on import. Until that import completes, treat this archive\n"
-                    "like a password file:\n"
-                    "\n"
-                    "  - do NOT email, post to Slack/Teams, or upload to cloud\n"
-                    "    storage that is not under RedWire's control;\n"
-                    "  - hand off via encrypted channel (signed PGP, encrypted\n"
-                    "    USB, S3 SSE bucket with restricted IAM, etc.);\n"
-                    "  - delete the local copy immediately after the destination\n"
-                    "    instance has imported it.\n"
-                    "\n"
-                    "manifest.json -> contains_plaintext_secrets: true\n"
-                    "================================================================\n"
-                ),
-            )
+            members["SECURITY_WARNING.txt"] = (
+                "================================================================\n"
+                "  REDWIRE EXPORT — CONTAINS PLAINTEXT SECRETS\n"
+                "================================================================\n"
+                "\n"
+                "This archive contains plaintext credentials and/or vault file\n"
+                "attachments from an engagement (vault item username/password/\n"
+                "note columns and any uploaded FILE-type vault attachments).\n"
+                "\n"
+                "Vault encryption-at-rest is intentionally stripped on export so\n"
+                "the destination RedWire instance can re-encrypt under its own\n"
+                "key on import. Until that import completes, treat this archive\n"
+                "like a password file:\n"
+                "\n"
+                "  - do NOT email, post to Slack/Teams, or upload to cloud\n"
+                "    storage that is not under RedWire's control;\n"
+                "  - hand off via encrypted channel (signed PGP, encrypted\n"
+                "    USB, S3 SSE bucket with restricted IAM, etc.);\n"
+                "  - delete the local copy immediately after the destination\n"
+                "    instance has imported it.\n"
+                "\n"
+                "manifest.json -> contains_plaintext_secrets: true\n"
+                "================================================================\n"
+            ).encode("utf-8")
 
-        # data
-        zf.writestr("engagement.json", json.dumps(data, indent=2, default=str))
+        # engagement.json — deterministic serialization so the same
+        # export produces the same bytes (matters for the digest).
+        members["engagement.json"] = json.dumps(
+            data, indent=2, default=str, sort_keys=True
+        ).encode("utf-8")
 
         # attachments — evidence files
         for ev in evidence_list:
             if ev.file_path:
                 try:
                     file_bytes = await storage_service.download_file(ev.file_path)
-                    zf.writestr(f"attachments/{ev.file_path}", file_bytes)
+                    if file_bytes is None:
+                        continue
+                    members[f"attachments/{ev.file_path}"] = file_bytes
                 except Exception:
                     pass  # skip missing files
 
@@ -714,11 +852,35 @@ async def export_engagement(
             if vi.file_path:
                 try:
                     file_bytes = await storage_service.download_file(vi.file_path)
-                    if file_bytes is not None:
-                        file_bytes = _decrypt_vault_bytes(file_bytes)
-                    zf.writestr(f"attachments/{vi.file_path}", file_bytes)
+                    if file_bytes is None:
+                        continue
+                    file_bytes = _decrypt_vault_bytes(file_bytes)
+                    members[f"attachments/{vi.file_path}"] = file_bytes
                 except Exception:
                     pass
+
+        # Digests + manifest. Sort names so the map is
+        # ordering-independent (JSON serialisation preserves insertion
+        # order, which would otherwise let two identical exports differ
+        # on disk).
+        digests = {name: _sha256_hex(members[name]) for name in sorted(members)}
+        root_digest = _compute_root_digest(digests)
+
+        manifest = {
+            "version": MANIFEST_VERSION,
+            "exported_at": datetime.utcnow().isoformat(),
+            "engagement_name": eng.name,
+            "source": "redwire",
+            "contains_plaintext_secrets": _has_vault_secrets,
+            "digests": digests,
+            "root_digest": root_digest,
+        }
+        zf.writestr(
+            "manifest.json",
+            json.dumps(manifest, indent=2, sort_keys=True),
+        )
+        for name in sorted(members):
+            zf.writestr(name, members[name])
 
     zip_buf.seek(0)
     safe_name = eng.name.replace(" ", "_").replace("/", "-")[:50]
@@ -750,7 +912,13 @@ async def export_engagement(
     return StreamingResponse(
         zip_buf,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # GHSA-vwgf-r8qp-8gwr: surface the archive's root SHA-256
+            # to the export UI so the operator can send it out-of-band
+            # to whoever will import the archive.
+            "X-Archive-Root-Digest": root_digest,
+        },
     )
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -786,6 +954,11 @@ async def preview_import(
     manifest = json.loads(zf.read("manifest.json"))
     if manifest.get("source") != "redwire":
         raise HTTPException(status_code=400, detail="Archive is not a RedWire export")
+
+    # GHSA-vwgf-r8qp-8gwr: verify every archive member against its
+    # manifest-recorded SHA-256 BEFORE any further parsing so a
+    # tampered engagement.json never reaches the ORM layer.
+    _verify_archive_digests(zf, manifest)
 
     if "engagement.json" not in zf.namelist():
         raise HTTPException(status_code=400, detail="Missing engagement.json in archive")
@@ -867,6 +1040,7 @@ async def preview_import(
             "exported_at": manifest.get("exported_at"),
             "source_version": manifest.get("version"),
             "contains_plaintext_secrets": bool(manifest.get("contains_plaintext_secrets")),
+            "root_digest": manifest.get("root_digest"),
         },
         "counts": counts,
         "matched_users": matched,
@@ -908,6 +1082,11 @@ async def import_engagement(
     manifest = json.loads(zf.read("manifest.json"))
     if manifest.get("source") != "redwire":
         raise HTTPException(status_code=400, detail="Archive is not a RedWire export")
+
+    # GHSA-vwgf-r8qp-8gwr: verify every archive member against its
+    # manifest-recorded SHA-256 BEFORE any further parsing so a
+    # tampered engagement.json never reaches the ORM layer.
+    _verify_archive_digests(zf, manifest)
 
     # Read data
     if "engagement.json" not in zf.namelist():
@@ -1497,6 +1676,13 @@ async def import_engagement(
             await db.flush()
 
         # ── Log import activity ──────────────────────────────────────
+        # GHSA-vwgf-r8qp-8gwr: include the archive's manifest root
+        # digest so forensic queries can tie an imported engagement
+        # back to a specific archive without digging through server
+        # logs. Truncated to 16 hex chars in the details string for
+        # readability; the full digest is available in server logs
+        # and by re-hashing the archive if it's still on hand.
+        _archive_fp = (manifest.get("root_digest") or "unknown")[:16]
         from models.discussion import ActivityLog
         db.add(ActivityLog(
             id=str(uuid.uuid4()),
@@ -1506,7 +1692,10 @@ async def import_engagement(
             resource_type="engagement",
             resource_id=eng_new_id,
             resource_name=new_eng.name,
-            details=f"Imported from archive: {file.filename}",
+            details=(
+                f"Imported from archive: {file.filename} "
+                f"(fingerprint {_archive_fp}…)"
+            ),
             created_at=datetime.utcnow(),
         ))
 

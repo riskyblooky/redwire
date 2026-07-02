@@ -492,7 +492,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
-    expose_headers=["Content-Disposition", "X-Marking-Warnings"],
+    expose_headers=["Content-Disposition", "X-Marking-Warnings", "X-Archive-Root-Digest"],
 )
 
 # Activity Middleware to update last_active (throttled)

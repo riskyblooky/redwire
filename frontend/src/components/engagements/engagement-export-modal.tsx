@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Download, ShieldAlert, KeyRound, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, Download, ShieldAlert, KeyRound, ChevronDown, ChevronRight, Fingerprint, Copy, Check } from 'lucide-react';
 import api, { apiErrorMessage } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -28,6 +28,8 @@ export function EngagementExportModal({
     const [passphrase, setPassphrase] = useState('');
     const [confirmPw, setConfirmPw] = useState('');
     const [busy, setBusy] = useState(false);
+    const [rootDigest, setRootDigest] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
 
     useEffect(() => {
         api.get(`/engagements/${engagementId}/export/preview`)
@@ -65,6 +67,7 @@ export function EngagementExportModal({
                 setBusy(false);
                 return;
             }
+            const digest = resp.headers.get('x-archive-root-digest');
             const blob = await resp.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -77,10 +80,29 @@ export function EngagementExportModal({
             a.remove();
             URL.revokeObjectURL(url);
             toast.success(showPwSection && passphrase ? 'Encrypted export downloaded' : 'Engagement exported successfully');
-            onClose();
+            if (digest) {
+                // Keep the modal open so the operator can copy the fingerprint
+                // before dismissing (they'll want to share it out-of-band with
+                // whoever will import).
+                setRootDigest(digest);
+                setBusy(false);
+            } else {
+                onClose();
+            }
         } catch (err: any) {
             toast.error(err?.message || 'Export failed');
             setBusy(false);
+        }
+    };
+
+    const copyDigest = async () => {
+        if (!rootDigest) return;
+        try {
+            await navigator.clipboard.writeText(rootDigest);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            toast.error('Clipboard copy failed');
         }
     };
 
@@ -97,7 +119,30 @@ export function EngagementExportModal({
                     </DialogDescription>
                 </DialogHeader>
 
-                {previewLoading ? (
+                {rootDigest ? (
+                    <div className="space-y-4 py-2">
+                        <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-blue-400">
+                                <Fingerprint className="h-4 w-4" />
+                                Archive fingerprint
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <code className="flex-1 font-mono text-xs text-slate-300 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 break-all">
+                                    {rootDigest}
+                                </code>
+                                <Button size="icon" variant="outline" onClick={copyDigest} title="Copy">
+                                    {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                                </Button>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                                Share this fingerprint with the recipient via a channel you trust
+                                (Signal, in-person, encrypted email). They can compare it against
+                                the fingerprint their instance computes on import to confirm the
+                                archive hasn&apos;t been tampered with in transit.
+                            </p>
+                        </div>
+                    </div>
+                ) : previewLoading ? (
                     <div className="py-8 flex items-center justify-center text-slate-400 text-sm gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" /> Checking archive contents…
                     </div>
@@ -184,11 +229,17 @@ export function EngagementExportModal({
                 )}
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-                    <Button onClick={handleExport} disabled={disabled}>
-                        {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-                        {showPwSection && passphrase ? 'Download encrypted archive' : 'Download archive'}
-                    </Button>
+                    {rootDigest ? (
+                        <Button onClick={onClose}>Done</Button>
+                    ) : (
+                        <>
+                            <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+                            <Button onClick={handleExport} disabled={disabled}>
+                                {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                                {showPwSection && passphrase ? 'Download encrypted archive' : 'Download archive'}
+                            </Button>
+                        </>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>

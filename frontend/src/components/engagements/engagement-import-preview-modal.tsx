@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
     Upload, ShieldAlert, CheckCircle2, AlertCircle, Briefcase, Bug, Server, ListChecks,
-    Paperclip, KeyRound, StickyNote, Brush, MessageSquare, Network, FileText,
+    Paperclip, KeyRound, StickyNote, Brush, MessageSquare, Network, FileText, Fingerprint,
 } from 'lucide-react';
 
 export interface ImportPreview {
@@ -23,6 +23,7 @@ export interface ImportPreview {
         exported_at?: string | null;
         source_version?: string | null;
         contains_plaintext_secrets: boolean;
+        root_digest?: string | null;
     };
     counts: Record<string, number>;
     matched_users: any[];
@@ -112,6 +113,25 @@ export function EngagementImportPreviewModal({
                             </div>
                         )}
                     </div>
+
+                    {/* Archive integrity — root SHA-256 for out-of-band verification */}
+                    {preview.archive.root_digest && (
+                        <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 flex items-start gap-3">
+                            <Fingerprint className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+                            <div className="min-w-0 flex-1 text-sm">
+                                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">
+                                    Archive fingerprint
+                                </div>
+                                <div className="font-mono text-xs text-slate-300 break-all">
+                                    {preview.archive.root_digest}
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                    Compare with the value from the exporter (via a channel you trust) to
+                                    confirm the archive hasn't been tampered with in transit.
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Plaintext-secrets banner */}
                     {preview.archive.contains_plaintext_secrets && (
