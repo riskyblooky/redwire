@@ -156,40 +156,56 @@ EOF
     echo -e "${GREEN}Credentials saved to 'credentials_DO_NOT_SHARE.txt'.${NC}"
 fi
 
-# 3. Clean stale source files
-# unzip overlays new files but never removes old ones that were deleted locally.
-# Wipe source dirs so the Docker build context is clean.
-echo -e "\n${BLUE}[3/8] Cleaning stale source files...${NC}"
-for dir in frontend/src frontend/public backend/app backend/alembic; do
-    if [ -d "$dir" ]; then
-        echo "  Removing old $dir/"
-        rm -rf "$dir"
-    fi
-done
-# Also remove stale config files that were migrated
-for f in frontend/tailwind.config.ts frontend/tailwind.config.js; do
-    if [ -f "$f" ]; then
-        echo "  Removing stale $f"
-        rm -f "$f"
-    fi
-done
-echo -e "${GREEN}Source directories cleaned.${NC}"
+# 3 & 4. Source files.
+#
+# Two supported layouts:
+#   (a) Zip-based migration/upgrade — a redwire_migration_package.zip is
+#       present next to this script. Old source dirs get wiped so the
+#       zip overlay can't leave deleted files behind, then the zip is
+#       extracted. This is what the export_system.ps1 flow produces.
+#   (b) Fresh install from a git clone — no zip present. Source is
+#       already in place; skip the wipe (it would delete the tree the
+#       user just cloned) and the extract (nothing to extract).
+if [ -f redwire_migration_package.zip ]; then
+    echo -e "\n${BLUE}[3/8] Cleaning stale source files...${NC}"
+    for dir in frontend/src frontend/public backend/app backend/alembic; do
+        if [ -d "$dir" ]; then
+            echo "  Removing old $dir/"
+            rm -rf "$dir"
+        fi
+    done
+    for f in frontend/tailwind.config.ts frontend/tailwind.config.js; do
+        if [ -f "$f" ]; then
+            echo "  Removing stale $f"
+            rm -f "$f"
+        fi
+    done
+    echo -e "${GREEN}Source directories cleaned.${NC}"
 
-# 4. Re-extract fresh source from zip
-# Handle Windows-created zips that may contain backslash path separators.
-echo -e "\n${BLUE}[4/8] Re-extracting fresh source...${NC}"
-python3 -c "
+    # Handle Windows-created zips that may contain backslash path separators.
+    echo -e "\n${BLUE}[4/8] Re-extracting fresh source...${NC}"
+    python3 -c "
 import zipfile, os
 z = zipfile.ZipFile('redwire_migration_package.zip')
 for info in z.infolist():
-    # Fix Windows backslash paths
     info.filename = info.filename.replace(chr(92), '/')
     if info.filename.startswith('.env'):
         continue
     z.extract(info, '.')
 z.close()
 "
-echo -e "${GREEN}Source files extracted.${NC}"
+    echo -e "${GREEN}Source files extracted.${NC}"
+else
+    echo -e "\n${BLUE}[3/8] No migration zip found — using in-place source (git clone install).${NC}"
+    if [ ! -d backend ] || [ ! -d frontend ] || [ ! -f docker-compose.prod.yml ]; then
+        echo -e "${RED}Error: No redwire_migration_package.zip and no source tree in the current directory.${NC}"
+        echo "Run this script from the root of a git clone of RedWire, or"
+        echo "place redwire_migration_package.zip next to it."
+        exit 1
+    fi
+    echo -e "${GREEN}Source tree present; nothing to extract.${NC}"
+    echo -e "\n${BLUE}[4/8] Skipping extract step (no zip).${NC}"
+fi
 
 # 5. SSL Bootstrap
 echo -e "\n${BLUE}[5/8] Preparing SSL Certificates...${NC}"

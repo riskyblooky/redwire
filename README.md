@@ -59,77 +59,55 @@ RedWire centralizes the operational side of an engagement: who is doing what, wh
 ### Prerequisites
 
 - Docker and Docker Compose
-- Git
+- Git, Python 3, OpenSSL (present on any modern Linux)
 - 2 GB free RAM minimum (4 GB recommended for production)
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd redwire
-   ```
-
-2. **Create the environment file**
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Generate secrets**
-
-   Generate values for `JWT_SECRET` and `VAULT_ENCRYPTION_KEY` in `.env`:
-   ```bash
-   # Linux/macOS
-   openssl rand -hex 32
-   ```
-   ```powershell
-   # Windows (PowerShell)
-   -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 32 | ForEach-Object {[char]$_})
-   ```
-
-   **Important:** Back up `VAULT_ENCRYPTION_KEY` separately from the database. Losing it means losing access to all vault data.
-
-4. **Start the platform**
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-
-5. **Wait for startup** (~30–60 seconds)
-   ```bash
-   docker compose -f docker-compose.prod.yml logs -f backend
-   ```
-   Wait for `Application startup complete`.
-
-6. **Access the platform**
-
-   The production Compose stack puts everything behind Nginx, so the application is served on a single port:
-   - Web UI: http://localhost
-   - API docs: http://localhost/api/docs
-
-   Internal services (PostgreSQL, Redis, MinIO, MCP server) are not exposed on the host by design. See the [Production deployment](#production-deployment) section for SSL setup and domain configuration.
-
-### Default credentials
-
-- Username: `admin`
-- Password: `changeme`
-
-Change the admin password immediately after first login.
-
-## Production deployment
-
-A production-tuned Compose file and deploy script are provided.
-
 ```bash
-# On the deploy target
+git clone <repository-url>
+cd redwire
 ./scripts/deploy_server.sh
 ```
 
-This uses `docker-compose.prod.yml`, which:
+The deploy script is the supported install path. It:
+
+- Prompts for the deploy domain, admin username, admin email, and admin password (blank → random)
+- Generates strong random values for every secret in `.env`:
+  - `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MINIO_ROOT_PASSWORD`, `JWT_SECRET` — each 32 random bytes as hex
+  - `VAULT_ENCRYPTION_KEY`, `TOTP_ENCRYPTION_KEY` — proper Fernet keys (32 URL-safe base64 bytes; hex will NOT work)
+- Writes `.env` and `credentials_DO_NOT_SHARE.txt` at mode `0600`
+- Builds and starts all services via `docker-compose.prod.yml`
+- Runs Alembic migrations
+- Optionally bootstraps a Let's Encrypt certificate via Certbot (skip for on-prem / internal deployments — a self-signed cert is installed and works fine)
+
+When the script exits, the platform is reachable at `https://<your-domain>` and the admin credentials are in `credentials_DO_NOT_SHARE.txt`. **Back up `VAULT_ENCRYPTION_KEY` separately from the database — losing it means losing access to all vault data.**
+
+**Offline installs:** On a connected machine run `pwsh scripts/export_system.ps1 -IncludeImages` to produce `redwire_migration_package.zip` plus `redwire_images.tar`, ship both to the target, and run `./deploy_server.sh --offline`.
+
+### Manual configuration (advanced)
+
+If you need to configure `.env` by hand instead of letting the script do it, `cp .env.example .env` and generate secrets as follows:
+
+```bash
+# hex-32 secrets: POSTGRES_PASSWORD, REDIS_PASSWORD, MINIO_ROOT_PASSWORD, JWT_SECRET
+openssl rand -hex 32
+
+# Fernet keys: VAULT_ENCRYPTION_KEY, TOTP_ENCRYPTION_KEY
+python3 -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
+
+The Fernet keys are not interchangeable with the hex secrets — the vault and TOTP subsystems will fail closed on startup if either key is missing or malformed. Set `POSTGRES_USER`, `POSTGRES_DB`, `MINIO_ROOT_USER`, `NEXT_PUBLIC_API_URL`, `CORS_ORIGINS`, `DOMAIN_NAME`, and `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_USERNAME` to match your environment, then `docker compose -f docker-compose.prod.yml up -d`.
+
+## Production deployment
+
+The Quick Start above is the production install path — `deploy_server.sh` and `docker-compose.prod.yml` are what runs on real deployments. The Compose file:
+
 - Builds the frontend with `NODE_OPTIONS="--max-old-space-size=2048"` (suitable for a 4 GB VPS)
 - Does not expose internal service ports (postgres, redis, minio, mcp) on the host
 - Runs Nginx as the public-facing reverse proxy
 
-For SSL, the repository includes `scripts/init-ssl.sh` to bootstrap Let's Encrypt certificates via Certbot.
+For an existing install, re-running `./scripts/deploy_server.sh` after `git pull` will apply migrations and rebuild in place.
 
 ## Role-based access control
 
