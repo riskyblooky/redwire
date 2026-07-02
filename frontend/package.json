@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/sync-plugin-frontends.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/sync-plugin-frontends.mjs",
     "build": "next build",
+    "sync-plugin-frontends": "node scripts/sync-plugin-frontends.mjs",
     "start": "next start",
     "lint": "next lint"
   },

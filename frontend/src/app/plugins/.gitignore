@@ -1,0 +1,6 @@
+# Managed by frontend/scripts/sync-plugin-frontends.mjs — see the script
+# for how directories in this folder are populated. Contents copied
+# from backend/plugins/<slug>/frontend/ before every next dev / next
+# build. Ignore everything except this file and hand-authored routes.
+*
+!.gitignore
