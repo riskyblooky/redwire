@@ -1543,14 +1543,34 @@ async def import_engagement(
         await db.flush()
 
         # ── 11. Threads & Comments ───────────────────────────────────
-        from models.discussion import Thread, Comment
+        from models.discussion import Thread, Comment, ResourceType
+        # GHSA-7x2f-ff7r-h388 #8 (CWE-20): the Thread.resource_type
+        # column is a plain String(50) (the model comment reads
+        # "Changed from Enum to String") — no DB-level enum guard.
+        # An archive whose `resource_type` value doesn't belong to the
+        # ResourceType enum would land as legit-looking data and later
+        # break every consumer that assumes the value is one of the
+        # 12 documented shapes (serializer, /engagements/{id}/threads
+        # UI grouping, discussions router's engagement scoping).
+        # Coerce unknown values to ENGAGEMENT + log — the value's not
+        # attacker-controlled in a way that lets them cross a trust
+        # boundary, so silently normalising is preferable to refusing
+        # the whole archive.
+        _valid_resource_types = {v.value for v in ResourceType}
         for th in data.get("threads", []):
             # Remap resource_id if it was an engagement-scoped entity
             resource_id = remap(th.get("resource_id"))
+            raw_rt = th.get("resource_type", "engagement")
+            if raw_rt not in _valid_resource_types:
+                logger.warning(
+                    "engagement-import: thread %r has unknown resource_type=%r; "
+                    "coercing to 'engagement'", th.get("id"), raw_rt,
+                )
+                raw_rt = ResourceType.ENGAGEMENT.value
             db.add(Thread(
                 id=new_id(th["id"]),
                 engagement_id=eng_new_id,
-                resource_type=th.get("resource_type", "engagement"),
+                resource_type=raw_rt,
                 resource_id=resource_id,
                 title=th.get("title", ""),
                 is_resolved=th.get("is_resolved", False),
@@ -1578,13 +1598,23 @@ async def import_engagement(
 
         # ── 12. Activity Logs ────────────────────────────────────────
         from models.discussion import ActivityLog
+        # GHSA-7x2f-ff7r-h388 #8 (CWE-20): ActivityLog.resource_type
+        # is the same String(50) shape and lands from the same archive
+        # section; same enum-coerce policy as threads above.
         for al in data.get("activity_logs", []):
+            raw_rt = al.get("resource_type", "engagement")
+            if raw_rt not in _valid_resource_types:
+                logger.warning(
+                    "engagement-import: activity_log %r has unknown resource_type=%r; "
+                    "coercing to 'engagement'", al.get("id"), raw_rt,
+                )
+                raw_rt = ResourceType.ENGAGEMENT.value
             db.add(ActivityLog(
                 id=new_id(al["id"]),
                 engagement_id=eng_new_id,
                 user_id=resolve_user(al.get("user_id")),
                 action=al.get("action", "imported"),
-                resource_type=al.get("resource_type", "engagement"),
+                resource_type=raw_rt,
                 resource_id=remap(al.get("resource_id")) or eng_new_id,
                 resource_name=al.get("resource_name"),
                 details=al.get("details"),

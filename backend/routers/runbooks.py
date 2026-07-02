@@ -537,16 +537,37 @@ async def apply_runbook_to_engagement(
         runbook_item_id_to_testcase_id[item.id] = testcase_id
         created_testcases.append(testcase)
 
-    await create_activity_log(
-        db,
-        engagement_id=engagement_id,
-        user_id=current_user.id,
-        action="applied_runbook",
-        resource_type="testcase",
-        resource_id=runbook.id,
-        resource_name=runbook.name,
-        details=f"Applied runbook '{runbook.name}' — created {len(created_testcases)} test cases",
-    )
+    # GHSA-7x2f-ff7r-h388 #14 (CWE-696): commit the applied test cases
+    # BEFORE the activity-log call. Previously the only commit here was
+    # the side-effect one inside create_activity_log; if that log write
+    # failed (rare — FK on user_id, unique conflict on the log table,
+    # etc.) the applied test cases rolled back with it and the caller
+    # got a 500 with all their work reverted. Explicit commit makes the
+    # test-case creation the primary transactional unit and reduces the
+    # audit-log call to what it should be: a fire-and-forget side
+    # effect that can fail without dropping the operator's data.
+    await db.commit()
+
+    try:
+        await create_activity_log(
+            db,
+            engagement_id=engagement_id,
+            user_id=current_user.id,
+            action="applied_runbook",
+            resource_type="testcase",
+            resource_id=runbook.id,
+            resource_name=runbook.name,
+            details=f"Applied runbook '{runbook.name}' — created {len(created_testcases)} test cases",
+        )
+    except Exception as log_err:
+        # create_activity_log is documented "never raises" but wrap it
+        # anyway — belt-and-suspenders so a future refactor of the
+        # helper can't accidentally propagate an exception here and
+        # undo the fix.
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "apply_runbook activity_log failed after successful commit: %s", log_err,
+        )
 
     return {
         "message": f"Runbook '{runbook.name}' applied successfully",
