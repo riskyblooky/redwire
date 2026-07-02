@@ -36,6 +36,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
 import {
@@ -530,16 +531,28 @@ export default function RunbookEditorPage() {
                                 </div>
                                 <div>
                                     <Label className="text-slate-300">Type</Label>
-                                    <select
-                                        value={runbookType}
-                                        onChange={e => setRunbookType(e.target.value)}
-                                        className="mt-1.5 w-full h-10 rounded-md border border-slate-700 bg-slate-800/50 px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary [color-scheme:dark]"
+                                    {/* Native <select> was rendering with native chrome
+                                        (light background on some OSes) despite color-scheme:dark.
+                                        Match the rest of the app by using the shadcn Select
+                                        primitive. Empty-string is not a valid Radix Select value,
+                                        so the "no type" state is represented by ``__none__`` and
+                                        translated back when writing state. */}
+                                    <Select
+                                        value={runbookType || '__none__'}
+                                        onValueChange={(v) => setRunbookType(v === '__none__' ? '' : v)}
                                     >
-                                        <option value="" className="bg-slate-900 text-white">No type</option>
-                                        {runbookTypes.map(t => (
-                                            <option key={t.id} value={t.name} className="bg-slate-900 text-white">{t.name}</option>
-                                        ))}
-                                    </select>
+                                        <SelectTrigger className="mt-1.5 bg-slate-800/50 border-slate-700 text-white focus:ring-primary">
+                                            <SelectValue placeholder="No type" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-900 border-slate-700 text-white">
+                                            <SelectItem value="__none__" className="text-slate-300">No type</SelectItem>
+                                            {runbookTypes.map(t => (
+                                                <SelectItem key={t.id} value={t.name} className="text-white">
+                                                    {t.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                                 <div>
                                     <Label className="text-slate-300">Description</Label>
