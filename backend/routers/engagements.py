@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, delete as sa_delete
 from typing import List, Optional
@@ -82,7 +83,7 @@ async def get_engagements(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
     include_proposed: bool = Query(False, description="Include PROPOSED engagements in results"),
 ):
     """Get engagements. Admins/Team Leads see all, others see assigned ones.

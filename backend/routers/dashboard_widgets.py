@@ -9,7 +9,8 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func, and_, cast, Float, Integer, String as SAString, case, extract, text
 
@@ -76,7 +77,7 @@ class QueryPreviewRequest(BaseModel):
     aggregation: str = Field("count", max_length=16)  # count, avg, sum, max, min
     value_column: str = Field("id", max_length=64)
     filters: Optional[List[QueryFilter]] = None
-    limit: int = 50
+    limit: int = Query(50, ge=1, le=MAX_LIST_LIMIT)
     # ── Advanced fields ──
     date_column: Optional[str] = Field(None, max_length=64)       # column to filter/bucket on
     date_range: Optional[str] = Field(None, max_length=16)        # "7d", "30d", "90d", "quarter", "year", "all"

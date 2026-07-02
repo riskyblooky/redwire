@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from schemas._field_limits import MAX_LIST_LIMIT
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -704,7 +705,7 @@ async def get_assets(
     sort_by: Optional[str] = Query("created_at"),
     sort_order: Optional[str] = Query("desc"),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

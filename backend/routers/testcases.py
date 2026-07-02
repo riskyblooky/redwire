@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/testcases", tags=["testcases"])
 async def get_testcases(
     engagement_id: Optional[str] = Query(None),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

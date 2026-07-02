@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete as sql_delete, or_
 from sqlalchemy.orm import selectinload
@@ -589,7 +590,7 @@ async def get_activity_log(
     search: Optional[str] = None,
     sort_by: Optional[str] = "created_at",
     sort_order: Optional[str] = "desc",
-    limit: int = 25,
+    limit: int = Query(25, ge=1, le=MAX_LIST_LIMIT),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)

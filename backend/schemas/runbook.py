@@ -4,6 +4,7 @@ from datetime import datetime
 from models.template_status import TemplateStatus
 from schemas._field_limits import (
     LONG_TEXT,
+    MAX_RUNBOOK_ITEMS,
     SHORT_LABEL,
     SLUG,
     TITLE,
@@ -22,14 +23,17 @@ class RunbookCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=TITLE)
     description: Optional[str] = Field(None, max_length=LONG_TEXT)
     runbook_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
-    items: List[RunbookItemCreate] = []
+    # GHSA-7x2f-ff7r-h388 #13 (CWE-770): items[] was unbounded, so a
+    # single POST could enqueue N `db.add(RunbookItem(...))` calls for
+    # any N the client sent. Cap at MAX_RUNBOOK_ITEMS.
+    items: List[RunbookItemCreate] = Field(default_factory=list, max_length=MAX_RUNBOOK_ITEMS)
 
 
 class RunbookUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=TITLE)
     description: Optional[str] = Field(None, max_length=LONG_TEXT)
     runbook_type: Optional[str] = Field(None, max_length=SHORT_LABEL)
-    items: Optional[List[RunbookItemCreate]] = None
+    items: Optional[List[RunbookItemCreate]] = Field(None, max_length=MAX_RUNBOOK_ITEMS)
 
 
 class RunbookItemTemplateResponse(BaseModel):

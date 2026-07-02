@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -40,7 +41,7 @@ async def get_findings(
     severity: Optional[Severity] = Query(None),
     status: Optional[FindingStatus] = Query(None),
     skip: int = 0,
-    limit: int = 100
+    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT)
 ):
     """Get findings with optional filters."""
     from models.discussion import Thread

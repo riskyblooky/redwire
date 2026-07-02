@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
 from typing import List, Optional
@@ -31,7 +32,7 @@ async def get_testcase_templates(
     category: Optional[str] = Query(None),
     status_filter: Optional[TemplateStatus] = Query(None, alias="status"),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
 ):
     """List test case templates the user is allowed to see.
 

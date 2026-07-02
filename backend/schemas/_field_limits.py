@@ -41,10 +41,22 @@ CVSS_VECTOR = 100       # CVSS v3 / v4 vector strings cap out around ~80
 ENUM_STR = 32           # string-typed enum values
 JSON_BLOB = 1_048_576   # 1 MiB — settings JSON dumped to text
 
+# Collection / list shapes --------------------------------------------------------
+# GHSA-7x2f-ff7r-h388 #9, #10, #13 (CWE-770): global caps for list endpoints and
+# unbounded object payloads. Sized generously so no legitimate UI query bites
+# the cap while still killing "SELECT 100_000 findings" and "attach a dict with
+# a million node positions" DoS shapes at the schema boundary. Pick the
+# smallest cap that fits real use — the goal is a ceiling that never bites a
+# real workflow but neutralises the resource-consumption footgun.
+MAX_LIST_LIMIT = 500    # `limit=` on list endpoints
+MAX_RUNBOOK_ITEMS = 500 # items[] on a runbook create/update
+MAX_GRAPH_NODES = 5000  # nodes in an attack-graph positions dict
+
 __all__ = [
     "NAME", "SHORT_LABEL", "SLUG", "TITLE",
     "URL", "EMAIL", "HOSTNAME", "PATH", "IP_ADDR", "HEX_COLOR",
     "TOKEN", "SHORT_TOKEN", "HASH", "UUID_FIELD",
     "NOTE", "DESCRIPTION", "LONG_TEXT",
     "CVSS_VECTOR", "ENUM_STR", "JSON_BLOB",
+    "MAX_LIST_LIMIT", "MAX_RUNBOOK_ITEMS", "MAX_GRAPH_NODES",
 ]

@@ -383,6 +383,20 @@ async def create_attack_graph_layout(
     if not positions or not isinstance(positions, dict):
         raise HTTPException(status_code=400, detail="positions is required and must be a dict")
 
+    # GHSA-7x2f-ff7r-h388 #10 (CWE-770): the positions dict was accepted
+    # verbatim regardless of size. An operator posting {"n1":{...},
+    # "n2":{...}, ...} with millions of keys would sink the encode-then-
+    # persist path (json.dumps + DB write) and blow up on subsequent
+    # tree reads. Cap at MAX_GRAPH_NODES — a legitimate engagement graph
+    # is well under 5000 nodes (RedWire's UI paginates at ~200 per view
+    # by default).
+    from schemas._field_limits import MAX_GRAPH_NODES
+    if len(positions) > MAX_GRAPH_NODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"positions dict exceeds the {MAX_GRAPH_NODES}-node cap.",
+        )
+
     from sqlalchemy import update as sa_update
 
     # If this layout will be active, deactivate all others first
@@ -454,7 +468,18 @@ async def update_attack_graph_layout(
     if "name" in body:
         layout.name = body["name"]
     if "positions" in body:
-        layout.positions = json.dumps(body["positions"])
+        # GHSA-7x2f-ff7r-h388 #10: same MAX_GRAPH_NODES cap as the create
+        # path — the update endpoint took positions verbatim too.
+        from schemas._field_limits import MAX_GRAPH_NODES
+        positions = body["positions"]
+        if not isinstance(positions, dict):
+            raise HTTPException(status_code=400, detail="positions must be a dict")
+        if len(positions) > MAX_GRAPH_NODES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"positions dict exceeds the {MAX_GRAPH_NODES}-node cap.",
+            )
+        layout.positions = json.dumps(positions)
         layout.pinned_by = current_user.id
         layout.pinned_at = datetime.utcnow()
 

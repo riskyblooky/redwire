@@ -1,5 +1,6 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Query
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -341,7 +342,7 @@ async def get_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = 0,
-    limit: int = 100
+    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT)
 ):
     """Team picker — returns lightweight UserSummary rows visible to any
     authenticated user. The full UserResponse (with auth_provider,
