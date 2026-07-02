@@ -38,6 +38,17 @@ class PluginManifest:
     settings: list[dict] = field(default_factory=list)
     widgets: list[dict] = field(default_factory=list)
     nav_items: list[dict] = field(default_factory=list)
+    # ``extensions`` maps a slot name (e.g. ``engagement.tabs``) to a list of
+    # entries the plugin wants to render into that slot. Each entry is a
+    # dict with:
+    #   * ``component``: the file basename under ``frontend/extensions/``
+    #                    (without the .tsx). Loaded via the generated
+    #                    registry in ``frontend/src/app/plugins/
+    #                    _extensions.generated.tsx``.
+    #   * ``label``: display name (used for tabs / section headings).
+    #   * ``required_permissions`` (optional): per-entry RBAC gate.
+    # See PluginRegistry.get_extensions for the read path.
+    extensions: dict = field(default_factory=dict)
     required_permissions: list[str] = field(default_factory=list)
     enabled: bool = True
 
@@ -363,6 +374,49 @@ class PluginRegistry:
                 })
         return items
 
+    async def get_extensions(self, slot: str, user=None, db=None) -> list[dict]:
+        """Return every plugin extension registered against ``slot``,
+        filtered by the caller's global permissions.
+
+        The frontend passes a slot name (e.g. ``engagement.tabs``) and
+        gets back a list of ``{plugin_id, plugin_slug, component, label,
+        ...}`` entries it can render. The component name is what the
+        generated ``_extensions.generated.tsx`` registry keys on.
+        """
+        items = []
+        _has_perm = None
+        if user is not None and db is not None:
+            from auth.permissions import has_global_permission as _has_perm
+
+        for plugin in self.plugins.values():
+            if not (plugin.manifest.enabled and not plugin.error):
+                continue
+            plugin_perms = list(plugin.manifest.required_permissions or [])
+            for entry in (plugin.manifest.extensions.get(slot) or []):
+                if not isinstance(entry, dict):
+                    continue
+                required = list(entry.get("required_permissions") or plugin_perms)
+                if user is not None and required:
+                    ok = True
+                    for pname in required:
+                        try:
+                            perm = _resolve_permission(pname)
+                        except ValueError:
+                            ok = False
+                            break
+                        if not await _has_perm(user, perm, db):
+                            ok = False
+                            break
+                    if not ok:
+                        continue
+                items.append({
+                    **entry,
+                    "plugin_id": plugin.id,
+                    "plugin_slug": plugin.slug,
+                    "slot": slot,
+                })
+        return items
+
     def _parse_manifest(self, dir_name: str, path: Path) -> PluginManifest:
         """Parse plugin.yaml into a PluginManifest."""
         with open(path, "r", encoding="utf-8") as f:
@@ -379,6 +433,7 @@ class PluginRegistry:
             settings=data.get("settings", []),
             widgets=data.get("widgets", []),
             nav_items=data.get("nav_items", []),
+            extensions=data.get("extensions", {}) or {},
             required_permissions=data.get("required_permissions", []),
             enabled=data.get("enabled", True),
         )

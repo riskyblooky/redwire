@@ -25,6 +25,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
 import DashboardLayout from '@/components/layout/dashboard-layout';
+import { PluginSlot, type PluginExtension } from '@/components/plugin-slot';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1422,6 +1423,23 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                             <FileText className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Reporting</span>
                         </TabsTrigger>
+                        {/* Plugin-registered tabs. Each entry from
+                            /plugins/extensions/engagement.tabs renders as a
+                            TabsTrigger; the matching TabsContent below picks
+                            up the same value. The wrapper handles the styling
+                            so plugins don't need to know about the tab shell. */}
+                        <PluginSlot
+                            slot="engagement.tabs"
+                            renderWrapper={(entry: PluginExtension) => (
+                                <TabsTrigger
+                                    key={`plugin-tab-${entry.plugin_slug}-${entry.component}`}
+                                    value={`plugin:${entry.plugin_slug}:${entry.component}`}
+                                    className="flex-1 min-w-[130px] rounded-lg py-2.5 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400 data-[state=active]:border-emerald-500/30 hover:border-emerald-500/20 hover:text-emerald-400/80 border border-transparent transition-all duration-300 group"
+                                >
+                                    <span className="font-semibold">{entry.label ?? entry.component}</span>
+                                </TabsTrigger>
+                            )}
+                        />
                     </TabsList>
 
                     <TabsContent value="logs" className="mt-6 focus-visible:outline-hidden focus-visible:ring-0">
@@ -1545,6 +1563,24 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                     <TabsContent value="attachments" className="mt-6 focus-visible:outline-hidden focus-visible:ring-0">
                         <AttachmentsTab engagementId={id} />
                     </TabsContent>
+                    {/* Plugin-registered tab content. The wrapper picks
+                        the value that matches the TabsTrigger above so
+                        Radix routes the selection here when a plugin tab
+                        is clicked. Each extension component receives
+                        engagementId as a prop plus its own manifest entry. */}
+                    <PluginSlot
+                        slot="engagement.tabs"
+                        props={{ engagementId: id }}
+                        renderWrapper={(entry: PluginExtension, node) => (
+                            <TabsContent
+                                key={`plugin-content-${entry.plugin_slug}-${entry.component}`}
+                                value={`plugin:${entry.plugin_slug}:${entry.component}`}
+                                className="mt-6 focus-visible:outline-hidden focus-visible:ring-0"
+                            >
+                                {node}
+                            </TabsContent>
+                        )}
+                    />
                 </Tabs>
 
                 {engagement && (

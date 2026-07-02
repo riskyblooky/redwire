@@ -77,6 +77,27 @@ async def get_plugin_widgets(current_user: User = Depends(get_current_user)):
     return plugin_registry.get_all_widgets()
 
 
+@router.get("/extensions/{slot}")
+async def get_plugin_extensions(
+    slot: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all plugin-registered extensions for a given slot.
+
+    Slots are named after the core-page site that renders them (e.g.
+    ``engagement.tabs``). Each returned entry names a component the
+    frontend resolves via its extension registry (see
+    ``frontend/src/app/plugins/_extensions.generated.tsx``).
+
+    Results are RBAC-filtered per-entry: entries the caller can't reach
+    are omitted. Slot name is passed through unvalidated because plugins
+    can register into any slot they want — the render site decides which
+    slot to ask for.
+    """
+    return await plugin_registry.get_extensions(slot, current_user, db)
+
+
 # ── Plugin details ───────────────────────────────────────────────────
 
 @router.get("/{plugin_id}", dependencies=[Depends(require_roles(ADMIN_ROLES))])

@@ -39,3 +39,11 @@ settings:
 
 required_permissions:
   - ASSET_VIEW
+
+# Extension slots this plugin registers into. See PluginRegistry.get_extensions.
+extensions:
+  engagement.tabs:
+    - component: cmdb-tab      # matches frontend/extensions/cmdb-tab.tsx
+      label: "ServiceNow CMDB"
+      required_permissions:
+        - "engagement_view"
