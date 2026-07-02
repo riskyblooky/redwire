@@ -94,6 +94,10 @@ export function Providers({ children }: { children: ReactNode }) {
                 richColors
                 position="top-right"
                 theme="dark"
+                // Push below the 64px (h-16) dashboard header so toasts
+                // don't overlap the search / notifications menus that
+                // open from the top bar.
+                offset="80px"
                 toastOptions={{
                     style: {
                         background: 'rgb(15 23 42)',       // slate-900
