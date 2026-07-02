@@ -245,7 +245,7 @@ sleep 15 # Give DB time to initialize
 # 7. Database Migration (Safe)
 echo -e "\n${BLUE}[7/8] Running Database Migrations...${NC}"
 echo "Applying alembic migrations to update schema without data loss..."
-docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+docker compose -f docker-compose.prod.yml run --rm backend python migrate.py upgrade heads
 echo -e "${GREEN}Migrations applied successfully!${NC}"
 
 # 7b. Re-key at-rest data onto freshly generated encryption key(s) (GHSA-pg99).

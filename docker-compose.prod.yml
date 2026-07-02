@@ -101,7 +101,7 @@ services:
     # --forwarded-allow-ips: trust X-Forwarded-* / X-Real-IP only from
     # private docker bridge subnets (where nginx lives), not '*' which
     # let any TCP peer claim to be the proxy. GHSA-xg53-8wgq-w9cw.
-    command: sh -c "alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='172.16.0.0/12'"
+    command: sh -c "python migrate.py upgrade heads && exec uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='172.16.0.0/12'"
     networks:
       - redwire-network
     restart: always
