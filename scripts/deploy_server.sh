@@ -81,6 +81,10 @@ if [ -f .env ]; then
         echo -e "${RED}and save the new key(s) from .env. Do NOT change JWT_SECRET until the${NC}"
         echo -e "${RED}re-key step below completes, or existing vault/TOTP data is lost.${NC}"
     fi
+    # GHSA-f6pp-m653-9r8r #1: enforce owner-only perms whether we appended
+    # new keys or not — an existing .env from a prior deploy could have been
+    # written before this chmod landed.
+    chmod 600 .env
 else
     echo "This script will help you create a secure configuration."
     
@@ -141,6 +145,12 @@ TOTP Encryption Key:  ${TOTP_ENCRYPTION_KEY}
 
 KEEP THIS FILE SAFE!
 EOF
+
+    # GHSA-f6pp-m653-9r8r #1: restrict both secret-bearing files to owner-only
+    # BEFORE printing the "created successfully" banner so any operator
+    # reading the output sees the perm state that shipped. Default umask
+    # (022) would otherwise leave both world-readable.
+    chmod 600 .env credentials_DO_NOT_SHARE.txt
 
     echo -e "${GREEN}.env file created successfully!${NC}"
     echo -e "${GREEN}Credentials saved to 'credentials_DO_NOT_SHARE.txt'.${NC}"

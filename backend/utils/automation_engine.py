@@ -422,15 +422,27 @@ async def _execute_webhook(action: dict, context: Dict[str, Any], rule_name: str
         if "Content-Type" not in headers:
             headers["Content-Type"] = "application/json"
 
+    # GHSA-f6pp-m653-9r8r #2: log scheme + host only, never the path or
+    # query. Discord/Slack/Teams webhooks carry the auth secret in the URL
+    # path (e.g. .../webhooks/<id>/<TOKEN>); logging the full URL at INFO
+    # persisted the secret into container stdout, docker journal, and any
+    # log-aggregation the operator has hooked up.
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        redacted_url = f"{parsed.scheme}://{parsed.netloc}/…" if parsed.netloc else "<invalid-url>"
+    except Exception:
+        redacted_url = "<unparseable-url>"
+
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
             if method == "GET":
                 await client.get(url, headers=headers)
             else:
                 await client.request(method, url, headers=headers, content=body)
-        logger.info(f"Webhook fired for rule '{rule_name}' → {url}")
+        logger.info(f"Webhook fired for rule '{rule_name}' → {redacted_url}")
     except Exception as e:
-        logger.error(f"Webhook failed for rule '{rule_name}': {e}")
+        logger.error(f"Webhook failed for rule '{rule_name}' ({redacted_url}): {e}")
 
 
 async def _execute_add_tags(
