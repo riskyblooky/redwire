@@ -252,7 +252,7 @@ async def create_rule(
         raise HTTPException(403, "You don't have permission to create automations")
 
     # GHSA-jvcx-44v2-gc9m: gate the rule's scope.
-    is_admin = current_user.role in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
+    is_admin = current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)
     if data.engagement_id is None:
         # Global rule (fires on every engagement) — must be able to see all
         # engagements. Admin role passes via has_global_permission's bypass.

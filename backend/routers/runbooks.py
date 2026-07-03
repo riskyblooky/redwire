@@ -470,7 +470,7 @@ async def apply_runbook_to_engagement(
     _enforce_referenced_templates_published(runbook, current_user, "apply")
 
     # Check engagement-scoped testcase create permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, Permission.TESTCASE_CREATE.value, db

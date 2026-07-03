@@ -368,7 +368,7 @@ async def create_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Save current positions as a new named layout."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -447,7 +447,7 @@ async def update_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Update positions and/or name of a saved layout."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -506,7 +506,7 @@ async def activate_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Set a layout as the active one for all users."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -557,7 +557,7 @@ async def delete_attack_graph_layout_named(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a named layout."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -609,7 +609,7 @@ async def save_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Pin the current attack graph layout (legacy: upsert a Default active layout)."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -673,7 +673,7 @@ async def delete_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Remove active layout flag (legacy reset)."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -714,7 +714,7 @@ async def create_attacker_node(
     current_user: User = Depends(get_current_user),
 ):
     """Create an attacker node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -752,7 +752,7 @@ async def update_attacker_node(
     current_user: User = Depends(get_current_user),
 ):
     """Update an attacker node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -795,7 +795,7 @@ async def delete_attacker_node(
     current_user: User = Depends(get_current_user),
 ):
     """Delete an attacker node (cascades to edges)."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -828,7 +828,7 @@ async def create_attacker_edge(
     current_user: User = Depends(get_current_user),
 ):
     """Create an edge from attacker to a target node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db
@@ -949,7 +949,7 @@ async def delete_attacker_edge(
     current_user: User = Depends(get_current_user),
 ):
     """Remove an edge from attacker node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, "engagement_edit", db

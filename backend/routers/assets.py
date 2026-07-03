@@ -333,7 +333,7 @@ async def import_assets(
 ):
     """Import assets from CSV, XLSX, or NMAP XML file."""
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, Permission.ASSET_CREATE.value, db
@@ -523,7 +523,7 @@ async def add_asset_port(
         raise HTTPException(status_code=404, detail="Asset not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db
@@ -577,7 +577,7 @@ async def update_asset_port(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db
@@ -631,7 +631,7 @@ async def delete_asset_port(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db
@@ -856,7 +856,7 @@ async def create_asset(
 ):
     """Create a new asset"""
     # Check permissions using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, asset_data.engagement_id, Permission.ASSET_CREATE.value, db)
         if not has_permission:
@@ -910,7 +910,7 @@ async def update_asset(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = db_asset.created_by == current_user.id
     
     if not is_admin:
@@ -979,7 +979,7 @@ async def delete_asset(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = db_asset.created_by == current_user.id
     
     if not is_admin:

@@ -43,7 +43,7 @@ async def import_spray_log(
         raise HTTPException(status_code=404, detail="Engagement not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await check_engagement_permission(
             current_user.id, engagement_id, Permission.VAULT_CREATE.value, db
@@ -127,7 +127,7 @@ async def commit_spray(
         raise HTTPException(status_code=404, detail="Engagement not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await check_engagement_permission(
             current_user.id, data.engagement_id, Permission.VAULT_CREATE.value, db
@@ -335,7 +335,7 @@ async def delete_spray_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Spray campaign not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await check_engagement_permission(
             current_user.id, campaign.engagement_id, Permission.VAULT_DELETE.value, db
@@ -379,7 +379,7 @@ async def vault_spray_hits(
         raise HTTPException(status_code=404, detail="Spray campaign not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await check_engagement_permission(
             current_user.id, campaign.engagement_id, Permission.VAULT_CREATE.value, db

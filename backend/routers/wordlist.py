@@ -164,7 +164,7 @@ async def upload_wordlist(
 ):
     """Upload a wordlist file. Processing happens in the background."""
     # Admin only
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can upload wordlists.",
@@ -210,7 +210,7 @@ async def delete_wordlist(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a wordlist and all its entries. Rebuilds the Bloom filter."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can delete wordlists.",

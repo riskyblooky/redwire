@@ -305,7 +305,7 @@ async def link_infra_item(
     # InfraItem is global (no engagement_id), so per-link the caller must
     # have at least view permission on the target entity's engagement.
     # Admins bypass.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
 
     async def _require_view(eng_id: str, perm: Permission, label: str):
         if is_admin:

@@ -431,7 +431,7 @@ async def suggest_techniques(
     # constrain caller-supplied finding_ids to this engagement, so they can't
     # name UUIDs from other tenants' engagements to leak finding bodies via
     # the response or ship them to the external AI provider.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         if not await check_engagement_permission(
             current_user.id, engagement_id, Permission.FINDING_VIEW.value, db

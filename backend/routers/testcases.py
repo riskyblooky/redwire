@@ -179,7 +179,7 @@ async def create_testcase(
 ):
     """Create a new test case"""
     # Check permissions using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, testcase_data.engagement_id, Permission.TESTCASE_CREATE.value, db)
@@ -269,7 +269,7 @@ async def update_testcase(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = db_testcase.created_by == current_user.id
     
     if not is_admin:
@@ -471,7 +471,7 @@ async def delete_testcase(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = db_testcase.created_by == current_user.id
     
     if not is_admin:
@@ -777,7 +777,7 @@ async def upload_testcase_evidence(
         )
 
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_creator = testcase.created_by == current_user.id
 
     if not is_admin:

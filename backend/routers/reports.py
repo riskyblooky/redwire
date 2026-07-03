@@ -135,7 +135,7 @@ async def _do_generate_report(
         )
 
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, config.engagement_id, Permission.REPORT_GENERATE.value, db)
         if not has_permission:
@@ -581,7 +581,7 @@ async def save_report_to_engagement(
         )
 
     # 2. Permission check (same as report generation)
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id,

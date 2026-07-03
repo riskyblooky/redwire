@@ -145,7 +145,7 @@ async def update_evidence(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = evidence.created_by == current_user.id
     
     if not is_admin:
@@ -250,7 +250,7 @@ async def delete_evidence(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = evidence.created_by == current_user.id
     
     if not is_admin:
@@ -328,7 +328,7 @@ async def replace_evidence_file(
         )
 
     # Check permissions using RBAC (same as update_evidence)
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = evidence.created_by == current_user.id
 
     if not is_admin:
@@ -497,7 +497,7 @@ async def create_evidence_download_token(
     # Mirror the same authorization the download route enforces — issuing
     # a token to a caller who can't use the underlying file would be a
     # capability leak.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         eng_id = await get_evidence_engagement_id(evidence, db)
         if eng_id and not await check_engagement_permission(
@@ -679,7 +679,7 @@ async def strip_evidence_exif(
         raise HTTPException(status_code=404, detail="Evidence not found")
 
     # Check edit permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = evidence.created_by == current_user.id
     if not is_admin:
         eng_id = await get_evidence_engagement_id(evidence, db)

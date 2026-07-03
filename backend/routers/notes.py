@@ -200,7 +200,7 @@ async def create_note(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new note."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
 
     if not is_admin:
         has_permission = await check_engagement_permission(
@@ -291,7 +291,7 @@ async def update_note(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         is_owner = note.created_by == current_user.id
         if is_owner:
@@ -401,7 +401,7 @@ async def delete_note(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         is_owner = note.created_by == current_user.id
         if is_owner:

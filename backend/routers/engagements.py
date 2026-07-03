@@ -336,7 +336,7 @@ async def create_engagement(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new engagement."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions to create engagements"
@@ -441,7 +441,7 @@ async def update_engagement(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
     
     # Check if user has permission to modify using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.ENGAGEMENT_EDIT.value, db)
@@ -767,7 +767,7 @@ async def upload_engagement_evidence(
 ):
     """Upload a general attachment for an engagement."""
     # Check if engagement exists and user has permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.EVIDENCE_CREATE.value, db)
         if not has_permission:
@@ -866,7 +866,7 @@ async def generate_engagement_phases(
     current_user: User = Depends(get_current_user),
 ):
     """Generate default phases for an existing engagement that has none."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins and team leads can generate engagement phases"
@@ -908,7 +908,7 @@ async def update_engagement_phases(
     current_user: User = Depends(get_current_user),
 ):
     """Bulk-update phase dates for an engagement."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins and team leads can modify engagement phases"

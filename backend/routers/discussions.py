@@ -132,7 +132,7 @@ async def create_thread(
 ):
     """Create a new thread."""
     # Authorization Check - need discussion_create permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, thread_data.engagement_id, Permission.DISCUSSION_CREATE.value, db)
@@ -220,7 +220,7 @@ async def update_thread(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     
     # Check permissions - only creator, admins, or those with discussion_edit permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_creator = thread.created_by == current_user.id
 
     if not is_admin:
@@ -288,7 +288,7 @@ async def resolve_thread(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_creator = thread.created_by == current_user.id
 
     if not is_admin:
@@ -350,7 +350,7 @@ async def delete_thread(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_creator = thread.created_by == current_user.id
     
     if not is_admin:
@@ -433,7 +433,7 @@ async def create_comment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     
     # Authorization Check - need discussion_create permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, thread.engagement_id, Permission.DISCUSSION_CREATE.value, db)
@@ -570,7 +570,7 @@ async def delete_comment(
     thread = thread_result.scalar_one_or_none()
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_creator = comment.created_by == current_user.id
     
     if not is_admin:

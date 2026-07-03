@@ -58,7 +58,7 @@ async def create_calendar_event(
 ):
     """Create a new manual calendar event."""
     # Check global calendar_create permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await has_global_permission(current_user, Permission.CALENDAR_CREATE, db)
         if not has_perm:
@@ -92,7 +92,7 @@ async def update_calendar_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     
     # Check global calendar_edit permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await has_global_permission(current_user, Permission.CALENDAR_EDIT, db)
         if not has_perm:
@@ -132,7 +132,7 @@ async def delete_calendar_event(
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
 
     # OOO events: only the creator or admin can delete
     if event.event_type == "OOO":

@@ -140,7 +140,7 @@ async def create_vault_item(
 ):
     """Create a new vault item."""
     # Authorization Check using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, item_data.engagement_id, Permission.VAULT_CREATE.value, db)
@@ -187,7 +187,7 @@ async def upload_vault_file(
 ):
     """Upload a sensitive file to the vault."""
     # Authorization Check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.VAULT_CREATE.value, db)
         if not has_permission:
@@ -261,7 +261,7 @@ async def update_vault_item(
             raise HTTPException(status_code=404, detail="Vault item not found")
 
         # Authorization Check using RBAC with ANY model
-        is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+        is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
         is_owner = item.created_by == current_user.id
         
         if not is_admin:
@@ -465,7 +465,7 @@ async def delete_vault_item(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # Authorization Check using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = item.created_by == current_user.id
     
     if not is_admin:
@@ -598,7 +598,7 @@ async def link_vault_to_finding(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
         if not has_permission:
@@ -646,7 +646,7 @@ async def unlink_vault_from_finding(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
         if not has_permission:
@@ -690,7 +690,7 @@ async def link_vault_to_testcase(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
         if not has_permission:
@@ -738,7 +738,7 @@ async def unlink_vault_from_testcase(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
         if not has_permission:
@@ -783,7 +783,7 @@ async def link_vault_to_asset(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
         if not has_permission:
@@ -831,7 +831,7 @@ async def unlink_vault_from_asset(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
         if not has_permission:

@@ -372,7 +372,7 @@ async def create_finding(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new finding for an engagement. Optionally link assets, tags, and a test case during creation."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     
     if not is_admin:
         has_permission = await check_engagement_permission(current_user.id, finding_data.engagement_id, Permission.FINDING_CREATE.value, db)
@@ -510,7 +510,7 @@ async def update_finding(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = finding.created_by == current_user.id
     
     if not is_admin:
@@ -849,7 +849,7 @@ async def delete_finding(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = finding.created_by == current_user.id
    
     if not is_admin:
@@ -904,7 +904,7 @@ async def upload_evidence(
         )
     
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_creator = finding.created_by == current_user.id
     
     if not (is_admin or is_creator):

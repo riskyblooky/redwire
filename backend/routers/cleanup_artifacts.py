@@ -145,7 +145,7 @@ async def create_cleanup_artifact(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new cleanup artifact."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, data.engagement_id, Permission.CLEANUP_CREATE.value, db
@@ -195,7 +195,7 @@ async def update_cleanup_artifact(
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = artifact.created_by == current_user.id
 
     if not is_admin:
@@ -256,7 +256,7 @@ async def delete_cleanup_artifact(
     if not artifact:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_owner = artifact.created_by == current_user.id
 
     if not is_admin:
