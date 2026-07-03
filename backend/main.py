@@ -477,6 +477,7 @@ os.makedirs("uploads/profile_photos", exist_ok=True)
 from fastapi import Depends as _h77m_Depends, HTTPException as _h77m_HTTPException
 from fastapi.responses import FileResponse as _h77m_FileResponse
 from auth.dependencies import get_current_user as _h77m_get_current_user
+from models.user import UserRole as _h77m_UserRole
 
 _UPLOADS_ROOT = os.path.realpath("uploads")
 _UPLOADS_MIME_BY_EXT = {
@@ -490,12 +491,42 @@ _UPLOADS_MIME_BY_EXT = {
 
 @app.get("/uploads/{path:path}", include_in_schema=False)
 async def _serve_upload(path: str, _user=_h77m_Depends(_h77m_get_current_user)):
-    """Authenticated, traversal-safe upload server with attachment disposition."""
+    """Authenticated, traversal-safe upload server with attachment disposition.
+
+    GHSA-h77m-pjqc-5cm3 landed the authentication gate. This block adds
+    per-subdirectory authorization on top so a leaked URL from one
+    subsystem doesn't grant cross-subsystem read to any authenticated
+    caller:
+
+      uploads/wordlists/*      — admin / read-only-admin / team-lead only.
+                                 The wordlist router gates *upload* on the
+                                 same triplet; matching *fetch* to that
+                                 keeps the surface consistent.
+      uploads/profile_photos/* — any authenticated user. The team picker
+                                 renders every user's avatar, so this
+                                 stays open to any signed-in caller.
+      uploads/<other>          — any authenticated user (unchanged
+                                 default). Add a subdir-specific rule
+                                 here when a new upload category ships.
+    """
     target = os.path.realpath(os.path.join(_UPLOADS_ROOT, path))
     if not (target == _UPLOADS_ROOT or target.startswith(_UPLOADS_ROOT + os.sep)):
         raise _h77m_HTTPException(status_code=404, detail="Not found")
+
+    # First path segment inside uploads/ selects the policy. Realpath
+    # already blocked traversal; here we're just categorizing.
+    # Order matters: role check runs BEFORE the file-exists check so an
+    # unauthorized caller can't probe filenames by observing the
+    # 404-vs-403 difference.
+    rel = os.path.relpath(target, _UPLOADS_ROOT).replace(os.sep, "/")
+    first_segment = rel.split("/", 1)[0] if "/" in rel else rel
+    if first_segment == "wordlists":
+        if _user.role not in (_h77m_UserRole.ADMIN, _h77m_UserRole.READ_ONLY_ADMIN, _h77m_UserRole.TEAM_LEAD):
+            raise _h77m_HTTPException(status_code=403, detail="Wordlists are admin-only")
+
     if not os.path.isfile(target):
         raise _h77m_HTTPException(status_code=404, detail="Not found")
+
     ext = os.path.splitext(target)[1].lower()
     media_type = _UPLOADS_MIME_BY_EXT.get(ext, "application/octet-stream")
     return _h77m_FileResponse(

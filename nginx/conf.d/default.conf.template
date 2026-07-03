@@ -66,6 +66,30 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Auth endpoints don't legitimately need multi-MB payloads — login
+    # is JSON, TOTP is 6 digits, password reset is a token + password.
+    # Global client_max_body_size is 200M (wordlist uploads elsewhere);
+    # this cap kills the multipart-preamble parser DoS class flagged in
+    # GHSA-cvhc-7gfq-59p3's follow-up. Cheap: python-multipart still
+    # walks the preamble byte-by-byte at ~85 μs/KiB, so bounding the
+    # body to 64k bounds the per-request worker cost to a few ms.
+    # Route match uses `^~` prefix so this block wins over the shorter
+    # /api/ location for any /api/auth/* URI without a regex scan.
+    location ^~ /api/auth/ {
+        client_max_body_size 64k;
+
+        set $backend_url http://backend:8000;
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $backend_url;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location /api/ {
         set $backend_url http://backend:8000;
         rewrite ^/api/(.*)$ /$1 break;

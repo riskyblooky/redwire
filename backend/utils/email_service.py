@@ -1,6 +1,7 @@
 """
 Email service utility — sends emails via SMTP using settings from auth_settings table.
 """
+import re
 import smtplib
 import ssl
 import tempfile
@@ -13,6 +14,43 @@ from sqlalchemy import select
 from models.auth_settings import AuthSetting
 
 logger = logging.getLogger(__name__)
+
+# GHSA-m28w-p732-3rm5 follow-up: defense-in-depth header-injection guard at
+# the send_email boundary. The main GHSA already HTML-escaped user data
+# rendered into the email BODY; this catches the shape where a future
+# caller wires user-supplied text into the SUBJECT or RECIPIENT fields
+# (e.g. an automation rule that stuffs a finding title into the subject).
+# A raw ``\r\n`` in either becomes a header split — attacker smuggles
+# ``\r\nBcc: attacker@evil`` and the outer stack routes a copy.
+#
+# Python's ``email.message`` refuses some of these at serialize time, but
+# ``smtplib.SMTP.sendmail(msg.as_string())`` will happily hand off a
+# pre-serialized string that already contains the injection. Fail loudly
+# at the wrapper instead of trusting library-layer behavior.
+_HEADER_INJECTION_RE = re.compile(r"[\r\n]")
+
+# Loose but strict-enough: no whitespace or comma (RFC-compliant addresses
+# never contain either outside of quoted-local-parts, which we're not
+# handling), single ``@``, at least one dot in the domain. `email.utils
+# .parseaddr` is more permissive and returns a tuple even for garbage
+# input, so we do the reject upstream of it.
+_ADDR_RE = re.compile(r"^[^\s,<>]+@[^\s,<>]+\.[^\s,<>]+$")
+
+
+def _guard_email_headers(subject: str, recipients) -> None:
+    """Reject subject values or recipient addresses that could inject
+    into the SMTP header stream. Raises ValueError on bad input so the
+    caller — typically an automation action — surfaces the failure in
+    logs and fails the action rather than silently sending elsewhere."""
+    if _HEADER_INJECTION_RE.search(subject or ""):
+        raise ValueError("Email subject contains CR/LF; refusing to send.")
+    if isinstance(recipients, str):
+        recipients = [recipients]
+    for r in recipients or ():
+        if not isinstance(r, str) or _HEADER_INJECTION_RE.search(r):
+            raise ValueError(f"Recipient address contains CR/LF: {r!r}")
+        if not _ADDR_RE.match(r):
+            raise ValueError(f"Recipient address is not RFC-compliant: {r!r}")
 
 
 async def _get_smtp_settings(db: AsyncSession) -> Dict[str, str]:
@@ -135,6 +173,11 @@ async def send_email(
     text_body: Optional[str] = None,
 ) -> bool:
     """Send an email using SMTP settings from the database."""
+    # Header/recipient guard — see _guard_email_headers docstring. Run
+    # BEFORE loading settings so a bad caller fails fast without touching
+    # the DB. GHSA-m28w-p732-3rm5 follow-up.
+    _guard_email_headers(subject, to_email)
+
     cfg = await _get_smtp_settings(db)
 
     if cfg.get("smtp_enabled", "false").lower() != "true":
