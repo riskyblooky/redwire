@@ -133,7 +133,11 @@ def _open_engagement_archive(content: bytes, passphrase: Optional[str]) -> zipfi
     try:
         for info in azf.infolist():
             if info.file_size > 0:
-                azf.read(info.filename)
+                # Streamed read via the safe helper — a wrong passphrase
+                # raises on the first inflater chunk (bytes needed for
+                # decryption verification), same effect as read() but
+                # bounded by the per-member cap. See _read_member_safely.
+                _read_member_safely(azf, info.filename)
                 break
     except RuntimeError as exc:
         azf.close()
@@ -142,6 +146,53 @@ def _open_engagement_archive(content: bytes, passphrase: Optional[str]) -> zipfi
             detail="Could not decrypt archive — check the import passphrase.",
         ) from exc
     return azf
+
+
+def _read_member_safely(
+    zf: zipfile.ZipFile, name: str, max_bytes: int = IMPORT_MAX_ARCHIVE_BYTES
+) -> bytes:
+    """Read a zip archive member with a hard per-member byte ceiling.
+
+    GHSA-f826-6226-4rfw follow-up. The primary bomb guard
+    (``_reject_zip_bomb``) computes ``file_size / compress_size`` from
+    the central-directory metadata; a hand-crafted archive that
+    under-declares ``file_size`` can slip past the ratio cap while
+    still decompressing to gigabytes. This helper decompresses through
+    ``zf.open(name)`` (streams from the inflater rather than trusting
+    the declared size), tracks the running total, and raises 400 the
+    moment we cross ``max_bytes``. Same behaviour for pyzipper's
+    ``AESZipFile`` — its ``.open()`` returns a compatible stream.
+
+    ``max_bytes`` defaults to ``IMPORT_MAX_ARCHIVE_BYTES`` — no single
+    member can legitimately exceed the whole archive we agreed to
+    accept.
+    """
+    buf = io.BytesIO()
+    total = 0
+    # 64 KiB chunks — inflater efficiency without unbounded RAM growth
+    # for pathological input.
+    with zf.open(name) as fp:
+        while True:
+            chunk = fp.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                logger.warning(
+                    "Engagement import: member %r exceeded per-member cap "
+                    "(read %d bytes, cap %d) — refusing.",
+                    name, total, max_bytes,
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Archive member '{name}' exceeds the per-member "
+                        f"size cap ({max_bytes} bytes). Refusing — possible "
+                        f"zip bomb."
+                    ),
+                )
+            buf.write(chunk)
+    return buf.getvalue()
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -233,7 +284,7 @@ def _verify_archive_digests(zf: zipfile.ZipFile, manifest: dict) -> None:
                     f"'{name}' but the file is missing from the archive."
                 ),
             )
-        actual = _sha256_hex(zf.read(name))
+        actual = _sha256_hex(_read_member_safely(zf, name))
         if not isinstance(expected, str) or actual != expected:
             logger.warning(
                 "Engagement import: digest mismatch on %r (expected=%s actual=%s)",
@@ -325,8 +376,14 @@ async def export_engagement_preview(
     the plaintext-secret warning + acknowledgement before triggering the
     real export. Returns the same flag the manifest will carry so the UI
     and the archive can't disagree.
+
+    GHSA-3r7j-7h5r-gxgx follow-up: READ_ONLY_ADMIN dropped from the role
+    check. Producing a freestanding offline copy — including the vault
+    plaintexts the GHSA-3r7j fix now includes — is a stronger action
+    than "read-only" implies, and the error message ("Admin or Team Lead
+    role required") suggests the inclusion was copy-paste, not intent.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
 
     from models.engagement import Engagement
@@ -363,8 +420,11 @@ async def export_engagement(
     never persists the passphrase; the operator hands it off out-of-band.
     Filename gains a ``.enc.zip`` suffix as a UX cue and so the import
     flow has a hint to prompt for a passphrase before upload.
+
+    GHSA-3r7j-7h5r-gxgx follow-up: READ_ONLY_ADMIN dropped from the role
+    check — see the preview endpoint above for the rationale.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
         raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
 
     passphrase = _validate_passphrase(x_export_passphrase, kind="export")
@@ -951,7 +1011,7 @@ async def preview_import(
 
     if "manifest.json" not in zf.namelist():
         raise HTTPException(status_code=400, detail="Missing manifest.json in archive")
-    manifest = json.loads(zf.read("manifest.json"))
+    manifest = json.loads(_read_member_safely(zf, "manifest.json"))
     if manifest.get("source") != "redwire":
         raise HTTPException(status_code=400, detail="Archive is not a RedWire export")
 
@@ -962,7 +1022,7 @@ async def preview_import(
 
     if "engagement.json" not in zf.namelist():
         raise HTTPException(status_code=400, detail="Missing engagement.json in archive")
-    data = json.loads(zf.read("engagement.json"))
+    data = json.loads(_read_member_safely(zf, "engagement.json"))
     zf.close()
 
     exported_users: dict = data.get("users", {})
@@ -1079,7 +1139,7 @@ async def import_engagement(
     # Read manifest
     if "manifest.json" not in zf.namelist():
         raise HTTPException(status_code=400, detail="Missing manifest.json in archive")
-    manifest = json.loads(zf.read("manifest.json"))
+    manifest = json.loads(_read_member_safely(zf, "manifest.json"))
     if manifest.get("source") != "redwire":
         raise HTTPException(status_code=400, detail="Archive is not a RedWire export")
 
@@ -1091,7 +1151,7 @@ async def import_engagement(
     # Read data
     if "engagement.json" not in zf.namelist():
         raise HTTPException(status_code=400, detail="Missing engagement.json in archive")
-    data = json.loads(zf.read("engagement.json"))
+    data = json.loads(_read_member_safely(zf, "engagement.json"))
 
     # ── Resolve users: match exported user IDs to local users ────────
     # Parse manual user mapping from form data
@@ -1368,7 +1428,7 @@ async def import_engagement(
             # Upload file from ZIP to MinIO
             zip_path = f"attachments/{old_path}"
             if old_path and zip_path in zf.namelist():
-                file_bytes = zf.read(zip_path)
+                file_bytes = _read_member_safely(zf, zip_path)
                 try:
                     await storage_service.upload_file(file_bytes, new_storage_name, content_type=ev.get("mime_type"))
                 except Exception:
@@ -1413,7 +1473,7 @@ async def import_engagement(
                 new_vault_path = f"vault/{uuid.uuid4()}{ext}"
                 zip_path = f"attachments/{old_path}"
                 if zip_path in zf.namelist():
-                    file_bytes = zf.read(zip_path)
+                    file_bytes = _read_member_safely(zf, zip_path)
                     try:
                         # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: the export
                         # path decrypts before zipping, so the archive
