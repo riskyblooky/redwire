@@ -109,6 +109,12 @@ The Quick Start above is the production install path — `deploy_server.sh` and 
 
 For an existing install, re-running `./scripts/deploy_server.sh` after `git pull` will apply migrations and rebuild in place.
 
+For everything else — environment variable reference, backups, upgrades,
+credential rotation, running behind another reverse proxy, optional
+integrations (LDAP/SAML/SMTP), and common troubleshooting — see
+[`docs/ADMIN_GUIDE.md`](docs/ADMIN_GUIDE.md). Every env var is also
+documented inline in [`.env.example`](.env.example).
+
 ## Role-based access control
 
 | Role | Capabilities |
