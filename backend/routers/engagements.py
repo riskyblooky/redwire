@@ -26,7 +26,7 @@ from fastapi import UploadFile, File, Form
 import os
 import uuid
 from utils.storage import storage_service
-from utils.uploads import safe_content_type
+from utils.uploads import safe_content_type, sanitize_original_filename
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict, manager
 from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
@@ -796,7 +796,7 @@ async def upload_engagement_evidence(
     new_evidence = Evidence(
         engagement_id=engagement_id,
         filename=storage_filename,
-        original_filename=file.filename or "unknown",
+        original_filename=sanitize_original_filename(file.filename, fallback="unknown"),
         file_path=storage_filename,
         file_size=file_size,
         mime_type=safe_mime,

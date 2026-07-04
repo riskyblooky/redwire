@@ -139,6 +139,22 @@ async def delete_report_theme(
     if not theme:
         raise HTTPException(status_code=404, detail="Report theme not found")
 
+    # GHSA-3m9c-7f84-9cm2 follow-up: refuse to delete the system-owned
+    # theme. It's the last-resort fallback the report generator uses
+    # when no user-created default exists; letting an admin delete it
+    # (intentionally or accidentally) breaks every engagement that
+    # relies on the fallback path.
+    if theme.is_system:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "This is the system-owned default theme and cannot be "
+                "deleted. You can clear its 'is_default' flag on another "
+                "theme to unpin it, but the system theme remains as the "
+                "generator's ultimate fallback."
+            ),
+        )
+
     await db.delete(theme)
     await db.commit()
     return None

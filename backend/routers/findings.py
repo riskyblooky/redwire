@@ -22,7 +22,7 @@ from auth.rbac import can_modify_resource, check_engagement_permission
 from models.user import UserRole
 from models.permission import Permission
 from utils.storage import storage_service
-from utils.uploads import safe_content_type
+from utils.uploads import safe_content_type, sanitize_original_filename
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
@@ -946,7 +946,7 @@ async def upload_evidence(
         finding_id=finding_id,
         engagement_id=finding.engagement_id,
         filename=storage_filename,
-        original_filename=file.filename or "unknown",
+        original_filename=sanitize_original_filename(file.filename, fallback="unknown"),
         file_path=storage_filename,
         file_size=file_size,
         mime_type=safe_mime,

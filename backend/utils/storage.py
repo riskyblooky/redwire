@@ -61,6 +61,28 @@ class StorageService:
         """Delete a file from MinIO."""
         self.s3.delete_object(Bucket=self.bucket_name, Key=filename)
 
+    async def head_object(self, filename: str) -> Optional[dict]:
+        """Return object metadata (size, etag, last-modified, content-type)
+        without downloading the body. Returns ``None`` when the object
+        doesn't exist.
+
+        Used at the evidence-export size cap to cross-check the recorded
+        ``Evidence.file_size`` against the actual object size — an
+        operator with direct MinIO access could have swapped in a
+        larger file after upload (GHSA-q8q6-22jx-7rjj follow-up)."""
+        try:
+            resp = self.s3.head_object(Bucket=self.bucket_name, Key=filename)
+            return {
+                "size": resp.get("ContentLength"),
+                "etag": resp.get("ETag"),
+                "last_modified": resp.get("LastModified"),
+                "content_type": resp.get("ContentType"),
+            }
+        except Exception:
+            # boto raises ClientError with 404 or NoSuchKey — either way,
+            # "we can't verify" is the answer callers care about.
+            return None
+
     def get_presigned_url(self, filename: str, expires_in: int = 3600) -> str:
         """Generate a presigned URL for a file.
 

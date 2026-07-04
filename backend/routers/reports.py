@@ -160,7 +160,15 @@ async def _do_generate_report(
     # Sort sections by sort_order
     sections = sorted(layout.sections, key=lambda s: s.sort_order)
 
-    # 3. Fetch Theme (optional — use specified, or default, or None)
+    # 3. Fetch Theme — three-stage resolution (GHSA-3m9c-7f84-9cm2 follow-up):
+    #    (a) explicit theme_id from the request
+    #    (b) any user-marked default (is_default=True)
+    #    (c) the seeded system theme (is_system=True) as an ultimate
+    #        fallback so an admin who deleted the current default doesn't
+    #        break every subsequent report generation. Delete guard in
+    #        routers/report_themes.py prevents deleting the system row,
+    #        but this belt-and-suspenders keeps report_generator working
+    #        even if the row goes missing (drift, hand-edited DB, etc.).
     theme = None
     if config.theme_id:
         theme_result = await db.execute(
@@ -168,11 +176,15 @@ async def _do_generate_report(
         )
         theme = theme_result.scalar_one_or_none()
     if not theme:
-        # Try the default theme
         default_result = await db.execute(
             select(ReportTheme).where(ReportTheme.is_default == True)
         )
         theme = default_result.scalar_one_or_none()
+    if not theme:
+        system_result = await db.execute(
+            select(ReportTheme).where(ReportTheme.is_system == True)
+        )
+        theme = system_result.scalar_one_or_none()
 
     # 3b. Resolve the marking profile: explicit config → engagement's profile →
     # None. Marking is OPT-IN: with no profile selected, no markings render.
@@ -473,16 +485,32 @@ async def _do_generate_report(
                     # before any MinIO round-trip. include_in_report mirrors what
                     # the loops below will write, so the cap matches what the
                     # archive would otherwise have grown to.
-                    total_evidence_bytes = sum(
-                        (e.file_size or 0)
-                        for f in findings
-                        for e in (f.evidence or [])
-                        if e.include_in_report and e.filename
-                    ) + sum(
-                        (e.file_size or 0)
-                        for e in standalone_evidence
-                        if e.include_in_report and e.filename
-                    )
+                    #
+                    # Defense-in-depth over the recorded size: HEAD each object
+                    # first and use ``max(recorded, actual)``. An operator with
+                    # direct MinIO access could have swapped in a larger file
+                    # after upload, defeating the cap if we trusted the DB
+                    # value alone. One HEAD per file is cheap (metadata only,
+                    # no body transfer); missing objects return None and
+                    # fall back to the recorded value.
+                    async def _effective_size(e) -> int:
+                        recorded = e.file_size or 0
+                        meta = await storage_service.head_object(e.filename)
+                        actual = (meta or {}).get("size") or 0
+                        return max(recorded, actual)
+
+                    finding_evidence_bytes = 0
+                    for f in findings:
+                        for e in (f.evidence or []):
+                            if e.include_in_report and e.filename:
+                                finding_evidence_bytes += await _effective_size(e)
+
+                    standalone_evidence_bytes = 0
+                    for e in standalone_evidence:
+                        if e.include_in_report and e.filename:
+                            standalone_evidence_bytes += await _effective_size(e)
+
+                    total_evidence_bytes = finding_evidence_bytes + standalone_evidence_bytes
                     if total_evidence_bytes > REPORT_EXPORT_MAX_EVIDENCE_BYTES:
                         logger.warning(
                             "Refused JSON_ZIP export of engagement %s by user %s: "

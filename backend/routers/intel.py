@@ -23,6 +23,7 @@ from schemas.intel import (
     IntelLinkRequest, LinkedEntitySummary, IntelAttachmentResponse,
 )
 from utils.storage import storage_service
+from utils.uploads import sanitize_original_filename
 from utils.ssrf import validate_outbound_url, validate_outbound_url_sync, OutboundURLError
 
 import logging
@@ -384,7 +385,7 @@ async def upload_intel_attachments(
         attachment = IntelAttachment(
             intel_item_id=item_id,
             filename=storage_key,
-            original_filename=file.filename,
+            original_filename=sanitize_original_filename(file.filename),
             file_size=len(content),
             mime_type=content_type,
             created_by=current_user.id,

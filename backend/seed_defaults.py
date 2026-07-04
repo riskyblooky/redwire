@@ -303,6 +303,13 @@ async def seed_skill_taxonomy() -> Tuple[int, int]:
 # utils/report_generator.py when no theme is selected. Seeding a default
 # row gives operators a starting point they can clone or tweak in the UI.
 
+# Deterministic ID for the system-owned "RedWire Default" theme so
+# ``seed_default_report_theme`` can find and repair it on every boot
+# without depending on the row order. Refuses deletion at the API layer
+# (routers/report_themes.py::delete_report_theme) so an admin can't
+# accidentally delete the generator's last-resort fallback.
+SYSTEM_REPORT_THEME_ID = "00000000-0000-0000-0000-00000000d347"
+
 _DEFAULT_REPORT_THEME = {
     "name": "RedWire Default",
     "description": "Dark-executive Red Team palette — clone and tweak from the Themes page.",
@@ -321,16 +328,39 @@ _DEFAULT_REPORT_THEME = {
     "footer_text":        "CONFIDENTIAL",
     "page_size":          "letter",
     "is_default":         True,
+    "is_system":          True,
 }
 
 
 async def seed_default_report_theme() -> bool:
+    """Ensure the system-owned RedWire Default theme exists.
+
+    Idempotent by fixed id. If the row was deleted (e.g. via a pre-fix
+    build that allowed it), re-creates it. If it exists but was renamed
+    or non-default, leaves user edits alone but re-pins ``is_system=True``
+    so the delete guard still applies. GHSA-3m9c-7f84-9cm2 follow-up.
+    """
     from models.report_theme import ReportTheme
     async with AsyncSessionLocal() as db:
-        existing = await db.execute(select(ReportTheme))
-        if existing.scalars().first() is not None:
+        existing_system = await db.execute(
+            select(ReportTheme).where(ReportTheme.id == SYSTEM_REPORT_THEME_ID)
+        )
+        row = existing_system.scalar_one_or_none()
+        if row is not None:
+            # Re-pin is_system if an old migration reset it. Don't overwrite
+            # user edits to name/colors — the delete guard is what matters.
+            if not row.is_system:
+                row.is_system = True
+                await db.commit()
+                return True
             return False
-        db.add(ReportTheme(id=str(uuid.uuid4()), **_DEFAULT_REPORT_THEME))
+
+        # No system row yet. Might be a legacy install where the seed
+        # created a non-system-marked default row with a random id; leave
+        # that one alone and just plant the system row alongside it.
+        # If it's the ONLY default and the operator edited it, they can
+        # keep using it; the system row is a fallback, not a replacement.
+        db.add(ReportTheme(id=SYSTEM_REPORT_THEME_ID, **_DEFAULT_REPORT_THEME))
         await db.commit()
     return True
 

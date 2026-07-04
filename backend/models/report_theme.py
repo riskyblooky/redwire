@@ -6,7 +6,15 @@ import uuid
 class ReportTheme(Base, AuditMixin):
     __tablename__ = "report_themes"
 
+    # System-owned row marker. Set on the seeded "RedWire Default" theme
+    # via a deterministic id (see SYSTEM_REPORT_THEME_ID below and
+    # backend/seed_defaults.py::seed_default_report_theme). Rows with
+    # is_system=True refuse deletion at the API layer (GHSA-3m9c-7f84-9cm2
+    # follow-up) so an operator can't accidentally delete the last
+    # fallback the report generator relies on. Non-system themes are
+    # user-created and freely deletable.
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    is_system = Column(Boolean, nullable=False, default=False, server_default="false")
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
 

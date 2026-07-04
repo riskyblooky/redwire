@@ -101,12 +101,8 @@ services:
 
   frontend:
     build:
-      # Repo-root context — matches prod so the Dockerfile is single-sourced
-      # (COPY frontend/... and COPY backend/plugins/). Dev additionally
-      # bind-mounts ./frontend and ./backend/plugins at runtime below, so
-      # what's baked into the image is only used for the first cold start.
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
       target: development
     image: redwire-frontend:dev
     container_name: redwire-frontend
@@ -121,10 +117,6 @@ services:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
       - frontend_next_cache:/app/.next
-      # Read-only mount of the plugin tree so the predev sync script can
-      # mirror plugins/<slug>/frontend into src/app/plugins/<slug>/ at
-      # startup. See frontend/scripts/sync-plugin-frontends.mjs.
-      - ./backend/plugins:/backend-plugins:ro
     networks:
       - redwire-network
 
@@ -178,8 +170,11 @@ services:
       REDWIRE_API_URL: http://backend:8000
       MCP_PORT: "3001"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080,https://localhost:8443}
-    ports:
-      - "127.0.0.1:3001:3001"
+    # GHSA-qf2j-p8q7-v98h follow-up: no host port publishing. The SSE
+    # transport is for the in-cluster backend→MCP path; remote clients
+    # should route through nginx (which exposes /mcp/* on the public
+    # port with the normal Authorization: Bearer <jwt> flow). Bypassing
+    # nginx by hitting 127.0.0.1:3001 skipped auth entirely on dev.
     depends_on:
       - backend
     volumes:

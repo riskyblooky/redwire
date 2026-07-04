@@ -27,6 +27,7 @@ from models.permission import Permission
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from utils.storage import storage_service
+from utils.uploads import sanitize_original_filename
 
 router = APIRouter(prefix="/markdown-images", tags=["markdown-images"])
 
@@ -98,7 +99,7 @@ async def upload_markdown_image(
         created_by=current_user.id,
         content_type=content_type,
         size_bytes=len(body),
-        original_filename=file.filename,
+        original_filename=sanitize_original_filename(file.filename),
     )
     db.add(row)
     await db.commit()

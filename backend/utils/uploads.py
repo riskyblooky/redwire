@@ -9,12 +9,65 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import os
+import unicodedata
 from typing import Optional
 
 from fastapi import HTTPException, UploadFile, status
 
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_original_filename(raw: Optional[str], fallback: str = "upload") -> str:
+    """Normalize a user-supplied filename for safe storage in the DB
+    ``original_filename`` column.
+
+    GHSA-fwvp-qc8h-r5p4 follow-up. The GHSA fix sanitizes at every emit
+    sink (JSON_ZIP export ZIP members + manifest attachment paths). This
+    helper adds source-side scrubbing so the stored value can be trusted
+    at rest and by any future emit path we haven't yet audited.
+
+    Applied transforms:
+      1. Strip directory components — a client that sends
+         ``../../etc/passwd`` or ``C:\\Users\\x\\bad.exe`` reduces to
+         the basename. Windows-style backslashes normalized first.
+      2. NFKC Unicode normalization — collapses look-alike codepoints
+         (e.g. fullwidth Latin) so the stored value matches what a
+         reader will see rendered. Matches the username normalization
+         from GHSA-2hrj-c2v3-8p2v.
+      3. Drop control characters (categories Cc, Cf) so a filename
+         can't smuggle a CR/LF/NUL into any downstream serializer.
+      4. Fall back to ``fallback`` if the sanitized result is empty
+         (all-control, all-slashes, missing extension only).
+
+    Returns a plain str; never raises.
+    """
+    if not raw:
+        return fallback
+    # Windows path separators are legal characters on POSIX; normalize
+    # BEFORE basename so both platforms strip the same way.
+    normalized = raw.replace("\\", "/")
+    basename = os.path.basename(normalized)
+    if not basename:
+        return fallback
+    # NFKC folds fullwidth / compat forms into their canonical shape.
+    basename = unicodedata.normalize("NFKC", basename)
+    # Drop control chars (Cc = other/control, Cf = other/format including
+    # zero-width joiner shenanigans). Keeps printable Unicode.
+    cleaned = "".join(
+        ch for ch in basename if unicodedata.category(ch) not in ("Cc", "Cf")
+    ).strip()
+    if not cleaned:
+        return fallback
+    # Cap at a reasonable filename length — some filesystems reject > 255.
+    if len(cleaned) > 255:
+        stem, dot, ext = cleaned.rpartition(".")
+        if dot and len(ext) < 32:
+            cleaned = stem[: 255 - len(ext) - 1] + "." + ext
+        else:
+            cleaned = cleaned[:255]
+    return cleaned
 
 
 # GHSA-h77m-pjqc-5cm3 follow-up: client-supplied ``Content-Type`` is the

@@ -308,7 +308,14 @@ async def upload_profile_photo(
     os.makedirs(upload_dir, exist_ok=True)
 
     # Generate unique filename — sniffed extension, not the client's claim.
-    filename = f"{current_user.id}_{uuid.uuid4()}{sniffed_ext}"
+    # GHSA-h77m-pjqc-5cm3 follow-up: was `<user-uuid>_<file-uuid><ext>` which
+    # leaked the user's primary key in any URL the file surfaced through.
+    # Single UUID is sufficient — collision resistance is fine, and the
+    # per-directory auth + owner-check on /uploads already scopes access.
+    # Old rows keep the dual-UUID form until the next photo change; no
+    # rewrite migration needed because the previous filename still
+    # resolves via `current_user.profile_photo` on GET.
+    filename = f"{uuid.uuid4()}{sniffed_ext}"
     file_path = os.path.join(upload_dir, filename)
 
     # Save file

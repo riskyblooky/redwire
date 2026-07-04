@@ -529,10 +529,25 @@ async def delete_testcase(
             await db.delete(desc)
         cascade_count = len(descendants)
 
-    # Log activity before deletion
+    # Log activity before deletion. GHSA-3mpw-xmrg-5rx5 follow-up:
+    # for cascade deletes, append a JSON payload listing every
+    # descendant that got dropped — id, original author, title — so
+    # the audit trail shows *whose work* was touched, not just a count.
+    # Human readers see the prose prefix; machine consumers (audit
+    # dashboards, forensic queries) can parse the JSON at the tail.
     details = f"Deleted test case: {db_testcase.title}"
     if cascade_count > 0:
         details += f" (and {cascade_count} child test case{'s' if cascade_count != 1 else ''})"
+        import json as _json
+        descendants_payload = [
+            {
+                "id": d.id,
+                "title": d.title,
+                "author_id": d.created_by,
+            }
+            for d in descendants
+        ]
+        details += " " + _json.dumps({"descendants": descendants_payload})
     await create_activity_log(
         db,
         engagement_id=db_testcase.engagement_id,
@@ -764,7 +779,7 @@ async def upload_testcase_evidence(
     from models.evidence import Evidence
     from schemas.evidence import EvidenceResponse
     from utils.storage import storage_service
-    from utils.uploads import safe_content_type
+    from utils.uploads import safe_content_type, sanitize_original_filename
     import os
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
@@ -830,7 +845,7 @@ async def upload_testcase_evidence(
         testcase_id=testcase_id,
         engagement_id=testcase.engagement_id,
         filename=storage_filename,
-        original_filename=file.filename or "unknown",
+        original_filename=sanitize_original_filename(file.filename, fallback="unknown"),
         file_path=storage_filename,
         file_size=file_size,
         mime_type=safe_mime,
