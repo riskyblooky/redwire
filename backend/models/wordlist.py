@@ -36,4 +36,14 @@ class WordlistEntry(Base):
     ntlm = Column(String(32), nullable=True, index=True)
     md5 = Column(String(32), nullable=True, index=True)
     sha1 = Column(String(40), nullable=True, index=True)
-    source = Column(String(255), nullable=True)  # wordlist_meta.id
+    # Real FK to wordlist_meta.id — was a bare string with a
+    # "wordlist_meta.id" comment before (GHSA-jw3p follow-up). CASCADE
+    # matches the router's explicit cleanup pattern
+    # (routers/wordlist.py::delete_wordlist deletes matching entries
+    # by source before dropping the meta row) — the FK just makes it
+    # DB-enforced instead of route-enforced.
+    source = Column(
+        String(255),
+        ForeignKey("wordlist_meta.id", ondelete="CASCADE"),
+        nullable=True,
+    )

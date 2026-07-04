@@ -3,7 +3,7 @@ AiSetting model — stores AI/LLM configuration as key-value pairs.
 Sensitive values (API keys) are flagged via is_encrypted
 so they can be masked in API responses.
 """
-from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
 from datetime import datetime
 from database import Base
 
@@ -15,7 +15,9 @@ class AiSetting(Base):
     value = Column(Text, nullable=True)
     is_encrypted = Column(Boolean, default=False, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    updated_by = Column(String, nullable=True)
+    # Real FK to users.id — was a bare string before (GHSA-jw3p follow-up).
+    # SET NULL on user delete so the setting survives operator departure.
+    updated_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     def __repr__(self):
         return f"<AiSetting key={self.key}>"

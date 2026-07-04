@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, Enum as SAEnum
+from sqlalchemy import Column, String, DateTime, Text, Enum as SAEnum, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -37,7 +37,11 @@ class InfraItem(Base):
     os = Column(String(100), nullable=True)
     point_of_presence = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
-    created_by = Column(String, nullable=True)
+    # Real FK to users.id — was a bare string before (GHSA-jw3p follow-up).
+    # SET NULL on user delete: the infra item survives the operator leaving,
+    # attribution becomes anonymous — matches how wordlist_meta.uploaded_by
+    # and every AuditMixin-based model handle the same shape.
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
