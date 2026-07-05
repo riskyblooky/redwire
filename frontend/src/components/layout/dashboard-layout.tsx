@@ -4,6 +4,7 @@ import { ReactNode, useRef, useCallback, useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
+import { CommandPalette } from '@/components/command-palette';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
 import {
@@ -305,6 +306,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return (
         <div className="flex h-screen overflow-hidden bg-slate-950">
+            {/* Global command palette — Cmd/Ctrl+K to open. See
+                components/command-palette.tsx for the action list and
+                two-key hotkey sequences (N F, G E, etc.). Mounted here
+                so it exists on every authenticated route. */}
+            <CommandPalette />
             {/* Sidebar */}
             <aside
                 className={cn(
