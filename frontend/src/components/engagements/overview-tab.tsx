@@ -21,6 +21,7 @@ import {
     Edit, Trash2, Users, Calendar, Flag, AlertCircle,
     TrendingUp, Building2, Eye, Clock, Mail, User,
     Activity as ActivityIcon, History as HistoryIcon,
+    Upload,
 } from 'lucide-react';
 import { cn, getAvatarUrl, parseUTCDate } from '@/lib/utils';
 import { useFindings } from '@/lib/hooks/use-findings';
@@ -171,20 +172,32 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                         <p className="text-sm text-slate-400">View and manage engagement metadata</p>
                     </div>
                 </div>
-                {(canEditEngagement || canDeleteEngagement) && (
-                    <div className="flex gap-2">
-                        {canEditEngagement && (
-                            <Button onClick={onEdit} variant="outline" className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300">
-                                <Edit className="h-4 w-4 mr-2" />Edit Engagement
-                            </Button>
-                        )}
-                        {canDeleteEngagement && (
-                            <Button onClick={onDelete} variant="outline" className="border-red-500/30 bg-red-500/5 hover:bg-red-500/10 text-red-400">
-                                <Trash2 className="h-4 w-4 mr-2" />Delete
-                            </Button>
-                        )}
-                    </div>
-                )}
+                <div className="flex gap-2">
+                    {/* Import scanner output pre-scoped to this engagement.
+                        Opens the wizard at /imports?engagement=<id>, which
+                        pre-fills the target and hides the engagement
+                        selector. Any authenticated engagement viewer sees
+                        this — the wizard itself enforces write permissions
+                        at commit time. */}
+                    <Button
+                        onClick={() => router.push(`/imports?engagement=${engagementId}`)}
+                        variant="outline"
+                        className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300"
+                    >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Import
+                    </Button>
+                    {canEditEngagement && (
+                        <Button onClick={onEdit} variant="outline" className="border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300">
+                            <Edit className="h-4 w-4 mr-2" />Edit Engagement
+                        </Button>
+                    )}
+                    {canDeleteEngagement && (
+                        <Button onClick={onDelete} variant="outline" className="border-red-500/30 bg-red-500/5 hover:bg-red-500/10 text-red-400">
+                            <Trash2 className="h-4 w-4 mr-2" />Delete
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Top Stats Hub */}

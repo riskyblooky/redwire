@@ -17,7 +17,8 @@
  */
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import {
@@ -115,13 +116,32 @@ function StepIndicator({ current }: { current: number }) {
 
 export default function ImportsPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    // Pre-scope the wizard to a specific engagement when the URL carries
+    // ``?engagement=<id>``. This is how the "Import" button on the
+    // engagement detail page opens the wizard scoped — no more picking
+    // your way through the engagement dropdown. When set, the wizard
+    // hides the selector and shows a back link to the engagement.
+    const preScopedEngagementId = searchParams?.get('engagement') || '';
+
     const { data: engagements = [] } = useEngagements();
     const previewMutation = usePreviewImport();
     const commitMutation = useCommitImport();
 
     // Wizard state
     const [step, setStep] = useState(0);
-    const [selectedEngagement, setSelectedEngagement] = useState('');
+    const [selectedEngagement, setSelectedEngagement] = useState(preScopedEngagementId);
+
+    // Sync from URL if it changes after mount (unlikely in practice, but keeps
+    // the state honest if a link handler pushes a new ?engagement= param).
+    useEffect(() => {
+        if (preScopedEngagementId && preScopedEngagementId !== selectedEngagement) {
+            setSelectedEngagement(preScopedEngagementId);
+        }
+        // Intentionally only depends on preScopedEngagementId — we don't want
+        // to reset state on every internal selectedEngagement change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [preScopedEngagementId]);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [preview, setPreview] = useState<PreviewResponse | null>(null);
     const [result, setResult] = useState<CommitResponse | null>(null);
@@ -276,24 +296,55 @@ export default function ImportsPage() {
                 {/* ═══ Step 0: Upload ═══ */}
                 {step === 0 && (
                     <div className="space-y-4">
-                        {/* Engagement Selector */}
-                        <Card className="border-slate-800 bg-slate-900/50">
-                            <CardContent className="p-4">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
-                                    Target Engagement
-                                </label>
-                                <select
-                                    value={selectedEngagement}
-                                    onChange={(e) => setSelectedEngagement(e.target.value)}
-                                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                >
-                                    <option value="">Select an engagement...</option>
-                                    {engagements.map((eng: any) => (
-                                        <option key={eng.id} value={eng.id}>{eng.name}</option>
-                                    ))}
-                                </select>
-                            </CardContent>
-                        </Card>
+                        {/* Engagement Selector — hidden when the URL pre-scopes
+                            us to a specific engagement (opened from the
+                            engagement detail page). Show a scope pill + back
+                            link instead so the operator knows what they're
+                            importing into. */}
+                        {preScopedEngagementId ? (
+                            <Card className="border-primary/30 bg-primary/5">
+                                <CardContent className="p-4 flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <Layers className="h-4 w-4 text-primary shrink-0" />
+                                        <div className="min-w-0">
+                                            <p className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                                                Importing into
+                                            </p>
+                                            <p className="text-sm text-white font-medium truncate">
+                                                {engagementName || '…'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => router.push(`/engagements/${preScopedEngagementId}`)}
+                                        className="text-slate-400 hover:text-white shrink-0"
+                                    >
+                                        <ArrowLeft className="h-4 w-4 mr-1" />
+                                        Back to engagement
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            <Card className="border-slate-800 bg-slate-900/50">
+                                <CardContent className="p-4">
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
+                                        Target Engagement
+                                    </label>
+                                    <select
+                                        value={selectedEngagement}
+                                        onChange={(e) => setSelectedEngagement(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                    >
+                                        <option value="">Select an engagement...</option>
+                                        {engagements.map((eng: any) => (
+                                            <option key={eng.id} value={eng.id}>{eng.name}</option>
+                                        ))}
+                                    </select>
+                                </CardContent>
+                            </Card>
+                        )}
 
                         {/* Drop Zone */}
                         <div
