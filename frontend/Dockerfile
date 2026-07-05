@@ -25,7 +25,12 @@ ENV PATH /app/node_modules/.bin:$PATH
 EXPOSE 3000
 
 # Aggressive startup: verify next, install if missing, and run directly
-CMD ["sh", "-c", "if [ ! -f ./node_modules/.bin/next ]; then npm install; fi && ./node_modules/.bin/next dev"]
+# Use `npm run dev` (not `next dev` directly) so the ``predev`` hook fires
+# and sync-plugin-frontends.mjs runs on every container start. Without
+# the sync, plugin-slot.tsx fails to resolve
+# ``@/app/plugins/_extensions.generated`` on first render of any page
+# that mounts a <PluginSlot>.
+CMD ["sh", "-c", "if [ ! -f ./node_modules/.bin/next ]; then npm install; fi && npm run dev"]
 
 # Production dependencies stage
 FROM base AS deps
