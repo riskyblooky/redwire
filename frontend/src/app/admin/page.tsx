@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail } from 'lucide-react';
+import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -84,6 +84,7 @@ import type { SkillCategory, Skill } from '@/lib/hooks/use-skills';
 import { WidgetManagement } from '@/components/admin/widget-management';
 import { PluginManagement } from '@/components/admin/plugin-management';
 import EmailSettings from '@/components/admin/email-settings';
+import { AboutPanel } from '@/components/admin/about-panel';
 import {
     Tabs,
     TabsContent,
@@ -553,6 +554,10 @@ export default function AdminPage() {
 
                     <TabsContent value="email" className="space-y-6">
                         <EmailSettings />
+                    </TabsContent>
+
+                    <TabsContent value="about" className="space-y-6">
+                        <AboutPanel />
                     </TabsContent>
                 </Tabs>
 

@@ -782,20 +782,6 @@ function RequiredSkillsCard({ engagementId, onDirtyChange, saveRef }: {
         onDirtyChange?.(dirty);
     };
 
-    const toggleSkill = (skillId: string) => {
-        setLocalSkills(prev => {
-            const next = { ...prev };
-            if (next[skillId] !== undefined) delete next[skillId]; else next[skillId] = 1;
-            return next;
-        });
-        markDirty(true);
-    };
-
-    const setMinLevel = (skillId: string, level: number) => {
-        setLocalSkills(prev => ({ ...prev, [skillId]: level }));
-        markDirty(true);
-    };
-
     const handleSave = async () => {
         const skills = Object.entries(localSkills).map(([skill_id, min_level]) => ({ skill_id, min_level }));
         try {
@@ -823,62 +809,89 @@ function RequiredSkillsCard({ engagementId, onDirtyChange, saveRef }: {
         );
     }
 
+    // Set required level for a skill. Level 0 = not required (removed from
+    // the payload on save). Matches the profile SkillsTab UX so the two
+    // pickers behave the same across the app.
+    const setLevel = (skillId: string, level: number) => {
+        setLocalSkills(prev => {
+            if (level === 0) {
+                const next = { ...prev };
+                delete next[skillId];
+                return next;
+            }
+            return { ...prev, [skillId]: level };
+        });
+        markDirty(true);
+    };
+
     return (
-        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
-            <CardHeader>
-                <div>
-                    <CardTitle className="text-white flex items-center gap-2 text-lg">
-                        <Radar className="h-5 w-5 text-pink-500" /> Required Skills
-                    </CardTitle>
-                    <CardDescription>Skills needed for operators on this engagement</CardDescription>
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                {categories.map(cat => (
-                    <div key={cat.id} className="space-y-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color ?? '#6366f1' }} />
-                            <span className="text-sm font-semibold text-slate-300">{cat.name}</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pl-4">
-                            {cat.skills?.map(skill => {
-                                const selected = localSkills[skill.id] !== undefined;
-                                const level    = localSkills[skill.id] ?? 0;
-                                return (
-                                    <div
-                                        key={skill.id}
-                                        className={cn(
-                                            'rounded-lg border p-3 cursor-pointer transition-all select-none',
-                                            selected ? 'border-pink-500/40 bg-pink-500/5' : 'border-slate-800 bg-slate-900/30 hover:border-slate-700'
-                                        )}
-                                        onClick={() => toggleSkill(skill.id)}
-                                    >
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className={cn('text-sm font-medium', selected ? 'text-white' : 'text-slate-400')}>
-                                                {skill.name}
-                                            </span>
-                                            <div className={cn('w-4 h-4 rounded border transition-all shrink-0', selected ? 'bg-pink-600 border-pink-500' : 'border-slate-600')} />
-                                        </div>
-                                        {selected && (
-                                            <div className="mt-2 space-y-1" onClick={e => e.stopPropagation()}>
-                                                <Label className="text-[10px] text-slate-500 uppercase tracking-wider">
-                                                    Min Level:{' '}
-                                                    <span className={SKILL_LEVELS[level]?.color || 'text-pink-400'}>
-                                                        {SKILL_LEVELS[level]?.label || level}
-                                                    </span>
-                                                </Label>
-                                                <input type="range" min={0} max={3} value={level}
-                                                    onChange={e => setMinLevel(skill.id, parseInt(e.target.value))}
-                                                    className="w-full accent-pink-500 h-1" />
-                                            </div>
+        <div className="space-y-4">
+            <div className="flex items-center gap-2">
+                <Radar className="h-5 w-5 text-pink-500" />
+                <h2 className="text-lg font-semibold text-white">Required Skills</h2>
+                <p className="text-sm text-slate-400 ml-2">Skills needed for operators on this engagement</p>
+            </div>
+
+            {categories.map((cat) => (
+                <Card key={cat.id} className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-white text-base flex items-center gap-2">
+                            <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: cat.color || '#6366f1' }}
+                            />
+                            {cat.name}
+                            <span className="text-xs text-slate-600 font-normal">
+                                {cat.skills?.length ?? 0} skills
+                            </span>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {cat.skills?.map((skill) => {
+                            const level = localSkills[skill.id] ?? 0;
+                            return (
+                                <div
+                                    key={skill.id}
+                                    className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-800/40 transition-colors"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <span className="text-sm text-white font-medium">{skill.name}</span>
+                                        {skill.description && (
+                                            <p className="text-xs text-slate-600 truncate">{skill.description}</p>
                                         )}
                                     </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                ))}
-            </CardContent>
-        </Card>
+                                    <div className="flex items-center gap-1 shrink-0 ml-4">
+                                        {SKILL_LEVELS.map((lvl) => {
+                                            const isActive = level === lvl.value;
+                                            return (
+                                                <button
+                                                    key={lvl.value}
+                                                    type="button"
+                                                    onClick={() => setLevel(skill.id, lvl.value)}
+                                                    className={cn(
+                                                        'px-2.5 py-1 rounded-md text-xs font-medium transition-all border',
+                                                        isActive
+                                                            ? lvl.value === 0
+                                                                ? 'bg-slate-700 border-slate-600 text-slate-300'
+                                                                : lvl.value === 1
+                                                                    ? 'bg-blue-500/15 border-blue-500/30 text-blue-400'
+                                                                    : lvl.value === 2
+                                                                        ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                                                                        : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                                                            : 'bg-transparent border-slate-800 text-slate-600 hover:text-slate-400 hover:border-slate-700'
+                                                    )}
+                                                >
+                                                    {lvl.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </CardContent>
+                </Card>
+            ))}
+        </div>
     );
 }

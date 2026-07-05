@@ -58,6 +58,13 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        # Build metadata surfaced by /health. deploy_server.sh sets these
+        # via env before invoking docker compose build; when they're not
+        # set (raw ``docker compose build``), the Dockerfile defaults them
+        # to "" and the backend falls back to a ``git rev-parse`` probe.
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        BUILD_TIME: ${BUILD_TIME:-}
     image: redwire-backend:latest
     container_name: redwire-backend
     environment:

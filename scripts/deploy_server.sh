@@ -235,7 +235,15 @@ if [ "$OFFLINE" -eq 1 ]; then
     docker compose -f docker-compose.prod.yml up -d --no-build
 else
     echo "Building images (requires internet)..."
-    docker compose -f docker-compose.prod.yml build
+    # Bake build metadata into the image so /health can report exactly
+    # what's live. GIT_COMMIT falls back to "unknown" when the deploy
+    # tree isn't a git clone (zip-based install); BUILD_TIME is always
+    # captured. Backend Dockerfile picks these up via ARG.
+    export GIT_COMMIT=$(git rev-parse --short=12 HEAD 2>/dev/null || echo "unknown")
+    export BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    docker compose -f docker-compose.prod.yml build \
+        --build-arg GIT_COMMIT="$GIT_COMMIT" \
+        --build-arg BUILD_TIME="$BUILD_TIME"
     docker compose -f docker-compose.prod.yml up -d
 fi
 

@@ -661,12 +661,53 @@ async def root():
     }
 
 
+# Build info computed once at boot. Version comes from backend/version.py;
+# git commit and build time come from Docker build args (set in
+# scripts/deploy_server.sh). In dev — where the args aren't set — we
+# fall back to running `git rev-parse HEAD` against the mounted source.
+def _resolve_build_info() -> dict:
+    import subprocess
+    from version import VERSION as _VER
+
+    commit = os.getenv("GIT_COMMIT") or ""
+    if not commit:
+        # Best-effort dev fallback. Runs once, in the container's mounted
+        # source tree if the repo is bind-mounted (dev compose). Failures
+        # are silent — "unknown" is a fine sentinel.
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--short=12", "HEAD"],
+                capture_output=True, text=True, timeout=2, cwd="/app",
+            )
+            if result.returncode == 0:
+                commit = result.stdout.strip()
+        except Exception:
+            pass
+    return {
+        "version": _VER,
+        "commit": commit or "unknown",
+        "build_time": os.getenv("BUILD_TIME") or "unknown",
+    }
+
+
+_BUILD_INFO = _resolve_build_info()
+
+
 @app.get("/health", tags=["health"])
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint.
+
+    Returns platform + build metadata so an operator (or the admin
+    About page) can confirm exactly what's live: semantic version from
+    ``version.py``, git commit short SHA from the build args
+    (``GIT_COMMIT`` / ``BUILD_TIME`` set in
+    ``scripts/deploy_server.sh``), or ``"unknown"`` when the args
+    weren't passed (dev without a bind-mounted repo, unusual builds).
+    """
     return {
         "status": "healthy",
-        "service": "redwire-api"
+        "service": "redwire-api",
+        **_BUILD_INFO,
     }
 
 @app.on_event("startup")
