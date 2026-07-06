@@ -66,7 +66,7 @@ import {
     Activity, FileText, Target, Shield, Users, TrendingUp, BarChart3, UserCheck,
     ClipboardCheck, Trash2, Briefcase, Clock, Zap, Building2,
 } from 'lucide-react';
-import { getAvatarUrl } from '@/lib/utils';
+import { AuthedImg } from '@/lib/hooks/use-authed-image';
 
 type TimeRange = '7d' | '30d' | '90d' | '180d' | 'custom';
 
@@ -791,7 +791,7 @@ export default function StatsPage() {
                                                         <td className="py-2.5 px-3">
                                                             <div className="flex items-center gap-2">
                                                                 {op.profile_photo ? (
-                                                                    <img src={getAvatarUrl(op.profile_photo)} className="h-6 w-6 rounded-full object-cover" alt="" />
+                                                                    <AuthedImg src={op.profile_photo} className="h-6 w-6 rounded-full object-cover" alt="" />
                                                                 ) : (
                                                                     <div className="h-6 w-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-bold">
                                                                         {initial}

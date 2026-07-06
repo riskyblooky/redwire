@@ -5,14 +5,6 @@ export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-export function getAvatarUrl(path: string | null | undefined): string | undefined {
-    if (!path) return undefined;
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    // Ensure no double slashes if path starts with slash
-    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-    return `${baseUrl}/${cleanPath}`;
-}
-
 /**
  * Parse a date string from the backend as UTC.
  * Backend timestamps are stored in UTC but may lack a Z suffix,

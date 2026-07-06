@@ -51,7 +51,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { cn, getAvatarUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { useAuthedImageUrl } from '@/lib/hooks/use-authed-image';
 import EngagementSelector from '@/components/engagement-selector';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { toast } from 'sonner';
@@ -99,6 +100,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     const router = useRouter();
     const { user, logout, mustChangePassword, clearMustChangePassword } = useAuthStore();
     const [collapsed, setCollapsed] = useState(false);
+    const navUserBlobUrl = useAuthedImageUrl(user?.profile_photo);
     const [hoverExpanded, setHoverExpanded] = useState(false);
     const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [headerSearch, setHeaderSearch] = useState('');
@@ -419,9 +421,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                 )}
                             >
                                 <Avatar className="h-8 w-8">
-                                    {user?.profile_photo ? (
+                                    {navUserBlobUrl ? (
                                         <AvatarImage
-                                            src={getAvatarUrl(user.profile_photo)}
+                                            src={navUserBlobUrl}
                                             alt={user?.full_name || user?.username}
                                         />
                                     ) : null}

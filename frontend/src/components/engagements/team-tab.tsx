@@ -13,12 +13,12 @@
 
 import { useState } from 'react';
 import { Users, Mail, Check } from 'lucide-react';
-import { cn, getAvatarUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 
 interface TeamTabProps {
@@ -103,14 +103,7 @@ export function TeamTab({ engagement, canManageMembers, onOpenTeamDialog }: Team
                                     <TableRow key={assignment.user_id} className="border-slate-800 hover:bg-slate-800/30">
                                         <TableCell className="font-medium text-slate-200">
                                             <div className="flex items-center gap-3">
-                                                <Avatar className="h-8 w-8">
-                                                    {u?.profile_photo && (
-                                                        <AvatarImage src={getAvatarUrl(u.profile_photo)} alt={displayName} />
-                                                    )}
-                                                    <AvatarFallback className="bg-linear-to-br from-purple-500 to-pink-500 text-white text-[10px] font-bold">
-                                                        {initials}
-                                                    </AvatarFallback>
-                                                </Avatar>
+                                                <UserAvatar user={u} className="h-8 w-8" />
                                                 {displayName}
                                             </div>
                                         </TableCell>

@@ -83,7 +83,7 @@ import {
     ResponsiveContainer
 } from 'recharts';
 
-import { cn, getAvatarUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useEngagement, useDeleteEngagement, useUpdateEngagement } from '@/lib/hooks/use-engagements';
 import { useAssets, useUpdateAsset, useDeleteAsset, useAssetPortFilters } from '@/lib/hooks/use-assets';

@@ -23,7 +23,7 @@ import {
     Activity as ActivityIcon, History as HistoryIcon,
     Upload,
 } from 'lucide-react';
-import { cn, getAvatarUrl, parseUTCDate } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useFindingsTimeline } from '@/lib/hooks/use-stats';
 import { useTestCases } from '@/lib/hooks/use-testcases';
@@ -43,7 +43,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
     ResponsiveContainer,
     AreaChart,
@@ -363,10 +362,7 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                                         const isLeadRole = assignment.role?.name === 'Engagement Lead' || u?.role === 'admin' || u?.role === 'team_lead';
                                         return (
                                             <div key={assignment.user_id} className="flex items-center gap-3">
-                                                <Avatar className="h-8 w-8 border border-slate-700">
-                                                    {u?.profile_photo && <AvatarImage src={getAvatarUrl(u.profile_photo)} alt={displayName} />}
-                                                    <AvatarFallback className="bg-slate-800 text-slate-300 text-[10px] font-bold">{initials}</AvatarFallback>
-                                                </Avatar>
+                                                <UserAvatar user={u} className="h-8 w-8 border border-slate-700" />
                                                 <div className="overflow-hidden">
                                                     <p className="text-sm text-white font-medium truncate">{displayName}</p>
                                                     <p className="text-[11px] text-slate-500 truncate flex items-center gap-1.5">

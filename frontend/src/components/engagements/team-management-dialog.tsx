@@ -23,9 +23,9 @@ import { useEngagementRoles } from '@/lib/hooks/use-rbac';
 import { useUpdateEngagement, Engagement } from '@/lib/hooks/use-engagements';
 import { UserPlus, Trash2, Shield, Loader2, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { cn, getAvatarUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 interface TeamManagementDialogProps {
     engagement: Engagement;
@@ -134,14 +134,15 @@ export function TeamManagementDialog({ engagement, open, onOpenChange }: TeamMan
                                         key={index}
                                         className="flex items-center gap-3 p-3 rounded-xl border border-slate-800 bg-slate-900/40 group transition-all hover:border-slate-700"
                                     >
-                                        <Avatar className="h-9 w-9">
-                                            {user?.profile_photo && (
-                                                <AvatarImage src={getAvatarUrl(user.profile_photo)} alt={user.full_name || user.username} />
-                                            )}
-                                            <AvatarFallback className="bg-slate-800 text-slate-400 border border-slate-700">
-                                                <User className="h-5 w-5" />
-                                            </AvatarFallback>
-                                        </Avatar>
+                                        <UserAvatar
+                                            user={user ? {
+                                                id: user.id,
+                                                username: user.username,
+                                                full_name: user.full_name,
+                                                profile_photo: user.profile_photo,
+                                            } : undefined}
+                                            className="h-9 w-9"
+                                        />
 
                                         <div className="flex-1 grid grid-cols-2 gap-3 mt-1">
                                             <div className="space-y-1">

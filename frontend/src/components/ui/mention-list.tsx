@@ -6,7 +6,7 @@ import React, {
     useImperativeHandle,
     useState,
 } from 'react';
-import { getAvatarUrl } from '@/lib/utils';
+import { AuthedImg } from '@/lib/hooks/use-authed-image';
 
 export interface MentionSuggestionItem {
     id: string;
@@ -79,8 +79,8 @@ const MentionList = forwardRef<MentionListRef, MentionListProps>(
                             }`}
                     >
                         {item.profile_photo ? (
-                            <img
-                                src={getAvatarUrl(item.profile_photo)}
+                            <AuthedImg
+                                src={item.profile_photo}
                                 alt={item.username}
                                 className="h-6 w-6 rounded-full object-cover shrink-0"
                             />

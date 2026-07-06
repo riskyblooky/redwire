@@ -5,7 +5,34 @@ import { PresenceUser } from '@/lib/hooks/use-collaboration';
 import { useAuthStore } from '@/stores/auth-store';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { getAvatarUrl } from '@/lib/utils';
+import { useAuthedImageUrl } from '@/lib/hooks/use-authed-image';
+
+/** Auth-fetches the user's profile photo and renders it inside the
+ *  standard Radix Avatar shell. Extracted because hooks can't be called
+ *  inside `.map()` — this component gives every mapped user its own
+ *  useAuthedImageUrl() call. */
+function PresenceAvatar({
+    user, bgColor, initials,
+}: {
+    user: PresenceUser;
+    bgColor: string;
+    initials: string;
+}) {
+    const blobUrl = useAuthedImageUrl(user.profile_photo);
+    return (
+        <Avatar className="h-7 w-7 ring-2 ring-slate-950 transition-all group-hover:z-30 group-hover:scale-110 shadow-lg">
+            {blobUrl ? (
+                <AvatarImage src={blobUrl} alt={user.full_name || user.username || 'User'} />
+            ) : null}
+            <AvatarFallback
+                className="text-white text-[10px] font-bold border border-white/10"
+                style={{ backgroundColor: bgColor }}
+            >
+                {initials}
+            </AvatarFallback>
+        </Avatar>
+    );
+}
 
 interface PresenceIndicatorProps {
     users: PresenceUser[];
@@ -81,20 +108,11 @@ export function PresenceIndicator({ users, maxDisplay = 5 }: PresenceIndicatorPr
                         <Tooltip key={user.id}>
                             <TooltipTrigger asChild>
                                 <div className="relative group cursor-default">
-                                    <Avatar className="h-7 w-7 ring-2 ring-slate-950 transition-all group-hover:z-30 group-hover:scale-110 shadow-lg">
-                                        {user.profile_photo ? (
-                                            <AvatarImage
-                                                src={getAvatarUrl(user.profile_photo)}
-                                                alt={user.full_name || user.username || 'User'}
-                                            />
-                                        ) : null}
-                                        <AvatarFallback
-                                            className="text-white text-[10px] font-bold border border-white/10"
-                                            style={{ backgroundColor: getHexColor(user.id) }}
-                                        >
-                                            {getInitials(user)}
-                                        </AvatarFallback>
-                                    </Avatar>
+                                    <PresenceAvatar
+                                        user={user}
+                                        bgColor={getHexColor(user.id)}
+                                        initials={getInitials(user)}
+                                    />
                                     <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full ring-1 ring-slate-950 bg-green-500 shadow-xs" />
                                 </div>
                             </TooltipTrigger>

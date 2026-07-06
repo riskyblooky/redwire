@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { getAvatarUrl } from '@/lib/utils';
 import { User } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { useAuthedImageUrl } from '@/lib/hooks/use-authed-image';
 
 export interface UserAvatarProps {
     user?: Partial<User> | null;
@@ -18,6 +18,9 @@ export function UserAvatar({ user, userId, username, className }: UserAvatarProp
     const id = user?.id || userId || 'unknown';
     const name = user?.username || user?.full_name || username || '??';
     const profilePhoto = user?.profile_photo;
+    // Post-GHSA-h77m /uploads/* is auth-only; use the shared blob-fetch hook
+    // so Radix's <AvatarImage> gets a src it can actually load.
+    const blobUrl = useAuthedImageUrl(profilePhoto);
 
     const getInitials = (name: string) => {
         if (!name) return '??';
@@ -56,9 +59,9 @@ export function UserAvatar({ user, userId, username, className }: UserAvatarProp
 
     return (
         <Avatar className={cn("h-8 w-8 ring-2 ring-slate-950 shadow-lg", className)}>
-            {profilePhoto ? (
+            {blobUrl ? (
                 <AvatarImage
-                    src={getAvatarUrl(profilePhoto)}
+                    src={blobUrl}
                     alt={name}
                 />
             ) : null}

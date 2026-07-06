@@ -29,6 +29,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/dashboard-layout';
+import { useAuthedImageUrl } from '@/lib/hooks/use-authed-image';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -342,10 +343,9 @@ export default function ProfilePage() {
 
     const { setUser } = useAuthStore();
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const photoUrl = user?.profile_photo
-        ? `${API_URL}/${user.profile_photo}`
-        : null;
+    // /uploads/* is auth-only (GHSA-h77m). Fetch the bytes through the
+    // shared hook so <img src> gets a usable blob: URL.
+    const photoUrl = useAuthedImageUrl(user?.profile_photo);
 
     return (
         <DashboardLayout>

@@ -34,7 +34,7 @@ import { useTeamAvailability } from '@/lib/hooks/use-calendar';
 import { useEngagements, useUpdateEngagement } from '@/lib/hooks/use-engagements';
 import { useEngagementRoles } from '@/lib/hooks/use-rbac';
 import { useEngagementSkills, useFocusFit, SKILL_LEVELS, type EngagementSkill } from '@/lib/hooks/use-skills';
-import { getAvatarUrl } from '@/lib/utils';
+import { AuthedImg } from '@/lib/hooks/use-authed-image';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
 import {
@@ -552,8 +552,8 @@ export function SchedulingAssistant({
                                 >
                                     {/* Profile Photo / Avatar */}
                                     {member.user.profile_photo ? (
-                                        <img
-                                            src={getAvatarUrl(member.user.profile_photo)}
+                                        <AuthedImg
+                                            src={member.user.profile_photo}
                                             alt={member.user.full_name || member.user.username}
                                             className="h-8 w-8 rounded-full object-cover shrink-0 ring-1 ring-slate-700"
                                         />
