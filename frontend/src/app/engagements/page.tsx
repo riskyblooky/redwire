@@ -563,7 +563,6 @@ export default function EngagementsPage() {
                             <Briefcase className="h-8 w-8 text-primary" />
                             Engagements
                         </h1>
-                        <p className="text-slate-400 mt-1">Manage security testing engagements and projects</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <input

@@ -196,11 +196,11 @@ export default function StatsPage() {
                             <h1 className="text-3xl font-bold text-white tracking-tight">
                                 {selectedEngagement ? `${selectedEngagement.name} Analytics` : 'Operations Analytics'}
                             </h1>
-                            <p className="text-slate-400 text-sm">
-                                {selectedEngagement
-                                    ? `Metrics for ${selectedEngagement.client_name}`
-                                    : 'Comprehensive metrics dashboard for red team operations'}
-                            </p>
+                            {selectedEngagement && (
+                                <p className="text-slate-400 text-sm">
+                                    Metrics for {selectedEngagement.client_name}
+                                </p>
+                            )}
                         </div>
                     </div>
 

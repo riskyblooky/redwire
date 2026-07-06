@@ -180,9 +180,6 @@ export default function TagsPage() {
                             </div>
                             Tags
                         </h1>
-                        <p className="text-slate-400 mt-1">
-                            Manage tags for categorizing and labeling items
-                        </p>
                     </div>
                     {!canManage && (
                         <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 gap-1.5">

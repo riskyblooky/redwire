@@ -267,7 +267,6 @@ export default function FindingsPage() {
                             <Bug className="h-8 w-8 text-red-500" />
                             Findings
                         </h1>
-                        <p className="text-slate-400 mt-1">Manage and track security vulnerabilities</p>
                     </div>
                     {/* Note: Create button shown for all users - engagement selection happens on create page */}
                     <Button onClick={() => router.push('/findings/new')} className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/20">

@@ -232,7 +232,6 @@ export default function TestCasesPage() {
                             <CheckSquare className="h-8 w-8 text-primary" />
                             Test Cases
                         </h1>
-                        <p className="text-slate-400 mt-1">Track security testing checklists and results</p>
                     </div>
                     <Button onClick={() => router.push('/testcases/new')} className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20">
                         <Plus className="h-4 w-4 mr-2" />

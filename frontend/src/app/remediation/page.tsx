@@ -295,7 +295,6 @@ export default function RemediationPage() {
                         </div>
                         <div>
                             <h1 className="text-3xl font-bold text-white">Remediation</h1>
-                            <p className="text-slate-400 text-sm mt-0.5">Track and manage vulnerability remediation across engagements</p>
                         </div>
                     </div>
                 </div>

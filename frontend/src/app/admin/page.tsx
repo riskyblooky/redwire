@@ -247,9 +247,6 @@ export default function AdminPage() {
                             <Shield className="h-8 w-8 text-indigo-500" />
                             Admin Console
                         </h1>
-                        <p className="text-slate-400 mt-1">
-                            Manage users, groups, permissions, and platform settings.
-                        </p>
                     </div>
                 </div>
 

@@ -93,7 +93,6 @@ export default function ReportsPage() {
                             <FileText className="h-8 w-8 text-green-500" />
                             Reporting Center
                         </h1>
-                        <p className="text-slate-400 mt-1">Generate professional documentation for your operations</p>
                     </div>
                 </div>
 

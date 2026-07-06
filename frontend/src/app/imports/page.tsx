@@ -286,9 +286,6 @@ export default function ImportsPage() {
                             </div>
                             Import Scanner Output
                         </h1>
-                        <p className="text-slate-500 mt-1 text-sm ml-12">
-                            Import assets and findings from Nessus, Burp Suite, Nuclei, Nmap, and more
-                        </p>
                     </div>
                     <StepIndicator current={step} />
                 </div>

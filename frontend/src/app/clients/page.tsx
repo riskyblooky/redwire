@@ -527,7 +527,6 @@ export default function ClientsPage() {
                             <Building2 className="h-8 w-8 text-primary" />
                             Client Registry
                         </h1>
-                        <p className="text-slate-400 mt-1">Manage your client hierarchy and organization structure</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <Button

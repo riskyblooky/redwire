@@ -251,7 +251,6 @@ export default function AssetsPage() {
                             <Server className="h-8 w-8 text-primary" />
                             Assets
                         </h1>
-                        <p className="text-slate-400 mt-1">Manage target systems and infrastructure</p>
                     </div>
                     <Button onClick={handleCreate} className="bg-primary hover:bg-primary/90 text-white">
                         <Plus className="h-4 w-4 mr-2" />

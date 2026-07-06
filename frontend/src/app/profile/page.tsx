@@ -354,7 +354,6 @@ export default function ProfilePage() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold text-white tracking-tight">User Profile</h1>
-                        <p className="text-slate-400 mt-1">Manage your account settings, skills, and preferences</p>
                     </div>
                 </div>
 

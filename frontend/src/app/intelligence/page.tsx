@@ -235,7 +235,6 @@ export default function IntelligencePage() {
                         </div>
                         <div>
                             <h1 className="text-3xl font-bold text-white">Intelligence</h1>
-                            <p className="text-slate-400 text-sm">Threat intel, CVEs, advisories, and security research</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">

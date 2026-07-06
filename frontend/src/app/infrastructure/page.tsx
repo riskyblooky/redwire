@@ -1026,7 +1026,6 @@ export default function InfrastructurePage() {
                         </div>
                         <div>
                             <h1 className="text-2xl font-black text-white tracking-tight">Infrastructure</h1>
-                            <p className="text-sm text-slate-500">Red team assets, C2 servers, and points of presence</p>
                         </div>
                     </div>
                     {canCreate && (
