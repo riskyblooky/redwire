@@ -55,6 +55,7 @@ import {
 } from '@/lib/hooks/use-entity-links';
 import { Link as LinkIcon } from 'lucide-react';
 import { apiErrorMessage } from '@/lib/api';
+import { MarkdownPreview } from '@/components/ui/markdown-editor';
 
 const assetTypeColors: Record<string, string> = {
     IP_ADDRESS: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -296,11 +297,9 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                             <FileText className="h-5 w-5 text-primary" />
                                             <h3 className="text-xl font-bold tracking-tight">Description</h3>
                                         </div>
-                                        <div className="prose prose-invert max-w-none prose-slate">
-                                            <p className="text-slate-300 leading-relaxed">
-                                                {asset.description || <span className="text-slate-600 italic">No description provided</span>}
-                                            </p>
-                                        </div>
+                                        {asset.description
+                                            ? <MarkdownPreview value={asset.description} />
+                                            : <p className="text-slate-600 italic">No description provided</p>}
                                     </section>
 
                                     {asset.notes && (
@@ -314,9 +313,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                                     <h3 className="text-xl font-bold tracking-tight">Internal Notes</h3>
                                                 </div>
                                                 <div className="bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
-                                                    <pre className="text-sm text-slate-300 whitespace-pre-wrap font-sans leading-relaxed">
-                                                        {asset.notes}
-                                                    </pre>
+                                                    <MarkdownPreview value={asset.notes} />
                                                 </div>
                                             </section>
                                         </>

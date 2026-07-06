@@ -32,6 +32,7 @@ import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { useDeleteEngagement } from '@/lib/hooks/use-engagements';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { EngagementSkillsOverviewCard } from '@/components/engagements/engagement-skills-overview-card';
 
 import { formatDistanceToNow } from 'date-fns';
@@ -395,20 +396,28 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                 <div className="md:col-span-2 space-y-6">
                     <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs overflow-hidden border-l-4 border-l-primary/40">
                         <CardHeader><CardTitle className="text-lg font-bold text-white">Project Description</CardTitle></CardHeader>
-                        <CardContent><p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">{engagement.description || 'No description provided for this engagement.'}</p></CardContent>
+                        <CardContent>
+                            {engagement.description
+                                ? <MarkdownPreview value={engagement.description} />
+                                : <p className="text-slate-400 text-sm italic">No description provided for this engagement.</p>}
+                        </CardContent>
                     </Card>
 
                     <div className="grid gap-6 md:grid-cols-2">
                         <Card className="border-slate-800 bg-slate-900/50 border-t-2 border-t-blue-500/20">
                             <CardHeader className="pb-2"><CardTitle className="text-sm font-bold text-blue-400 uppercase tracking-tight">Scope</CardTitle></CardHeader>
-                            <CardContent><p className="text-slate-400 text-xs leading-relaxed italic">{engagement.scope || 'No specific scope defined.'}</p></CardContent>
+                            <CardContent>
+                                {engagement.scope
+                                    ? <MarkdownPreview value={engagement.scope} />
+                                    : <p className="text-slate-500 text-xs italic">No specific scope defined.</p>}
+                            </CardContent>
                         </Card>
                         <Card className="border-slate-800 bg-slate-900/50 border-t-2 border-t-green-500/20">
                             <CardHeader className="pb-2"><CardTitle className="text-sm font-bold text-green-400 uppercase tracking-tight">Objectives</CardTitle></CardHeader>
                             <CardContent>
-                                <ul className="text-slate-400 text-xs space-y-2">
-                                    {engagement.objectives ? engagement.objectives.split('\n').map((obj: string, i: number) => (<li key={i} className="flex gap-2"><span className="text-green-500">•</span>{obj}</li>)) : (<li>• No objectives defined.</li>)}
-                                </ul>
+                                {engagement.objectives
+                                    ? <MarkdownPreview value={engagement.objectives} />
+                                    : <p className="text-slate-500 text-xs italic">No objectives defined.</p>}
                             </CardContent>
                         </Card>
                     </div>
