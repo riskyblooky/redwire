@@ -35,7 +35,6 @@ import {
     GanttChart,
     Radar,
     Server,
-    Upload,
     Plug,
 } from 'lucide-react';
 import { getPluginIcon } from '@/lib/plugin-icons';
@@ -83,7 +82,6 @@ const navItems: NavItem[] = [
     { title: 'Stats', href: '/stats', icon: BarChart },
     { title: 'Remediation', href: '/remediation', icon: ClipboardCheck },
     { title: 'Intelligence', href: '/intelligence', icon: Radar },
-    { title: 'Import', href: '/imports', icon: Upload },
     { title: 'Infrastructure', href: '/infrastructure', icon: Server },
     { title: 'Templates', href: '/templates', icon: BookOpen },
     { title: 'Tags', href: '/tags', icon: Tags },
