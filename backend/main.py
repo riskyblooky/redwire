@@ -22,6 +22,10 @@ from utils.event_bus import event_bus
 
 # OpenAPI tag descriptions for /docs
 openapi_tags = [
+    # ── Meta ──────────────────────────────────────────────────────────
+    {"name": "root", "description": "Service root — returns basic identity information for the running instance"},
+    {"name": "health", "description": "Liveness probe reporting version, git commit, and build time from the deployed image"},
+
     # ── Core ──────────────────────────────────────────────────────────
     {"name": "authentication", "description": "Login, registration, token refresh, logout, 2FA (TOTP), and SAML SSO"},
     {"name": "users", "description": "User profile and account management"},
@@ -39,11 +43,12 @@ openapi_tags = [
     {"name": "vault", "description": "Secure credential and secret storage within engagements"},
     {"name": "cleanup-artifacts", "description": "Post-engagement cleanup item tracking and remediation"},
     {"name": "evidence", "description": "Evidence file uploads and management for findings"},
+    {"name": "markdown-images", "description": "Inline image uploads for markdown-embedded images in notes, findings, and test cases"},
     {"name": "discussions", "description": "Threaded discussions on findings and test cases"},
     {"name": "tags", "description": "Finding tags and categorization labels"},
 
     # ── Reporting ────────────────────────────────────────────────────
-    {"name": "reports", "description": "Report generation and export (PDF, DOCX)"},
+    {"name": "reports", "description": "Report generation and export (PDF, JSON archive)"},
     {"name": "report-layouts", "description": "Per-engagement report section layouts and ordering"},
     {"name": "report-layout-templates", "description": "Reusable report layout templates"},
     {"name": "report-themes", "description": "Report visual themes and branding customization"},
@@ -63,7 +68,9 @@ openapi_tags = [
     # ── Intelligence & Search ────────────────────────────────────────
     {"name": "search", "description": "Global cross-resource search across engagements, findings, assets, and more"},
     {"name": "attack-graph", "description": "Attack path graph visualization data and MITRE ATT&CK mapping"},
+    {"name": "attack", "description": "MITRE ATT&CK technique catalog lookup and enumeration"},
     {"name": "wordlist", "description": "Password and wordlist management for credential testing"},
+    {"name": "spray", "description": "Password-spraying job orchestration and results tracking"},
     {"name": "intelligence", "description": "Threat intelligence feeds, CVEs, advisories, and intel-to-engagement linking"},
     {"name": "infrastructure", "description": "Red team infrastructure and asset tracking for C2, VPS, redirectors, and point of presence"},
     {"name": "skills", "description": "Skill categories, individual skills, user proficiency, and engagement skill requirements"},
@@ -76,7 +83,7 @@ openapi_tags = [
     {"name": "dashboard", "description": "Dashboard widget definitions and user layout customization"},
 
     # ── Automation & Notifications ───────────────────────────────────
-    {"name": "automations", "description": "Automation rules, triggers, and event-driven actions"},
+    {"name": "automations", "description": "Automation rules and event-driven actions. Two scopes: org-wide rules (admin-curated) and per-user personal rules (owner-scoped, notify-self only)"},
     {"name": "notifications", "description": "User notifications, preferences, and unread counts"},
 
     # ── AI ────────────────────────────────────────────────────────────
