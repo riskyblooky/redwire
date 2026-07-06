@@ -2,12 +2,42 @@
 LDAP authentication module.
 Uses ldap3 to bind and search against an LDAP/Active Directory server.
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import logging
 import tempfile
 import os
+import time
 
 logger = logging.getLogger(__name__)
+
+
+# ── Debug tracing ──────────────────────────────────────────────────────
+#
+# When the admin toggles ``ldap_debug_enabled`` on, the auth path (and
+# the /test endpoint) build a step-by-step ``trace`` list — one entry per
+# meaningful action (resolve TLS, open server, bind service account,
+# search user, bind user). Passwords are never included in trace entries;
+# bind DNs and search filters are surfaced verbatim so misconfigured
+# search bases or filter templates are obvious.
+#
+# The trace is returned from ``test_ldap_connection`` and logged (at INFO)
+# from ``authenticate_ldap`` so operators debugging a real login attempt
+# can grep ``[LDAP DEBUG]`` in the container logs.
+
+
+def _now_ms() -> float:
+    return time.monotonic() * 1000.0
+
+
+def _trace_step(trace: Optional[List[Dict[str, Any]]], step: str, ok: bool,
+                message: str, started_ms: Optional[float] = None) -> None:
+    """Append a trace step if ``trace`` is not None (i.e. debug is on)."""
+    if trace is None:
+        return
+    entry: Dict[str, Any] = {"step": step, "ok": ok, "message": message}
+    if started_ms is not None:
+        entry["elapsed_ms"] = round(_now_ms() - started_ms, 2)
+    trace.append(entry)
 
 
 def _escape_ldap_filter(value: str) -> str:
@@ -83,6 +113,8 @@ def _open_server_and_connection(
     password: Optional[str],
     *,
     connect_timeout: Optional[int] = None,
+    trace: Optional[List[Dict[str, Any]]] = None,
+    bind_label: str = "bind",
 ):
     """Open a Server + Connection with the correct TLS mode.
 
@@ -110,6 +142,12 @@ def _open_server_and_connection(
     mode = _resolve_tls_mode(settings)
     server_url = settings["server_url"]
 
+    _trace_step(
+        trace, "resolve_tls_mode", True,
+        f"tls_mode={mode}, tls_verify={str(settings.get('tls_verify', 'true')).lower()!r}"
+        f", server_url={server_url!r}",
+    )
+
     server_kwargs: Dict[str, Any] = {"get_info": ALL}
     if connect_timeout is not None:
         server_kwargs["connect_timeout"] = connect_timeout
@@ -122,17 +160,37 @@ def _open_server_and_connection(
     # For starttls: connect + upgrade BEFORE binding, so the bind
     # password isn't leaked over plaintext.
     if mode == "starttls":
+        t0 = _now_ms()
         conn = Connection(server, user=user, password=password, auto_bind=False)
         if not conn.open():
+            _trace_step(trace, "open_socket", False, f"failed: {conn.result}", t0)
             raise RuntimeError(f"LDAP connect failed: {conn.result}")
+        _trace_step(trace, "open_socket", True, f"plain socket to {server_url}", t0)
+
+        t1 = _now_ms()
         if not conn.start_tls():
+            _trace_step(trace, "starttls", False, f"failed: {conn.result}", t1)
             raise RuntimeError(f"LDAP StartTLS failed: {conn.result}")
+        _trace_step(trace, "starttls", True, "TLS upgrade OK", t1)
+
+        t2 = _now_ms()
         if not conn.bind():
+            _trace_step(trace, bind_label, False,
+                        f"user={user!r} result={conn.result}", t2)
             raise RuntimeError(f"LDAP bind failed: {conn.result}")
+        _trace_step(trace, bind_label, True, f"user={user!r}", t2)
         return server, conn
 
     # ldaps or plain: single-step auto_bind is fine.
-    conn = Connection(server, user=user, password=password, auto_bind=True)
+    t0 = _now_ms()
+    try:
+        conn = Connection(server, user=user, password=password, auto_bind=True)
+    except Exception as exc:
+        _trace_step(trace, bind_label, False,
+                    f"user={user!r} error={exc.__class__.__name__}: {exc}", t0)
+        raise
+    _trace_step(trace, bind_label, True,
+                f"user={user!r} ({'ldaps' if mode == 'ldaps' else 'plain'})", t0)
     return server, conn
 
 
@@ -140,17 +198,27 @@ def authenticate_ldap(
     username: str,
     password: str,
     settings: Dict[str, str],
+    *,
+    debug: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     Authenticate a user against LDAP.
 
     Returns a dict with user info (username, email, full_name) on success,
     or None on failure.
+
+    When ``debug`` is True, a per-step trace is emitted at INFO with the
+    ``[LDAP DEBUG]`` prefix so operators can reconstruct what happened
+    (which step failed, how long each took, what search filter actually
+    hit the server). The trace never contains passwords.
     """
+    trace: Optional[List[Dict[str, Any]]] = [] if debug else None
     try:
         from ldap3 import SUBTREE
     except ImportError:
         logger.error("ldap3 package not installed")
+        _trace_step(trace, "import_ldap3", False, "ldap3 package missing")
+        _emit_trace(trace, username, ok=False)
         return None
 
     server_url = settings.get("server_url", "")
@@ -164,27 +232,39 @@ def authenticate_ldap(
 
     if not server_url or not search_base:
         logger.error("LDAP server_url or search_base not configured")
+        _trace_step(trace, "validate_settings", False,
+                    f"server_url={server_url!r} search_base={search_base!r}")
+        _emit_trace(trace, username, ok=False)
         return None
+    _trace_step(trace, "validate_settings", True,
+                f"search_base={search_base!r}, filter_template={search_filter!r}, "
+                f"username_attr={username_attr!r}")
 
     try:
         # Step 1: Bind with service account to search for user DN
         server, search_conn = _open_server_and_connection(
             settings, user=bind_dn, password=bind_password,
+            trace=trace, bind_label="bind_service",
         )
 
         # Escape username to prevent LDAP filter injection, then substitute
         safe_username = _escape_ldap_filter(username)
         actual_filter = search_filter.replace("{username}", safe_username)
+        t = _now_ms()
         search_conn.search(
             search_base=search_base,
             search_filter=actual_filter,
             search_scope=SUBTREE,
             attributes=[username_attr, email_attr, fullname_attr],
         )
+        _trace_step(trace, "search_user",
+                    len(search_conn.entries) > 0,
+                    f"filter={actual_filter!r} → {len(search_conn.entries)} entrie(s)", t)
 
         if not search_conn.entries:
             logger.info(f"LDAP user not found: {username}")
             search_conn.unbind()
+            _emit_trace(trace, username, ok=False)
             return None
 
         user_entry = search_conn.entries[0]
@@ -196,6 +276,7 @@ def authenticate_ldap(
         # the service bind above.
         _, user_conn = _open_server_and_connection(
             settings, user=user_dn, password=password,
+            trace=trace, bind_label="bind_user",
         )
         user_conn.unbind()
 
@@ -206,38 +287,78 @@ def authenticate_ldap(
         }
 
         logger.info(f"LDAP authentication successful for: {username}")
+        _emit_trace(trace, username, ok=True)
         return user_info
 
     except Exception as e:
         logger.warning(f"LDAP authentication failed for {username}: {e}")
+        _trace_step(trace, "auth_exception", False,
+                    f"{e.__class__.__name__}: {e}")
+        _emit_trace(trace, username, ok=False)
         return None
 
 
-def test_ldap_connection(settings: Dict[str, str]) -> Dict[str, Any]:
+def _emit_trace(trace: Optional[List[Dict[str, Any]]], username: str, *,
+                ok: bool) -> None:
+    """Log a captured trace to the standard logger. Prefixed so operators
+    can grep ``[LDAP DEBUG]`` in container logs."""
+    if not trace:
+        return
+    result = "SUCCESS" if ok else "FAILED"
+    logger.info("[LDAP DEBUG] %s auth for %r — %d step(s):", result, username, len(trace))
+    for step in trace:
+        marker = "✓" if step.get("ok") else "✗"
+        elapsed = f" ({step['elapsed_ms']}ms)" if "elapsed_ms" in step else ""
+        logger.info("[LDAP DEBUG]   %s %s%s: %s",
+                    marker, step.get("step"), elapsed, step.get("message"))
+
+
+def test_ldap_connection(settings: Dict[str, str], *,
+                         debug: bool = False) -> Dict[str, Any]:
     """
     Test LDAP connectivity and return status.
-    Returns {"success": bool, "message": str}
+
+    Returns ``{"success": bool, "message": str, "trace": [...]}`` when
+    ``debug`` is True; the ``trace`` key is omitted otherwise so we don't
+    surface implementation detail unless the admin explicitly asked for it
+    via the debug toggle.
     """
+    trace: Optional[List[Dict[str, Any]]] = [] if debug else None
     try:
         import ldap3  # noqa: F401
     except ImportError:
-        return {"success": False, "message": "ldap3 package not installed"}
+        _trace_step(trace, "import_ldap3", False, "ldap3 package missing")
+        return _test_response(False, "ldap3 package not installed", trace)
 
     server_url = settings.get("server_url", "")
     bind_dn = settings.get("bind_dn", "")
     bind_password = settings.get("bind_password", "")
 
     if not server_url:
-        return {"success": False, "message": "Server URL is required"}
+        _trace_step(trace, "validate_settings", False, "server_url is empty")
+        return _test_response(False, "Server URL is required", trace)
+    _trace_step(trace, "validate_settings", True,
+                f"server_url={server_url!r}, bind_dn={bind_dn!r}, "
+                f"bind_password={'set' if bind_password else 'empty'}")
 
     try:
         _, conn = _open_server_and_connection(
             settings, user=bind_dn, password=bind_password, connect_timeout=10,
+            trace=trace, bind_label="bind_service",
         )
         conn.unbind()
-        return {
-            "success": True,
-            "message": f"Successfully connected to {server_url} (tls_mode={_resolve_tls_mode(settings)})",
-        }
+        return _test_response(
+            True,
+            f"Successfully connected to {server_url} (tls_mode={_resolve_tls_mode(settings)})",
+            trace,
+        )
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        return _test_response(False, str(e), trace)
+
+
+def _test_response(success: bool, message: str,
+                   trace: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"success": success, "message": message}
+    if trace is not None:
+        out["trace"] = trace
+    return out

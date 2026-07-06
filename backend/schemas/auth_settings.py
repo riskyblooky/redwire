@@ -41,6 +41,11 @@ class LdapSettings(BaseModel):
     # Logged loudly at auth time.
     tls_verify: bool = True
     tls_ca_cert: Optional[str] = Field(None, max_length=JSON_BLOB)  # PEM CA certificate, None = keep existing
+    # When True, real logins log a per-step [LDAP DEBUG] trace to stdout
+    # and the Test Connection endpoint returns the same trace inline. Off
+    # by default; turn on temporarily while diagnosing a broken bind /
+    # filter / TLS handshake.
+    debug_enabled: bool = False
 
     @field_validator("tls_mode", mode="before")
     @classmethod

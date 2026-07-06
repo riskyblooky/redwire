@@ -30,6 +30,7 @@ LDAP_KEYS = [
     "ldap_email_attribute", "ldap_fullname_attribute",
     "ldap_tls_mode", "ldap_tls_verify", "ldap_tls_enabled",
     "ldap_tls_ca_cert",
+    "ldap_debug_enabled",
 ]
 SAML_KEYS = [
     "saml_enabled", "saml_idp_entity_id", "saml_idp_sso_url", "saml_idp_slo_url",
@@ -109,6 +110,7 @@ async def get_auth_settings(
         tls_mode=tls_mode_raw,
         tls_verify=raw.get("ldap_tls_verify", "true").lower() != "false",
         tls_ca_cert=_mask(raw.get("ldap_tls_ca_cert", "")),
+        debug_enabled=raw.get("ldap_debug_enabled", "false").lower() == "true",
     )
 
     saml = SamlSettings(
@@ -150,6 +152,7 @@ async def update_ldap_settings(
         # Also mirror to the legacy key so any external tooling / a rollback
         # to an older backend build still lands somewhere reasonable.
         "ldap_tls_enabled": "false" if settings.tls_mode == "none" else "true",
+        "ldap_debug_enabled": str(settings.debug_enabled).lower(),
     }
 
     # Only update password if a new value is provided (not None / not masked)
@@ -225,7 +228,8 @@ async def test_ldap(
         "tls_enabled": raw.get("ldap_tls_enabled", "true"),
         "tls_ca_cert": raw.get("ldap_tls_ca_cert", ""),
     }
-    return test_ldap_connection(settings_for_test)
+    debug = raw.get("ldap_debug_enabled", "false").lower() == "true"
+    return test_ldap_connection(settings_for_test, debug=debug)
 
 
 # ─── Splash Screen / Login Banner ─────────────────────────────────────────────

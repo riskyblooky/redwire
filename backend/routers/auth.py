@@ -283,7 +283,11 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
             "tls_enabled": auth_cfg.get("ldap_tls_enabled", "true"),
             "tls_ca_cert": auth_cfg.get("ldap_tls_ca_cert", ""),
         }
-        ldap_info = authenticate_ldap(credentials.username, credentials.password, ldap_settings)
+        ldap_debug = auth_cfg.get("ldap_debug_enabled", "false").lower() == "true"
+        ldap_info = authenticate_ldap(
+            credentials.username, credentials.password, ldap_settings,
+            debug=ldap_debug,
+        )
         if ldap_info:
             authenticated = True
             # JIT provision: create local user if they don't exist

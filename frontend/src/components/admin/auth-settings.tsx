@@ -17,6 +17,20 @@ interface LdapSettings {
     fullname_attribute: string;
     tls_mode: TlsMode;
     tls_verify: boolean;
+    debug_enabled: boolean;
+}
+
+interface LdapTraceStep {
+    step: string;
+    ok: boolean;
+    message: string;
+    elapsed_ms?: number;
+}
+
+interface LdapTestResult {
+    success: boolean;
+    message: string;
+    trace?: LdapTraceStep[];
 }
 
 interface SamlSettings {
@@ -46,6 +60,7 @@ const DEFAULT_LDAP: LdapSettings = {
     fullname_attribute: 'cn',
     tls_mode: 'ldaps',
     tls_verify: true,
+    debug_enabled: false,
 };
 
 const DEFAULT_SAML: SamlSettings = {
@@ -63,7 +78,7 @@ export function AuthSettingsManagement() {
     const [saml, setSaml] = useState<SamlSettings>(DEFAULT_SAML);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [testResult, setTestResult] = useState<LdapTestResult | null>(null);
     const [testingLdap, setTestingLdap] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [splash, setSplash] = useState({ enabled: false, title: '', message: '' });
@@ -369,6 +384,30 @@ export function AuthSettingsManagement() {
                                 </span>
                             </label>
                         )}
+
+                        <label className="flex items-start gap-2 text-sm text-foreground/80 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={ldap.debug_enabled}
+                                onChange={(e) => setLdap({ ...ldap, debug_enabled: e.target.checked })}
+                                className="mt-0.5 rounded bg-secondary border-border text-primary focus:ring-primary"
+                            />
+                            <span>
+                                Enable connection debugging
+                                {ldap.debug_enabled && (
+                                    <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                                        debug on
+                                    </span>
+                                )}
+                                <span className="block text-xs text-foreground/60 mt-0.5">
+                                    Emits a per-step <code className="text-[11px]">[LDAP DEBUG]</code> trace
+                                    (server URL, TLS mode, bind DN, actual filter, entry counts, timings)
+                                    on real logins to the backend log, and returns the same trace in the
+                                    Test Connection response. Passwords are never included. Turn off when
+                                    you're done — the logs get noisy.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     <div className="flex items-center gap-3 pt-4 border-t border-border/50">
@@ -392,6 +431,39 @@ export function AuthSettingsManagement() {
                             </span>
                         )}
                     </div>
+
+                    {testResult?.trace && testResult.trace.length > 0 && (
+                        <div className="mt-4 rounded-lg border border-border/60 bg-secondary/20">
+                            <div className="px-3 py-2 border-b border-border/60 flex items-center justify-between">
+                                <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
+                                    Connection trace
+                                </span>
+                                <span className="text-[10px] text-foreground/50">
+                                    {testResult.trace.length} step{testResult.trace.length === 1 ? '' : 's'}
+                                </span>
+                            </div>
+                            <ol className="divide-y divide-border/40 font-mono text-[11px]">
+                                {testResult.trace.map((step, i) => (
+                                    <li key={i} className="px-3 py-1.5 flex items-start gap-2">
+                                        <span className={step.ok ? 'text-green-400 shrink-0' : 'text-red-400 shrink-0'}>
+                                            {step.ok ? '✓' : '✗'}
+                                        </span>
+                                        <span className="text-primary shrink-0 min-w-[8rem]">
+                                            {step.step}
+                                        </span>
+                                        <span className="text-foreground/70 flex-1 break-all">
+                                            {step.message}
+                                        </span>
+                                        {step.elapsed_ms !== undefined && (
+                                            <span className="text-foreground/40 shrink-0">
+                                                {step.elapsed_ms.toFixed(1)}ms
+                                            </span>
+                                        )}
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+                    )}
                 </div>
             </div>
 
