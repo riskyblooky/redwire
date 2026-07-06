@@ -41,8 +41,13 @@ import {
 import {
     ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon,
     Loader2, Target, Clock, Trash2, Info, Users, Search, Eye,
-    TrendingUp, UserCheck, AlertTriangle, Activity, TreePalm,
+    UserCheck, AlertTriangle, Activity, TreePalm, GanttChart, LayoutGrid,
 } from 'lucide-react';
+import { PersonalGanttView } from '@/components/calendar/personal-gantt';
+import { DayView } from '@/components/calendar/day-view';
+import { WeekView } from '@/components/calendar/week-view';
+import { DayEventsPopover } from '@/components/calendar/day-events-popover';
+import { cn } from '@/lib/utils';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { toast } from 'sonner';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -62,13 +67,18 @@ import {
 
 import {
     format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
+    startOfDay, endOfDay,
     eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths,
-    parseISO, isWithinInterval, differenceInDays, isAfter, isBefore, addDays,
+    parseISO, isWithinInterval, isAfter, isBefore, addDays, subDays,
 } from 'date-fns';
 import { useCalendarFeed, useCreateCalendarEvent, useDeleteCalendarEvent, useTeamAvailability } from '@/lib/hooks/use-calendar';
 import { useAuthStore } from '@/stores/auth-store';
 
 // Phase styling — kept consistent with the planning page gantt
+// Month cells cap event tiles at this count; overflow rolls into the
+// "+N more…" popover. Chosen to match a 120px cell without wrapping.
+const MONTH_CAP = 3;
+
 const PHASE_STYLE: Record<string, { label: string; tile: string; sidebar: string }> = {
     SCOPING:     { label: 'Scoping',     tile: 'bg-cyan-500/10 border-cyan-500/20 text-cyan-300 border-l-cyan-500',         sidebar: 'bg-cyan-500/20 text-cyan-300' },
     PLANNING:    { label: 'Planning',    tile: 'bg-amber-500/10 border-amber-500/20 text-amber-300 border-l-amber-500',     sidebar: 'bg-amber-500/20 text-amber-300' },
@@ -96,14 +106,40 @@ export default function CalendarPage() {
             }
         },
     });
-    const [currentMonth, setCurrentMonth] = useState(new Date());
+    // `currentMonth` is a legacy name kept for the metrics strip that
+    // computes on a whole-month window regardless of the active view.
+    // `currentDate` is the reference date used for the visible view.
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const currentMonth = currentDate;
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState<any>(null);
     const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
     const [isMyCalendar, setIsMyCalendar] = useState(false);
+    const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'gantt'>('week');
+    // ISO date of the currently-open "+N more" popover in Month view. Only
+    // one popover open at a time; keying on the day string means Popover
+    // instances stay stable across the days.map() call.
+    const [popoverDayKey, setPopoverDayKey] = useState<string | null>(null);
 
-    const viewStart = startOfWeek(startOfMonth(currentMonth));
-    const viewEnd = endOfWeek(endOfMonth(currentMonth));
+    // Feed range adapts to the visible view.
+    //   day   → single day
+    //   week  → Mon-Fri (Work Week)
+    //   month → Sun-Sat spanning current month
+    //   gantt → 3-month sliding window
+    const viewStart = viewMode === 'day'
+        ? startOfDay(currentDate)
+        : viewMode === 'week'
+            ? startOfWeek(currentDate, { weekStartsOn: 1 })
+            : viewMode === 'month'
+                ? startOfWeek(startOfMonth(currentDate))
+                : startOfMonth(subMonths(currentDate, 1));
+    const viewEnd = viewMode === 'day'
+        ? endOfDay(currentDate)
+        : viewMode === 'week'
+            ? endOfDay(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 4))
+            : viewMode === 'month'
+                ? endOfWeek(endOfMonth(currentDate))
+                : endOfMonth(addMonths(currentDate, 1));
 
     // Compute effective filter: if "My Calendar" is active, override filter
     const effectiveFilterIds = isMyCalendar && currentUser?.id
@@ -148,9 +184,12 @@ export default function CalendarPage() {
         const availableCount = totalMembers - unavailable.size;
         const utilization = totalMembers > 0 ? Math.round((unavailable.size / totalMembers) * 100) : 0;
 
-        // Engagements this month (overlap with current visible month)
+        // Engagements this month (overlap with current visible month).
+        // Proposed engagements can land in the list with a null start_date —
+        // treat them as not-yet-scheduled and skip.
         const thisMonthEngs = allEngagements.filter(e => {
             if (e.status === 'completed' || e.status === 'cancelled') return false;
+            if (!e.start_date) return false;
             const start = parseISO(e.start_date);
             const end = e.end_date ? parseISO(e.end_date) : addDays(now, 365);
             return isBefore(start, monthEnd) && isAfter(end, monthStart);
@@ -169,8 +208,32 @@ export default function CalendarPage() {
 
     const days = eachDayOfInterval({ start: viewStart, end: viewEnd });
 
-    const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
-    const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+    // Prev/next step matches the visible view: day → 1 day, week → 7 days,
+    // month/gantt → 1 month.
+    const nextMonth = () => {
+        if (viewMode === 'day') setCurrentDate(addDays(currentDate, 1));
+        else if (viewMode === 'week') setCurrentDate(addDays(currentDate, 7));
+        else setCurrentDate(addMonths(currentDate, 1));
+    };
+    const prevMonth = () => {
+        if (viewMode === 'day') setCurrentDate(subDays(currentDate, 1));
+        else if (viewMode === 'week') setCurrentDate(subDays(currentDate, 7));
+        else setCurrentDate(subMonths(currentDate, 1));
+    };
+    const setCurrentMonth = (d: Date) => setCurrentDate(d);
+
+    // Header label — what the "Month nav" chip in the header says.
+    const navLabel = viewMode === 'day'
+        ? format(currentDate, 'MMM d, yyyy')
+        : viewMode === 'week'
+            ? (() => {
+                const mon = startOfWeek(currentDate, { weekStartsOn: 1 });
+                const fri = addDays(mon, 4);
+                return isSameMonth(mon, fri)
+                    ? `${format(mon, 'MMM d')} – ${format(fri, 'd, yyyy')}`
+                    : `${format(mon, 'MMM d')} – ${format(fri, 'MMM d, yyyy')}`;
+            })()
+            : format(currentDate, 'MMMM yyyy');
 
     const handleCreateEvent = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -219,11 +282,35 @@ export default function CalendarPage() {
                             <CalendarIcon className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-white tracking-tight">Ops Calendar</h1>
-                            <p className="text-slate-400 text-sm">Track engagements and operational deadlines</p>
+                            <h1 className="text-3xl font-bold text-white tracking-tight">Calendar</h1>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        {/* View mode: Day | Week | Month | Gantt */}
+                        <div className="flex bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+                            {([
+                                { id: 'day' as const, label: 'Day', icon: CalendarIcon },
+                                { id: 'week' as const, label: 'Week', icon: LayoutGrid },
+                                { id: 'month' as const, label: 'Month', icon: LayoutGrid },
+                                { id: 'gantt' as const, label: 'Gantt', icon: GanttChart },
+                            ]).map((mode, i) => (
+                                <button
+                                    key={mode.id}
+                                    onClick={() => setViewMode(mode.id)}
+                                    className={cn(
+                                        'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
+                                        i > 0 && 'border-l border-slate-800',
+                                        viewMode === mode.id
+                                            ? 'bg-primary/15 text-primary'
+                                            : 'text-slate-400 hover:text-white',
+                                    )}
+                                >
+                                    <mode.icon className="h-3.5 w-3.5" />
+                                    {mode.label}
+                                </button>
+                            ))}
+                        </div>
+
                         {/* View My Calendar button */}
                         <Button
                             variant={isMyCalendar ? 'default' : 'outline'}
@@ -249,14 +336,18 @@ export default function CalendarPage() {
                             </Badge>
                         )}
 
-                        {/* Month nav */}
+                        {/* Range nav — label + step scales with view */}
                         <div className="flex bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
                             <Button variant="ghost" size="icon" onClick={prevMonth} className="text-slate-400 hover:text-white border-r border-slate-800 rounded-none h-9 w-9">
                                 <ChevronLeft className="h-4 w-4" />
                             </Button>
-                            <div className="px-4 flex items-center justify-center font-medium text-white min-w-[150px] text-sm">
-                                {format(currentMonth, 'MMMM yyyy')}
-                            </div>
+                            <button
+                                onClick={() => setCurrentDate(new Date())}
+                                className="px-4 flex items-center justify-center font-medium text-white min-w-[180px] text-sm hover:bg-slate-800/50 transition-colors"
+                                title="Jump to today"
+                            >
+                                {navLabel}
+                            </button>
                             <Button variant="ghost" size="icon" onClick={nextMonth} className="text-slate-400 hover:text-white border-l border-slate-800 rounded-none h-9 w-9">
                                 <ChevronRight className="h-4 w-4" />
                             </Button>
@@ -358,8 +449,9 @@ export default function CalendarPage() {
                                                     key={eng.id}
                                                     value={`${eng.name} ${eng.client_name}`}
                                                     onSelect={() => {
-                                                        const startDate = parseISO(eng.start_date);
-                                                        setCurrentMonth(startDate);
+                                                        if (eng.start_date) {
+                                                            setCurrentMonth(parseISO(eng.start_date));
+                                                        }
                                                         setSelectedEvent({
                                                             id: eng.id,
                                                             title: `${eng.name} (${eng.client_name})`,
@@ -475,66 +567,117 @@ export default function CalendarPage() {
                 </div>
 
                 <div className="grid lg:grid-cols-4 gap-6">
-                    {/* Calendar Grid */}
                     <div className="lg:col-span-3">
-                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden relative">
+                        <div className="relative">
                             {isLoading && (
-                                <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-xs z-10 flex items-center justify-center">
+                                <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-xs z-10 flex items-center justify-center rounded-lg">
                                     <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
                                 </div>
                             )}
-                            <CardContent className="p-0">
-                                <div className="grid grid-cols-7 border-b border-slate-800 bg-slate-800/30">
-                                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                                        <div key={day} className="py-2 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">{day}</div>
-                                    ))}
-                                </div>
-                                <div className="grid grid-cols-7 border-slate-800 bg-slate-900/30">
-                                    {days.map((day) => {
-                                        const dayEvents = feed.filter(e => {
-                                            const start = parseISO(e.start.toString());
-                                            const end = parseISO(e.end.toString());
-                                            return isSameDay(start, day) || isWithinInterval(day, { start, end });
-                                        });
-                                        const isToday = isSameDay(day, new Date());
+                            {viewMode === 'day' && (
+                                <DayView
+                                    currentDate={currentDate}
+                                    feed={feed}
+                                    onSelect={setSelectedEvent}
+                                    selectedId={selectedEvent?.id ?? null}
+                                />
+                            )}
+                            {viewMode === 'week' && (
+                                <WeekView
+                                    currentDate={currentDate}
+                                    feed={feed}
+                                    onSelect={setSelectedEvent}
+                                    onJumpToDay={(d) => { setCurrentDate(d); setViewMode('day'); }}
+                                />
+                            )}
+                            {viewMode === 'gantt' && (
+                                <PersonalGanttView
+                                    currentMonth={currentDate}
+                                    feed={feed}
+                                    onSelect={setSelectedEvent}
+                                    selectedId={selectedEvent?.id ?? null}
+                                />
+                            )}
+                            {viewMode === 'month' && (
+                                <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
+                                    <CardContent className="p-0">
+                                        <div className="grid grid-cols-7 border-b border-slate-800 bg-slate-800/30">
+                                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                                                <div key={day} className="py-2 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">{day}</div>
+                                            ))}
+                                        </div>
+                                        <div className="grid grid-cols-7 border-slate-800 bg-slate-900/30">
+                                            {days.map((day) => {
+                                                const dayEvents = feed.filter(e => {
+                                                    const start = parseISO(e.start.toString());
+                                                    const end = parseISO(e.end.toString());
+                                                    return isSameDay(start, day) || isWithinInterval(day, { start, end });
+                                                });
+                                                const shown = dayEvents.slice(0, MONTH_CAP);
+                                                const hidden = dayEvents.length - shown.length;
+                                                const isToday = isSameDay(day, new Date());
+                                                const dayKey = day.toISOString();
+                                                const popoverIsOpen = popoverDayKey === dayKey;
 
-                                        return (
-                                            <div key={day.toString()} className={`min-h-[120px] p-2 border-r border-b border-slate-800 transition-colors hover:bg-slate-800/20 ${!isSameMonth(day, currentMonth) ? 'bg-slate-950/40 opacity-30 shadow-inner' : ''}`}>
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className={`text-sm font-black ${isToday ? 'bg-primary text-primary-foreground h-6 w-6 rounded-full flex items-center justify-center shadow-lg shadow-primary/40' : 'text-slate-500'}`}>
-                                                        {format(day, 'd')}
-                                                    </span>
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    {dayEvents.map(event => {
-                                                        const phaseStyle = event.type === 'engagement' && event.phase ? PHASE_STYLE[event.phase] : null;
-                                                        const tileClasses = event.type === 'engagement'
-                                                            ? (phaseStyle?.tile ?? ENGAGEMENT_DEFAULT_TILE)
-                                                            : event.type === 'ooo'
-                                                                ? 'bg-red-500/10 border-red-500/20 text-red-400 border-l-red-500'
-                                                                : 'bg-blue-500/10 border-blue-500/20 text-blue-400 border-l-blue-500';
-                                                        return (
-                                                            <div
-                                                                key={event.id}
-                                                                onClick={() => setSelectedEvent(event)}
-                                                                title={event.type === 'engagement' && event.phase ? `${event.title} — ${phaseStyle?.label ?? event.phase}` : event.title}
-                                                                className={`text-[10px] p-1.5 rounded-md border cursor-pointer hover:brightness-125 transition-all border-l-[3px] shadow-md ${tileClasses} truncate font-bold flex items-center gap-1.5`}
+                                                return (
+                                                    <div key={day.toString()} className={`min-h-[120px] p-2 border-r border-b border-slate-800 transition-colors hover:bg-slate-800/20 ${!isSameMonth(day, currentMonth) ? 'bg-slate-950/40 opacity-30 shadow-inner' : ''}`}>
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <button
+                                                                onClick={() => { setCurrentDate(day); setViewMode('day'); }}
+                                                                title="Jump to day view"
+                                                                className={`text-sm font-black transition-transform hover:scale-110 ${isToday ? 'bg-primary text-primary-foreground h-6 w-6 rounded-full flex items-center justify-center shadow-lg shadow-primary/40' : 'text-slate-500 hover:text-white'}`}
                                                             >
-                                                                {event.type === 'engagement' ? <Target className="h-2.5 w-2.5 shrink-0" /> : event.type === 'ooo' ? <TreePalm className="h-2.5 w-2.5 shrink-0" /> : <Clock className="h-2.5 w-2.5 shrink-0" />}
-                                                                <span className="truncate">{event.title}</span>
-                                                                {event.type === 'engagement' && event.phase && phaseStyle && (
-                                                                    <span className="ml-auto shrink-0 text-[8px] uppercase tracking-wider opacity-70">{phaseStyle.label}</span>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </CardContent>
-                        </Card>
+                                                                {format(day, 'd')}
+                                                            </button>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            {shown.map(event => {
+                                                                const phaseStyle = event.type === 'engagement' && event.phase ? PHASE_STYLE[event.phase] : null;
+                                                                const tileClasses = event.type === 'engagement'
+                                                                    ? (phaseStyle?.tile ?? ENGAGEMENT_DEFAULT_TILE)
+                                                                    : event.type === 'ooo'
+                                                                        ? 'bg-red-500/10 border-red-500/20 text-red-400 border-l-red-500'
+                                                                        : 'bg-blue-500/10 border-blue-500/20 text-blue-400 border-l-blue-500';
+                                                                return (
+                                                                    <div
+                                                                        key={event.id}
+                                                                        onClick={() => setSelectedEvent(event)}
+                                                                        title={event.type === 'engagement' && event.phase ? `${event.title} — ${phaseStyle?.label ?? event.phase}` : event.title}
+                                                                        className={`text-[10px] p-1.5 rounded-md border cursor-pointer hover:brightness-125 transition-all border-l-[3px] shadow-md ${tileClasses} truncate font-bold flex items-center gap-1.5`}
+                                                                    >
+                                                                        {event.type === 'engagement' ? <Target className="h-2.5 w-2.5 shrink-0" /> : event.type === 'ooo' ? <TreePalm className="h-2.5 w-2.5 shrink-0" /> : <Clock className="h-2.5 w-2.5 shrink-0" />}
+                                                                        <span className="truncate">{event.title}</span>
+                                                                        {event.type === 'engagement' && event.phase && phaseStyle && (
+                                                                            <span className="ml-auto shrink-0 text-[8px] uppercase tracking-wider opacity-70">{phaseStyle.label}</span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {hidden > 0 && (
+                                                                <DayEventsPopover
+                                                                    open={popoverIsOpen}
+                                                                    onOpenChange={o => setPopoverDayKey(o ? dayKey : null)}
+                                                                    day={day}
+                                                                    events={dayEvents}
+                                                                    onSelect={event => {
+                                                                        setSelectedEvent(event);
+                                                                        setPopoverDayKey(null);
+                                                                    }}
+                                                                >
+                                                                    <button className="w-full text-[10px] text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 rounded-md py-1 transition-colors">
+                                                                        +{hidden} more…
+                                                                    </button>
+                                                                </DayEventsPopover>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+                        </div>
                     </div>
 
                     {/* Inspector Sidebar */}
