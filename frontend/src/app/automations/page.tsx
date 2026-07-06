@@ -42,6 +42,7 @@ import { toast } from 'sonner';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import {
     useAutomations,
+    useMyPersonalAutomations,
     useTriggerTypes,
     useCreateAutomation,
     useUpdateAutomation,
@@ -53,6 +54,7 @@ import {
     AutomationAction,
     TriggerType,
 } from '@/lib/hooks/use-automations';
+import { PersonalRuleEditor } from '@/components/automations/personal-rule-editor';
 import { useUsers } from '@/lib/hooks/use-users';
 import { useTags } from '@/lib/hooks/use-tags';
 
@@ -886,16 +888,22 @@ function RuleEditor({
 // ── main page ────────────────────────────────────────────────────────
 
 export default function AutomationsPage() {
-    const { data: rules, isLoading } = useAutomations();
+    const { data: orgRules, isLoading: orgLoading } = useAutomations();
+    const { data: personalRules, isLoading: personalLoading } = useMyPersonalAutomations();
     const { data: triggers } = useTriggerTypes();
     const toggleRule = useToggleAutomation();
     const deleteRule = useDeleteAutomation();
     const triggerRule = useTriggerAutomation();
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
+    const [scope, setScope] = useState<'org' | 'personal'>('org');
     const [editorOpen, setEditorOpen] = useState(false);
+    const [personalEditorOpen, setPersonalEditorOpen] = useState(false);
     const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
     const [search, setSearch] = useState('');
+
+    const rules = scope === 'personal' ? personalRules : orgRules;
+    const isLoading = scope === 'personal' ? personalLoading : orgLoading;
 
     const filteredRules = (rules || []).filter(r =>
         r.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -905,8 +913,16 @@ export default function AutomationsPage() {
 
     const enabledCount = (rules || []).filter(r => r.is_enabled).length;
 
-    const handleCreate = () => { setEditingRule(null); setEditorOpen(true); };
-    const handleEdit = (rule: AutomationRule) => { setEditingRule(rule); setEditorOpen(true); };
+    const handleCreate = () => {
+        setEditingRule(null);
+        if (scope === 'personal') setPersonalEditorOpen(true);
+        else setEditorOpen(true);
+    };
+    const handleEdit = (rule: AutomationRule) => {
+        setEditingRule(rule);
+        if (rule.is_personal || rule.owner_user_id) setPersonalEditorOpen(true);
+        else setEditorOpen(true);
+    };
 
     const handleToggle = async (rule: AutomationRule) => {
         try {
@@ -958,8 +974,34 @@ export default function AutomationsPage() {
                     </div>
                     <Button onClick={handleCreate} className="bg-primary hover:bg-primary/90 text-white gap-2">
                         <Plus className="h-4 w-4" />
-                        New Rule
+                        {scope === 'personal' ? 'New Personal Rule' : 'New Rule'}
                     </Button>
+                </div>
+
+                {/* Scope tabs */}
+                <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit mb-4">
+                    <button
+                        onClick={() => { setScope('org'); setSearch(''); }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${scope === 'org'
+                            ? 'bg-primary/15 text-primary'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            }`}
+                    >
+                        <Shield className="h-4 w-4" />
+                        Org Rules
+                        <span className="text-[10px] text-slate-500">({(orgRules || []).length})</span>
+                    </button>
+                    <button
+                        onClick={() => { setScope('personal'); setSearch(''); }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${scope === 'personal'
+                            ? 'bg-primary/15 text-primary'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                            }`}
+                    >
+                        <Bell className="h-4 w-4" />
+                        My Rules
+                        <span className="text-[10px] text-slate-500">({(personalRules || []).length})</span>
+                    </button>
                 </div>
 
                 {/* Search */}
@@ -995,6 +1037,11 @@ export default function AutomationsPage() {
                 {editorOpen && (
                     <RuleEditor open={editorOpen}
                         onClose={() => { setEditorOpen(false); setEditingRule(null); }}
+                        editRule={editingRule} triggers={triggers || []} />
+                )}
+                {personalEditorOpen && (
+                    <PersonalRuleEditor open={personalEditorOpen}
+                        onClose={() => { setPersonalEditorOpen(false); setEditingRule(null); }}
                         editRule={editingRule} triggers={triggers || []} />
                 )}
 

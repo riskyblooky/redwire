@@ -154,6 +154,11 @@ class AutomationCreate(BaseModel):
     # a UUID scopes the rule to a single engagement (requires engagement_view
     # on that engagement). Enforced in the create handler.
     engagement_id: Optional[str] = Field(None, max_length=64)
+    # Personal rule flag. When True, the rule is scoped to the requesting
+    # user: owner_user_id is set to their id, actions are forced to
+    # notify-self, and the engine only dispatches when the triggering event
+    # was caused by the owner. AUTOMATION_CREATE is not required.
+    is_personal: bool = False
 
 
 class AutomationUpdate(BaseModel):
@@ -197,11 +202,24 @@ def _rule_to_dict(rule: AutomationRule) -> dict:
         "is_enabled": rule.is_enabled,
         "created_by": rule.created_by,
         "engagement_id": rule.engagement_id,
+        "owner_user_id": rule.owner_user_id,
+        "is_personal": rule.owner_user_id is not None,
         "created_at": rule.created_at.isoformat() if rule.created_at else None,
         "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
         "last_triggered_at": rule.last_triggered_at.isoformat() if rule.last_triggered_at else None,
         "trigger_count": rule.trigger_count or 0,
     }
+
+
+def _extract_personal_message(actions: List[ActionSchema]) -> Optional[str]:
+    """Pull the operator-supplied ``message`` off a personal rule's action
+    list, if any. Personal rules only support one implicit action (notify
+    self); the caller may pass a custom message via the same
+    :class:`ActionSchema` shape as an org rule."""
+    for a in actions:
+        if a.message:
+            return a.message
+    return None
 
 
 # ── endpoints ─────────────────────────────────────────────────────────
@@ -224,14 +242,37 @@ async def get_trigger_types(
 
 @router.get("")
 async def list_rules(
+    scope: str = "org",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List automation rules. Admins/managers see all; others see own."""
+    """List automation rules.
+
+    ``scope=org`` (default): org-scope rules (owner_user_id IS NULL). Admins
+    and TeamLeads see all; others see their own. Requires AUTOMATION_VIEW.
+
+    ``scope=personal``: rules owned by the current user. No AUTOMATION_VIEW
+    check — personal rules belong to their owner regardless of the org
+    permission grid.
+    """
+    if scope == "personal":
+        query = (
+            select(AutomationRule)
+            .where(AutomationRule.owner_user_id == current_user.id)
+            .order_by(AutomationRule.created_at.desc())
+        )
+        result = await db.execute(query)
+        rules = result.scalars().all()
+        return {"rules": [_rule_to_dict(r) for r in rules]}
+
     if not await has_global_permission(current_user, Permission.AUTOMATION_VIEW, db):
         raise HTTPException(403, "You don't have permission to view automations")
 
-    query = select(AutomationRule).order_by(AutomationRule.created_at.desc())
+    query = (
+        select(AutomationRule)
+        .where(AutomationRule.owner_user_id.is_(None))
+        .order_by(AutomationRule.created_at.desc())
+    )
 
     if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
         query = query.where(AutomationRule.created_by == current_user.id)
@@ -248,6 +289,48 @@ async def create_rule(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new automation rule."""
+    if data.trigger_type not in TRIGGER_TYPES:
+        raise HTTPException(400, f"Unknown trigger type: {data.trigger_type}")
+
+    # ── Personal rule path ────────────────────────────────────────────
+    # Personal rules ignore AUTOMATION_CREATE (any user may subscribe
+    # themselves to their own events). The action is forced to a single
+    # notify-self so an operator can't set up broadcast / webhook / email
+    # actions under the "personal" banner.
+    if data.is_personal:
+        if data.engagement_id is not None:
+            raise HTTPException(
+                400,
+                "Personal rules must not set engagement_id; filter by "
+                "engagement via a condition instead.",
+            )
+
+        message = _extract_personal_message(data.actions)
+        forced_actions = [
+            {
+                "type": "notify_users",
+                "user_ids": [current_user.id],
+                **({"message": message} if message else {}),
+            }
+        ]
+
+        rule = AutomationRule(
+            name=data.name,
+            description=data.description,
+            trigger_type=data.trigger_type,
+            conditions=[c.model_dump() for c in data.conditions],
+            actions=forced_actions,
+            is_enabled=data.is_enabled,
+            created_by=current_user.id,
+            engagement_id=None,
+            owner_user_id=current_user.id,
+        )
+        db.add(rule)
+        await db.commit()
+        await db.refresh(rule)
+        return _rule_to_dict(rule)
+
+    # ── Org rule path (existing semantics) ────────────────────────────
     if not await has_global_permission(current_user, Permission.AUTOMATION_CREATE, db):
         raise HTTPException(403, "You don't have permission to create automations")
 
@@ -272,9 +355,6 @@ async def create_rule(
                 "You do not have access to the engagement this rule would scope to.",
             )
 
-    if data.trigger_type not in TRIGGER_TYPES:
-        raise HTTPException(400, f"Unknown trigger type: {data.trigger_type}")
-
     await _assert_user_ids_exist(data.actions, db)
 
     rule = AutomationRule(
@@ -293,6 +373,38 @@ async def create_rule(
     return _rule_to_dict(rule)
 
 
+async def _load_rule_for_action(
+    rule_id: str,
+    action_permission: Permission,
+    db: AsyncSession,
+    current_user: User,
+) -> AutomationRule:
+    """Resolve ``rule_id`` and enforce access for a mutating/read op.
+
+    Personal rules (owner_user_id set) are only accessible to their owner —
+    AUTOMATION_* permissions do not open them to admins, and their owner
+    does not need AUTOMATION_* to touch them. Org rules use the existing
+    global permission grid.
+    """
+    result = await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+
+    if rule.owner_user_id is not None:
+        if rule.owner_user_id != current_user.id:
+            # Do not leak the personal rule's existence via a 403 that a 404
+            # wouldn't also produce.
+            raise HTTPException(404, "Rule not found")
+        return rule
+
+    if not await has_global_permission(current_user, action_permission, db):
+        raise HTTPException(
+            403, f"You don't have permission for {action_permission.value} on automations"
+        )
+    return rule
+
+
 @router.get("/{rule_id}")
 async def get_rule(
     rule_id: str,
@@ -300,13 +412,7 @@ async def get_rule(
     current_user: User = Depends(get_current_user),
 ):
     """Get a single automation rule."""
-    if not await has_global_permission(current_user, Permission.AUTOMATION_VIEW, db):
-        raise HTTPException(403, "You don't have permission to view automations")
-
-    result = await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(404, "Rule not found")
+    rule = await _load_rule_for_action(rule_id, Permission.AUTOMATION_VIEW, db, current_user)
     return _rule_to_dict(rule)
 
 
@@ -318,13 +424,7 @@ async def update_rule(
     current_user: User = Depends(get_current_user),
 ):
     """Update an automation rule."""
-    if not await has_global_permission(current_user, Permission.AUTOMATION_EDIT, db):
-        raise HTTPException(403, "You don't have permission to edit automations")
-
-    result = await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(404, "Rule not found")
+    rule = await _load_rule_for_action(rule_id, Permission.AUTOMATION_EDIT, db, current_user)
 
     if data.name is not None:
         rule.name = data.name
@@ -337,8 +437,20 @@ async def update_rule(
     if data.conditions is not None:
         rule.conditions = [c.model_dump() for c in data.conditions]
     if data.actions is not None:
-        await _assert_user_ids_exist(data.actions, db)
-        rule.actions = [a.model_dump(exclude_none=True) for a in data.actions]
+        if rule.owner_user_id is not None:
+            # Personal rules keep the notify-self action shape regardless of
+            # what the client sends. Pull only the optional message override.
+            message = _extract_personal_message(data.actions)
+            rule.actions = [
+                {
+                    "type": "notify_users",
+                    "user_ids": [rule.owner_user_id],
+                    **({"message": message} if message else {}),
+                }
+            ]
+        else:
+            await _assert_user_ids_exist(data.actions, db)
+            rule.actions = [a.model_dump(exclude_none=True) for a in data.actions]
     if data.is_enabled is not None:
         rule.is_enabled = data.is_enabled
 
@@ -355,13 +467,7 @@ async def delete_rule(
     current_user: User = Depends(get_current_user),
 ):
     """Delete an automation rule."""
-    if not await has_global_permission(current_user, Permission.AUTOMATION_DELETE, db):
-        raise HTTPException(403, "You don't have permission to delete automations")
-
-    result = await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(404, "Rule not found")
+    rule = await _load_rule_for_action(rule_id, Permission.AUTOMATION_DELETE, db, current_user)
     await db.delete(rule)
     await db.commit()
 
@@ -373,13 +479,7 @@ async def toggle_rule(
     current_user: User = Depends(get_current_user),
 ):
     """Toggle a rule's enabled state."""
-    if not await has_global_permission(current_user, Permission.AUTOMATION_EDIT, db):
-        raise HTTPException(403, "You don't have permission to edit automations")
-
-    result = await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(404, "Rule not found")
+    rule = await _load_rule_for_action(rule_id, Permission.AUTOMATION_EDIT, db, current_user)
 
     rule.is_enabled = not rule.is_enabled
     rule.updated_at = datetime.utcnow()
@@ -400,13 +500,7 @@ async def run_rule(
     evaluation. Rate-limited (GHSA-3ccf-qpj4-vpx8 follow-up) so an admin
     or TeamLead can't flood a victim's notification tray + WebSocket
     by hammering this endpoint."""
-    if not await has_global_permission(current_user, Permission.AUTOMATION_EDIT, db):
-        raise HTTPException(403, "You don't have permission to run automations")
-
-    result = await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(404, "Rule not found")
+    rule = await _load_rule_for_action(rule_id, Permission.AUTOMATION_EDIT, db, current_user)
 
     from utils.automation_engine import execute_rule_actions
 

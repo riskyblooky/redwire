@@ -663,8 +663,14 @@ async def evaluate_rules(
     # the engagement that raised this event. If the event has no engagement
     # context, only global rules can match — non-global rules can't fire for
     # events outside their engagement.
+    #
+    # Personal rules (owner_user_id set) additionally require that the event
+    # was caused by the owner — filtered post-query so we don't have to
+    # dispatch both branches into SQL. Owner match is on ``context.user_id``
+    # (the actor of the activity).
     from sqlalchemy import or_
     event_engagement_id = context.get("engagement_id")
+    event_actor_id = context.get("user_id")
 
     # GHSA-cjgm-6cr5-j3x2: outer try/except guards the query path only.
     # Per-rule failures are caught one level down so one rule's exception
@@ -689,6 +695,13 @@ async def evaluate_rules(
         print(f"[AUTOMATION] ENGINE QUERY ERROR: {e}")
         logger.error(f"Automation engine query error: {e}")
         return
+
+    # Drop personal rules whose owner didn't cause this event. Keeps
+    # notifications scoped to "things I did" rather than the full org firehose.
+    rules = [
+        r for r in rules
+        if r.owner_user_id is None or r.owner_user_id == event_actor_id
+    ]
 
     print(f"[AUTOMATION] evaluate_rules: trigger='{trigger_type}', found {len(rules)} rule(s), context keys={list(context.keys())}")
     if context.get('status'):

@@ -36,6 +36,9 @@ export interface AutomationRule {
     actions: AutomationAction[];
     is_enabled: boolean;
     created_by: string;
+    engagement_id?: string | null;
+    owner_user_id?: string | null;
+    is_personal?: boolean;
     created_at: string;
     updated_at: string;
     last_triggered_at?: string;
@@ -54,6 +57,16 @@ export function useAutomations() {
         queryKey: ['automations'],
         queryFn: async () => {
             const { data } = await api.get('/automations');
+            return data.rules;
+        },
+    });
+}
+
+export function useMyPersonalAutomations() {
+    return useQuery<AutomationRule[]>({
+        queryKey: ['automations', 'personal'],
+        queryFn: async () => {
+            const { data } = await api.get('/automations', { params: { scope: 'personal' } });
             return data.rules;
         },
     });

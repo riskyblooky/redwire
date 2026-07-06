@@ -19,6 +19,11 @@ class AutomationRule(Base):
     # engagement, gated at create time by VIEW_ALL_ENGAGEMENTS); a non-NULL
     # value scopes the rule to a single engagement.
     engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=True, index=True)
+    # NULL = org rule (created_by / engagement_id govern access, existing
+    # semantics). Non-NULL = personal rule scoped to that user: engine only
+    # dispatches when the triggering event's actor matches this owner, and
+    # the router bypasses AUTOMATION_* permission gates for the owner.
+    owner_user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     last_triggered_at = Column(DateTime, nullable=True)
