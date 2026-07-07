@@ -9,7 +9,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
     useDashboardWidgets, useCreateWidget, useUpdateWidget, useDeleteWidget,
-    useQueryPreview, useQuerySchema, useComputedMetrics,
+    useQueryPreview, useQueryPreviewMulti, useQuerySchema, useComputedMetrics,
     type DashboardWidgetDef, type QueryDefinition, type QuerySchema,
 } from '@/lib/hooks/use-dashboard-widgets';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -156,6 +156,27 @@ const TOOLTIP_STYLE = {
 
 // ── Form State ─────────────────────────────────────────────────────
 
+interface FilterDef {
+    column: string;
+    operator: string;
+    value: string;
+}
+
+/** One sub-query — the shape backed by config.query (single-query
+ *  widgets) or an element of config.queries (composite widgets). */
+interface QueryDef {
+    table: string;
+    group_by: string;
+    aggregation: string;
+    value_column: string;
+    limit: number;
+    date_column: string;
+    date_range: string;
+    time_bucket: string;
+    series_by: string;
+    filters: FilterDef[];
+}
+
 interface FormState {
     name: string;
     description: string;
@@ -164,27 +185,48 @@ interface FormState {
     size: string;
     category: string;
     icon: string;
-    // Query builder
-    query_table: string;
-    query_group_by: string;
-    query_aggregation: string;
-    query_value_column: string;
-    query_limit: number;
-    // Advanced
-    query_date_column: string;
-    query_date_range: string;
-    query_time_bucket: string;
-    query_series_by: string;
-    query_filters: Array<{ column: string; operator: string; value: string }>;
+    // Ordered list of sub-queries. Non-composite widgets always have
+    // length 1 and land as config.query; composite types (scatter,
+    // ratio, percentage, delta, overlay) land as config.queries.
+    queries: QueryDef[];
+    // Optional series labels for overlay widgets — same length as queries
+    // when supplied. Used by OverlayWidget's legend.
+    series_labels: string[];
 }
+
+/** Composite widget types consume config.queries (multiple sub-queries)
+ *  and render via per-widget flavors on the dashboard. */
+const COMPOSITE_TYPES = ['scatter', 'ratio', 'percentage', 'delta', 'overlay'];
+const isCompositeType = (t: string) => COMPOSITE_TYPES.includes(t);
+
+/** How many sub-queries each composite type needs. Values are [min, max].
+ *  Non-composite = [1, 1]. */
+function queryCountRange(widget_type: string): [number, number] {
+    switch (widget_type) {
+        case 'ratio':
+        case 'percentage':
+        case 'delta':
+        case 'scatter':
+            return [2, 2];
+        case 'overlay':
+            return [2, 6];
+        default:
+            return [1, 1];
+    }
+}
+
+const EMPTY_QUERY: QueryDef = {
+    table: 'findings', group_by: 'severity', aggregation: 'count',
+    value_column: 'id', limit: 50,
+    date_column: '', date_range: '30d', time_bucket: '',
+    series_by: '', filters: [],
+};
 
 const EMPTY_FORM: FormState = {
     name: '', description: '', widget_type: 'bar_chart',
     data_source: 'severity_distribution', size: 'medium', category: 'custom', icon: 'BarChart3',
-    query_table: 'findings', query_group_by: 'severity', query_aggregation: 'count',
-    query_value_column: 'id', query_limit: 50,
-    query_date_column: '', query_date_range: '30d', query_time_bucket: '',
-    query_series_by: '', query_filters: [],
+    queries: [{ ...EMPTY_QUERY }],
+    series_labels: [],
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -197,26 +239,71 @@ export function WidgetManagement() {
     const updateWidget = useUpdateWidget();
     const deleteWidget = useDeleteWidget();
     const queryPreview = useQueryPreview();
+    const queryPreviewMulti = useQueryPreviewMulti();
     const { data: schema } = useQuerySchema();
     const { data: metricsData } = useComputedMetrics();
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [previewData, setPreviewData] = useState<any>(null);
     const [previewMode, setPreviewMode] = useState<'chart' | 'table'>('chart');
     const [builderStep, setBuilderStep] = useState(0); // 0=source 1=metrics 2=filters 3=viz 4=preview
+    // Which sub-query the wizard's fields target. Reset on dialog open /
+    // widget-type change so the user isn't editing a deleted sub-query.
+    const [activeQueryIdx, setActiveQueryIdx] = useState(0);
+
+    // Convenience: pull the currently active sub-query and a setter that
+    // patches just that slot so component code doesn't need to spread the
+    // whole queries array every time.
+    const activeQuery = form.queries[activeQueryIdx] ?? form.queries[0];
+    const updateActiveQuery = (patch: Partial<QueryDef>) => {
+        setForm(f => {
+            const next = [...f.queries];
+            next[activeQueryIdx] = { ...next[activeQueryIdx], ...patch };
+            return { ...f, queries: next };
+        });
+        setPreviewData(null);
+    };
+
+    /** Reshape a widget's stored config into the flat FormState.queries
+     *  array. Handles both single-query (config.query) and composite
+     *  (config.queries) shapes so an existing widget of either flavor
+     *  opens correctly. Fields missing on the stored config are
+     *  back-filled from EMPTY_QUERY. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const normalizeConfigToQueries = (config: any): QueryDef[] => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const asDef = (raw: any): QueryDef => ({
+            ...EMPTY_QUERY,
+            ...raw,
+            // group_by can be a string or list on the wire; the wizard
+            // only edits single-column groups today, so collapse a list
+            // back to the first entry. Multi-col group-by editing is
+            // still supported by editing config.query directly.
+            group_by: Array.isArray(raw?.group_by) ? raw.group_by[0] : (raw?.group_by ?? EMPTY_QUERY.group_by),
+            filters: raw?.filters ?? [],
+        });
+        if (Array.isArray(config?.queries) && config.queries.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return config.queries.map((q: any) => asDef(q));
+        }
+        if (config?.query) return [asDef(config.query)];
+        return [{ ...EMPTY_QUERY }];
+    };
 
     const openCreate = () => {
         setEditingId(null);
         setForm(EMPTY_FORM);
+        setActiveQueryIdx(0);
         setPreviewData(null);
         setBuilderStep(0);
         setDialogOpen(true);
     };
 
     const openEdit = (w: DashboardWidgetDef) => {
-        const qConfig = w.config?.query;
+        const queries = normalizeConfigToQueries(w.config);
         setEditingId(w.id);
         setForm({
             name: w.name,
@@ -226,51 +313,70 @@ export function WidgetManagement() {
             size: w.size,
             category: w.category,
             icon: w.icon || 'BarChart3',
-            query_table: qConfig?.table || 'findings',
-            query_group_by: qConfig?.group_by || 'severity',
-            query_aggregation: qConfig?.aggregation || 'count',
-            query_value_column: qConfig?.value_column || 'id',
-            query_limit: qConfig?.limit || 50,
-            query_date_column: qConfig?.date_column || '',
-            query_date_range: qConfig?.date_range || '30d',
-            query_time_bucket: qConfig?.time_bucket || '',
-            query_series_by: qConfig?.series_by || '',
-            query_filters: qConfig?.filters || [],
+            queries,
+            series_labels: w.config?.series_labels || [],
         });
+        setActiveQueryIdx(0);
         setPreviewData(null);
         setBuilderStep(0);
         setDialogOpen(true);
     };
 
-    const handlePreview = async () => {
-        try {
-            const queryDef: QueryDefinition = {
-                table: form.query_table,
-                group_by: form.query_group_by,
-                aggregation: form.query_aggregation,
-                value_column: form.query_value_column,
-                limit: form.query_limit,
-            };
-            if (form.query_date_column) {
-                queryDef.date_column = form.query_date_column;
-                queryDef.date_range = form.query_date_range;
-            }
-            if (form.query_time_bucket) {
-                queryDef.time_bucket = form.query_time_bucket;
-                if (!queryDef.date_column) {
-                    // Auto-pick first date column
-                    const tSchema = schema?.schema?.[form.query_table];
-                    if (tSchema?.date_columns?.[0]) {
-                        queryDef.date_column = tSchema.date_columns[0];
-                        queryDef.date_range = form.query_date_range || '30d';
-                    }
+    /** Trim / extend the queries array so its length is within the
+     *  widget-type's constraint. Called whenever widget_type changes. */
+    const enforceQueryCount = (widget_type: string) => {
+        const [min] = queryCountRange(widget_type);
+        setForm(f => {
+            let queries = f.queries;
+            while (queries.length < min) queries = [...queries, { ...EMPTY_QUERY }];
+            return { ...f, queries };
+        });
+        setActiveQueryIdx(0);
+    };
+
+    /** Build a QueryDefinition (backend wire shape) from a QueryDef
+     *  form entry. Drops empty-string fields so the payload matches
+     *  what the backend expects (e.g. no ``date_range`` when
+     *  ``date_column`` isn't set). */
+    const queryDefForWire = (q: QueryDef): QueryDefinition => {
+        const wire: QueryDefinition = {
+            table: q.table,
+            group_by: q.group_by,
+            aggregation: q.aggregation,
+            value_column: q.value_column,
+            limit: q.limit,
+        };
+        if (q.date_column) {
+            wire.date_column = q.date_column;
+            wire.date_range = q.date_range;
+        }
+        if (q.time_bucket) {
+            wire.time_bucket = q.time_bucket;
+            if (!wire.date_column) {
+                const tSchema = schema?.schema?.[q.table];
+                if (tSchema?.date_columns?.[0]) {
+                    wire.date_column = tSchema.date_columns[0];
+                    wire.date_range = q.date_range || '30d';
                 }
             }
-            if (form.query_series_by) queryDef.series_by = form.query_series_by;
-            if (form.query_filters.length > 0) queryDef.filters = form.query_filters;
+        }
+        if (q.series_by) wire.series_by = q.series_by;
+        if (q.filters.length > 0) wire.filters = q.filters;
+        return wire;
+    };
 
-            const result = await queryPreview.mutateAsync(queryDef);
-            setPreviewData(result);
+    const handlePreview = async () => {
+        try {
+            if (isCompositeType(form.widget_type) && form.queries.length > 1) {
+                const wires = form.queries.map(queryDefForWire);
+                const result = await queryPreviewMulti.mutateAsync({ queries: wires });
+                setPreviewData(result);   // { results: [...] }
+            } else {
+                const wire = queryDefForWire(activeQuery);
+                const result = await queryPreview.mutateAsync(wire);
+                setPreviewData(result);
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (err: any) {
             toast.error(apiErrorMessage(err, 'Query failed'));
         }
@@ -278,32 +384,19 @@ export function WidgetManagement() {
 
     const handleSave = async () => {
         try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const config: any = {};
             if (form.data_source === 'custom_query') {
-                const q: any = {
-                    table: form.query_table,
-                    group_by: form.query_group_by,
-                    aggregation: form.query_aggregation,
-                    value_column: form.query_value_column,
-                    limit: form.query_limit,
-                };
-                if (form.query_date_column) {
-                    q.date_column = form.query_date_column;
-                    q.date_range = form.query_date_range;
-                }
-                if (form.query_time_bucket) {
-                    q.time_bucket = form.query_time_bucket;
-                    if (!q.date_column) {
-                        const tSchema = schema?.schema?.[form.query_table];
-                        if (tSchema?.date_columns?.[0]) {
-                            q.date_column = tSchema.date_columns[0];
-                            q.date_range = form.query_date_range || '30d';
-                        }
+                if (isCompositeType(form.widget_type) && form.queries.length > 1) {
+                    // Composite widget — write config.queries and optional
+                    // series_labels for overlay widgets.
+                    config.queries = form.queries.map(queryDefForWire);
+                    if (form.widget_type === 'overlay' && form.series_labels.length > 0) {
+                        config.series_labels = form.series_labels;
                     }
+                } else {
+                    config.query = queryDefForWire(form.queries[0]);
                 }
-                if (form.query_series_by) q.series_by = form.query_series_by;
-                if (form.query_filters.length > 0) q.filters = form.query_filters;
-                config.query = q;
             }
 
             const payload: any = {
@@ -350,21 +443,19 @@ export function WidgetManagement() {
 
     const handleTableChange = (table: string) => {
         const tSchema = schema?.schema?.[table];
-        setForm(f => ({
-            ...f,
-            query_table: table,
-            query_group_by: tSchema?.group_by[0] || '',
-            query_value_column: tSchema?.aggregate[0] || 'id',
-            query_date_column: '',
-            query_time_bucket: '',
-            query_series_by: '',
-            query_filters: [],
-        }));
-        setPreviewData(null);
+        updateActiveQuery({
+            table,
+            group_by: tSchema?.group_by[0] || '',
+            value_column: tSchema?.aggregate[0] || 'id',
+            date_column: '',
+            time_bucket: '',
+            series_by: '',
+            filters: [],
+        });
     };
 
-    // Current table schema
-    const tSchema = schema?.schema?.[form.query_table];
+    // Current sub-query's table schema
+    const tSchema = schema?.schema?.[activeQuery.table];
 
     if (isLoading) {
         return (
@@ -516,7 +607,11 @@ export function WidgetManagement() {
                         <div className="grid grid-cols-3 gap-3">
                             <div className="space-y-1.5">
                                 <Label className="text-slate-300 text-xs">Chart Type</Label>
-                                <Select value={form.widget_type} onValueChange={v => setForm(f => ({ ...f, widget_type: v }))}>
+                                <Select value={form.widget_type} onValueChange={v => {
+                                    setForm(f => ({ ...f, widget_type: v }));
+                                    enforceQueryCount(v);
+                                    setPreviewData(null);
+                                }}>
                                     <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-9">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -583,6 +678,86 @@ export function WidgetManagement() {
                                     <span className="text-[10px] text-cyan-500/60 ml-auto">Safe, parameterized queries — no raw SQL</span>
                                 </div>
 
+                                {/* ── Sub-query tabs — composite widgets only ── */}
+                                {isCompositeType(form.widget_type) && (() => {
+                                    const [min, max] = queryCountRange(form.widget_type);
+                                    return (
+                                        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-2 space-y-1.5">
+                                            <div className="flex items-center gap-1.5 text-[10px] text-cyan-300 font-semibold uppercase tracking-wider">
+                                                <Layers className="h-3 w-3" />
+                                                <span>Sub-queries — this widget composes {min === max ? min : `${min}–${max}`}</span>
+                                                <span className="ml-auto text-cyan-500/60 text-[9px] font-normal normal-case tracking-normal">
+                                                    Configure each sub-query below via its tab.
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {form.queries.map((_, i) => (
+                                                    <button
+                                                        key={i}
+                                                        onClick={() => { setActiveQueryIdx(i); setPreviewData(null); }}
+                                                        className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all border ${
+                                                            activeQueryIdx === i
+                                                                ? 'bg-cyan-500/25 text-cyan-200 border-cyan-500/40'
+                                                                : 'bg-slate-900/50 text-slate-400 border-slate-700/50 hover:border-cyan-500/30 hover:text-cyan-300'
+                                                        }`}
+                                                    >
+                                                        Query {i + 1}
+                                                        {form.widget_type === 'delta' && i === 0 && ' (current)'}
+                                                        {form.widget_type === 'delta' && i === 1 && ' (previous)'}
+                                                        {form.widget_type === 'ratio' && i === 0 && ' (numerator)'}
+                                                        {form.widget_type === 'ratio' && i === 1 && ' (denominator)'}
+                                                        {form.widget_type === 'percentage' && i === 0 && ' (part)'}
+                                                        {form.widget_type === 'percentage' && i === 1 && ' (whole)'}
+                                                        {form.widget_type === 'scatter' && i === 0 && ' (x)'}
+                                                        {form.widget_type === 'scatter' && i === 1 && ' (y)'}
+                                                        {form.queries.length > min && (
+                                                            <span
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setForm(f => ({ ...f, queries: f.queries.filter((_, j) => j !== i) }));
+                                                                    if (activeQueryIdx >= form.queries.length - 1) setActiveQueryIdx(Math.max(0, form.queries.length - 2));
+                                                                    setPreviewData(null);
+                                                                }}
+                                                                className="ml-1.5 text-red-400/70 hover:text-red-400 cursor-pointer"
+                                                                role="button"
+                                                                aria-label={`Remove query ${i + 1}`}
+                                                            >×</span>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                                {form.queries.length < max && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setForm(f => ({ ...f, queries: [...f.queries, { ...EMPTY_QUERY }] }));
+                                                            setActiveQueryIdx(form.queries.length);
+                                                            setPreviewData(null);
+                                                        }}
+                                                        className="px-2.5 py-1 rounded text-[10px] font-bold transition-all border border-dashed border-cyan-500/40 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/15"
+                                                    >
+                                                        <Plus className="h-2.5 w-2.5 inline mr-0.5" />
+                                                        Add sub-query
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {form.widget_type === 'overlay' && (
+                                                <div className="pt-1.5 border-t border-cyan-500/10">
+                                                    <Label className="text-[9px] text-cyan-500/70 uppercase tracking-wider">Series label (for legend)</Label>
+                                                    <Input
+                                                        value={form.series_labels[activeQueryIdx] ?? ''}
+                                                        onChange={e => {
+                                                            const next = [...form.series_labels];
+                                                            next[activeQueryIdx] = e.target.value;
+                                                            setForm(f => ({ ...f, series_labels: next }));
+                                                        }}
+                                                        placeholder={`Series ${activeQueryIdx + 1}`}
+                                                        className="bg-slate-900 border-slate-700 text-white h-7 text-xs mt-1"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
                                 {/* ── Step 1: Data Source Table ── */}
                                 <div className="space-y-2">
                                     <div className="flex items-center gap-2">
@@ -592,7 +767,7 @@ export function WidgetManagement() {
                                     <div className="flex gap-2 flex-wrap">
                                         {schema?.tables?.map(t => {
                                             const TIcon = TABLE_ICONS[t] || Database;
-                                            const isActive = form.query_table === t;
+                                            const isActive = activeQuery.table === t;
                                             return (
                                                 <button key={t} onClick={() => handleTableChange(t)}
                                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border
@@ -616,7 +791,7 @@ export function WidgetManagement() {
                                     <div className="grid grid-cols-4 gap-2">
                                         <div className="space-y-1">
                                             <Label className="text-slate-400 text-[10px]">Group By</Label>
-                                            <Select value={form.query_group_by} onValueChange={v => { setForm(f => ({ ...f, query_group_by: v })); setPreviewData(null); }}>
+                                            <Select value={activeQuery.group_by} onValueChange={v => { updateActiveQuery({ group_by: v }); setPreviewData(null); }}>
                                                 <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-8 text-xs">
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -629,7 +804,7 @@ export function WidgetManagement() {
                                         </div>
                                         <div className="space-y-1">
                                             <Label className="text-slate-400 text-[10px]">Aggregation</Label>
-                                            <Select value={form.query_aggregation} onValueChange={v => { setForm(f => ({ ...f, query_aggregation: v })); setPreviewData(null); }}>
+                                            <Select value={activeQuery.aggregation} onValueChange={v => { updateActiveQuery({ aggregation: v }); setPreviewData(null); }}>
                                                 <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-8 text-xs">
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -642,7 +817,7 @@ export function WidgetManagement() {
                                         </div>
                                         <div className="space-y-1">
                                             <Label className="text-slate-400 text-[10px]">Value Column</Label>
-                                            <Select value={form.query_value_column} onValueChange={v => { setForm(f => ({ ...f, query_value_column: v })); setPreviewData(null); }}>
+                                            <Select value={activeQuery.value_column} onValueChange={v => { updateActiveQuery({ value_column: v }); setPreviewData(null); }}>
                                                 <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-8 text-xs">
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -655,8 +830,8 @@ export function WidgetManagement() {
                                         </div>
                                         <div className="space-y-1">
                                             <Label className="text-slate-400 text-[10px]">Limit</Label>
-                                            <Input type="number" value={form.query_limit} min={1} max={500}
-                                                onChange={e => setForm(f => ({ ...f, query_limit: parseInt(e.target.value) || 50 }))}
+                                            <Input type="number" value={activeQuery.limit} min={1} max={500}
+                                                onChange={e => updateActiveQuery({ limit: parseInt(e.target.value) || 50 })}
                                                 className="bg-slate-900 border-slate-700 text-white h-8 text-xs" />
                                         </div>
                                     </div>
@@ -676,7 +851,7 @@ export function WidgetManagement() {
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div className="space-y-1">
                                                     <Label className="text-slate-400 text-[10px]">Date Column</Label>
-                                                    <Select value={form.query_date_column || '__none__'} onValueChange={v => { setForm(f => ({ ...f, query_date_column: v === '__none__' ? '' : v })); setPreviewData(null); }}>
+                                                    <Select value={activeQuery.date_column || '__none__'} onValueChange={v => { updateActiveQuery({ date_column: v === '__none__' ? '' : v }); setPreviewData(null); }}>
                                                         <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-8 text-xs">
                                                             <SelectValue />
                                                         </SelectTrigger>
@@ -688,10 +863,10 @@ export function WidgetManagement() {
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
-                                                {form.query_date_column && (
+                                                {activeQuery.date_column && (
                                                     <div className="space-y-1">
                                                         <Label className="text-slate-400 text-[10px]">Time Bucket</Label>
-                                                        <Select value={form.query_time_bucket || '__none__'} onValueChange={v => { setForm(f => ({ ...f, query_time_bucket: v === '__none__' ? '' : v })); setPreviewData(null); }}>
+                                                        <Select value={activeQuery.time_bucket || '__none__'} onValueChange={v => { updateActiveQuery({ time_bucket: v === '__none__' ? '' : v }); setPreviewData(null); }}>
                                                             <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-8 text-xs">
                                                                 <SelectValue />
                                                             </SelectTrigger>
@@ -707,13 +882,13 @@ export function WidgetManagement() {
                                             </div>
 
                                             {/* Date range pills */}
-                                            {form.query_date_column && (
+                                            {activeQuery.date_column && (
                                                 <div className="flex gap-1.5 flex-wrap">
                                                     {DATE_RANGE_OPTIONS.map(dr => (
                                                         <button key={dr.value}
-                                                            onClick={() => { setForm(f => ({ ...f, query_date_range: dr.value })); setPreviewData(null); }}
+                                                            onClick={() => { updateActiveQuery({ date_range: dr.value }); setPreviewData(null); }}
                                                             className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all border
-                                                                ${form.query_date_range === dr.value
+                                                                ${activeQuery.date_range === dr.value
                                                                     ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
                                                                     : 'text-slate-500 border-slate-700/50 hover:text-slate-300 hover:border-slate-600'}`}>
                                                             {dr.label}
@@ -729,7 +904,7 @@ export function WidgetManagement() {
                                                         <Label className="text-slate-400 text-[10px] flex items-center gap-1">
                                                             <Layers className="h-3 w-3" /> Multi-Series (split by)
                                                         </Label>
-                                                        <Select value={form.query_series_by || '__none__'} onValueChange={v => { setForm(f => ({ ...f, query_series_by: v === '__none__' ? '' : v })); setPreviewData(null); }}>
+                                                        <Select value={activeQuery.series_by || '__none__'} onValueChange={v => { updateActiveQuery({ series_by: v === '__none__' ? '' : v }); setPreviewData(null); }}>
                                                             <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-8 text-xs">
                                                                 <SelectValue />
                                                             </SelectTrigger>
@@ -755,20 +930,20 @@ export function WidgetManagement() {
                                         <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
                                         <span className="text-xs font-bold text-slate-200">Filters</span>
                                         <Filter className="h-3.5 w-3.5 text-slate-500" />
-                                        <button onClick={() => setForm(f => ({ ...f, query_filters: [...f.query_filters, { column: tSchema.filter_columns[0] || '', operator: 'eq', value: '' }] }))}
+                                        <button onClick={() => updateActiveQuery({ filters: [...activeQuery.filters, { column: tSchema.filter_columns[0] || '', operator: 'eq', value: '' }] })}
                                             className="ml-auto text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1">
                                             <Plus className="h-3 w-3" /> Add Filter
                                         </button>
                                     </div>
-                                    {form.query_filters.length === 0 && (
+                                    {activeQuery.filters.length === 0 && (
                                         <p className="text-slate-600 text-[10px] italic">No filters applied — showing all data.</p>
                                     )}
-                                    {form.query_filters.map((filter, idx) => (
+                                    {activeQuery.filters.map((filter, idx) => (
                                         <div key={idx} className="flex items-center gap-2">
                                             <Select value={filter.column} onValueChange={v => {
-                                                const filters = [...form.query_filters];
+                                                const filters = [...activeQuery.filters];
                                                 filters[idx] = { ...filters[idx], column: v };
-                                                setForm(f => ({ ...f, query_filters: filters }));
+                                                updateActiveQuery({ filters });
                                                 setPreviewData(null);
                                             }}>
                                                 <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-7 text-[11px] w-32">
@@ -781,9 +956,9 @@ export function WidgetManagement() {
                                                 </SelectContent>
                                             </Select>
                                             <Select value={filter.operator} onValueChange={v => {
-                                                const filters = [...form.query_filters];
+                                                const filters = [...activeQuery.filters];
                                                 filters[idx] = { ...filters[idx], operator: v };
-                                                setForm(f => ({ ...f, query_filters: filters }));
+                                                updateActiveQuery({ filters });
                                                 setPreviewData(null);
                                             }}>
                                                 <SelectTrigger className="bg-slate-900 border-slate-700 text-white h-7 text-[11px] w-20">
@@ -797,14 +972,14 @@ export function WidgetManagement() {
                                             </Select>
                                             <Input value={filter.value} placeholder="value"
                                                 onChange={e => {
-                                                    const filters = [...form.query_filters];
+                                                    const filters = [...activeQuery.filters];
                                                     filters[idx] = { ...filters[idx], value: e.target.value };
-                                                    setForm(f => ({ ...f, query_filters: filters }));
+                                                    updateActiveQuery({ filters });
                                                     setPreviewData(null);
                                                 }}
                                                 className="bg-slate-900 border-slate-700 text-white h-7 text-[11px] flex-1" />
                                             <button onClick={() => {
-                                                setForm(f => ({ ...f, query_filters: f.query_filters.filter((_, i) => i !== idx) }));
+                                                updateActiveQuery({ filters: activeQuery.filters.filter((_, i) => i !== idx) });
                                                 setPreviewData(null);
                                             }}
                                                 className="text-red-400 hover:text-red-300 p-1">
@@ -833,19 +1008,34 @@ export function WidgetManagement() {
 
                                     <div className="flex items-center gap-2">
                                         <Button size="sm" onClick={handlePreview}
-                                            disabled={queryPreview.isPending}
+                                            disabled={queryPreview.isPending || queryPreviewMulti.isPending}
                                             className="bg-cyan-600 hover:bg-cyan-500 text-white h-7 text-xs gap-1.5">
-                                            <Play className="h-3 w-3" /> {queryPreview.isPending ? 'Running...' : 'Run Query'}
+                                            <Play className="h-3 w-3" />
+                                            {queryPreview.isPending || queryPreviewMulti.isPending
+                                                ? 'Running...'
+                                                : (isCompositeType(form.widget_type) && form.queries.length > 1
+                                                    ? `Run ${form.queries.length} queries`
+                                                    : 'Run Query')}
                                         </Button>
                                         {previewData && (
                                             <span className="text-[10px] text-cyan-400">
-                                                {previewData.data?.length || 0} rows · mode: {previewData.mode || 'standard'}
-                                                {previewData.series && ` · ${previewData.series.length} series`}
+                                                {previewData.results
+                                                    ? `${previewData.results.length} sub-queries · ${previewData.results.reduce((s: number, r: { data?: unknown[] }) => s + (r.data?.length || 0), 0)} total rows`
+                                                    : `${previewData.data?.length || 0} rows · mode: ${previewData.mode || 'standard'}${previewData.series ? ` · ${previewData.series.length} series` : ''}`}
                                             </span>
                                         )}
                                     </div>
 
                                     {/* Preview output */}
+                                    {previewData?.results && Array.isArray(previewData.results) && (
+                                        <div className="rounded-lg bg-slate-900/80 border border-slate-800 p-3">
+                                            <CompositePreview
+                                                data={previewData}
+                                                chartType={form.widget_type}
+                                                seriesLabels={form.series_labels}
+                                            />
+                                        </div>
+                                    )}
                                     {previewData?.data?.length > 0 && (
                                         <div className="rounded-lg bg-slate-900/80 border border-slate-800 p-3">
                                             {previewMode === 'chart' ? (
@@ -855,7 +1045,7 @@ export function WidgetManagement() {
                                             )}
                                         </div>
                                     )}
-                                    {previewData?.data?.length === 0 && (
+                                    {previewData && !previewData.results && previewData?.data?.length === 0 && (
                                         <p className="text-slate-500 text-xs italic text-center py-4">No data returned. Try different parameters.</p>
                                     )}
                                 </div>
@@ -1148,5 +1338,171 @@ function PreviewTable({ data }: { data: any }) {
                 </tbody>
             </table>
         </div>
+    );
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  COMPOSITE PREVIEW — scatter / ratio / percentage / delta / overlay
+// ══════════════════════════════════════════════════════════════════
+
+/** Pearson r for two parallel numeric arrays. */
+function pearsonR(xs: number[], ys: number[]): number {
+    const n = Math.min(xs.length, ys.length);
+    if (n < 2) return 0;
+    const mx = xs.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    const my = ys.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    let num = 0, dx = 0, dy = 0;
+    for (let i = 0; i < n; i++) {
+        const a = xs[i] - mx, b = ys[i] - my;
+        num += a * b; dx += a * a; dy += b * b;
+    }
+    const denom = Math.sqrt(dx * dy);
+    return denom === 0 ? 0 : num / denom;
+}
+
+function sumValues(rows: Array<{ value?: number }> | null | undefined): number {
+    if (!rows) return 0;
+    return rows.reduce((s, r) => s + (typeof r.value === 'number' ? r.value : 0), 0);
+}
+
+function formatBig(v: number): string {
+    if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (Math.abs(v) >= 1_000) return `${(v / 1_000).toFixed(1)}k`;
+    return v % 1 === 0 ? v.toString() : v.toFixed(1);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CompositePreview({ data, chartType, seriesLabels }: { data: any; chartType: string; seriesLabels: string[] }) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results: Array<{ data: any[]; mode?: string }> = data.results || [];
+    if (results.length < 2) {
+        return <p className="text-slate-500 text-xs italic text-center py-4">Composite widgets need at least 2 sub-queries.</p>;
+    }
+
+    // Ratio / Percentage — sum both sides.
+    if (chartType === 'ratio' || chartType === 'percentage') {
+        const a = sumValues(results[0].data);
+        const b = sumValues(results[1].data);
+        let display = '—';
+        if (b !== 0) {
+            const v = chartType === 'ratio' ? a / b : (a / b) * 100;
+            display = chartType === 'ratio' ? v.toFixed(2) : `${v.toFixed(1)}%`;
+        }
+        return (
+            <div className="text-center py-4">
+                <div className="text-4xl font-bold text-white">{display}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-2">
+                    {formatBig(a)} of {formatBig(b)}
+                </div>
+            </div>
+        );
+    }
+
+    // Delta — sum both, show current + % change.
+    if (chartType === 'delta') {
+        const curr = sumValues(results[0].data);
+        const prev = sumValues(results[1].data);
+        const delta = prev === 0 ? null : ((curr - prev) / prev) * 100;
+        const arrow = delta === null ? '' : delta > 0 ? '▲' : delta < 0 ? '▼' : '=';
+        const color = delta === null ? 'text-slate-500' : delta > 0 ? 'text-red-400' : 'text-green-400';
+        return (
+            <div className="text-center py-4">
+                <div className="text-4xl font-bold text-white">{formatBig(curr)}</div>
+                <div className={`mt-2 text-sm font-semibold ${color}`}>
+                    {arrow} {delta === null ? 'no baseline' : `${Math.abs(delta).toFixed(1)}%`}
+                </div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+                    vs previous ({formatBig(prev)})
+                </div>
+            </div>
+        );
+    }
+
+    // Scatter — join queries on primary label, plot (x, y). Show Pearson r.
+    if (chartType === 'scatter') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const A: any[] = results[0].data || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const B: any[] = results[1].data || [];
+        const byLabel = new Map<string, { x?: number; y?: number }>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const r of A) byLabel.set(r.label, { ...(byLabel.get(r.label) || {}), x: r.value });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const r of B) byLabel.set(r.label, { ...(byLabel.get(r.label) || {}), y: r.value });
+        const points = Array.from(byLabel.entries())
+            .filter(([, v]) => v.x !== undefined && v.y !== undefined)
+            .map(([label, v]) => ({ label, x: v.x!, y: v.y! }));
+        const r = pearsonR(points.map(p => p.x), points.map(p => p.y));
+        return (
+            <>
+                <ResponsiveContainer width="100%" height={200}>
+                    <RLineChart data={points}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis type="number" dataKey="x" name="A" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                        <YAxis type="number" dataKey="y" name="B" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                        <Tooltip {...TOOLTIP_STYLE} />
+                        <Line
+                            type="linear" dataKey="y" stroke="none"
+                            dot={{ r: 4, fill: '#8b5cf6' }} activeDot={{ r: 6 }}
+                            isAnimationActive={false}
+                        />
+                    </RLineChart>
+                </ResponsiveContainer>
+                <div className="text-center mt-1 text-[11px] text-slate-400">
+                    Pearson r = <span className={r > 0.3 ? 'text-green-400 font-semibold' : r < -0.3 ? 'text-red-400 font-semibold' : 'text-slate-400'}>{r.toFixed(3)}</span>
+                    <span className="ml-2 text-slate-600">({points.length} points)</span>
+                </div>
+            </>
+        );
+    }
+
+    // Overlay — merge time-series on `date` key, one line per sub-query.
+    if (chartType === 'overlay') {
+        const dateMap: Record<string, Record<string, number | string>> = {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        results.forEach((r: { data?: any[] }, i: number) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (r.data || []).forEach((row: any) => {
+                const d = row.date;
+                if (!d) return;
+                if (!dateMap[d]) dateMap[d] = { date: d };
+                dateMap[d][`s${i}`] = row.value || 0;
+            });
+        });
+        const merged = Object.values(dateMap).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        return (
+            <ResponsiveContainer width="100%" height={200}>
+                <RLineChart data={merged}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis
+                        dataKey="date"
+                        tickFormatter={(v: string) => v ? new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
+                        stroke="#94a3b8"
+                        tick={{ fill: '#94a3b8', fontSize: 9 }}
+                    />
+                    <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                    <Tooltip {...TOOLTIP_STYLE} />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    {results.map((_, i) => (
+                        <Line
+                            key={i}
+                            type="monotone"
+                            dataKey={`s${i}`}
+                            name={seriesLabels[i] || `Series ${i + 1}`}
+                            stroke={ACCENT_COLORS[i % ACCENT_COLORS.length]}
+                            strokeWidth={2}
+                            dot={false}
+                        />
+                    ))}
+                </RLineChart>
+            </ResponsiveContainer>
+        );
+    }
+
+    return (
+        <p className="text-slate-500 text-xs italic text-center py-4">
+            No composite renderer for &quot;{chartType}&quot;.
+        </p>
     );
 }

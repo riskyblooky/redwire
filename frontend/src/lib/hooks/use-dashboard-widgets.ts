@@ -170,9 +170,27 @@ export function useCustomWidgetData(widgetId: string | undefined) {
 }
 
 export function useQueryPreview() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return useMutation<{ data: any[]; series?: string[]; mode?: string }, Error, QueryDefinition>({
         mutationFn: async (queryDef) => {
             const { data } = await api.post('/dashboard/widgets/query-preview', queryDef);
+            return data;
+        },
+    });
+}
+
+/** Preview N parallel sub-queries. Composite widgets (scatter, ratio,
+ *  percentage, delta, overlay) use this to render preview data before
+ *  saving. Server accepts up to 6 sub-queries per call. */
+export function useQueryPreviewMulti() {
+    return useMutation<
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { results: Array<{ data: any[]; series?: string[]; mode?: string }> },
+        Error,
+        { queries: QueryDefinition[] }
+    >({
+        mutationFn: async (payload) => {
+            const { data } = await api.post('/dashboard/widgets/query-preview-multi', payload);
             return data;
         },
     });
