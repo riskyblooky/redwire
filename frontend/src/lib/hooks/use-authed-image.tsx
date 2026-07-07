@@ -87,7 +87,6 @@ interface AuthedImgProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'
 export function AuthedImg({ src, alt = '', ...rest }: AuthedImgProps) {
     const resolved = useAuthedImageUrl(src);
     if (!resolved) return null;
-    // eslint-disable-next-line @next/next/no-img-element
     return <img src={resolved} alt={alt} {...rest} />;
 }
 

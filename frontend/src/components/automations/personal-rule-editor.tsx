@@ -139,9 +139,8 @@ export function PersonalRuleEditor({
                     trigger_type: triggerType,
                     conditions,
                     actions,
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     is_personal: true,
-                } as any);
+                });
                 toast.success('Personal rule created');
             }
             onClose();
