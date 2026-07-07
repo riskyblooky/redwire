@@ -322,14 +322,17 @@ async def _execute_notify_users(
     for uid in user_ids:
         if not await _can_see_engagement(uid):
             continue
-        # For org rules: keep the default self-suppression so a rule
-        # author who caused the trigger event doesn't ping themselves
-        # about their own action. For personal rules: bypass it —
-        # personal rules are always owner→self (the engine filters
-        # them to only owner-caused events, and create_rule forces the
-        # target to [owner_user_id]), so the default self-check would
-        # silently drop every fire. The per-event mute preference is
-        # honored either way.
+        # Bypass the default "don't ping the actor about their own
+        # action" self-suppression in two cases:
+        #   1. Personal rules — always owner→self; the check would
+        #      silently drop every fire.
+        #   2. Manual runs via the /run endpoint — the whole point of
+        #      Run is to test the rule, so an admin who's also a
+        #      recipient wants to actually see the notification pop.
+        # For real trigger events on org rules, the default holds:
+        # the rule author doesn't get pinged about their own action.
+        # The per-event mute preference is honored regardless.
+        is_manual = context.get("action") == "manual"
         await create_notification(
             db=db,
             user_id=uid,
@@ -339,7 +342,7 @@ async def _execute_notify_users(
             link=link,
             actor_id=context.get("user_id"),
             engagement_id=event_engagement_id,
-            skip_self_check=rule_is_personal,
+            skip_self_check=rule_is_personal or is_manual,
         )
 
 
