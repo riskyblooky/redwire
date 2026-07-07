@@ -444,6 +444,34 @@ async def lifespan(app):
     except Exception as e:
         print(f"[totp-secrets] WARN: backfill failed: {e}")
 
+    # ── One-shot auth_settings at-rest encryption backfill ──
+    # Companion to the AuthSetting.value → EncryptedText flip. Before
+    # that change, LDAP bind passwords / SMTP passwords / SAML IdP certs
+    # sat plaintext in auth_settings.value even though the row was
+    # flagged is_encrypted=True (the flag was only used to mask API
+    # responses, not to actually encrypt). Encrypted-at-rest via the
+    # column type from now on; this pass re-encrypts any legacy rows
+    # so the fail-closed decrypt path doesn't nuke live LDAP config on
+    # first upgrade. Idempotent + cheap once complete.
+    try:
+        from utils.auth_settings_field_migration import (
+            count_legacy_auth_settings_rows,
+            backfill_legacy_auth_settings,
+        )
+        async with AsyncSessionLocal() as _db:
+            pending = await count_legacy_auth_settings_rows(_db)
+            if pending:
+                print(f"[auth-settings] backfilling {pending} row(s) with unencrypted value...")
+                stats = await backfill_legacy_auth_settings(_db)
+                print(
+                    f"[auth-settings] done: rows_checked={stats['rows_checked']} "
+                    f"already_encrypted={stats['already_encrypted']} "
+                    f"re_encrypted={stats['re_encrypted']} "
+                    f"skipped={stats['skipped']}"
+                )
+    except Exception as e:
+        print(f"[auth-settings] WARN: backfill failed: {e}")
+
     bloom_task = asyncio.create_task(_load_bloom())
     intel_task = asyncio.create_task(_refresh_intel_feeds_background())
     yield
