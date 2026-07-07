@@ -40,6 +40,20 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/components/ui/command';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -73,6 +87,9 @@ import {
     UserCircle,
     StickyNote,
     Eye,
+    FolderPlus,
+    Check,
+    ChevronsUpDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Client, ClientType } from '@/lib/types';
@@ -100,6 +117,7 @@ interface TreeNodeProps {
     onEdit: (client: Client) => void;
     onDelete: (client: Client) => void;
     onView: (client: Client) => void;
+    onCreateChild: (parent: Client) => void;
     onSelect: (client: Client) => void;
     selectedId: string | null;
     clientTypes: ClientType[];
@@ -111,7 +129,7 @@ interface TreeNodeProps {
     dragPosition: 'above' | 'below' | 'inside' | null;
 }
 
-function TreeNode({ node, depth, expandedNodes, toggleNode, onEdit, onDelete, onView, onSelect, selectedId, clientTypes, onDragStart, onDragOver, onDragLeave, onDrop, dragOverId, dragPosition }: TreeNodeProps) {
+function TreeNode({ node, depth, expandedNodes, toggleNode, onEdit, onDelete, onView, onCreateChild, onSelect, selectedId, clientTypes, onDragStart, onDragOver, onDragLeave, onDrop, dragOverId, dragPosition }: TreeNodeProps) {
     const isExpanded = expandedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
     const clientType = clientTypes.find(t => t.id === node.client_type_id);
@@ -206,6 +224,10 @@ function TreeNode({ node, depth, expandedNodes, toggleNode, onEdit, onDelete, on
                             <Pencil className="h-4 w-4 mr-2" />
                             Edit
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onCreateChild(node)}>
+                            <FolderPlus className="h-4 w-4 mr-2" />
+                            New Sub-client
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                             onClick={() => onDelete(node)}
                             className="text-red-400 focus:text-red-400"
@@ -234,6 +256,7 @@ function TreeNode({ node, depth, expandedNodes, toggleNode, onEdit, onDelete, on
                             onEdit={onEdit}
                             onDelete={onDelete}
                             onView={onView}
+                            onCreateChild={onCreateChild}
                             onSelect={onSelect}
                             selectedId={selectedId}
                             clientTypes={clientTypes}
@@ -265,6 +288,13 @@ export default function ClientsPage() {
 
     // UI State
     const [searchQuery, setSearchQuery] = useState('');
+    // Filter chips — mirrors the boolean-filter pattern on other list pages.
+    // "engagement" = show only clients with at least one engagement;
+    // "no-engagement" = show only clients with zero engagements;
+    // "all" = no filter. Client-type chip further narrows on client_type_id.
+    const [engagementFilter, setEngagementFilter] = useState<'all' | 'has' | 'none'>('all');
+    const [typeFilter, setTypeFilter] = useState<string>('all');
+    const [parentPickerOpen, setParentPickerOpen] = useState(false);
     const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -494,19 +524,40 @@ export default function ClientsPage() {
     const totalClients = flatClients?.length || 0;
     const totalEngagements = flatClients?.reduce((sum, c) => sum + (c.engagement_count || 0), 0) || 0;
 
-    // Filter tree nodes by search
+    // Filter tree by search + engagement chip + type chip. A parent survives
+    // if it OR any descendant survives, so filters don't hide the ancestor
+    // path to a matching node.
     const filteredTree = useMemo(() => {
-        if (!tree || !searchQuery.trim()) return tree || [];
+        const noSearch = !searchQuery.trim();
+        const noEng = engagementFilter === 'all';
+        const noType = typeFilter === 'all';
+        if (!tree || (noSearch && noEng && noType)) return tree || [];
+
         const q = searchQuery.toLowerCase();
+
+        function nodeMatches(node: Client): boolean {
+            if (!noSearch) {
+                const hit = node.name.toLowerCase().includes(q) ||
+                    node.contact_name?.toLowerCase().includes(q) ||
+                    node.contact_email?.toLowerCase().includes(q);
+                if (!hit) return false;
+            }
+            if (!noEng) {
+                const count = node.engagement_count || 0;
+                if (engagementFilter === 'has' && count === 0) return false;
+                if (engagementFilter === 'none' && count > 0) return false;
+            }
+            if (!noType) {
+                if (node.client_type_id !== typeFilter) return false;
+            }
+            return true;
+        }
 
         function filterNodes(nodes: Client[]): Client[] {
             return nodes
                 .map(node => {
                     const filteredChildren = node.children ? filterNodes(node.children) : [];
-                    const matches = node.name.toLowerCase().includes(q) ||
-                        node.contact_name?.toLowerCase().includes(q) ||
-                        node.contact_email?.toLowerCase().includes(q);
-                    if (matches || filteredChildren.length > 0) {
+                    if (nodeMatches(node) || filteredChildren.length > 0) {
                         return { ...node, children: filteredChildren };
                     }
                     return null;
@@ -515,7 +566,7 @@ export default function ClientsPage() {
         }
 
         return filterNodes(tree);
-    }, [tree, searchQuery]);
+    }, [tree, searchQuery, engagementFilter, typeFilter]);
 
     return (
         <DashboardLayout>
@@ -598,7 +649,7 @@ export default function ClientsPage() {
                             </Button>
                         </div>
                     </CardHeader>
-                    <div className="px-6 pb-4">
+                    <div className="px-6 pb-4 space-y-2.5">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                             <Input
@@ -607,6 +658,74 @@ export default function ClientsPage() {
                                 onChange={e => setSearchQuery(e.target.value)}
                                 className="pl-9 bg-slate-800/50 border-slate-700 text-white"
                             />
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mr-1">Engagements</span>
+                            {([
+                                { id: 'all' as const, label: 'All' },
+                                { id: 'has' as const, label: 'Has engagements' },
+                                { id: 'none' as const, label: 'No engagements' },
+                            ]).map(chip => (
+                                <button
+                                    key={chip.id}
+                                    onClick={() => setEngagementFilter(chip.id)}
+                                    className={cn(
+                                        'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                                        engagementFilter === chip.id
+                                            ? 'bg-primary/15 text-primary border-primary/40'
+                                            : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500',
+                                    )}
+                                >
+                                    {chip.label}
+                                </button>
+                            ))}
+                            {clientTypes.length > 0 && (
+                                <>
+                                    <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mx-1 ml-3">Type</span>
+                                    <button
+                                        onClick={() => setTypeFilter('all')}
+                                        className={cn(
+                                            'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                                            typeFilter === 'all'
+                                                ? 'bg-primary/15 text-primary border-primary/40'
+                                                : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500',
+                                        )}
+                                    >
+                                        All
+                                    </button>
+                                    {clientTypes.map(t => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => setTypeFilter(t.id)}
+                                            className={cn(
+                                                'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                                                typeFilter === t.id
+                                                    ? 'text-white'
+                                                    : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500',
+                                            )}
+                                            style={typeFilter === t.id ? {
+                                                backgroundColor: (t.color || '#6366f1') + '30',
+                                                borderColor: (t.color || '#6366f1') + '80',
+                                                color: t.color || '#6366f1',
+                                            } : undefined}
+                                        >
+                                            <span
+                                                className="inline-block w-1.5 h-1.5 rounded-full mr-1.5"
+                                                style={{ backgroundColor: t.color || '#6366f1' }}
+                                            />
+                                            {t.name}
+                                        </button>
+                                    ))}
+                                </>
+                            )}
+                            {(searchQuery || engagementFilter !== 'all' || typeFilter !== 'all') && (
+                                <button
+                                    onClick={() => { setSearchQuery(''); setEngagementFilter('all'); setTypeFilter('all'); }}
+                                    className="text-[10px] text-slate-500 hover:text-white px-1.5 py-1 transition-colors"
+                                >
+                                    Clear
+                                </button>
+                            )}
                         </div>
                     </div>
                     <CardContent className="pt-0">
@@ -633,7 +752,7 @@ export default function ClientsPage() {
                                 )}
                             </div>
                         ) : (
-                            <div className="space-y-0.5">
+                            <div className="space-y-0.5 max-h-[calc(100vh-460px)] min-h-[300px] overflow-y-auto pr-1">
                                 {filteredTree.map(node => (
                                     <TreeNode
                                         key={node.id}
@@ -644,6 +763,7 @@ export default function ClientsPage() {
                                         onEdit={openEditDialog}
                                         onDelete={setDeleteTarget}
                                         onView={setViewTarget}
+                                        onCreateChild={(parent) => openCreateDialog(parent.id)}
                                         onSelect={setSelectedClient}
                                         selectedId={selectedClient?.id ?? null}
                                         clientTypes={clientTypes}
@@ -712,24 +832,61 @@ export default function ClientsPage() {
                             </div>
                             <div className="space-y-2">
                                 <Label className="text-slate-200">Parent</Label>
-                                <Select
-                                    value={formData.parent_id || "none"}
-                                    onValueChange={(v) => setFormData(prev => ({ ...prev, parent_id: v === 'none' ? '' : v }))}
-                                >
-                                    <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
-                                        <SelectValue placeholder="None (top-level)" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="none">None (top-level)</SelectItem>
-                                        {(flatClients || [])
-                                            .filter(c => c.id !== editingClient?.id)
-                                            .map(c => (
-                                                <SelectItem key={c.id} value={c.id}>
-                                                    {c.name}
-                                                </SelectItem>
-                                            ))}
-                                    </SelectContent>
-                                </Select>
+                                {/* Command-popover instead of Radix Select so a large client
+                                    list is searchable. Mirrors the calendar page's
+                                    "Find engagement" pattern. */}
+                                <Popover open={parentPickerOpen} onOpenChange={setParentPickerOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={parentPickerOpen}
+                                            className="w-full justify-between bg-slate-800/50 border-slate-700 text-white font-normal hover:bg-slate-800"
+                                        >
+                                            {formData.parent_id
+                                                ? (flatClients || []).find(c => c.id === formData.parent_id)?.name || 'Unknown'
+                                                : <span className="text-slate-500">None (top-level)</span>}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0 bg-slate-900 border-slate-700">
+                                        <Command className="bg-slate-900">
+                                            <CommandInput placeholder="Search clients..." className="text-white" />
+                                            <CommandList>
+                                                <CommandEmpty>No client found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    <CommandItem
+                                                        value="__none__"
+                                                        onSelect={() => {
+                                                            setFormData(prev => ({ ...prev, parent_id: '' }));
+                                                            setParentPickerOpen(false);
+                                                        }}
+                                                        className="text-slate-400"
+                                                    >
+                                                        <Check className={cn('mr-2 h-4 w-4', !formData.parent_id ? 'opacity-100' : 'opacity-0')} />
+                                                        None (top-level)
+                                                    </CommandItem>
+                                                    {(flatClients || [])
+                                                        .filter(c => c.id !== editingClient?.id)
+                                                        .map(c => (
+                                                            <CommandItem
+                                                                key={c.id}
+                                                                value={c.name}
+                                                                onSelect={() => {
+                                                                    setFormData(prev => ({ ...prev, parent_id: c.id }));
+                                                                    setParentPickerOpen(false);
+                                                                }}
+                                                                className="text-slate-300"
+                                                            >
+                                                                <Check className={cn('mr-2 h-4 w-4', formData.parent_id === c.id ? 'opacity-100' : 'opacity-0')} />
+                                                                {c.name}
+                                                            </CommandItem>
+                                                        ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
                         </div>
                         <div className="space-y-2">
