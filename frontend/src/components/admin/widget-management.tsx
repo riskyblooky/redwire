@@ -952,7 +952,131 @@ function PreviewChart({ data, chartType }: { data: any; chartType: string }) {
         );
     }
 
-    // Standard: bar or pie
+    // Composite widget types can't preview from a single query — the
+    // builder wizard only produces one query, but these consume N.
+    // Surface an actionable message instead of silently falling back
+    // to a bar chart that misrepresents what the widget will render.
+    const COMPOSITE_TYPES = ['scatter', 'ratio', 'percentage', 'delta', 'overlay'];
+    if (COMPOSITE_TYPES.includes(chartType)) {
+        return (
+            <div className="rounded-lg border border-dashed border-cyan-500/30 bg-cyan-500/5 p-4 text-center">
+                <p className="text-xs text-cyan-300 font-medium">
+                    {chartType} widgets need multiple sub-queries.
+                </p>
+                <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                    The builder wizard only produces one query at a time. Set up the
+                    widget's <code className="text-cyan-400">config.queries</code> array
+                    directly on save, or duplicate an example widget of this type and
+                    edit its sub-queries.
+                </p>
+                <p className="text-[10px] text-slate-500 mt-2">
+                    Preview shows the single-query result below as a stand-in:
+                </p>
+                <div className="mt-2 opacity-60">
+                    <ResponsiveContainer width="100%" height={140}>
+                        <BarChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis dataKey="label" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                            <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                            <Tooltip {...TOOLTIP_STYLE} />
+                            <Bar dataKey="value" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        );
+    }
+
+    // 2D heatmap — needs multi-column group_by (rows carry `labels[]`).
+    if (chartType === 'heatmap') {
+        const isMulti = chartData[0] && Array.isArray(chartData[0].labels) && chartData[0].labels.length >= 2;
+        if (!isMulti) {
+            return (
+                <p className="text-slate-500 text-xs italic text-center py-4">
+                    Heatmap needs a 2-column group-by. Add a second column at Step 2 (Group).
+                </p>
+            );
+        }
+        const xVals = Array.from(new Set(chartData.map((c: any) => c.labels[0])));
+        const yVals = Array.from(new Set(chartData.map((c: any) => c.labels[1])));
+        const grid: Record<string, number> = {};
+        let maxVal = 0;
+        for (const c of chartData) {
+            grid[`${c.labels[0]}||${c.labels[1]}`] = c.value;
+            if (c.value > maxVal) maxVal = c.value;
+        }
+        return (
+            <div className="overflow-x-auto max-w-full">
+                <table className="w-full text-[10px] border-collapse">
+                    <thead>
+                        <tr>
+                            <th />
+                            {xVals.map(x => (<th key={String(x)} className="p-1 text-slate-400 text-center">{String(x)}</th>))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {yVals.map(y => (
+                            <tr key={String(y)}>
+                                <td className="p-1 text-slate-400 font-medium whitespace-nowrap pr-2">{String(y)}</td>
+                                {xVals.map(x => {
+                                    const v = grid[`${x}||${y}`] || 0;
+                                    const alpha = maxVal === 0 ? 0 : v / maxVal;
+                                    return (
+                                        <td key={String(x)}
+                                            className="p-1 text-center text-white font-mono rounded"
+                                            style={{ backgroundColor: `rgba(139, 92, 246, ${0.15 + alpha * 0.75})` }}
+                                        >{v || ''}</td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    }
+
+    // Stat card / gauge — the query almost always returns a group-by, so
+    // collapse it: show the total on top, breakdown mini-bars below.
+    if (chartType === 'stat_card' || chartType === 'gauge') {
+        const total = chartData.reduce((s: number, r: any) => s + (r.value || 0), 0);
+        return (
+            <div className="text-center py-4">
+                <div className="text-4xl font-bold text-white">
+                    {total >= 1_000_000 ? `${(total / 1_000_000).toFixed(1)}M`
+                        : total >= 1_000 ? `${(total / 1_000).toFixed(1)}k`
+                            : total.toLocaleString()}
+                </div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+                    total across {chartData.length} group{chartData.length === 1 ? '' : 's'}
+                </div>
+            </div>
+        );
+    }
+
+    // Area chart — standard mode fills a trend line under the values.
+    if (chartType === 'area_chart') {
+        return (
+            <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={chartData}>
+                    <defs>
+                        <linearGradient id="stdAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                        </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="label" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                    <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                    <Tooltip {...TOOLTIP_STYLE} />
+                    <Area type="monotone" dataKey="value" stroke="#818cf8" strokeWidth={2}
+                        fill="url(#stdAreaGrad)" dot={{ fill: '#818cf8', r: 2 }} />
+                </AreaChart>
+            </ResponsiveContainer>
+        );
+    }
+
+    // Pie
     if (chartType === 'pie_chart') {
         return (
             <ResponsiveContainer width="100%" height={200}>
@@ -973,7 +1097,8 @@ function PreviewChart({ data, chartType }: { data: any; chartType: string }) {
         );
     }
 
-    // Default: bar chart
+    // Default: bar / stacked-bar (stacked mode requires multi_series data,
+    // which falls through to the mode==='multi_series' branch above).
     return (
         <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData}>
