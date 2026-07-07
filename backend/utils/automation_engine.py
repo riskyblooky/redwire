@@ -271,7 +271,9 @@ def _build_resource_link(context: Dict[str, Any]) -> Optional[str]:
 
 
 async def _execute_notify_users(
-    db: AsyncSession, action: dict, context: Dict[str, Any], rule_name: str
+    db: AsyncSession, action: dict, context: Dict[str, Any], rule_name: str,
+    *,
+    rule_is_personal: bool = False,
 ):
     """Send in-app notification to specific users.
 
@@ -320,10 +322,14 @@ async def _execute_notify_users(
     for uid in user_ids:
         if not await _can_see_engagement(uid):
             continue
-        # Note: no skip_self_check — the recipient's per-event mute
-        # preference wins over the rule author's choice. There's no
-        # defensible reason an automation rule should override the
-        # recipient's own mute. Follow-up to GHSA-3ccf-qpj4-vpx8.
+        # For org rules: keep the default self-suppression so a rule
+        # author who caused the trigger event doesn't ping themselves
+        # about their own action. For personal rules: bypass it —
+        # personal rules are always owner→self (the engine filters
+        # them to only owner-caused events, and create_rule forces the
+        # target to [owner_user_id]), so the default self-check would
+        # silently drop every fire. The per-event mute preference is
+        # honored either way.
         await create_notification(
             db=db,
             user_id=uid,
@@ -333,6 +339,7 @@ async def _execute_notify_users(
             link=link,
             actor_id=context.get("user_id"),
             engagement_id=event_engagement_id,
+            skip_self_check=rule_is_personal,
         )
 
 
@@ -619,7 +626,8 @@ async def execute_rule_actions(
     Does NOT commit — the caller is responsible for committing.
     """
     actions = rule.actions or []
-    print(f"[AUTOMATION] Executing {len(actions)} action(s) for rule '{rule.name}'")
+    rule_is_personal = getattr(rule, "owner_user_id", None) is not None
+    print(f"[AUTOMATION] Executing {len(actions)} action(s) for rule '{rule.name}' (personal={rule_is_personal})")
 
     for action_config in actions:
         action_type = action_config.get("type")
@@ -629,7 +637,10 @@ async def execute_rule_actions(
             continue
 
         try:
-            if action_type in ("notify_users", "notify_role", "email", "add_tags"):
+            if action_type == "notify_users":
+                await executor(db, action_config, context, rule.name,
+                               rule_is_personal=rule_is_personal)
+            elif action_type in ("notify_role", "email", "add_tags"):
                 await executor(db, action_config, context, rule.name)
             else:
                 await executor(action_config, context, rule.name)
