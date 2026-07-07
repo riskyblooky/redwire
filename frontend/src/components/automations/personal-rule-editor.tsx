@@ -32,6 +32,7 @@ import {
     AutomationCondition,
     TriggerType,
 } from '@/lib/hooks/use-automations';
+import { AUTOMATION_KNOWN_VALUES } from '@/lib/automation-known-values';
 
 // Personal rules only make sense for triggers where "I did the thing" is a
 // natural filter. Excluded triggers are the ones that fire on foreign
@@ -297,12 +298,30 @@ export function PersonalRuleEditor({
                                                     ))}
                                                 </SelectContent>
                                             </Select>
-                                            <Input
-                                                value={cond.value}
-                                                onChange={e => updateCondition(idx, { value: e.target.value })}
-                                                placeholder="value"
-                                                className="bg-slate-800 border-slate-700 text-white text-xs h-8 flex-1"
-                                            />
+                                            {AUTOMATION_KNOWN_VALUES[cond.field] ? (
+                                                <Select
+                                                    value={cond.value}
+                                                    onValueChange={v => updateCondition(idx, { value: v })}
+                                                >
+                                                    <SelectTrigger className="bg-slate-800 border-slate-700 text-xs h-8 flex-1">
+                                                        <SelectValue placeholder="value" />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="bg-slate-800 border-slate-700">
+                                                        {AUTOMATION_KNOWN_VALUES[cond.field].map(opt => (
+                                                            <SelectItem key={opt.value} value={opt.value} className="text-white text-xs">
+                                                                {opt.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            ) : (
+                                                <Input
+                                                    value={cond.value}
+                                                    onChange={e => updateCondition(idx, { value: e.target.value })}
+                                                    placeholder="value"
+                                                    className="bg-slate-800 border-slate-700 text-white text-xs h-8 flex-1"
+                                                />
+                                            )}
                                             <Button size="icon" variant="ghost" onClick={() => removeCondition(idx)} className="h-7 w-7 text-slate-500 hover:text-red-400">
                                                 <X className="h-3.5 w-3.5" />
                                             </Button>

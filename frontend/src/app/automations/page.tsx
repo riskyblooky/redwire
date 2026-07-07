@@ -58,47 +58,9 @@ import { PersonalRuleEditor } from '@/components/automations/personal-rule-edito
 import { useUsers } from '@/lib/hooks/use-users';
 import { useTags } from '@/lib/hooks/use-tags';
 
-// ── known values for condition dropdowns ─────────────────────────────
-
-const KNOWN_VALUES: Record<string, { label: string; value: string }[]> = {
-    severity: [
-        { label: 'Critical', value: 'critical' },
-        { label: 'High', value: 'high' },
-        { label: 'Medium', value: 'medium' },
-        { label: 'Low', value: 'low' },
-        { label: 'Info', value: 'info' },
-    ],
-    status: [
-        { label: 'Open', value: 'open' },
-        { label: 'In Review', value: 'in_review' },
-        { label: 'Verified', value: 'verified' },
-        { label: 'Remediated', value: 'remediated' },
-        { label: 'Closed', value: 'closed' },
-        { label: 'Pending', value: 'pending' },
-        { label: 'Cleaned', value: 'cleaned' },
-        { label: 'Skipped', value: 'skipped' },
-    ],
-    resource_type: [
-        { label: 'Finding', value: 'finding' },
-        { label: 'Engagement', value: 'engagement' },
-        { label: 'Asset', value: 'asset' },
-        { label: 'Test Case', value: 'testcase' },
-        { label: 'Evidence', value: 'evidence' },
-        { label: 'Note', value: 'note' },
-        { label: 'Comment', value: 'comment' },
-        { label: 'Vault', value: 'vault' },
-        { label: 'Cleanup', value: 'cleanup_artifact' },
-    ],
-    asset_type: [
-        { label: 'IP Address', value: 'ip_address' },
-        { label: 'Domain', value: 'domain' },
-        { label: 'URL', value: 'url' },
-        { label: 'Application', value: 'application' },
-        { label: 'Server', value: 'server' },
-        { label: 'Network', value: 'network' },
-        { label: 'Other', value: 'other' },
-    ],
-};
+// Value dropdowns are shared with the personal-rule editor — see
+// frontend/src/lib/automation-known-values.ts to avoid drift.
+import { AUTOMATION_KNOWN_VALUES as KNOWN_VALUES } from '@/lib/automation-known-values';
 
 // Numeric fields use number input + numeric operators
 const NUMERIC_FIELDS = new Set(['cvss_score']);
