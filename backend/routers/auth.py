@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -284,7 +285,13 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
             "tls_ca_cert": auth_cfg.get("ldap_tls_ca_cert", ""),
         }
         ldap_debug = auth_cfg.get("ldap_debug_enabled", "false").lower() == "true"
-        ldap_info = authenticate_ldap(
+        # ldap3 is synchronous — a raw call from this ``async def`` route
+        # would block the event loop for the entire LDAP handshake (up to
+        # LDAP_LOGIN_TIMEOUT_S), wedging every other request. Push it to
+        # the default threadpool so only that one worker thread stalls if
+        # the DC gets slow, and the loop keeps servicing everyone else.
+        ldap_info = await asyncio.to_thread(
+            authenticate_ldap,
             credentials.username, credentials.password, ldap_settings,
             debug=ldap_debug,
         )
