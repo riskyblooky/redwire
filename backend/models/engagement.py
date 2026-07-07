@@ -9,6 +9,7 @@ import enum
 
 class EngagementStatus(str, enum.Enum):
     PROPOSED = "PROPOSED"
+    SCOPING = "SCOPING"
     PLANNING = "PLANNING"
     IN_PROGRESS = "IN_PROGRESS"
     REPORTING = "REPORTING"

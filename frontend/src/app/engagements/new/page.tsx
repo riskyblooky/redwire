@@ -40,6 +40,7 @@ import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { apiErrorMessage } from '@/lib/api';
 
 const ENGAGEMENT_STATUSES = [
+    { value: 'SCOPING',     label: 'Scoping'     },
     { value: 'PLANNING',    label: 'Planning'    },
     { value: 'IN_PROGRESS', label: 'In Progress' },
     { value: 'REPORTING',   label: 'Reporting'   },
@@ -62,7 +63,7 @@ const initialForm = {
     client_id: '',
     description: '',
     engagement_type: '',
-    status: 'PLANNING',
+    status: 'SCOPING',
     start_date: '',
     end_date: '',
     scope: '',

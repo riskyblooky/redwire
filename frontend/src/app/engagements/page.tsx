@@ -67,6 +67,7 @@ type SortOrder = 'asc' | 'desc';
 
 const ALL_STATUSES = [
     { value: 'PROPOSED',    label: 'Proposed' },
+    { value: 'SCOPING',     label: 'Scoping' },
     { value: 'PLANNING',    label: 'Planning' },
     { value: 'IN_PROGRESS', label: 'In Progress' },
     { value: 'REPORTING',   label: 'Reporting' },

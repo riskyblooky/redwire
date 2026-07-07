@@ -346,6 +346,7 @@ export function SchedulingAssistant({
 
     const statusColor = (status: string) => {
         switch (status) {
+            case 'SCOPING': return 'bg-cyan-500';
             case 'IN_PROGRESS': return 'bg-primary';
             case 'PLANNING': return 'bg-amber-500';
             case 'REPORTING': return 'bg-blue-500';

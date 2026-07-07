@@ -73,6 +73,7 @@ function getPhaseHealth(phase: EngagementPhase, engagementStatus: string): 'on-t
 }
 
 const ENGAGEMENT_STATUSES = [
+    { value: 'SCOPING',     label: 'Scoping'     },
     { value: 'PLANNING',    label: 'Planning'    },
     { value: 'IN_PROGRESS', label: 'In Progress' },
     { value: 'REPORTING',   label: 'Reporting'   },

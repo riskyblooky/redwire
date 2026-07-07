@@ -40,7 +40,7 @@ class EngagementBase(BaseModel):
     client_name: str = Field(..., min_length=1, max_length=NAME)
     client_id: Optional[str] = Field(None, max_length=UUID_FIELD)
     engagement_type: str = Field(..., max_length=SHORT_LABEL)
-    status: Optional[EngagementStatus] = EngagementStatus.PLANNING
+    status: Optional[EngagementStatus] = EngagementStatus.SCOPING
     description: Optional[str] = Field(None, max_length=LONG_TEXT)
     scope: Optional[str] = Field(None, max_length=LONG_TEXT)
     objectives: Optional[str] = Field(None, max_length=LONG_TEXT)

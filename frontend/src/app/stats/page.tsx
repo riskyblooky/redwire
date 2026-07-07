@@ -78,7 +78,7 @@ const STATUS_COLORS: Record<string, string> = {
     OPEN: '#ef4444', IN_REVIEW: '#f59e0b', VERIFIED: '#3b82f6', REMEDIATED: '#10b981', CLOSED: '#64748b',
 };
 const ENG_STATUS_COLORS: Record<string, string> = {
-    PLANNING: '#818cf8', IN_PROGRESS: '#3b82f6', REPORTING: '#f59e0b', COMPLETED: '#10b981', ON_HOLD: '#ef4444',
+    SCOPING: '#06b6d4', PLANNING: '#818cf8', IN_PROGRESS: '#3b82f6', REPORTING: '#f59e0b', COMPLETED: '#10b981', ON_HOLD: '#ef4444',
 };
 const CLEANUP_COLORS: Record<string, string> = {
     PENDING: '#f97316', CLEANED: '#10b981', PARTIALLY_CLEANED: '#f59e0b', NOT_APPLICABLE: '#64748b',
