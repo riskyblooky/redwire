@@ -7,7 +7,10 @@ export interface DashboardWidgetDef {
     id: string;
     name: string;
     description?: string;
-    widget_type: 'stat_card' | 'bar_chart' | 'pie_chart' | 'area_chart' | 'stacked_bar' | 'gauge' | 'table' | 'list';
+    widget_type:
+        | 'stat_card' | 'bar_chart' | 'pie_chart' | 'area_chart' | 'stacked_bar'
+        | 'gauge' | 'table' | 'list'
+        | 'heatmap' | 'scatter' | 'ratio' | 'percentage' | 'delta' | 'overlay';
     data_source: string;
     size: 'small' | 'medium' | 'large' | 'wide' | 'full';
     category: 'overview' | 'findings' | 'engagements' | 'operators' | 'clients' | 'custom';
@@ -149,8 +152,13 @@ export function useResetLayout() {
 
 // ── Custom Query Widget Data ───────────────────────────────────────
 
+// Response shape:
+//   single-query widget → { data: [...], mode?: 'standard' | 'time_series' | 'multi_series', series?: string[] }
+//   composite widget    → { results: [{data, mode, ...}, ...], mode: 'composite' }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function useCustomWidgetData(widgetId: string | undefined) {
-    return useQuery<{ data: any[]; series?: string[]; mode?: string }>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return useQuery<any>({
         queryKey: ['dashboard', 'widget-data', widgetId],
         queryFn: async () => {
             const { data } = await api.get(`/dashboard/widgets/${widgetId}/data`);

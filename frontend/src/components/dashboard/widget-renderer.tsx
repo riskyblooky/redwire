@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import {
     ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend,
     XAxis, YAxis, CartesianGrid, Tooltip, Area, AreaChart, Line, LineChart,
+    ScatterChart, Scatter, ZAxis,
 } from 'recharts';
 import { formatDistanceToNow, format } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
@@ -109,6 +110,17 @@ export default function WidgetRenderer({ widget, isEditing, engagementId, onRemo
             return <GaugeWidget widget={widget} stats={dashStats} isEditing={isEditing} onRemove={onRemove} />;
         case 'list':
             return <ListWidget widget={widget} stats={dashStats} isEditing={isEditing} onRemove={onRemove} />;
+        case 'heatmap':
+            return <HeatmapWidget widget={widget} isEditing={isEditing} onRemove={onRemove} />;
+        case 'scatter':
+            return <ScatterWidget widget={widget} isEditing={isEditing} onRemove={onRemove} />;
+        case 'ratio':
+        case 'percentage':
+            return <RatioWidget widget={widget} isEditing={isEditing} onRemove={onRemove} mode={widget.widget_type as 'ratio' | 'percentage'} />;
+        case 'delta':
+            return <DeltaWidget widget={widget} isEditing={isEditing} onRemove={onRemove} />;
+        case 'overlay':
+            return <OverlayWidget widget={widget} isEditing={isEditing} onRemove={onRemove} />;
         default:
             return (
                 <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
@@ -668,4 +680,281 @@ function getColor(widget: DashboardWidgetDef, entry: any, index: number): string
         case 'cleanup_status': return CLEANUP_COLORS[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];
         default: return widget.config?.colors?.[entry[getDataKey(widget)]] || ACCENT_COLORS[index % ACCENT_COLORS.length];
     }
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  P4/P5 — new widget flavors (heatmap, scatter, ratio, delta, overlay)
+// ══════════════════════════════════════════════════════════════════
+
+/** Given an array of {value: number} entries (or {value} shaped rows),
+ *  return the numeric sum. Used by ratio/percentage/delta collapsors. */
+function sumValues(rows: Array<{ value?: number }> | null | undefined): number {
+    if (!rows) return 0;
+    return rows.reduce((s, r) => s + (typeof r.value === 'number' ? r.value : 0), 0);
+}
+
+/** Pearson correlation coefficient for two parallel numeric arrays. */
+function pearsonR(xs: number[], ys: number[]): number {
+    const n = Math.min(xs.length, ys.length);
+    if (n < 2) return 0;
+    const mx = xs.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    const my = ys.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    let num = 0, dx = 0, dy = 0;
+    for (let i = 0; i < n; i++) {
+        const a = xs[i] - mx, b = ys[i] - my;
+        num += a * b;
+        dx += a * a;
+        dy += b * b;
+    }
+    const denom = Math.sqrt(dx * dy);
+    return denom === 0 ? 0 : num / denom;
+}
+
+// Heatmap — consumes 2D group_by results. Each row carries `labels: [x, y]`
+// and `value`. We pivot to a matrix and colour cells by intensity.
+function HeatmapWidget({ widget, isEditing, onRemove }: {
+    widget: DashboardWidgetDef; isEditing?: boolean; onRemove?: () => void;
+}) {
+    const { data: raw } = useResolvedChartData(widget);
+    const cells = Array.isArray(raw) ? raw : [];
+    // Extract axis dims from the first row's labels[]; skip if not 2D.
+    if (!cells.length || !Array.isArray(cells[0]?.labels) || cells[0].labels.length < 2) {
+        return (
+            <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+                <p className="text-slate-500 text-xs italic text-center py-4">
+                    Heatmap needs a 2D group-by (e.g. severity × status).
+                </p>
+            </WidgetShell>
+        );
+    }
+    const xVals = Array.from(new Set(cells.map(c => c.labels[0])));
+    const yVals = Array.from(new Set(cells.map(c => c.labels[1])));
+    // Map cellKey → value
+    const grid: Record<string, number> = {};
+    let maxVal = 0;
+    for (const c of cells) {
+        const k = `${c.labels[0]}||${c.labels[1]}`;
+        grid[k] = c.value;
+        if (c.value > maxVal) maxVal = c.value;
+    }
+    return (
+        <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+            <div className="overflow-x-auto max-w-full">
+                <table className="w-full text-[10px] border-collapse">
+                    <thead>
+                        <tr>
+                            <th className="p-1 text-left text-slate-500"></th>
+                            {xVals.map(x => (
+                                <th key={x} className="p-1 text-slate-400 font-medium text-center">{String(x)}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {yVals.map(y => (
+                            <tr key={y}>
+                                <td className="p-1 text-slate-400 font-medium whitespace-nowrap pr-2">{String(y)}</td>
+                                {xVals.map(x => {
+                                    const v = grid[`${x}||${y}`] || 0;
+                                    const alpha = maxVal === 0 ? 0 : v / maxVal;
+                                    return (
+                                        <td
+                                            key={x}
+                                            className="p-1 text-center text-white font-mono rounded"
+                                            style={{ backgroundColor: `rgba(139, 92, 246, ${0.15 + alpha * 0.75})` }}
+                                            title={`${y} × ${x}: ${v}`}
+                                        >
+                                            {v || ''}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </WidgetShell>
+    );
+}
+
+// Scatter widget: consumes composite results (2+ queries with a shared
+// bucket key). Bucket keys come from group_by columns; we join on the
+// primary label. Shows Pearson r underneath.
+function ScatterWidget({ widget, isEditing, onRemove }: {
+    widget: DashboardWidgetDef; isEditing?: boolean; onRemove?: () => void;
+}) {
+    const { data: raw } = useResolvedChartData(widget);
+    // Composite response? { results: [{data:[...]}, {data:[...]}] } lives on `raw`.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results = (raw as any)?.results;
+    if (!Array.isArray(results) || results.length < 2) {
+        return (
+            <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+                <p className="text-slate-500 text-xs italic text-center py-4">
+                    Scatter needs a composite widget with at least 2 sub-queries.
+                </p>
+            </WidgetShell>
+        );
+    }
+    const A: Array<{ label: string; value: number }> = results[0].data || [];
+    const B: Array<{ label: string; value: number }> = results[1].data || [];
+    const byLabel = new Map<string, { x?: number; y?: number }>();
+    for (const r of A) byLabel.set(r.label, { ...(byLabel.get(r.label) || {}), x: r.value });
+    for (const r of B) byLabel.set(r.label, { ...(byLabel.get(r.label) || {}), y: r.value });
+    const points = Array.from(byLabel.entries())
+        .filter(([, v]) => v.x !== undefined && v.y !== undefined)
+        .map(([label, v]) => ({ label, x: v.x!, y: v.y! }));
+    const r = pearsonR(points.map(p => p.x), points.map(p => p.y));
+    return (
+        <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+            <ResponsiveContainer width="100%" height={200}>
+                <ScatterChart>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="x" name="A" stroke="#94a3b8" fontSize={10} />
+                    <YAxis dataKey="y" name="B" stroke="#94a3b8" fontSize={10} />
+                    <ZAxis range={[60, 60]} />
+                    <Tooltip {...TOOLTIP_STYLE} cursor={{ strokeDasharray: '3 3' }} />
+                    <Scatter data={points} fill="#8b5cf6" />
+                </ScatterChart>
+            </ResponsiveContainer>
+            <div className="text-center mt-1 text-[11px] text-slate-400">
+                Pearson r = <span className={r > 0.3 ? 'text-green-400 font-semibold' : r < -0.3 ? 'text-red-400 font-semibold' : 'text-slate-400'}>{r.toFixed(3)}</span>
+                <span className="ml-2 text-slate-600">({points.length} points)</span>
+            </div>
+        </WidgetShell>
+    );
+}
+
+// Ratio / Percentage: sum(query0.data) op sum(query1.data). Rendered as a
+// giant stat card. Zero-denominator surfaces as em-dash.
+function RatioWidget({ widget, isEditing, onRemove, mode }: {
+    widget: DashboardWidgetDef; isEditing?: boolean; onRemove?: () => void; mode: 'ratio' | 'percentage';
+}) {
+    const { data: raw } = useResolvedChartData(widget);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results = (raw as any)?.results;
+    if (!Array.isArray(results) || results.length < 2) {
+        return (
+            <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+                <p className="text-slate-500 text-xs italic text-center py-4">
+                    {mode === 'ratio' ? 'Ratio' : 'Percentage'} needs 2 sub-queries in config.queries.
+                </p>
+            </WidgetShell>
+        );
+    }
+    const a = sumValues(results[0].data);
+    const b = sumValues(results[1].data);
+    let display = '—';
+    if (b !== 0) {
+        const v = mode === 'ratio' ? a / b : (a / b) * 100;
+        display = mode === 'ratio' ? v.toFixed(2) : `${v.toFixed(1)}%`;
+    }
+    return (
+        <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+            <div className="text-center py-6">
+                <div className="text-4xl font-bold text-white">{display}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-2">
+                    {formatValue(a)} of {formatValue(b)}
+                </div>
+            </div>
+        </WidgetShell>
+    );
+}
+
+// Delta: results[0] = current period, results[1] = previous period.
+// Show current + percent-change chip.
+function DeltaWidget({ widget, isEditing, onRemove }: {
+    widget: DashboardWidgetDef; isEditing?: boolean; onRemove?: () => void;
+}) {
+    const { data: raw } = useResolvedChartData(widget);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results = (raw as any)?.results;
+    if (!Array.isArray(results) || results.length < 2) {
+        return (
+            <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+                <p className="text-slate-500 text-xs italic text-center py-4">
+                    Delta needs 2 sub-queries (current + previous period).
+                </p>
+            </WidgetShell>
+        );
+    }
+    const curr = sumValues(results[0].data);
+    const prev = sumValues(results[1].data);
+    const delta = prev === 0 ? null : ((curr - prev) / prev) * 100;
+    const arrow = delta === null ? '' : delta > 0 ? '▲' : delta < 0 ? '▼' : '=';
+    const color = delta === null ? 'text-slate-500' : delta > 0 ? 'text-red-400' : 'text-green-400';
+    return (
+        <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+            <div className="text-center py-6">
+                <div className="text-4xl font-bold text-white">{formatValue(curr)}</div>
+                <div className={`mt-2 text-sm font-semibold ${color}`}>
+                    {arrow} {delta === null ? 'no baseline' : `${Math.abs(delta).toFixed(1)}%`}
+                </div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+                    vs previous ({formatValue(prev)})
+                </div>
+            </div>
+        </WidgetShell>
+    );
+}
+
+// Overlay time-series: multiple sub-queries with time_bucket → LineChart
+// with one Line per sub-query, joined on the shared date key.
+function OverlayWidget({ widget, isEditing, onRemove }: {
+    widget: DashboardWidgetDef; isEditing?: boolean; onRemove?: () => void;
+}) {
+    const { data: raw } = useResolvedChartData(widget);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results = (raw as any)?.results;
+    if (!Array.isArray(results) || results.length < 2) {
+        return (
+            <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+                <p className="text-slate-500 text-xs italic text-center py-4">
+                    Overlay needs 2+ time-series sub-queries.
+                </p>
+            </WidgetShell>
+        );
+    }
+    // Merge on `date` key. Each sub-query contributes a column named
+    // ``s${i}`` for the line to reference.
+    const dateMap: Record<string, Record<string, number | string>> = {};
+    results.forEach((r: { data?: Array<{ date?: string; value?: number }> }, i: number) => {
+        (r.data || []).forEach((row) => {
+            const d = row.date;
+            if (!d) return;
+            if (!dateMap[d]) dateMap[d] = { date: d };
+            dateMap[d][`s${i}`] = row.value || 0;
+        });
+    });
+    const merged = Object.values(dateMap).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const labels = widget.config?.series_labels || results.map((_: unknown, i: number) => `Series ${i + 1}`);
+    return (
+        <WidgetShell widget={widget} isEditing={isEditing} onRemove={onRemove}>
+            <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={merged}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis
+                        dataKey="date"
+                        tickFormatter={(v: string) => v ? format(new Date(v), 'MMM d') : ''}
+                        stroke="#94a3b8"
+                        fontSize={10}
+                    />
+                    <YAxis stroke="#94a3b8" fontSize={10} />
+                    <Tooltip {...TOOLTIP_STYLE} />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    {results.map((_: unknown, i: number) => (
+                        <Line
+                            key={i}
+                            type="monotone"
+                            dataKey={`s${i}`}
+                            name={labels[i] || `Series ${i + 1}`}
+                            stroke={ACCENT_COLORS[i % ACCENT_COLORS.length]}
+                            strokeWidth={2}
+                            dot={false}
+                        />
+                    ))}
+                </LineChart>
+            </ResponsiveContainer>
+        </WidgetShell>
+    );
 }

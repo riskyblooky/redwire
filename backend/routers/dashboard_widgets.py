@@ -480,6 +480,137 @@ SYSTEM_WIDGETS = [
     {"id": "sys-cleanup-status", "name": "Cleanup Status", "widget_type": "pie_chart", "data_source": "cleanup_status", "size": "medium", "category": "engagements", "icon": "Trash2", "config": {}},
     {"id": "sys-test-coverage", "name": "Test Case Coverage", "widget_type": "bar_chart", "data_source": "testcase_coverage", "size": "medium", "category": "engagements", "icon": "ClipboardCheck", "config": {}},
     {"id": "sys-findings-category", "name": "Findings by Category", "widget_type": "bar_chart", "data_source": "findings_by_category", "size": "wide", "category": "findings", "icon": "BarChart3", "config": {"layout": "vertical"}},
+
+    # ── P6 example widgets — showcase the query builder's range so that
+    # opening them in the editor pops the builder pre-filled with a real
+    # config. Each demonstrates one of the new capabilities.
+
+    # 1. Multi-column group_by → heatmap
+    {
+        "id": "sys-heatmap-sev-status",
+        "name": "Findings — Severity × Status",
+        "widget_type": "heatmap", "size": "wide", "category": "findings",
+        "icon": "BarChart3",
+        "data_source": "custom_query",
+        "config": {"query": {
+            "table": "findings",
+            "group_by": ["severity", "status"],
+            "aggregation": "count", "value_column": "id",
+            "limit": 100,
+        }},
+    },
+    # 2. Percentile aggregation
+    {
+        "id": "sys-p95-cvss",
+        "name": "P95 CVSS by Severity",
+        "widget_type": "bar_chart", "size": "medium", "category": "findings",
+        "icon": "TrendingUp",
+        "data_source": "custom_query",
+        "config": {"query": {
+            "table": "findings",
+            "group_by": "severity",
+            "aggregation": "p95", "value_column": "cvss_score",
+            "limit": 10,
+        }},
+    },
+    # 3. Composite ratio widget
+    {
+        "id": "sys-remediation-rate",
+        "name": "Remediation Rate",
+        "widget_type": "percentage", "size": "small", "category": "findings",
+        "icon": "Target",
+        "data_source": "custom_query",
+        "config": {"queries": [
+            {
+                "table": "findings", "group_by": "status",
+                "aggregation": "count", "value_column": "id",
+                "filters": [{"column": "status", "operator": "eq", "value": "REMEDIATED"}],
+            },
+            {
+                "table": "findings", "group_by": "status",
+                "aggregation": "count", "value_column": "id",
+            },
+        ]},
+    },
+    # 4. Delta widget (this-week vs last-week)
+    {
+        "id": "sys-findings-week-delta",
+        "name": "Findings — Last 7d vs Prior 7d",
+        "widget_type": "delta", "size": "small", "category": "findings",
+        "icon": "TrendingUp",
+        "data_source": "custom_query",
+        "config": {"queries": [
+            {
+                "table": "findings", "group_by": "severity",
+                "aggregation": "count", "value_column": "id",
+                "date_column": "created_at", "date_range": "7d",
+            },
+            {
+                "table": "findings", "group_by": "severity",
+                "aggregation": "count", "value_column": "id",
+                "date_column": "created_at", "date_range": "custom",
+                "date_start": (datetime.utcnow() - timedelta(days=14)).isoformat(),
+                "date_end": (datetime.utcnow() - timedelta(days=7)).isoformat(),
+            },
+        ]},
+    },
+    # 5. Overlay time-series (findings created vs updated over 30 days)
+    {
+        "id": "sys-created-vs-updated",
+        "name": "Findings — Created vs Updated",
+        "widget_type": "overlay", "size": "wide", "category": "findings",
+        "icon": "TrendingUp",
+        "data_source": "custom_query",
+        "config": {
+            "queries": [
+                {
+                    "table": "findings", "group_by": "severity",
+                    "aggregation": "count", "value_column": "id",
+                    "date_column": "created_at", "date_range": "30d",
+                    "time_bucket": "day",
+                },
+                {
+                    "table": "findings", "group_by": "severity",
+                    "aggregation": "count", "value_column": "id",
+                    "date_column": "updated_at", "date_range": "30d",
+                    "time_bucket": "day",
+                },
+            ],
+            "series_labels": ["Created", "Updated"],
+        },
+    },
+    # 6. Correlation scatter (findings per engagement vs avg CVSS per engagement)
+    {
+        "id": "sys-corr-findings-cvss",
+        "name": "Findings vs CVSS per Engagement",
+        "widget_type": "scatter", "size": "medium", "category": "findings",
+        "icon": "TrendingUp",
+        "data_source": "custom_query",
+        "config": {"queries": [
+            {
+                "table": "findings", "group_by": "engagement_id",
+                "aggregation": "count", "value_column": "id",
+            },
+            {
+                "table": "findings", "group_by": "engagement_id",
+                "aggregation": "avg", "value_column": "cvss_score",
+            },
+        ]},
+    },
+    # 7. Users by role (demonstrates the new users table)
+    {
+        "id": "sys-users-by-role",
+        "name": "Team Composition",
+        "widget_type": "pie_chart", "size": "medium", "category": "operators",
+        "icon": "Users",
+        "data_source": "custom_query",
+        "config": {"query": {
+            "table": "users",
+            "group_by": "role",
+            "aggregation": "count", "value_column": "id",
+            "filters": [{"column": "is_active", "operator": "eq", "value": "true"}],
+        }},
+    },
 ]
 
 # Default layout — what new users see

@@ -46,6 +46,17 @@ const WIDGET_TYPES = [
     { value: 'stat_card', label: 'Stat Card', Icon: Zap },
     { value: 'gauge', label: 'Gauge', Icon: Target },
     { value: 'list', label: 'List', Icon: Table2 },
+    // Post-P5 additions — 2D heatmap from multi-column group_by
+    // (severity × status etc.) and scatter for correlation widgets that
+    // consume multi-query results.
+    { value: 'heatmap', label: 'Heatmap (2D)', Icon: BarChart3 },
+    { value: 'scatter', label: 'Scatter / Correlation', Icon: TrendingUp },
+    // Post-P3 composite widget flavors — all consume config.queries
+    // (up to 6 sub-queries).
+    { value: 'ratio', label: 'Ratio (A ÷ B)', Icon: Zap },
+    { value: 'percentage', label: 'Percentage (A / B × 100)', Icon: Zap },
+    { value: 'delta', label: 'Delta (period vs previous)', Icon: TrendingUp },
+    { value: 'overlay', label: 'Overlay time-series', Icon: TrendingUp },
 ];
 
 const WIDGET_SIZES = [
@@ -116,10 +127,14 @@ const DATE_RANGE_OPTIONS = [
 
 const AGGREGATIONS = [
     { value: 'count', label: 'Count' },
+    { value: 'count_distinct', label: 'Count (distinct)' },
     { value: 'avg', label: 'Average' },
     { value: 'sum', label: 'Sum' },
     { value: 'max', label: 'Maximum' },
     { value: 'min', label: 'Minimum' },
+    { value: 'median', label: 'Median (P50)' },
+    { value: 'p95', label: 'P95' },
+    { value: 'p99', label: 'P99' },
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
