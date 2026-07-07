@@ -24,6 +24,16 @@ from models.asset import Asset
 from models.testcase import TestCase
 from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
 from models.client import Client
+from models.note import Note
+from models.evidence import Evidence
+from models.vault import VaultItem
+from models.automation import AutomationRule
+from models.notification import Notification
+from models.discussion import Thread, Comment, ActivityLog
+from models.intel_item import IntelItem
+from models.intel_feed import IntelFeed
+from models.infra_item import InfraItem
+from models.spray import SprayCampaign, SprayResult
 from models.associations import EngagementAssignment
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
@@ -68,13 +78,25 @@ class LayoutUpdate(BaseModel):
 
 class QueryFilter(BaseModel):
     column: str = Field(..., max_length=64)
-    operator: str = Field("eq", max_length=8)  # eq, ne, gt, lt, gte, lte, like
-    value: str = Field(..., max_length=512)
+    operator: str = Field("eq", max_length=16)  # covers up to is_not_null
+    value: str = Field("", max_length=512)  # blank when operator is presence-only
+
+class MultiQueryPreviewRequest(BaseModel):
+    """Multiple parallel sub-queries used by compositional widgets
+    (ratio / percentage / delta / overlay). Each entry gets executed
+    independently; the frontend combines the results per widget type.
+    """
+    queries: List["QueryPreviewRequest"] = Field(..., min_length=1, max_length=6)
+
 
 class QueryPreviewRequest(BaseModel):
     table: str = Field(..., max_length=64)
-    group_by: str = Field(..., max_length=64)
-    aggregation: str = Field("count", max_length=16)  # count, avg, sum, max, min
+    # ``group_by`` accepts either a single column (back-compat) or a list
+    # for 2D pivots ("severity × status"). Every column must be in the
+    # table's group_by allowlist. Single-string form is normalised into
+    # a 1-element list inside _build_query.
+    group_by: str | List[str] = Field(...)
+    aggregation: str = Field("count", max_length=16)
     value_column: str = Field("id", max_length=64)
     filters: Optional[List[QueryFilter]] = None
     limit: int = Query(50, ge=1, le=MAX_LIST_LIMIT)
@@ -91,12 +113,39 @@ class QueryPreviewRequest(BaseModel):
 # ── Query Builder Allowlist ──────────────────────────────────────────
 
 _TABLE_MAP = {
+    # Original core five
     "findings": Finding,
     "engagements": Engagement,
     "assets": Asset,
     "testcases": TestCase,
     "cleanup_artifacts": CleanupArtifact,
+    # Phase 1 expansion — 15 more tables covering people, records, ops,
+    # collaboration, and intelligence subsystems.
+    "users": User,
+    "clients": Client,
+    "notes": Note,
+    "evidence": Evidence,
+    "vault_items": VaultItem,               # sensitive — see _SENSITIVE_TABLES
+    "automation_rules": AutomationRule,
+    "notifications": Notification,           # sensitive — see _SENSITIVE_TABLES
+    "activity_logs": ActivityLog,
+    "threads": Thread,
+    "comments": Comment,
+    "intel_items": IntelItem,
+    "intel_feeds": IntelFeed,
+    "infra_items": InfraItem,
+    "spray_campaigns": SprayCampaign,
+    "spray_results": SprayResult,
 }
+
+
+# Tables that leak per-user or credential-adjacent data and MUST NOT be
+# queryable by anyone below MANAGE_DASHBOARD_WIDGETS + admin/team-lead:
+#   - vault_items: names/types can hint at credentials in use.
+#   - notifications: every user's inbox → easy per-user surveillance.
+# The runtime gate lives in _assert_query_access.
+_SENSITIVE_TABLES = {"vault_items", "notifications"}
+
 
 _ALLOWED_COLUMNS: dict[str, dict[str, list[str]]] = {
     "findings": {
@@ -134,15 +183,184 @@ _ALLOWED_COLUMNS: dict[str, dict[str, list[str]]] = {
         "filter_columns": ["status", "engagement_id"],
         "series_by": ["status"],
     },
+    # ── Team & org ──────────────────────────────────────────────────
+    "users": {
+        "group_by": ["role", "is_active", "auth_provider", "theme_preference"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at", "last_login", "last_active"],
+        "filter_columns": ["role", "is_active", "auth_provider"],
+        "series_by": ["role", "auth_provider"],
+    },
+    "clients": {
+        "group_by": ["client_type_id", "parent_id"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at", "updated_at"],
+        "filter_columns": ["client_type_id", "parent_id"],
+        "series_by": ["client_type_id"],
+    },
+    # ── Content & knowledge ────────────────────────────────────────
+    "notes": {
+        "group_by": ["engagement_id", "created_by", "parent_id"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at", "updated_at"],
+        "filter_columns": ["engagement_id", "created_by"],
+        "series_by": ["created_by"],
+    },
+    "evidence": {
+        "group_by": ["mime_type", "engagement_id", "finding_id", "testcase_id", "include_in_report"],
+        "aggregate": ["id", "file_size"],
+        "date_columns": ["created_at"],
+        "filter_columns": ["mime_type", "engagement_id", "finding_id", "include_in_report"],
+        "series_by": ["mime_type"],
+    },
+    "vault_items": {
+        "group_by": ["item_type", "engagement_id"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at", "updated_at"],
+        "filter_columns": ["item_type", "engagement_id"],
+        "series_by": ["item_type"],
+    },
+    # ── Automation & delivery ──────────────────────────────────────
+    "automation_rules": {
+        "group_by": ["trigger_type", "is_enabled", "owner_user_id", "engagement_id"],
+        "aggregate": ["id", "trigger_count"],
+        "date_columns": ["created_at", "updated_at", "last_triggered_at"],
+        "filter_columns": ["trigger_type", "is_enabled", "owner_user_id", "engagement_id"],
+        "series_by": ["trigger_type", "is_enabled"],
+    },
+    "notifications": {
+        "group_by": ["event_type", "is_read", "user_id", "actor_id", "engagement_id"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at"],
+        "filter_columns": ["event_type", "is_read", "user_id", "engagement_id"],
+        "series_by": ["event_type", "is_read"],
+    },
+    "activity_logs": {
+        "group_by": ["action", "resource_type", "user_id", "engagement_id"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at"],
+        "filter_columns": ["action", "resource_type", "user_id", "engagement_id"],
+        "series_by": ["action", "resource_type"],
+    },
+    # ── Collaboration ──────────────────────────────────────────────
+    "threads": {
+        "group_by": ["resource_type", "is_resolved", "created_by", "engagement_id"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at"],
+        "filter_columns": ["resource_type", "is_resolved", "created_by", "engagement_id"],
+        "series_by": ["resource_type", "is_resolved"],
+    },
+    "comments": {
+        "group_by": ["thread_id", "created_by", "is_resolved", "is_resolvable"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at", "resolved_at"],
+        "filter_columns": ["thread_id", "created_by", "is_resolved"],
+        "series_by": ["is_resolved"],
+    },
+    # ── Intelligence ───────────────────────────────────────────────
+    "intel_items": {
+        "group_by": ["item_type", "severity", "source", "feed_id"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at", "updated_at", "published_at"],
+        "filter_columns": ["item_type", "severity", "source", "feed_id", "cve_id"],
+        "series_by": ["item_type", "severity"],
+    },
+    "intel_feeds": {
+        "group_by": ["feed_type", "enabled"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at", "last_fetched_at"],
+        "filter_columns": ["feed_type", "enabled"],
+        "series_by": ["feed_type"],
+    },
+    # ── Infrastructure ─────────────────────────────────────────────
+    "infra_items": {
+        "group_by": ["infra_type", "status", "provider", "region"],
+        "aggregate": ["id"],
+        "date_columns": ["created_at"],
+        "filter_columns": ["infra_type", "status", "provider", "region"],
+        "series_by": ["infra_type", "status"],
+    },
+    # ── Spray ops ──────────────────────────────────────────────────
+    "spray_campaigns": {
+        "group_by": ["protocol", "status", "engagement_id", "target_hostname", "domain"],
+        "aggregate": ["id", "total_attempts", "successful", "locked_out", "failed"],
+        "date_columns": ["created_at", "updated_at"],
+        "filter_columns": ["protocol", "status", "engagement_id", "domain"],
+        "series_by": ["protocol", "status"],
+    },
+    "spray_results": {
+        "group_by": ["result", "is_admin", "campaign_id", "domain"],
+        "aggregate": ["id"],
+        "date_columns": [],   # no created_at on SprayResult
+        "filter_columns": ["result", "is_admin", "campaign_id", "domain"],
+        "series_by": ["result"],
+    },
 }
 
-# Predefined safe join paths
+# ── Join graph ──────────────────────────────────────────────────────
+#
+# Each entry declares an edge (from → to) plus the SQLAlchemy join
+# condition. When the caller asks for join_tables=[X, Y, Z], the query
+# builder walks each requested edge in the order given, ensuring
+# dependencies are added first via ``_via`` chains. Extending is a
+# matter of appending one row per new join — the walker figures out
+# the rest.
 _JOIN_PATHS = {
+    # Findings
     ("findings", "engagements"): lambda: (Engagement, Finding.engagement_id == Engagement.id),
-    ("findings", "clients"): lambda: (Client, Engagement.client_id == Client.id),  # requires engagements join first
+    ("findings", "clients"): lambda: (Client, Engagement.client_id == Client.id),
+    # Assets / testcases / cleanup
     ("assets", "engagements"): lambda: (Engagement, Asset.engagement_id == Engagement.id),
+    ("assets", "clients"): lambda: (Client, Engagement.client_id == Client.id),
     ("testcases", "engagements"): lambda: (Engagement, TestCase.engagement_id == Engagement.id),
+    ("testcases", "clients"): lambda: (Client, Engagement.client_id == Client.id),
     ("cleanup_artifacts", "engagements"): lambda: (Engagement, CleanupArtifact.engagement_id == Engagement.id),
+    ("cleanup_artifacts", "clients"): lambda: (Client, Engagement.client_id == Client.id),
+    # Content
+    ("notes", "engagements"): lambda: (Engagement, Note.engagement_id == Engagement.id),
+    ("notes", "users"): lambda: (User, Note.created_by == User.id),
+    ("evidence", "engagements"): lambda: (Engagement, Evidence.engagement_id == Engagement.id),
+    ("evidence", "findings"): lambda: (Finding, Evidence.finding_id == Finding.id),
+    ("evidence", "testcases"): lambda: (TestCase, Evidence.testcase_id == TestCase.id),
+    ("vault_items", "engagements"): lambda: (Engagement, VaultItem.engagement_id == Engagement.id),
+    # Automation / notifications / activity
+    ("automation_rules", "users"): lambda: (User, AutomationRule.created_by == User.id),
+    ("automation_rules", "engagements"): lambda: (Engagement, AutomationRule.engagement_id == Engagement.id),
+    ("notifications", "users"): lambda: (User, Notification.user_id == User.id),
+    ("notifications", "engagements"): lambda: (Engagement, Notification.engagement_id == Engagement.id),
+    ("activity_logs", "users"): lambda: (User, ActivityLog.user_id == User.id),
+    ("activity_logs", "engagements"): lambda: (Engagement, ActivityLog.engagement_id == Engagement.id),
+    # Collaboration
+    ("threads", "engagements"): lambda: (Engagement, Thread.engagement_id == Engagement.id),
+    ("threads", "users"): lambda: (User, Thread.created_by == User.id),
+    ("comments", "threads"): lambda: (Thread, Comment.thread_id == Thread.id),
+    ("comments", "users"): lambda: (User, Comment.created_by == User.id),
+    ("comments", "engagements"): lambda: (Engagement, Thread.engagement_id == Engagement.id),
+    # Intel
+    ("intel_items", "intel_feeds"): lambda: (IntelFeed, IntelItem.feed_id == IntelFeed.id),
+    ("intel_items", "users"): lambda: (User, IntelItem.created_by == User.id),
+    ("intel_feeds", "users"): lambda: (User, IntelFeed.created_by == User.id),
+    # Spray
+    ("spray_campaigns", "engagements"): lambda: (Engagement, SprayCampaign.engagement_id == Engagement.id),
+    ("spray_campaigns", "clients"): lambda: (Client, Engagement.client_id == Client.id),
+    ("spray_results", "spray_campaigns"): lambda: (SprayCampaign, SprayResult.campaign_id == SprayCampaign.id),
+    ("spray_results", "engagements"): lambda: (Engagement, SprayCampaign.engagement_id == Engagement.id),
+    # Clients
+    ("engagements", "clients"): lambda: (Client, Engagement.client_id == Client.id),
+}
+
+# When a requested join depends on an intermediate join being present,
+# declare it here. Keys are (from_table, to_table), values are the list
+# of prerequisite intermediate tables that must be joined first.
+_JOIN_PREREQS: dict[tuple[str, str], list[str]] = {
+    ("findings", "clients"): ["engagements"],
+    ("assets", "clients"): ["engagements"],
+    ("testcases", "clients"): ["engagements"],
+    ("cleanup_artifacts", "clients"): ["engagements"],
+    ("spray_campaigns", "clients"): ["engagements"],
+    ("spray_results", "spray_campaigns"): [],
+    ("spray_results", "engagements"): ["spray_campaigns"],
+    ("comments", "engagements"): ["threads"],
 }
 
 # Columns available via JOINs
@@ -154,21 +372,76 @@ _JOIN_COLUMNS = {
 }
 
 _AGG_FUNCS = {
-    "count": func.count,
-    "avg": func.avg,
-    "sum": func.sum,
-    "max": func.max,
-    "min": func.min,
+    "count": lambda col: func.count(col),
+    "avg": lambda col: func.avg(col),
+    "sum": lambda col: func.sum(col),
+    "max": lambda col: func.max(col),
+    "min": lambda col: func.min(col),
+    # Distinct-count: "how many unique values" — heavier than count() so
+    # cap use to allowlisted columns just like the base aggregations.
+    "count_distinct": lambda col: func.count(func.distinct(col)),
+    # Percentiles use PG's ordered-set aggregate. Fixed common breakpoints
+    # instead of an arbitrary percentile param so the API stays declarative
+    # and the frontend picker is enumerable.
+    "median": lambda col: func.percentile_cont(0.5).within_group(col.asc()),
+    "p95": lambda col: func.percentile_cont(0.95).within_group(col.asc()),
+    "p99": lambda col: func.percentile_cont(0.99).within_group(col.asc()),
 }
 
+
+def _parse_csv(v: str) -> list[str]:
+    """Split a filter value on commas and trim; blanks dropped."""
+    return [s.strip() for s in v.split(",") if s.strip()]
+
+
+def _coerce(col, s: str):
+    """Coerce a string filter value to the column's Python type when the
+    target is numeric or boolean. Strings pass through unchanged so
+    existing enum/status filters keep working. PG can't implicitly
+    convert varchar → double precision, so we do it here."""
+    try:
+        py_type = getattr(getattr(col, "type", None), "python_type", None)
+    except Exception:
+        return s
+    if py_type is None:
+        return s
+    if py_type is int:
+        try:
+            return int(s)
+        except ValueError:
+            return s
+    if py_type is float:
+        try:
+            return float(s)
+        except ValueError:
+            return s
+    if py_type is bool:
+        return s.strip().lower() in ("true", "t", "1", "yes", "y")
+    return s
+
+
 _FILTER_OPS = {
-    "eq": lambda col, val: col == val,
-    "ne": lambda col, val: col != val,
-    "gt": lambda col, val: col > val,
-    "lt": lambda col, val: col < val,
-    "gte": lambda col, val: col >= val,
-    "lte": lambda col, val: col <= val,
-    "like": lambda col, val: col.ilike(f"%{val}%"),
+    "eq":         lambda col, val: col == _coerce(col, val),
+    "ne":         lambda col, val: col != _coerce(col, val),
+    "gt":         lambda col, val: col > _coerce(col, val),
+    "lt":         lambda col, val: col < _coerce(col, val),
+    "gte":        lambda col, val: col >= _coerce(col, val),
+    "lte":        lambda col, val: col <= _coerce(col, val),
+    "like":       lambda col, val: col.ilike(f"%{val}%"),
+    "not_like":   lambda col, val: ~col.ilike(f"%{val}%"),
+    # Multi-value: value is a comma-separated list ("critical,high,medium").
+    "in":         lambda col, val: col.in_([_coerce(col, x) for x in _parse_csv(val)]),
+    "not_in":     lambda col, val: col.notin_([_coerce(col, x) for x in _parse_csv(val)]),
+    # Presence checks — value is ignored on the wire.
+    "is_null":     lambda col, _val: col.is_(None),
+    "is_not_null": lambda col, _val: col.isnot(None),
+    # Range: value is "min,max"; both sides inclusive to match date-range
+    # semantics elsewhere in the codebase.
+    "between": lambda col, val: (
+        col.between(_coerce(col, _parse_csv(val)[0]), _coerce(col, _parse_csv(val)[1]))
+        if len(_parse_csv(val)) == 2
+        else col == None    # noqa: E711 — malformed input matches nothing
+    ),
 }
 
 _DATE_RANGE_MAP = {
@@ -388,26 +661,52 @@ def _resolve_date_filter(req: QueryPreviewRequest, model):
     return date_col >= range_fn()
 
 
-def _apply_joins(query, req: QueryPreviewRequest):
-    """Apply predefined JOINs to the query."""
+def _assert_query_access(req: "QueryPreviewRequest", current_user: User) -> None:
+    """Gate access to sensitive tables. Anyone with MANAGE_DASHBOARD_WIDGETS
+    can already reach the query endpoints, but for the vault/notifications
+    class we tighten further to admin / read-only-admin / team-lead — a
+    normal operator with widget-customize permission should not be able
+    to enumerate credential names or per-user inbox contents.
+    """
+    all_tables = {req.table}
+    if req.join_tables:
+        all_tables.update(req.join_tables)
+    if all_tables & _SENSITIVE_TABLES:
+        if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tables {sorted(_SENSITIVE_TABLES & all_tables)} require admin or team-lead role",
+            )
+
+
+def _apply_joins(query, req: "QueryPreviewRequest"):
+    """Walk the requested join list, adding each edge in order and
+    inserting any declared prerequisites first. Duplicate joins are
+    silently coalesced so a caller asking for the same table twice
+    doesn't blow up the query planner."""
     if not req.join_tables:
         return query
-    joined = set()
-    for jtable in req.join_tables:
+    joined: set[str] = set()
+
+    def _add_edge(jtable: str) -> object:
+        """Recursive: add prereqs first, then the edge itself. Returns the
+        (possibly mutated) query. Uses a nonlocal ``query`` so recursion
+        can chain updates without the caller threading it through."""
+        nonlocal query
+        if jtable in joined:
+            return query
         key = (req.table, jtable)
         if key not in _JOIN_PATHS:
             raise HTTPException(400, f"No join path from '{req.table}' to '{jtable}'")
-        # If joining clients, ensure engagements is joined first
-        if jtable == "clients" and "engagements" not in joined:
-            eng_key = (req.table, "engagements")
-            if eng_key in _JOIN_PATHS:
-                target_model, condition = _JOIN_PATHS[eng_key]()
-                query = query.join(target_model, condition, isouter=True)
-                joined.add("engagements")
+        for prereq in _JOIN_PREREQS.get(key, []):
+            _add_edge(prereq)
         target_model, condition = _JOIN_PATHS[key]()
-        if jtable not in joined:
-            query = query.join(target_model, condition, isouter=True)
-            joined.add(jtable)
+        query = query.join(target_model, condition, isouter=True)
+        joined.add(jtable)
+        return query
+
+    for jtable in req.join_tables:
+        _add_edge(jtable)
     return query
 
 
@@ -419,8 +718,18 @@ def _build_query(req: QueryPreviewRequest):
     model = _TABLE_MAP[req.table]
     allowed = _ALLOWED_COLUMNS[req.table]
 
-    if req.group_by not in allowed["group_by"]:
-        raise HTTPException(400, f"Cannot group by '{req.group_by}'. Allowed: {allowed['group_by']}")
+    # Normalise group_by to a list. Single-string form still works —
+    # callers built against the old shape don't need to change. Every
+    # column must be in the table's group_by allowlist.
+    group_by_cols = req.group_by if isinstance(req.group_by, list) else [req.group_by]
+    if not group_by_cols:
+        raise HTTPException(400, "group_by requires at least one column")
+    if len(group_by_cols) > 3:
+        raise HTTPException(400, "group_by supports up to 3 columns")
+    for col_name in group_by_cols:
+        if col_name not in allowed["group_by"]:
+            raise HTTPException(400, f"Cannot group by '{col_name}'. Allowed: {allowed['group_by']}")
+
     if req.value_column not in allowed["aggregate"]:
         raise HTTPException(400, f"Cannot aggregate '{req.value_column}'. Allowed: {allowed['aggregate']}")
     if req.aggregation not in _AGG_FUNCS:
@@ -442,11 +751,9 @@ def _build_query(req: QueryPreviewRequest):
             raise HTTPException(400, f"Cannot bucket by '{req.date_column}'")
 
         date_col = getattr(model, req.date_column)
-        # Use func.date_trunc for PostgreSQL
         bucket = func.date_trunc(req.time_bucket, date_col).label("date")
 
         if req.series_by:
-            # Multi-series time-series: returns {date, series_val, value}
             series_col = getattr(model, req.series_by)
             query = select(
                 bucket,
@@ -460,12 +767,15 @@ def _build_query(req: QueryPreviewRequest):
             ).group_by(bucket).order_by(bucket)
     else:
         # ── Standard group-by mode ──
-        group_col = getattr(model, req.group_by)
-        query = select(
-            group_col.label("label"),
-            agg_fn(value_col).label("value"),
-        ).group_by(group_col)
-        query = query.order_by(agg_fn(value_col).desc())
+        # Multi-column: emit a labelN column per dim, group by all of them.
+        # Frontend renders as a compound key ("Critical / Open") for
+        # single-bucket viz, or as a 2D heatmap when there are exactly 2.
+        cols = [getattr(model, c) for c in group_by_cols]
+        selects: list = []
+        for i, col in enumerate(cols):
+            selects.append(col.label(f"label{i}" if i > 0 else "label"))
+        selects.append(agg_fn(value_col).label("value"))
+        query = select(*selects).group_by(*cols).order_by(agg_fn(value_col).desc())
 
     # Apply JOINs
     query = _apply_joins(query, req)
@@ -493,6 +803,31 @@ def _build_query(req: QueryPreviewRequest):
     limit = min(max(1, req.limit), 500)
     query = query.limit(limit)
     return query
+
+
+def _format_standard_result(rows, group_by_cols: list[str]) -> dict:
+    """Format standard-mode rows. Single-column groups → {label, value}
+    (unchanged shape, back-compat). Multi-column → the primary label plus
+    ``labels`` array holding every dim so the frontend can render a
+    heatmap / 2-key list without a second round trip."""
+    is_multi = len(group_by_cols) > 1
+    data = []
+    for r in rows:
+        raw_labels: list[str] = []
+        primary = getattr(r, "label", None)
+        raw_labels.append(str(primary) if primary is not None else "(none)")
+        for i in range(1, len(group_by_cols)):
+            v = getattr(r, f"label{i}", None)
+            raw_labels.append(str(v) if v is not None else "(none)")
+        entry: dict = {
+            "label": raw_labels[0] if not is_multi else " / ".join(raw_labels),
+            "value": float(r.value) if r.value else 0,
+        }
+        if is_multi:
+            entry["labels"] = raw_labels
+            entry["dims"] = dict(zip(group_by_cols, raw_labels))
+        data.append(entry)
+    return {"data": data, "mode": "standard", "group_by": group_by_cols}
 
 
 def _format_time_series_result(rows, has_series: bool):
@@ -530,6 +865,40 @@ def _format_time_series_result(rows, has_series: bool):
     }
 
 
+async def _run_single_query(
+    req: QueryPreviewRequest,
+    current_user: User,
+    db: AsyncSession,
+    *,
+    scope_to_user: bool = False,
+) -> dict:
+    """Execute one QueryPreviewRequest and return its formatted result.
+    Shared by the single-query preview, the multi-query preview, and
+    the widget-data endpoint. When ``scope_to_user`` is True, non-admin
+    callers are constrained to their own engagement assignments.
+    """
+    _assert_query_access(req, current_user)
+    query = _build_query(req)
+    if scope_to_user and current_user.role not in (
+        UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD,
+    ):
+        eng_sq = select(EngagementAssignment.engagement_id).where(
+            EngagementAssignment.user_id == current_user.id
+        )
+        model = _TABLE_MAP[req.table]
+        if req.table == "engagements":
+            query = query.where(model.id.in_(eng_sq))
+        elif hasattr(model, "engagement_id"):
+            query = query.where(model.engagement_id.in_(eng_sq))
+    rows = (await db.execute(query)).all()
+    if req.time_bucket and req.date_column:
+        return _format_time_series_result(rows, has_series=bool(req.series_by))
+    return _format_standard_result(
+        rows,
+        req.group_by if isinstance(req.group_by, list) else [req.group_by],
+    )
+
+
 @router.post("/widgets/query-preview")
 async def query_preview(
     req: QueryPreviewRequest,
@@ -539,20 +908,27 @@ async def query_preview(
     """Preview results of a custom query definition. Admin only."""
     if not await has_global_permission(current_user, Permission.MANAGE_DASHBOARD_WIDGETS, db):
         raise HTTPException(status_code=403, detail="Permission denied")
+    return await _run_single_query(req, current_user, db)
 
-    query = _build_query(req)
-    result = await db.execute(query)
-    rows = result.all()
 
-    # Time-series mode
-    if req.time_bucket and req.date_column:
-        return _format_time_series_result(rows, has_series=bool(req.series_by))
-
-    # Standard mode
-    return {
-        "data": [{"label": str(r.label) if r.label else "(none)", "value": float(r.value) if r.value else 0} for r in rows],
-        "mode": "standard",
-    }
+@router.post("/widgets/query-preview-multi")
+async def query_preview_multi(
+    req: MultiQueryPreviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Preview N parallel sub-queries. Feeds compositional widgets
+    (ratio, percentage, delta, overlay). Widget-management only — the
+    per-widget runtime endpoint below handles operator-scoped reads.
+    Runs each sub-query in the same session, then returns them in
+    caller-supplied order so the frontend can do the arithmetic without
+    a second round trip."""
+    if not await has_global_permission(current_user, Permission.MANAGE_DASHBOARD_WIDGETS, db):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    results = []
+    for q in req.queries:
+        results.append(await _run_single_query(q, current_user, db))
+    return {"results": results}
 
 
 @router.get("/widgets/{widget_id}/data")
@@ -561,7 +937,14 @@ async def get_widget_data(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get data for a custom-query widget."""
+    """Get data for a custom-query widget.
+
+    Widget shapes:
+      - Single-query: ``config.query = {...}`` — returns one result payload.
+      - Composite:   ``config.queries = [{...}, {...}, ...]`` — returns
+        ``{results: [...]}`` in the same order for ratio / percentage /
+        delta / overlay widget types.
+    """
     result = await db.execute(select(DashboardWidget).where(DashboardWidget.id == widget_id))
     widget = result.scalar_one_or_none()
     if not widget:
@@ -569,33 +952,26 @@ async def get_widget_data(
     if widget.data_source != "custom_query":
         raise HTTPException(400, "Widget does not use custom_query data source")
 
-    query_config = widget.config.get("query")
+    cfg = widget.config or {}
+    # Composite path — carries N sub-queries.
+    queries_config = cfg.get("queries")
+    if queries_config:
+        if not isinstance(queries_config, list) or not queries_config:
+            raise HTTPException(400, "config.queries must be a non-empty list")
+        if len(queries_config) > 6:
+            raise HTTPException(400, "config.queries capped at 6 sub-queries")
+        results = []
+        for q_cfg in queries_config:
+            sub_req = QueryPreviewRequest(**q_cfg)
+            results.append(await _run_single_query(sub_req, current_user, db, scope_to_user=True))
+        return {"results": results, "mode": "composite"}
+
+    # Single-query path (legacy shape).
+    query_config = cfg.get("query")
     if not query_config:
         return {"data": []}
-
     req = QueryPreviewRequest(**query_config)
-    query = _build_query(req)
-    # GHSA-f9x8-qmr3-jrv9: scope non-admins to engagements they're assigned to.
-    if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
-        eng_sq = select(EngagementAssignment.engagement_id).where(
-            EngagementAssignment.user_id == current_user.id
-        )
-        model = _TABLE_MAP[req.table]
-        if req.table == "engagements":
-            query = query.where(model.id.in_(eng_sq))
-        elif hasattr(model, "engagement_id"):
-            query = query.where(model.engagement_id.in_(eng_sq))
-    result = await db.execute(query)
-    rows = result.all()
-
-    # Time-series mode
-    if req.time_bucket and req.date_column:
-        return _format_time_series_result(rows, has_series=bool(req.series_by))
-
-    return {
-        "data": [{"label": str(r.label) if r.label else "(none)", "value": float(r.value) if r.value else 0} for r in rows],
-        "mode": "standard",
-    }
+    return await _run_single_query(req, current_user, db, scope_to_user=True)
 
 
 @router.get("/widgets/query-schema")
@@ -612,7 +988,8 @@ async def get_query_schema(
             "date_columns": columns.get("date_columns", []),
             "filter_columns": columns.get("filter_columns", columns["group_by"]),
             "series_by": columns.get("series_by", []),
-            "joins": [jt for (ft, jt) in _JOIN_PATHS.keys() if ft == table_name],
+            "joins": sorted({jt for (ft, jt) in _JOIN_PATHS.keys() if ft == table_name}),
+            "sensitive": table_name in _SENSITIVE_TABLES,
         }
     return {
         "tables": list(_TABLE_MAP.keys()),
@@ -621,6 +998,7 @@ async def get_query_schema(
         "filter_operators": list(_FILTER_OPS.keys()),
         "date_ranges": ["7d", "30d", "90d", "quarter", "year", "all", "custom"],
         "time_buckets": ["day", "week", "month"],
+        "sensitive_tables": sorted(_SENSITIVE_TABLES),
     }
 
 
