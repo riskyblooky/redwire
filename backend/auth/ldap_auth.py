@@ -11,6 +11,38 @@ import time
 logger = logging.getLogger(__name__)
 
 
+# Bound both the TCP connect and each subsequent read on the LDAP socket so
+# a silent server (dropped packets after handshake, half-open connection,
+# firewall black-hole) can't wedge a login request forever. Applied to the
+# service bind, user search, AND the user-verify bind — the second half
+# of two-stage auth used to be unbounded too.
+#
+# Override at deploy time with ``LDAP_LOGIN_TIMEOUT_S`` in the .env; default
+# is a middle-ground 15s. Tune down for local/fast networks, up for
+# geographically-distant DCs. ``test_ldap_connection`` keeps its own hard
+# 10s cap independent of this so a wedged "Test Connection" click can't
+# stall the admin UI.
+_DEFAULT_LOGIN_TIMEOUT_S = 15
+
+
+def _login_timeout_s() -> int:
+    """Read the operator-tunable login timeout, clamped to a sane range."""
+    raw = os.environ.get("LDAP_LOGIN_TIMEOUT_S", "").strip()
+    if not raw:
+        return _DEFAULT_LOGIN_TIMEOUT_S
+    try:
+        v = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid LDAP_LOGIN_TIMEOUT_S=%r; falling back to %d",
+            raw, _DEFAULT_LOGIN_TIMEOUT_S,
+        )
+        return _DEFAULT_LOGIN_TIMEOUT_S
+    # Clamp so an operator can't misconfigure themselves into a
+    # never-timeout or 0-second-timeout state.
+    return max(3, min(v, 120))
+
+
 # ── Debug tracing ──────────────────────────────────────────────────────
 #
 # When the admin toggles ``ldap_debug_enabled`` on, the auth path (and
@@ -113,6 +145,7 @@ def _open_server_and_connection(
     password: Optional[str],
     *,
     connect_timeout: Optional[int] = None,
+    receive_timeout: Optional[int] = None,
     trace: Optional[List[Dict[str, Any]]] = None,
     bind_label: str = "bind",
 ):
@@ -159,9 +192,17 @@ def _open_server_and_connection(
 
     # For starttls: connect + upgrade BEFORE binding, so the bind
     # password isn't leaked over plaintext.
+    # receive_timeout bounds every read operation on the connection
+    # (bind response, search response). Combined with the server's
+    # connect_timeout, this makes every step of the handshake wall-time
+    # bounded — a silent server can't hang a login request.
+    conn_kwargs: Dict[str, Any] = {"user": user, "password": password}
+    if receive_timeout is not None:
+        conn_kwargs["receive_timeout"] = receive_timeout
+
     if mode == "starttls":
         t0 = _now_ms()
-        conn = Connection(server, user=user, password=password, auto_bind=False)
+        conn = Connection(server, auto_bind=False, **conn_kwargs)
         if not conn.open():
             _trace_step(trace, "open_socket", False, f"failed: {conn.result}", t0)
             raise RuntimeError(f"LDAP connect failed: {conn.result}")
@@ -184,7 +225,7 @@ def _open_server_and_connection(
     # ldaps or plain: single-step auto_bind is fine.
     t0 = _now_ms()
     try:
-        conn = Connection(server, user=user, password=password, auto_bind=True)
+        conn = Connection(server, auto_bind=True, **conn_kwargs)
     except Exception as exc:
         _trace_step(trace, bind_label, False,
                     f"user={user!r} error={exc.__class__.__name__}: {exc}", t0)
@@ -240,10 +281,18 @@ def authenticate_ldap(
                 f"search_base={search_base!r}, filter_template={search_filter!r}, "
                 f"username_attr={username_attr!r}")
 
+    # Wall-clock cap on every socket op (connect + read). Applied to both
+    # binds and the intervening search so a wedged DC can't stall a login
+    # request. Configurable via LDAP_LOGIN_TIMEOUT_S in the environment.
+    timeout_s = _login_timeout_s()
+    _trace_step(trace, "resolve_timeout", True,
+                f"login_timeout_s={timeout_s} (env: LDAP_LOGIN_TIMEOUT_S)")
+
     try:
         # Step 1: Bind with service account to search for user DN
         server, search_conn = _open_server_and_connection(
             settings, user=bind_dn, password=bind_password,
+            connect_timeout=timeout_s, receive_timeout=timeout_s,
             trace=trace, bind_label="bind_service",
         )
 
@@ -276,6 +325,7 @@ def authenticate_ldap(
         # the service bind above.
         _, user_conn = _open_server_and_connection(
             settings, user=user_dn, password=password,
+            connect_timeout=timeout_s, receive_timeout=timeout_s,
             trace=trace, bind_label="bind_user",
         )
         user_conn.unbind()
@@ -343,7 +393,8 @@ def test_ldap_connection(settings: Dict[str, str], *,
 
     try:
         _, conn = _open_server_and_connection(
-            settings, user=bind_dn, password=bind_password, connect_timeout=10,
+            settings, user=bind_dn, password=bind_password,
+            connect_timeout=10, receive_timeout=10,
             trace=trace, bind_label="bind_service",
         )
         conn.unbind()
