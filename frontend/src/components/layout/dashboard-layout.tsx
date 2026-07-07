@@ -99,7 +99,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     const pathname = usePathname();
     const router = useRouter();
     const { user, logout, mustChangePassword, clearMustChangePassword } = useAuthStore();
-    const [collapsed, setCollapsed] = useState(false);
+    // Persist the collapsed state across route changes. DashboardLayout
+    // re-mounts on every navigation, so a plain useState(false) resets
+    // the sidebar back to expanded on every click. Read the last saved
+    // value on first mount (SSR-safe: no direct window access at the
+    // useState initialiser), then mirror future toggles to localStorage.
+    const [collapsed, setCollapsedRaw] = useState(false);
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const saved = window.localStorage.getItem('sidebar-collapsed');
+        if (saved === 'true') setCollapsedRaw(true);
+    }, []);
+    const setCollapsed = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
+        setCollapsedRaw(prev => {
+            const next = typeof v === 'function' ? v(prev) : v;
+            if (typeof window !== 'undefined') {
+                window.localStorage.setItem('sidebar-collapsed', String(next));
+            }
+            return next;
+        });
+    }, []);
     const navUserBlobUrl = useAuthedImageUrl(user?.profile_photo);
     const [hoverExpanded, setHoverExpanded] = useState(false);
     const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
