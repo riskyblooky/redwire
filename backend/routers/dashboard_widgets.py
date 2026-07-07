@@ -640,8 +640,15 @@ async def list_widgets(
     )
     widgets = result.scalars().all()
 
-    # If no system widgets exist, seed them
-    if not any(w.is_system for w in widgets):
+    # Seed any missing system widgets. Guard used to be "zero system
+    # widgets in DB" which meant that once the original set was seeded on
+    # a fresh install, later additions to SYSTEM_WIDGETS never landed on
+    # existing deployments. The seeder is already per-ID idempotent
+    # (checks each id before inserting), so simply comparing the count
+    # against the source list catches any gap.
+    system_ids_in_db = {w.id for w in widgets if w.is_system}
+    system_ids_in_source = {w["id"] for w in SYSTEM_WIDGETS}
+    if system_ids_in_source - system_ids_in_db:
         await _seed_system_widgets(db)
         result = await db.execute(
             select(DashboardWidget).where(DashboardWidget.is_active == True).order_by(DashboardWidget.category, DashboardWidget.name)
