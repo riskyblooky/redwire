@@ -348,6 +348,41 @@ def authenticate_ldap(
         return None
 
 
+def authenticate_ldap_with_trace(
+    username: str,
+    password: str,
+    settings: Dict[str, str],
+) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Run a full ``authenticate_ldap`` with tracing forced on and
+    return ``(user_info_or_None, trace)`` so the caller can render the
+    per-step trace directly (used by the admin "Test Login" endpoint).
+
+    Trace never contains passwords — see ``_trace_step`` callers.
+    """
+    trace: List[Dict[str, Any]] = []
+    user_info: Optional[Dict[str, Any]] = None
+
+    # authenticate_ldap builds its own trace when debug=True and hands
+    # it to _emit_trace. We need the raw list, so re-implement the
+    # dispatch by temporarily swapping in a collector that captures the
+    # trace before logging. Simpler than plumbing an out-param through
+    # every callsite.
+    global _emit_trace  # noqa: PLW0603
+    original_emit = _emit_trace
+
+    def _capture(t, u, *, ok):
+        if t:
+            trace.extend(t)
+        original_emit(t, u, ok=ok)
+
+    _emit_trace = _capture
+    try:
+        user_info = authenticate_ldap(username, password, settings, debug=True)
+    finally:
+        _emit_trace = original_emit
+    return user_info, trace
+
+
 def _emit_trace(trace: Optional[List[Dict[str, Any]]], username: str, *,
                 ok: bool) -> None:
     """Log a captured trace to the standard logger. Prefixed so operators

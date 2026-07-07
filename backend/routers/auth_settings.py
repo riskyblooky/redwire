@@ -16,7 +16,7 @@ from schemas.auth_settings import (
     SmtpSettings, SmtpTestRequest,
 )
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES, WRITE_ADMIN_ROLES
-from auth.ldap_auth import test_ldap_connection
+from auth.ldap_auth import test_ldap_connection, authenticate_ldap_with_trace
 
 router = APIRouter(prefix="/admin/auth-settings", tags=["admin-auth-settings"])
 
@@ -230,6 +230,61 @@ async def test_ldap(
     }
     debug = raw.get("ldap_debug_enabled", "false").lower() == "true"
     return test_ldap_connection(settings_for_test, debug=debug)
+
+
+@router.post(
+    "/ldap/test-login",
+    summary="Test an LDAP login end-to-end",
+    description=(
+        "Runs a full two-stage LDAP authentication (service bind → user "
+        "search → user bind) using an admin-supplied username + password, "
+        "and returns the same [LDAP DEBUG] trace surfaced by the runtime "
+        "login path. Trace is always on for this endpoint regardless of "
+        "the ldap_debug_enabled setting — the whole point is diagnosis."
+    ),
+)
+async def test_ldap_login(
+    creds: LdapTestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(WRITE_ADMIN_ROLES)),
+):
+    """Attempt a real LDAP login with the supplied credentials and
+    return the per-step trace. Admin-only. Passwords are never included
+    in the trace by ldap_auth — safe to surface to the UI."""
+    raw = await _get_all_settings(db)
+    ldap_settings = {
+        "server_url": raw.get("ldap_server_url", ""),
+        "bind_dn": raw.get("ldap_bind_dn", ""),
+        "bind_password": raw.get("ldap_bind_password", ""),
+        "search_base": raw.get("ldap_search_base", ""),
+        "search_filter": raw.get("ldap_search_filter", "(uid={username})"),
+        "username_attribute": raw.get("ldap_username_attribute", "uid"),
+        "email_attribute": raw.get("ldap_email_attribute", "mail"),
+        "fullname_attribute": raw.get("ldap_fullname_attribute", "cn"),
+        "tls_mode": raw.get("ldap_tls_mode", ""),
+        "tls_verify": raw.get("ldap_tls_verify", "true"),
+        "tls_enabled": raw.get("ldap_tls_enabled", "true"),
+        "tls_ca_cert": raw.get("ldap_tls_ca_cert", ""),
+    }
+
+    # Same threadpool wrap as the real login path so a wedged DC can't
+    # stall the admin UI while the test bind proceeds.
+    import asyncio
+    user_info, trace = await asyncio.to_thread(
+        authenticate_ldap_with_trace,
+        creds.username, creds.password, ldap_settings,
+    )
+
+    success = user_info is not None
+    return {
+        "success": success,
+        "message": (
+            f"Login succeeded — resolved user: {user_info['username']!r}"
+            if success else "Login failed. See trace for the step that broke."
+        ),
+        "user": user_info if success else None,
+        "trace": trace,
+    }
 
 
 # ─── Splash Screen / Login Banner ─────────────────────────────────────────────

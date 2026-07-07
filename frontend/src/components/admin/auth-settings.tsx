@@ -33,6 +33,10 @@ interface LdapTestResult {
     trace?: LdapTraceStep[];
 }
 
+interface LdapLoginTestResult extends LdapTestResult {
+    user?: { username: string; email: string; full_name: string } | null;
+}
+
 interface SamlSettings {
     enabled: boolean;
     idp_entity_id: string;
@@ -79,6 +83,11 @@ export function AuthSettingsManagement() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testResult, setTestResult] = useState<LdapTestResult | null>(null);
+    const [testLoginOpen, setTestLoginOpen] = useState(false);
+    const [testLoginUsername, setTestLoginUsername] = useState('');
+    const [testLoginPassword, setTestLoginPassword] = useState('');
+    const [testLoginResult, setTestLoginResult] = useState<LdapLoginTestResult | null>(null);
+    const [testLoginRunning, setTestLoginRunning] = useState(false);
     const [testingLdap, setTestingLdap] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [splash, setSplash] = useState({ enabled: false, title: '', message: '' });
@@ -180,6 +189,35 @@ export function AuthSettingsManagement() {
         } finally {
             setSaving(false);
         }
+    };
+
+    const runTestLogin = async () => {
+        if (!testLoginUsername || !testLoginPassword) return;
+        setTestLoginRunning(true);
+        setTestLoginResult(null);
+        try {
+            const res = await fetch(`${API}/admin/auth-settings/ldap/test-login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${getToken()}`,
+                },
+                body: JSON.stringify({ username: testLoginUsername, password: testLoginPassword }),
+            });
+            const data = await res.json();
+            setTestLoginResult(data);
+        } catch (e) {
+            setTestLoginResult({ success: false, message: String(e) });
+        } finally {
+            setTestLoginRunning(false);
+        }
+    };
+
+    const openTestLogin = () => {
+        setTestLoginUsername('');
+        setTestLoginPassword('');
+        setTestLoginResult(null);
+        setTestLoginOpen(true);
     };
 
     const testLdapConnection = async () => {
@@ -425,6 +463,12 @@ export function AuthSettingsManagement() {
                         >
                             {testingLdap ? 'Testing...' : 'Test Connection'}
                         </button>
+                        <button
+                            onClick={openTestLogin}
+                            className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                            Test Login…
+                        </button>
                         {testResult && (
                             <span className={`text-sm ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
                                 {testResult.message}
@@ -466,6 +510,125 @@ export function AuthSettingsManagement() {
                     )}
                 </div>
             </div>
+
+            {/* ── LDAP Test Login modal ─────────────────────────────── */}
+            {testLoginOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+                    onClick={() => setTestLoginOpen(false)}
+                >
+                    <div
+                        className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-semibold text-white">LDAP Test Login</h3>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                    Runs a real two-stage bind (service → search → user) with the currently
+                                    saved settings. Passwords stay out of the returned trace.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setTestLoginOpen(false)}
+                                className="text-slate-400 hover:text-white text-2xl leading-none px-1"
+                                aria-label="Close"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-3 overflow-y-auto">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label className="block">
+                                    <span className="block text-xs text-foreground/70 mb-1">Username</span>
+                                    <input
+                                        type="text"
+                                        value={testLoginUsername}
+                                        onChange={(e) => setTestLoginUsername(e.target.value)}
+                                        placeholder={ldap.username_attribute === 'uid' ? 'jdoe' : ''}
+                                        className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                        autoFocus
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="block text-xs text-foreground/70 mb-1">Password</span>
+                                    <input
+                                        type="password"
+                                        value={testLoginPassword}
+                                        onChange={(e) => setTestLoginPassword(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') runTestLogin();
+                                        }}
+                                    />
+                                </label>
+                            </div>
+
+                            <button
+                                onClick={runTestLogin}
+                                disabled={!testLoginUsername || !testLoginPassword || testLoginRunning}
+                                className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                            >
+                                {testLoginRunning ? 'Running…' : 'Run test login'}
+                            </button>
+
+                            {testLoginResult && (
+                                <div className="mt-2 space-y-3">
+                                    <div className={`rounded-lg border p-3 ${testLoginResult.success
+                                        ? 'border-green-500/30 bg-green-500/10'
+                                        : 'border-red-500/30 bg-red-500/10'
+                                        }`}>
+                                        <div className={`text-sm font-medium ${testLoginResult.success ? 'text-green-300' : 'text-red-300'}`}>
+                                            {testLoginResult.success ? '✓ ' : '✗ '}{testLoginResult.message}
+                                        </div>
+                                        {testLoginResult.user && (
+                                            <div className="text-xs text-foreground/70 mt-1 font-mono">
+                                                username={testLoginResult.user.username}
+                                                {' · '}email={testLoginResult.user.email || '(none)'}
+                                                {' · '}full_name={testLoginResult.user.full_name || '(none)'}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {testLoginResult.trace && testLoginResult.trace.length > 0 && (
+                                        <div className="rounded-lg border border-border/60 bg-secondary/20">
+                                            <div className="px-3 py-2 border-b border-border/60 flex items-center justify-between">
+                                                <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
+                                                    Trace
+                                                </span>
+                                                <span className="text-[10px] text-foreground/50">
+                                                    {testLoginResult.trace.length} step{testLoginResult.trace.length === 1 ? '' : 's'}
+                                                </span>
+                                            </div>
+                                            <ol className="divide-y divide-border/40 font-mono text-[11px]">
+                                                {testLoginResult.trace.map((step, i) => (
+                                                    <li key={i} className="px-3 py-1.5 flex items-start gap-2">
+                                                        <span className={step.ok ? 'text-green-400 shrink-0' : 'text-red-400 shrink-0'}>
+                                                            {step.ok ? '✓' : '✗'}
+                                                        </span>
+                                                        <span className="text-primary shrink-0 min-w-[8rem]">
+                                                            {step.step}
+                                                        </span>
+                                                        <span className="text-foreground/70 flex-1 break-all">
+                                                            {step.message}
+                                                        </span>
+                                                        {step.elapsed_ms !== undefined && (
+                                                            <span className="text-foreground/40 shrink-0">
+                                                                {step.elapsed_ms.toFixed(1)}ms
+                                                            </span>
+                                                        )}
+                                                    </li>
+                                                ))}
+                                            </ol>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── SAML SSO Section ────────────────────────────────── */}
             <div className="bg-card rounded-xl border border-border overflow-hidden">
