@@ -212,8 +212,20 @@ async def websocket_endpoint(
     # 2c. Engagement-scoped resources: require ENGAGEMENT_VIEW on the owning
     # engagement. (dashboard:global is intentionally permissive here;
     # broadcast-side scoping is tracked separately.)
+    #
+    # Admin / read-only-admin / team-lead bypass the per-engagement
+    # gate — same pattern as every REST view endpoint (see e.g.
+    # engagements.py:323, notes.py:121). Without this an admin who
+    # isn't a direct member of the engagement can't open the
+    # collaboration WS at all, so /notes and every other real-time
+    # surface silently 1008-close for them.
     if engagement_id is not None:
-        if not await check_engagement_permission(
+        is_admin_view = role in (
+            UserRole.ADMIN.value,
+            UserRole.READ_ONLY_ADMIN.value,
+            UserRole.TEAM_LEAD.value,
+        )
+        if not is_admin_view and not await check_engagement_permission(
             user_id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
         ):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -332,17 +344,24 @@ async def yjs_websocket_endpoint(
     #   - edit requires NOTE_EDIT (owner) or NOTE_EDIT_ANY (non-owner);
     #     admin / read-only-admin / team-lead bypass the edit check
     # Without this, the WS path is a softer door than the REST one.
-    if not await check_engagement_permission(
-        user_id, note.engagement_id, Permission.NOTE_VIEW.value, db
-    ):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
+    #
+    # Admin / read-only-admin / team-lead bypass the VIEW gate too
+    # (mirrors notes.py:121). Previously an admin who wasn't a direct
+    # engagement member couldn't open the Y.js sync socket for any
+    # note in that engagement — the WS was a *stricter* door than
+    # the REST fetch of the same note, so the frontend loaded the
+    # note metadata fine and then hung on the collab handshake.
     is_admin = role in (
         UserRole.ADMIN.value,
         UserRole.READ_ONLY_ADMIN.value,
         UserRole.TEAM_LEAD.value,
     )
+    if not is_admin and not await check_engagement_permission(
+        user_id, note.engagement_id, Permission.NOTE_VIEW.value, db
+    ):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     if is_admin:
         can_edit = True
     else:
