@@ -1,6 +1,7 @@
 import os
+import time
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError, BotoCoreError
 from typing import Optional
 import io
 
@@ -25,16 +26,75 @@ class StorageService:
         self._ensure_bucket_exists()
 
     def _ensure_bucket_exists(self):
-        """Ensure the configured bucket exists in MinIO."""
-        try:
-            self.s3.head_bucket(Bucket=self.bucket_name)
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == '404':
-                print(f"🪣 Creating bucket: {self.bucket_name}")
-                self.s3.create_bucket(Bucket=self.bucket_name)
-            else:
-                print(f"❌ Error checking bucket: {e}")
+        """Ensure the configured bucket exists in MinIO.
+
+        Three failure classes we split on:
+          - Bucket doesn't exist yet → create it.
+          - MinIO rejects our credentials (403 / AccessDenied /
+            InvalidAccessKeyId / SignatureDoesNotMatch) → persistent,
+            no point retrying. Fail loud on startup so the operator
+            sees the mismatch immediately rather than only when
+            someone tries to upload evidence and every request 500s.
+          - Transient (endpoint unreachable, network hiccup, MinIO
+            still finalising its root credential after volume init)
+            → retry with backoff.
+
+        Previously this printed non-404 errors and swallowed them,
+        letting the backend boot with a broken storage layer — every
+        subsequent upload then failed with HTTP 500 wrapping a MinIO
+        error that pointed nowhere useful. Prefer crash-loop with a
+        clear message over silent-broken."""
+        # 403-shaped codes from AWS S3 / MinIO indicating creds don't
+        # match. Retrying with the same creds won't help.
+        CRED_MISMATCH = {
+            'AccessDenied', 'InvalidAccessKeyId',
+            'SignatureDoesNotMatch', '403',
+        }
+        attempts = 6
+        delay = 1
+        last_error: Optional[str] = None
+        for attempt in range(1, attempts + 1):
+            try:
+                self.s3.head_bucket(Bucket=self.bucket_name)
+                return
+            except ClientError as e:
+                code = e.response.get('Error', {}).get('Code', '')
+                last_error = code
+                if code in ('404', 'NoSuchBucket', 'NotFound'):
+                    try:
+                        print(f"🪣 Creating bucket: {self.bucket_name}")
+                        self.s3.create_bucket(Bucket=self.bucket_name)
+                        return
+                    except ClientError as ce:
+                        if ce.response.get('Error', {}).get('Code') == 'BucketAlreadyOwnedByYou':
+                            return
+                        raise
+                if code in CRED_MISMATCH:
+                    raise RuntimeError(
+                        f"MinIO rejected the backend's credentials ({code}). "
+                        f"MINIO_ACCESS_KEY / MINIO_SECRET_KEY in .env do not "
+                        f"match the MinIO container's root user. If .env was "
+                        f"regenerated after a prior deploy, the minio_data "
+                        f"volume still carries the old root credential — "
+                        f"either restore .env to match, or "
+                        f"`docker compose down -v` the minio service and let "
+                        f"it re-init from the current .env."
+                    )
+                print(f"⏳ Bucket check failed (attempt {attempt}/{attempts}): "
+                      f"{code} — retrying in {delay}s")
+            except (EndpointConnectionError, BotoCoreError) as e:
+                last_error = type(e).__name__
+                print(f"⏳ MinIO unreachable (attempt {attempt}/{attempts}): "
+                      f"{last_error} — retrying in {delay}s")
+            time.sleep(delay)
+            delay = min(delay * 2, 15)
+
+        raise RuntimeError(
+            f"Could not verify or create bucket '{self.bucket_name}' after "
+            f"{attempts} attempts (last error: {last_error}). Check "
+            f"MINIO_ENDPOINT and that the MinIO container is running and "
+            f"reachable from the backend."
+        )
 
     async def upload_file(self, file_content: bytes, filename: str, content_type: Optional[str] = None) -> str:
         """Upload a file to MinIO and return its storage key/path."""
