@@ -1,17 +1,26 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEngagementContext } from '@/stores/engagement-store';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
-import { Briefcase } from 'lucide-react';
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+    CommandSeparator,
+} from '@/components/ui/command';
+import { Button } from '@/components/ui/button';
+import { Briefcase, Check, ChevronsUpDown, Globe } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export default function EngagementSelector() {
     const pathname = usePathname();
@@ -19,6 +28,7 @@ export default function EngagementSelector() {
     const searchParams = useSearchParams();
     const { selectedEngagementId, setSelectedEngagement } = useEngagementContext();
     const { data: engagements, isLoading } = useEngagements();
+    const [open, setOpen] = useState(false);
 
     // Only show on dashboard, engagements, findings, assets, testcases and stats pages
     const isDashboard = pathname === '/dashboard';
@@ -46,11 +56,19 @@ export default function EngagementSelector() {
 
     // PLANNING, IN_PROGRESS, REPORTING — the three "still in flight" states
     // where the operator might want quick context-switching. COMPLETED /
-    // ON_HOLD / PROPOSED are deliberately excluded so the dropdown stays
-    // short; those live on the full engagements list page.
-    const activeEngagements = engagements?.filter(
-        (eng) => eng.status === 'IN_PROGRESS' || eng.status === 'PLANNING' || eng.status === 'REPORTING'
-    ) || [];
+    // ON_HOLD / PROPOSED are deliberately excluded so the list stays short;
+    // those live on the full engagements list page.
+    const activeEngagements = useMemo(
+        () => engagements?.filter(
+            (eng) => eng.status === 'IN_PROGRESS' || eng.status === 'PLANNING' || eng.status === 'REPORTING',
+        ) ?? [],
+        [engagements],
+    );
+
+    const selectedName = useMemo(() => {
+        if (!selectedEngagementId || selectedEngagementId === 'global') return null;
+        return engagements?.find(e => e.id === selectedEngagementId)?.name ?? null;
+    }, [engagements, selectedEngagementId]);
 
     const handleValueChange = (value: string) => {
         const currentTab = searchParams?.get('tab');
@@ -58,7 +76,6 @@ export default function EngagementSelector() {
         if (value === 'global') {
             setSelectedEngagement('global');
             if (isDashboard || isStats) {
-                // On dashboard/stats, just update store — no navigation
                 return;
             }
             if (pathname?.startsWith('/engagements/')) {
@@ -67,10 +84,8 @@ export default function EngagementSelector() {
         } else {
             setSelectedEngagement(value);
             if (isDashboard || isStats) {
-                // On dashboard/stats, just update store — no navigation
                 return;
             }
-            // If we're on an engagement detail page, navigate to the new one while preserving the tab
             if (pathname?.startsWith('/engagements/')) {
                 const tabQuery = currentTab ? `?tab=${currentTab}` : '';
                 router.push(`/engagements/${value}${tabQuery}`);
@@ -85,35 +100,86 @@ export default function EngagementSelector() {
     }
 
     return (
-        <Select
-            value={selectedEngagementId || 'global'}
-            onValueChange={handleValueChange}
-        >
-            <SelectTrigger className="w-[280px] bg-slate-900 border-slate-700 text-white">
-                <div className="flex items-center gap-2">
-                    <Briefcase className="h-4 w-4" />
-                    <SelectValue placeholder="Select engagement" />
-                </div>
-            </SelectTrigger>
-            <SelectContent className="bg-slate-900 border-slate-700">
-                <SelectItem value="global" className="text-slate-300 hover:bg-slate-800 hover:text-white">
-                    Global (All Engagements)
-                </SelectItem>
-                {activeEngagements.length > 0 && (
-                    <>
-                        <div className="px-2 py-1.5 text-xs font-semibold text-slate-500">Active Engagements</div>
-                        {activeEngagements.map((engagement) => (
-                            <SelectItem
-                                key={engagement.id}
-                                value={engagement.id}
-                                className="text-slate-300 hover:bg-slate-800 hover:text-white"
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className="w-[280px] justify-between bg-slate-900 border-slate-700 text-white font-normal hover:bg-slate-800 hover:text-white"
+                >
+                    <div className="flex items-center gap-2 min-w-0">
+                        <Briefcase className="h-4 w-4 shrink-0" />
+                        <span className="truncate">
+                            {selectedName ?? 'Global (All Engagements)'}
+                        </span>
+                    </div>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent
+                className="w-[320px] p-0 bg-slate-900 border-slate-700"
+                align="start"
+            >
+                <Command className="bg-slate-900">
+                    <CommandInput placeholder="Search engagements…" className="text-white" />
+                    <CommandList className="max-h-80">
+                        <CommandEmpty>No engagement found.</CommandEmpty>
+                        <CommandGroup>
+                            <CommandItem
+                                value="__global__ Global All Engagements"
+                                onSelect={() => {
+                                    handleValueChange('global');
+                                    setOpen(false);
+                                }}
+                                className="text-slate-200"
                             >
-                                {engagement.name}
-                            </SelectItem>
-                        ))}
-                    </>
-                )}
-            </SelectContent>
-        </Select>
+                                <Check
+                                    className={cn(
+                                        'mr-2 h-3.5 w-3.5',
+                                        (!selectedEngagementId || selectedEngagementId === 'global')
+                                            ? 'opacity-100' : 'opacity-0',
+                                    )}
+                                />
+                                <Globe className="h-3.5 w-3.5 text-slate-400 mr-1.5" />
+                                <span>Global (All Engagements)</span>
+                            </CommandItem>
+                        </CommandGroup>
+                        {activeEngagements.length > 0 && (
+                            <>
+                                <CommandSeparator />
+                                <CommandGroup heading="Active Engagements">
+                                    {activeEngagements.map(eng => (
+                                        <CommandItem
+                                            key={eng.id}
+                                            value={`${eng.name} ${eng.client_name ?? ''}`}
+                                            onSelect={() => {
+                                                handleValueChange(eng.id);
+                                                setOpen(false);
+                                            }}
+                                            className="text-slate-200"
+                                        >
+                                            <Check
+                                                className={cn(
+                                                    'mr-2 h-3.5 w-3.5',
+                                                    selectedEngagementId === eng.id ? 'opacity-100' : 'opacity-0',
+                                                )}
+                                            />
+                                            <Briefcase className="h-3 w-3 text-primary mr-1.5" />
+                                            <span className="truncate flex-1">{eng.name}</span>
+                                            {eng.client_name && (
+                                                <span className="text-[10px] text-slate-500 ml-2 truncate">
+                                                    {eng.client_name}
+                                                </span>
+                                            )}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </>
+                        )}
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
     );
 }

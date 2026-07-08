@@ -54,6 +54,12 @@ class EngagementBase(BaseModel):
     ceiling_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
 
 class EngagementCreate(EngagementBase):
+    # Override the Base's optional start_date to hard-require it at
+    # create time. Existing rows may still be null (legacy imports,
+    # older creates) — the DB column stays nullable so we don't have
+    # to backfill — but every NEW engagement must anchor to a start
+    # date so calendar/phase math has a real value to work with.
+    start_date: datetime
     assigned_user_ids: Optional[List[str]] = []
     assignments: Optional[List[EngagementAssignmentCreate]] = []
     # Optional tag ids at create time — same shape as findings/testcases.

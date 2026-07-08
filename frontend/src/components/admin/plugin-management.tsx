@@ -66,7 +66,16 @@ function useTogglePlugin() {
             const { data } = await api.put(`/plugins/${pluginId}/toggle`, { enabled });
             return data;
         },
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins'] }),
+        onSuccess: () => {
+            // The manifest.enabled flip on the backend is authoritative,
+            // but three separate caches feed the UI: the admin list, the
+            // sidebar nav-items, and every PluginSlot on any page. All
+            // three must be invalidated or a disabled plugin's tab / nav
+            // link lingers until the individual staleTime expires.
+            qc.invalidateQueries({ queryKey: ['plugins'] });
+            qc.invalidateQueries({ queryKey: ['plugin-nav-items'] });
+            qc.invalidateQueries({ queryKey: ['plugin-extensions'] });
+        },
     });
 }
 

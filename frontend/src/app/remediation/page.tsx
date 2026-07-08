@@ -46,6 +46,19 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/components/ui/command';
+import {
     Dialog,
     DialogContent,
     DialogHeader,
@@ -59,6 +72,7 @@ import {
     Trash2, FileText, ExternalLink, Server,
     Key, UserCog, ShieldOff, Terminal, Package, HelpCircle,
     Clock, MinusCircle, ArrowUpDown, ArrowUp, ArrowDown, Sparkles, MessageSquare,
+    Check, ChevronsUpDown,
 } from 'lucide-react';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -122,7 +136,12 @@ export default function RemediationPage() {
     const [severityFilter, setSeverityFilter] = useState('ALL');
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
+    const [engagementPickerOpen, setEngagementPickerOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('findings');
+    const selectedEngagement = useMemo(
+        () => engagements.find(e => e.id === selectedEngagementId) ?? null,
+        [engagements, selectedEngagementId],
+    );
     const [sortField, setSortField] = useState<string>('severity');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [assetFilter, setAssetFilter] = useState('ALL');
@@ -304,32 +323,78 @@ export default function RemediationPage() {
                     <CardContent className="py-4">
                         <div className="flex items-center gap-4">
                             <label className="text-sm font-semibold text-slate-300 uppercase tracking-wider whitespace-nowrap">Engagement</label>
-                            <Select value={selectedEngagementId} onValueChange={setSelectedEngagementId}>
-                                <SelectTrigger className="bg-slate-950/50 border-slate-800 text-white h-11 max-w-lg">
-                                    <SelectValue placeholder="Select an engagement to view remediation..." />
-                                </SelectTrigger>
-                                <SelectContent className="bg-slate-900 border-slate-800 text-white max-h-80">
-                                    {isLoadingEngagements ? (
-                                        <div className="p-4 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></div>
-                                    ) : (
-                                        engagements.map((eng) => (
-                                            <SelectItem key={eng.id} value={eng.id}>
-                                                <div className="flex items-center gap-2">
-                                                    <span>{eng.name}</span>
-                                                    <Badge variant="outline" className={cn(
-                                                        "text-[9px] px-1.5 h-4 border-none uppercase font-bold",
-                                                        eng.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400' :
-                                                            eng.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400' :
-                                                                'bg-slate-500/10 text-slate-400'
-                                                    )}>
-                                                        {eng.status?.replace(/_/g, ' ')}
-                                                    </Badge>
-                                                </div>
-                                            </SelectItem>
-                                        ))
-                                    )}
-                                </SelectContent>
-                            </Select>
+                            <Popover open={engagementPickerOpen} onOpenChange={setEngagementPickerOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={engagementPickerOpen}
+                                        disabled={isLoadingEngagements}
+                                        className="bg-slate-950/50 border-slate-800 text-white h-11 max-w-lg w-full justify-between font-normal hover:bg-slate-900"
+                                    >
+                                        {isLoadingEngagements ? (
+                                            <span className="flex items-center gap-2 text-slate-400">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading engagements…
+                                            </span>
+                                        ) : selectedEngagement ? (
+                                            <span className="flex items-center gap-2 truncate">
+                                                <span className="truncate">{selectedEngagement.name}</span>
+                                                <Badge variant="outline" className={cn(
+                                                    "text-[9px] px-1.5 h-4 border-none uppercase font-bold shrink-0",
+                                                    selectedEngagement.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400' :
+                                                        selectedEngagement.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400' :
+                                                            'bg-slate-500/10 text-slate-400'
+                                                )}>
+                                                    {selectedEngagement.status?.replace(/_/g, ' ')}
+                                                </Badge>
+                                            </span>
+                                        ) : (
+                                            <span className="text-slate-400">Select an engagement to view remediation…</span>
+                                        )}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[420px] p-0 bg-slate-900 border-slate-800" align="start">
+                                    <Command className="bg-slate-900">
+                                        <CommandInput placeholder="Search engagements…" className="text-white" />
+                                        <CommandList className="max-h-80">
+                                            <CommandEmpty>No engagement found.</CommandEmpty>
+                                            <CommandGroup>
+                                                {engagements.map(eng => (
+                                                    <CommandItem
+                                                        key={eng.id}
+                                                        value={`${eng.name} ${eng.client_name ?? ''}`}
+                                                        onSelect={() => {
+                                                            setSelectedEngagementId(eng.id);
+                                                            setEngagementPickerOpen(false);
+                                                        }}
+                                                        className="text-slate-200"
+                                                    >
+                                                        <Check className={cn(
+                                                            'mr-2 h-3.5 w-3.5',
+                                                            selectedEngagementId === eng.id ? 'opacity-100' : 'opacity-0',
+                                                        )} />
+                                                        <span className="truncate flex-1">{eng.name}</span>
+                                                        {eng.client_name && (
+                                                            <span className="text-[10px] text-slate-500 ml-2 truncate">
+                                                                {eng.client_name}
+                                                            </span>
+                                                        )}
+                                                        <Badge variant="outline" className={cn(
+                                                            "text-[9px] px-1.5 h-4 border-none uppercase font-bold ml-2 shrink-0",
+                                                            eng.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400' :
+                                                                eng.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400' :
+                                                                    'bg-slate-500/10 text-slate-400'
+                                                        )}>
+                                                            {eng.status?.replace(/_/g, ' ')}
+                                                        </Badge>
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
                         </div>
                     </CardContent>
                 </Card>
