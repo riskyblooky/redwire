@@ -75,7 +75,27 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
       REFRESH_TOKEN_EXPIRE_HOURS: 24
       MINIO_ENDPOINT: minio:9000
-      MINIO_EXTERNAL_ENDPOINT: localhost:9000
+      # MinIO endpoint the BROWSER will hit. Presigned URLs get their
+      # host swapped from MINIO_ENDPOINT to this value before being
+      # returned to the frontend.
+      #
+      # Left unset by default: prod compose intentionally does NOT
+      # publish MinIO's port 9000, so there is no correct default we
+      # can pick that works everywhere. When unset, storage.py falls
+      # back to MINIO_ENDPOINT (`minio:9000`) — presigned URLs will
+      # be non-functional in the browser, which is the "obviously
+      # broken" state we prefer over silently pointing at a wrong
+      # host (the previous default was `localhost:9000`, which meant
+      # "the user's laptop, not the server" and would connection-
+      # refuse everywhere except a local single-box test).
+      #
+      # To make presigned URLs work in real prod, either:
+      #  (a) publish port 9000 and set MINIO_EXTERNAL_ENDPOINT to
+      #      the reachable host:port, or
+      #  (b) route MinIO through nginx at /minio/ and point this at
+      #      ${DOMAIN_NAME}/minio (requires signature-passthrough
+      #      config on the nginx location).
+      MINIO_EXTERNAL_ENDPOINT: ${MINIO_EXTERNAL_ENDPOINT:-}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: redwire-evidence

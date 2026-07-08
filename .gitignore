@@ -66,9 +66,17 @@ Thumbs.db
 *.sqlite
 postgres_data/
 
-# Uploads
+# Uploads — `uploads/` is left unanchored so backend/uploads/* (the
+# real runtime upload path for profile photos, vault, wordlists)
+# stays ignored. `evidence/` is anchored to repo root because the
+# unanchored form was accidentally swallowing
+# frontend/src/app/engagements/[id]/evidence/ — a Next.js route
+# whose /[eid]/page.tsx never got committed and 404'd on every
+# fresh deploy. Runtime evidence goes to MinIO, not disk; the
+# root-anchored ignore is kept only in case someone flips storage
+# back to local at the repo root.
 uploads/
-evidence/
+/evidence/
 
 # Coverage
 htmlcov/

@@ -8,7 +8,13 @@ import io
 class StorageService:
     def __init__(self):
         self.endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
-        self.external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", self.endpoint)
+        # Fall back to the internal endpoint when unset OR set to an
+        # empty string. The compose file uses ``${VAR:-}`` which yields
+        # "" when VAR isn't in .env — treat that as "not provided" so
+        # presigned URLs come back with the internal `minio:9000` host
+        # rather than a URL missing its authority (which is subtler
+        # and worse to debug).
+        self.external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT") or self.endpoint
         self.access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
         self.secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
         self.bucket_name = os.getenv("MINIO_BUCKET", "redwire-evidence")
