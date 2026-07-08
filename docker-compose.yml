@@ -101,8 +101,13 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      # Build context is the repo root so the frontend image can COPY
+      # backend/plugins into the build stage — sync-plugin-frontends
+      # bakes plugin React pages into the Next.js app tree. Matches
+      # docker-compose.prod.yml. Requires .dockerignore at the repo
+      # root to keep the context lean.
+      context: .
+      dockerfile: frontend/Dockerfile
       target: development
     image: redwire-frontend:dev
     container_name: redwire-frontend
