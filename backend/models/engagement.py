@@ -68,3 +68,5 @@ class Engagement(Base, AuditMixin):
     cleanup_artifacts = relationship("CleanupArtifact", back_populates="engagement", cascade="all, delete-orphan")
     phases = relationship("EngagementPhase", backref="engagement", cascade="all, delete-orphan", order_by="EngagementPhase.sort_order")
     required_skills = relationship("EngagementSkill", back_populates="engagement", cascade="all, delete-orphan")
+    # Global tag pool shared with findings + testcases.
+    tags = relationship("Tag", secondary="engagement_tags", backref="engagements", lazy="selectin")

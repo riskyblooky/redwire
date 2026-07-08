@@ -103,6 +103,30 @@ const EngagementRow = ({ engagement, handleView, handleEdit, handleDelete, handl
                             {engagement.description}
                         </div>
                     )}
+                    {engagement.tags && engagement.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                            {engagement.tags.slice(0, 4).map((tag: { id: string; name: string; color: string | null }) => (
+                                <span
+                                    key={tag.id}
+                                    className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border"
+                                    style={{
+                                        backgroundColor: tag.color ? `${tag.color}18` : '#1e293b',
+                                        borderColor: tag.color ? `${tag.color}40` : '#334155',
+                                        color: tag.color ?? '#94a3b8',
+                                    }}
+                                >
+                                    <span
+                                        className="w-1 h-1 rounded-full"
+                                        style={{ backgroundColor: tag.color ?? '#94a3b8' }}
+                                    />
+                                    {tag.name}
+                                </span>
+                            ))}
+                            {engagement.tags.length > 4 && (
+                                <span className="text-[9px] text-slate-500 self-center">+{engagement.tags.length - 4}</span>
+                            )}
+                        </div>
+                    )}
                 </div>
             </TableCell>
             <TableCell className="text-slate-300">

@@ -54,8 +54,17 @@ class FindingTag(Base):
 
 class TestCaseTag(Base):
     __tablename__ = "testcase_tags"
-    
+
     testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+
+class EngagementTag(Base):
+    """Many-to-many join between engagements and the global tags table.
+    Mirrors FindingTag / TestCaseTag exactly — Tag rows are shared across
+    all resource types, engagement_tags just records the linkage."""
+    __tablename__ = "engagement_tags"
+
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), primary_key=True)
     tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
 
 class FindingTestCase(Base):

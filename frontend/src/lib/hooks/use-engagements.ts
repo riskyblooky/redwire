@@ -50,6 +50,7 @@ export interface Engagement {
     assigned_users: AssignedUser[];
     assignment_details: EngagementAssignment[];
     phases: EngagementPhase[];
+    tags: Array<{ id: string; name: string; color: string | null }>;
     marking_profile_id?: string | null;
     default_classification_level?: string | null;
     default_classification_suffix?: string | null;
@@ -69,6 +70,8 @@ export interface EngagementCreate {
     end_date?: string;
     assigned_user_ids?: string[];
     assignments?: EngagementAssignmentCreate[];
+    // Optional tag ids on create. Empty array / omission = no tags.
+    tag_ids?: string[];
     marking_profile_id?: string | null;
     default_classification_level?: string | null;
     default_classification_suffix?: string | null;

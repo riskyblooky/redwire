@@ -35,6 +35,7 @@ import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { UserAssignmentField } from '@/components/engagements/user-assignment-field';
+import { TagPickerField } from '@/components/engagements/tag-picker-field';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { apiErrorMessage } from '@/lib/api';
@@ -69,6 +70,7 @@ const initialForm = {
     scope: '',
     objectives: '',
     assigned_user_ids: [] as string[],
+    tag_ids: [] as string[],
 };
 
 export default function NewEngagementPage() {
@@ -308,6 +310,15 @@ export default function NewEngagementPage() {
                                     fieldContext={{ resourceType: 'engagement', fieldName: 'Objectives' }}
                                 />
                             </div>
+
+                            <SectionDivider label="Tags" />
+                            <TagPickerField
+                                selected={formData.tag_ids}
+                                onChange={ids => {
+                                    setFormData(prev => ({ ...prev, tag_ids: ids }));
+                                    setDetailsDirty(true);
+                                }}
+                            />
                         </CardContent>
                     </Card>
                 </TabsContent>

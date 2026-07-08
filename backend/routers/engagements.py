@@ -221,6 +221,7 @@ async def get_engagements(
         selectinload(Engagement.assignment_details).selectinload(EngagementAssignment.role),
         selectinload(Engagement.client).selectinload(Client.client_type),
         selectinload(Engagement.phases),
+        selectinload(Engagement.tags),
     )
     for f in base_filters:
         query = query.where(f)
@@ -284,6 +285,7 @@ async def get_proposed_engagements(
             selectinload(Engagement.assignment_details).selectinload(EngagementAssignment.role),
             selectinload(Engagement.client).selectinload(Client.client_type),
             selectinload(Engagement.phases),
+            selectinload(Engagement.tags),
         )
         .where(Engagement.status == EngagementStatus.PROPOSED)
         .order_by(Engagement.start_date.asc())
@@ -305,6 +307,7 @@ async def get_engagement(
             selectinload(Engagement.assignment_details).selectinload(EngagementAssignment.role),
             selectinload(Engagement.client).selectinload(Client.client_type),
             selectinload(Engagement.phases),
+            selectinload(Engagement.tags),
         )
         .where(Engagement.id == engagement_id)
     )
@@ -345,6 +348,7 @@ async def create_engagement(
     data = engagement_data.model_dump()
     user_ids = data.pop("assigned_user_ids", [])
     assignments_data = data.pop("assignments", [])
+    tag_ids = data.pop("tag_ids", []) or []
     
     # Strip empty client_id to prevent UUID DataError
     if not data.get("client_id"):
@@ -399,6 +403,18 @@ async def create_engagement(
     
     db.add(new_engagement)
     await db.flush()  # Ensure engagement has an ID
+
+    # Assign tags — foreign / unknown ids drop via the .in_() lookup.
+    # Insert directly into the join table rather than going through the
+    # ORM relationship: assigning to ``new_engagement.tags`` computes a
+    # diff against the current collection, which triggers a lazy load
+    # SQLAlchemy can't service from this async context (MissingGreenlet).
+    if tag_ids:
+        from models.finding import Tag
+        from models.associations import EngagementTag
+        tag_result = await db.execute(select(Tag.id).where(Tag.id.in_(tag_ids)))
+        for tid in [r[0] for r in tag_result.all()]:
+            db.add(EngagementTag(engagement_id=new_engagement.id, tag_id=tid))
 
     # Auto-create phases for non-PROPOSED engagements
     if new_engagement.status != EngagementStatus.PROPOSED:
@@ -468,6 +484,10 @@ async def update_engagement(
     update_data = engagement_data.model_dump(exclude_unset=True)
     user_ids = update_data.pop("assigned_user_ids", None)
     assignments_data = update_data.pop("assignments", None)
+    # tag_ids semantics: None = don't touch, [] = clear all, [...] = replace.
+    # Sentinel object distinguishes "field absent" from "explicit empty list".
+    _TAG_NOT_SET = object()
+    tag_ids = update_data.pop("tag_ids", _TAG_NOT_SET)
 
     # GHSA-rh65-78qj-3mg2: non-admin operators may not re-parent an engagement
     # to a different client via mass-assigned client_id. Admins/leads still can.
@@ -556,7 +576,22 @@ async def update_engagement(
             )
             db.add(new_assign)
             new_assigned_user_ids.add(uid)
-    
+
+    # Replace tags iff caller sent tag_ids (even empty list clears them).
+    # Same reason as create: bypass the ORM relationship diff and touch
+    # the join table directly so async greenlet doesn't trip.
+    if tag_ids is not _TAG_NOT_SET:
+        from sqlalchemy import delete as _sa_delete
+        from models.finding import Tag
+        from models.associations import EngagementTag
+        await db.execute(
+            _sa_delete(EngagementTag).where(EngagementTag.engagement_id == engagement_id)
+        )
+        if tag_ids:
+            tag_result = await db.execute(select(Tag.id).where(Tag.id.in_(tag_ids)))
+            for tid in [r[0] for r in tag_result.all()]:
+                db.add(EngagementTag(engagement_id=engagement_id, tag_id=tid))
+
     await db.commit()
     await db.refresh(engagement)
 

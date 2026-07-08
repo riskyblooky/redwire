@@ -418,6 +418,37 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                         </Card>
                     </div>
 
+                    {/* Tags */}
+                    {engagement.tags && engagement.tags.length > 0 && (
+                        <Card className="border-slate-800 bg-slate-900/50 border-t-2 border-t-purple-500/20">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-bold text-purple-400 uppercase tracking-tight">Tags</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {engagement.tags.map((tag: { id: string; name: string; color: string | null }) => (
+                                        <Badge
+                                            key={tag.id}
+                                            variant="outline"
+                                            className="text-[10px] font-medium border py-0.5"
+                                            style={{
+                                                backgroundColor: tag.color ? `${tag.color}18` : undefined,
+                                                borderColor: tag.color ? `${tag.color}40` : undefined,
+                                                color: tag.color ?? undefined,
+                                            }}
+                                        >
+                                            <span
+                                                className="inline-block w-1.5 h-1.5 rounded-full mr-1.5"
+                                                style={{ backgroundColor: tag.color ?? undefined }}
+                                            />
+                                            {tag.name}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
                     {/* Recent Activity */}
                     <Card className="border-slate-800 bg-slate-900/40 backdrop-blur-xs border-l-4 border-l-blue-500/30">
                         <CardHeader className="pb-3 flex flex-row items-center justify-between">

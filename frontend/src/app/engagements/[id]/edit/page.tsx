@@ -37,6 +37,7 @@ import { ClassificationPicker } from '@/components/marking/classification-picker
 import { useClients } from '@/lib/hooks/use-clients';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { TeamManagementDialog } from '@/components/engagements/team-management-dialog';
+import { TagPickerField } from '@/components/engagements/tag-picker-field';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -138,6 +139,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         start_date: '', end_date: '', scope: '', objectives: '',
         marking_profile_id: '', default_classification_level: '',
         default_classification_suffix: '', ceiling_classification_level: '',
+        tag_ids: [] as string[],
     });
     const [detailsDirty, setDetailsDirty] = useState(false);
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
@@ -189,6 +191,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 default_classification_level:  engagement.default_classification_level || '',
                 default_classification_suffix: engagement.default_classification_suffix || '',
                 ceiling_classification_level:  engagement.ceiling_classification_level || '',
+                tag_ids:                       (engagement.tags || []).map(t => t.id),
             });
             setDetailsDirty(false);
         }
@@ -474,6 +477,15 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                             fieldContext={{ resourceType: 'engagement', fieldName: 'Objectives' }}
                                         />
                                     </div>
+
+                                    <SectionDivider label="Tags" />
+                                    <TagPickerField
+                                        selected={formData.tag_ids}
+                                        onChange={ids => {
+                                            setFormData(prev => ({ ...prev, tag_ids: ids }));
+                                            setDetailsDirty(true);
+                                        }}
+                                    />
 
                                     <SectionDivider label="Classification Marking" />
                                     <div className="space-y-4">

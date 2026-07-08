@@ -5,6 +5,7 @@ from models.engagement import EngagementStatus
 from schemas.user import UserSummary
 from schemas.rbac import EngagementAssignmentCreate, EngagementAssignmentResponse
 from schemas.client import ClientResponse as ClientSchemaResponse
+from schemas.finding import TagResponse
 from schemas._field_limits import (
     ENUM_STR,
     LONG_TEXT,
@@ -55,6 +56,10 @@ class EngagementBase(BaseModel):
 class EngagementCreate(EngagementBase):
     assigned_user_ids: Optional[List[str]] = []
     assignments: Optional[List[EngagementAssignmentCreate]] = []
+    # Optional tag ids at create time — same shape as findings/testcases.
+    # Foreign / unknown ids are silently dropped by the .in_() lookup so a
+    # stale client can't poison the row with junk associations.
+    tag_ids: Optional[List[str]] = []
 
 class EngagementUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=NAME)
@@ -73,6 +78,8 @@ class EngagementUpdate(BaseModel):
     ceiling_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     assigned_user_ids: Optional[List[str]] = None
     assignments: Optional[List[EngagementAssignmentCreate]] = None
+    # None = don't touch, [] = clear all — same semantics as findings.
+    tag_ids: Optional[List[str]] = None
 
 class EngagementResponse(EngagementBase):
     id: str
@@ -85,6 +92,7 @@ class EngagementResponse(EngagementBase):
     assignment_details: List["EngagementAssignmentResponse"] = []
     client: Optional[ClientSchemaResponse] = None
     phases: List[EngagementPhaseResponse] = []
+    tags: List[TagResponse] = []
 
     class Config:
         from_attributes = True
