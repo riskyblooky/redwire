@@ -91,6 +91,22 @@ const TOOLTIP_STYLE = {
     labelStyle: { color: '#94a3b8' },
 };
 
+/** Cap for growing chart datasets on this page. Recharts silently
+ *  degrades once bars overlap or labels collide; keeping a hard cap
+ *  means the visual stays readable at 20 clients / 200 clients /
+ *  2000 clients. If you need more, drill into the underlying resource
+ *  list page, not the summary chart. */
+const TOP_N = 20;
+
+/** Sort by a numeric key desc, then take the top N. Bounded rendering
+ *  helper used by every unbounded chart on this page. */
+function topN<T>(rows: T[] | undefined | null, key: keyof T, n: number = TOP_N): T[] {
+    if (!rows || rows.length === 0) return [];
+    return [...rows]
+        .sort((a, b) => (Number(b[key]) || 0) - (Number(a[key]) || 0))
+        .slice(0, n);
+}
+
 function LoadingPlaceholder({ height = 300 }: { height?: number }) {
     return <div className={`flex items-center justify-center text-slate-500`} style={{ height }}><Activity className="h-5 w-5 animate-spin mr-2" /> Loading...</div>;
 }
@@ -411,9 +427,11 @@ export default function StatsPage() {
                                 <CardDescription>Top vulnerability categories</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {catLoading ? <LoadingPlaceholder /> : (findingsByCategory?.categories?.length ?? 0) === 0 ? <EmptyState /> : (
-                                    <ResponsiveContainer width="100%" height={Math.max(200, (findingsByCategory?.categories?.length || 0) * 35)}>
-                                        <BarChart data={findingsByCategory?.categories || []} layout="vertical">
+                                {catLoading ? <LoadingPlaceholder /> : (findingsByCategory?.categories?.length ?? 0) === 0 ? <EmptyState /> : (() => {
+                                    const rows = topN(findingsByCategory?.categories, 'count');
+                                    return (
+                                    <ResponsiveContainer width="100%" height={Math.min(700, Math.max(200, rows.length * 35))}>
+                                        <BarChart data={rows} layout="vertical">
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                             <XAxis type="number" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                                             <YAxis type="category" dataKey="category" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} width={160} />
@@ -421,7 +439,8 @@ export default function StatsPage() {
                                             <Bar dataKey="count" fill="#818cf8" radius={[0, 6, 6, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
-                                )}
+                                    );
+                                })()}
                             </CardContent>
                         </Card>
 
@@ -434,7 +453,7 @@ export default function StatsPage() {
                             <CardContent>
                                 {metricsLoading ? <LoadingPlaceholder /> : (engMetrics?.per_engagement?.length ?? 0) === 0 ? <EmptyState /> : (
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={engMetrics?.per_engagement || []}>
+                                        <BarChart data={topN(engMetrics?.per_engagement, 'findings_count')}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                             <XAxis dataKey="engagement" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={60} />
                                             <YAxis yAxisId="left" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
@@ -493,7 +512,7 @@ export default function StatsPage() {
                                 <CardContent>
                                     {metricsLoading ? <LoadingPlaceholder height={250} /> : (
                                         <ResponsiveContainer width="100%" height={250}>
-                                            <BarChart data={engMetrics?.by_client || []} layout="vertical">
+                                            <BarChart data={topN(engMetrics?.by_client, 'count')} layout="vertical">
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                                 <XAxis type="number" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
                                                 <YAxis type="category" dataKey="client" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} width={120} />
@@ -566,7 +585,7 @@ export default function StatsPage() {
                             <CardContent>
                                 {metricsLoading ? <LoadingPlaceholder /> : (engMetrics?.per_engagement?.length ?? 0) === 0 ? <EmptyState /> : (
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={engMetrics?.per_engagement || []}>
+                                        <BarChart data={topN(engMetrics?.per_engagement, 'findings_count')}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                             <XAxis dataKey="engagement" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={60} />
                                             <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
@@ -609,7 +628,10 @@ export default function StatsPage() {
                                 <CardDescription>Findings, severity breakdown, and CVSS by client</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {clientsLoading ? <LoadingPlaceholder height={200} /> : (clientStats?.clients?.length ?? 0) === 0 ? <EmptyState /> : (
+                                {clientsLoading ? <LoadingPlaceholder height={200} /> : (clientStats?.clients?.length ?? 0) === 0 ? <EmptyState /> : (() => {
+                                    const shown = topN(clientStats?.clients, 'total_findings');
+                                    const total = clientStats?.clients?.length ?? 0;
+                                    return (
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-xs">
                                             <thead>
@@ -635,7 +657,7 @@ export default function StatsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {clientStats?.clients.map((c, idx) => {
+                                                {shown.map((c, idx) => {
                                                     // Client name is null in global stats mode for non-admins.
                                                     const label = c.client ?? '—';
                                                     const initial = (c.client?.[0] ?? '·').toUpperCase();
@@ -675,8 +697,14 @@ export default function StatsPage() {
                                                 })}
                                             </tbody>
                                         </table>
+                                        {total > shown.length && (
+                                            <p className="text-[10px] text-slate-500 text-center pt-2 border-t border-slate-800/50 mt-1">
+                                                Showing top {shown.length} of {total} clients by findings.
+                                            </p>
+                                        )}
                                     </div>
-                                )}
+                                    );
+                                })()}
                             </CardContent>
                         </Card>
 
@@ -689,7 +717,7 @@ export default function StatsPage() {
                             <CardContent>
                                 {clientsLoading ? <LoadingPlaceholder /> : (clientStats?.clients?.filter(c => c.total_findings > 0).length ?? 0) === 0 ? <EmptyState /> : (
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={clientStats?.clients.filter(c => c.total_findings > 0) || []}>
+                                        <BarChart data={topN((clientStats?.clients || []).filter(c => c.total_findings > 0), 'total_findings')}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                             <XAxis dataKey="client" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
                                             <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
@@ -714,7 +742,7 @@ export default function StatsPage() {
                             <CardContent>
                                 {clientsLoading ? <LoadingPlaceholder height={250} /> : (clientStats?.clients?.length ?? 0) === 0 ? <EmptyState /> : (
                                     <ResponsiveContainer width="100%" height={250}>
-                                        <BarChart data={clientStats?.clients || []} layout="vertical">
+                                        <BarChart data={topN(clientStats?.clients, 'engagement_count')} layout="vertical">
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                             <XAxis type="number" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
                                             <YAxis type="category" dataKey="client" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} width={120} />
@@ -738,7 +766,7 @@ export default function StatsPage() {
                             <CardContent>
                                 {activityLoading ? <LoadingPlaceholder /> : (
                                     <ResponsiveContainer width="100%" height={280}>
-                                        <BarChart data={activity?.top_contributors || []}>
+                                        <BarChart data={topN(activity?.top_contributors, 'activity_count')}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                             <XAxis dataKey="username" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                                             <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
@@ -757,7 +785,10 @@ export default function StatsPage() {
                                 <CardDescription>Comprehensive per-operator breakdown</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {opsLoading ? <LoadingPlaceholder height={200} /> : (operators?.operators?.length ?? 0) === 0 ? <EmptyState /> : (
+                                {opsLoading ? <LoadingPlaceholder height={200} /> : (operators?.operators?.length ?? 0) === 0 ? <EmptyState /> : (() => {
+                                    const shownOps = topN(operators?.operators, 'total_findings');
+                                    const totalOps = operators?.operators?.length ?? 0;
+                                    return (
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-xs">
                                             <thead>
@@ -782,7 +813,7 @@ export default function StatsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {operators?.operators.map((op, idx) => {
+                                                {shownOps.map((op, idx) => {
                                                     // username / full_name are null in global stats mode for non-admins.
                                                     const label = op.full_name || op.username || '—';
                                                     const initial = (op.full_name?.[0] || op.username?.[0] || '·').toUpperCase();
@@ -821,8 +852,14 @@ export default function StatsPage() {
                                                 })}
                                             </tbody>
                                         </table>
+                                        {totalOps > shownOps.length && (
+                                            <p className="text-[10px] text-slate-500 text-center pt-2 border-t border-slate-800/50 mt-1">
+                                                Showing top {shownOps.length} of {totalOps} operators by findings.
+                                            </p>
+                                        )}
                                     </div>
-                                )}
+                                    );
+                                })()}
                             </CardContent>
                         </Card>
 
@@ -835,7 +872,7 @@ export default function StatsPage() {
                             <CardContent>
                                 {opsLoading ? <LoadingPlaceholder /> : (
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={operators?.operators.filter(o => o.total_findings > 0) || []}>
+                                        <BarChart data={topN((operators?.operators || []).filter(o => o.total_findings > 0), 'total_findings')}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                                             <XAxis dataKey="username" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                                             <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />

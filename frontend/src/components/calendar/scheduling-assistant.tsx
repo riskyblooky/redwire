@@ -24,9 +24,19 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+import {
     Users, Loader2, Clock,
     Target,
     Sparkles, Calendar as CalendarIcon, ArrowRight,
+    Check, ChevronsUpDown,
     ArrowUpDown, SortAsc, UserMinus, UserPlus, CircleDot,
     Save, Shield, Settings, Radar,
 } from 'lucide-react';
@@ -66,6 +76,7 @@ export function SchedulingAssistant({
     const [customStart, setCustomStart] = useState(format(defaultStart, "yyyy-MM-dd"));
     const [customEnd, setCustomEnd] = useState(format(defaultEnd, "yyyy-MM-dd"));
     const [selectedEngagementId, setSelectedEngagementId] = useState<string | null>(null);
+    const [engagementPickerOpen, setEngagementPickerOpen] = useState(false);
     const [sortMode, setSortMode] = useState<'alpha' | 'availability' | 'best-match'>('alpha');
     // Track role assignments per user: { userId: roleId }
     const lastAppliedEngRef = useRef<string | null>(null);
@@ -430,24 +441,64 @@ export function SchedulingAssistant({
                             </div>
                         )}
 
-                        {dateMode === 'engagement' && (
-                            <Select value={selectedEngagementId || ''} onValueChange={setSelectedEngagementId}>
-                                <SelectTrigger className="h-8 bg-slate-800 border-slate-700 text-xs text-white w-[240px] truncate">
-                                    <SelectValue placeholder="Select engagement..." />
-                                </SelectTrigger>
-                                <SelectContent className="bg-slate-800 border-slate-700">
-                                    {allEngagements.map(eng => (
-                                        <SelectItem key={eng.id} value={eng.id} className="text-xs text-white">
-                                            <div className="flex items-center gap-1.5">
-                                                <Target className="h-3 w-3 text-primary" />
-                                                {eng.name}
-                                                <span className="text-slate-500">({eng.client_name})</span>
-                                            </div>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        )}
+                        {dateMode === 'engagement' && (() => {
+                            // Command popover instead of a plain Radix Select so the
+                            // dropdown is searchable — with hundreds of engagements
+                            // the flat list was unusable. Mirrors the calendar page's
+                            // "Find engagement" popover.
+                            const selectedEng = selectedEngagementId
+                                ? allEngagements.find(e => e.id === selectedEngagementId)
+                                : null;
+                            return (
+                                <Popover open={engagementPickerOpen} onOpenChange={setEngagementPickerOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={engagementPickerOpen}
+                                            className="h-8 bg-slate-800 border-slate-700 text-xs text-white w-[240px] justify-between font-normal hover:bg-slate-800/80"
+                                        >
+                                            {selectedEng ? (
+                                                <span className="flex items-center gap-1.5 truncate">
+                                                    <Target className="h-3 w-3 text-primary shrink-0" />
+                                                    <span className="truncate">{selectedEng.name}</span>
+                                                    <span className="text-slate-500 shrink-0">({selectedEng.client_name})</span>
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-400">Select engagement...</span>
+                                            )}
+                                            <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50 ml-1" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0 bg-slate-900 border-slate-700">
+                                        <Command className="bg-slate-900">
+                                            <CommandInput placeholder="Search engagements..." className="text-white" />
+                                            <CommandList>
+                                                <CommandEmpty>No engagement found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {allEngagements.map(eng => (
+                                                        <CommandItem
+                                                            key={eng.id}
+                                                            value={`${eng.name} ${eng.client_name}`}
+                                                            onSelect={() => {
+                                                                setSelectedEngagementId(eng.id);
+                                                                setEngagementPickerOpen(false);
+                                                            }}
+                                                            className="text-slate-300"
+                                                        >
+                                                            <Check className={cn('mr-2 h-3.5 w-3.5', selectedEngagementId === eng.id ? 'opacity-100' : 'opacity-0')} />
+                                                            <Target className="h-3 w-3 text-primary mr-1.5" />
+                                                            <span className="truncate">{eng.name}</span>
+                                                            <span className="text-slate-500 ml-1.5">({eng.client_name})</span>
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            );
+                        })()}
                     </div>
 
                     {/* Right: Stats + Sort */}
