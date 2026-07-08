@@ -84,6 +84,7 @@ export function WeekView({ currentDate, feed, onSelect, onJumpToDay }: WeekViewP
                 <div className="grid grid-cols-5 min-h-[500px]">
                     {days.map(day => {
                         const dayEvents = feed.filter(e => {
+                            if (!e.start || !e.end) return false;
                             const start = parseISO(e.start);
                             const end = parseISO(e.end);
                             return isSameDay(start, day) || isWithinInterval(day, { start, end });

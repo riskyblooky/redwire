@@ -107,6 +107,7 @@ export function DayView({ currentDate, feed, onSelect, selectedId }: DayViewProp
         const timedRaw: Array<{ item: FeedItem; startMin: number; endMin: number }> = [];
 
         for (const item of feed) {
+            if (!item.start || !item.end) continue;
             const start = parseISO(item.start);
             const end = parseISO(item.end);
             if (end < dayStart || start > dayEnd) continue;

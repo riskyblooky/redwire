@@ -609,6 +609,10 @@ export default function CalendarPage() {
                                         <div className="grid grid-cols-7 border-slate-800 bg-slate-900/30">
                                             {days.map((day) => {
                                                 const dayEvents = feed.filter(e => {
+                                                    // Feed items can arrive with null start/end for
+                                                    // proposed engagements or half-created OOO blocks —
+                                                    // skip them instead of blowing up parseISO.
+                                                    if (!e.start || !e.end) return false;
                                                     const start = parseISO(e.start.toString());
                                                     const end = parseISO(e.end.toString());
                                                     return isSameDay(start, day) || isWithinInterval(day, { start, end });

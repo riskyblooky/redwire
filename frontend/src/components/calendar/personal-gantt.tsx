@@ -122,6 +122,7 @@ export function PersonalGanttView({
     // Only feed items that overlap the viewport survive.
     const rows: GanttRow[] = useMemo(() => {
         const inWindow = feed.filter(item => {
+            if (!item.start || !item.end) return false;
             const s = parseISO(item.start);
             const e = parseISO(item.end);
             return s <= viewEnd && e >= viewStart;
