@@ -62,6 +62,7 @@ import {
     ShieldAlert,
     Palette,
     FlaskConical,
+    Briefcase,
 } from 'lucide-react';
 
 // ─── Color presets ───────────────────────────────────────────────
@@ -202,6 +203,11 @@ export default function TagsPage() {
                             Test Case Tags
                             <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tags.length}</Badge>
                         </TabsTrigger>
+                        <TabsTrigger value="engagements" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
+                            <Briefcase className="h-4 w-4" />
+                            Engagement Tags
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tags.length}</Badge>
+                        </TabsTrigger>
                     </TabsList>
 
                     {/* ─── Finding Tags Tab ─── */}
@@ -321,6 +327,115 @@ export default function TagsPage() {
                                     <div>
                                         <CardTitle className="text-white">Test Case Tags</CardTitle>
                                         <CardDescription>Tags for categorizing and labeling test cases across engagements</CardDescription>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                                            <Input
+                                                placeholder="Search tags..."
+                                                value={search}
+                                                onChange={e => setSearch(e.target.value)}
+                                                className="pl-10 w-64 bg-slate-800/50 border-slate-700"
+                                            />
+                                        </div>
+                                        {canManage && (
+                                            <Button
+                                                onClick={() => setIsCreateOpen(true)}
+                                                className="bg-primary hover:bg-primary/90 text-white text-white gap-2"
+                                            >
+                                                <Plus className="h-4 w-4" />
+                                                New Tag
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            </CardHeader>
+                            <CardContent>
+                                {isLoading ? (
+                                    <div className="flex items-center justify-center py-12">
+                                        <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+                                    </div>
+                                ) : filteredTags.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-500">
+                                        {search ? 'No tags match your search' : 'No tags created yet'}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-lg border border-slate-800 overflow-hidden">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="border-slate-800 hover:bg-transparent">
+                                                    <TableHead className="text-slate-400 w-16">Color</TableHead>
+                                                    <TableHead className="text-slate-400">Name</TableHead>
+                                                    <TableHead className="text-slate-400 w-48">Preview</TableHead>
+                                                    {canManage && (
+                                                        <TableHead className="text-slate-400 w-32 text-right">Actions</TableHead>
+                                                    )}
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {filteredTags.map(tag => (
+                                                    <TableRow key={tag.id} className="border-slate-800 hover:bg-slate-800/30">
+                                                        <TableCell>
+                                                            <div
+                                                                className="h-6 w-6 rounded-full border border-slate-600"
+                                                                style={{ backgroundColor: tag.color || '#64748b' }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell className="font-medium text-white">
+                                                            {tag.name}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="text-xs border-none"
+                                                                style={{
+                                                                    backgroundColor: `${tag.color || '#64748b'}20`,
+                                                                    color: tag.color || '#64748b',
+                                                                }}
+                                                            >
+                                                                {tag.name}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        {canManage && (
+                                                            <TableCell className="text-right">
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    <Button
+                                                                        size="icon"
+                                                                        variant="ghost"
+                                                                        className="h-8 w-8 text-slate-400 hover:text-white"
+                                                                        onClick={() => openEdit(tag)}
+                                                                    >
+                                                                        <Pencil className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                    <Button
+                                                                        size="icon"
+                                                                        variant="ghost"
+                                                                        className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                                                        onClick={() => handleDelete(tag)}
+                                                                    >
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                </div>
+                                                            </TableCell>
+                                                        )}
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+
+                    {/* ─── Engagement Tags Tab ─── */}
+                    <TabsContent value="engagements">
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                            <CardHeader>
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <CardTitle className="text-white">Engagement Tags</CardTitle>
+                                        <CardDescription>Tags for categorizing engagements — same shared pool used by findings and test cases</CardDescription>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <div className="relative">
