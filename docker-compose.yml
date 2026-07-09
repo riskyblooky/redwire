@@ -114,7 +114,19 @@ services:
       # (evidence + vault files go to MinIO, not disk). Without this
       # mount they live only on the container's writable layer and
       # `docker compose build backend` + `up -d` wipes them.
-      - uploads_data:/app/uploads
+      #
+      # Bind-mount to the host — the directory sits next to the
+      # compose file at ./backend/uploads and shows up on the host
+      # filesystem so an operator can back it up with `tar`, `ls` it
+      # for debugging, or move it during a host migration. The
+      # backend runs as root inside the container, so files land
+      # owned by root:root on the host — no UID drift.
+      #
+      # `backend/uploads/` is git-ignored and excluded from the
+      # deploy zip, so nothing in the source tree collides with it.
+      # Docker auto-creates the directory on first `up` if it
+      # doesn't exist yet.
+      - ./backend/uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -215,7 +227,6 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
-  uploads_data:
 
 networks:
   redwire-network:

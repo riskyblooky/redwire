@@ -234,32 +234,30 @@ if [ ! -f nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem ]; then
         -subj "/CN=${DOMAIN_NAME}"
 fi
 
-# Uploads volume migration: prior to the uploads_data named volume
-# landing in docker-compose.yml, backend/uploads/ (profile photos,
-# wordlists) lived on the container's writable layer and got wiped on
-# every rebuild. The new volume mount fixes that going forward, but a
-# host upgrading past this line still has photos/wordlists inside the
-# OLD container's writable layer that would be destroyed the instant
-# the container is recreated below. Copy them into the new volume
-# first so the upgrade preserves the data.
+# Uploads bind-mount migration: prior to backend/uploads/ being bind-
+# mounted from the host, profile photos and wordlists lived on the
+# container's writable layer and got wiped on every rebuild. The new
+# mount fixes that going forward, but a host upgrading past this line
+# still has files inside the OLD container's writable layer that
+# would be destroyed the instant the container is recreated below.
+# Copy them onto the host at ./backend/uploads/ first so the upgrade
+# preserves the data.
 #
-# Idempotent: skipped when the volume already exists (fresh install
-# or already-migrated host). Best-effort: cp failure is logged and
-# doesn't abort the deploy.
+# Idempotent: skipped when ./backend/uploads/ already has any files
+# (fresh install or already-migrated host — we don't want to
+# clobber a populated host directory with a stale container copy).
+# Best-effort: docker cp failure is logged and doesn't abort the
+# deploy.
 if docker inspect redwire-backend >/dev/null 2>&1; then
-    if ! docker volume inspect redwire_uploads_data >/dev/null 2>&1; then
-        echo -e "\n${BLUE}[Uploads migration] Preserving profile photos + wordlists into the new uploads_data volume...${NC}"
-        docker volume create redwire_uploads_data >/dev/null || true
-        docker run --rm \
-            --volumes-from redwire-backend \
-            -v redwire_uploads_data:/dest \
-            alpine:3 sh -c '
-                if [ -d /app/uploads ] && [ -n "$(ls -A /app/uploads 2>/dev/null)" ]; then
-                    cp -a /app/uploads/. /dest/ && echo "  Copied $(find /dest -type f | wc -l) file(s) into uploads_data."
-                else
-                    echo "  No pre-existing uploads to preserve."
-                fi
-            ' 2>&1 || echo -e "${RED}  Warning: upload migration step failed. Check manually before rebuild.${NC}"
+    mkdir -p ./backend/uploads
+    if [ -z "$(ls -A ./backend/uploads 2>/dev/null)" ]; then
+        echo -e "\n${BLUE}[Uploads migration] Preserving profile photos + wordlists onto the host bind mount...${NC}"
+        if docker cp redwire-backend:/app/uploads/. ./backend/uploads/ 2>/dev/null; then
+            count=$(find ./backend/uploads -type f 2>/dev/null | wc -l)
+            echo "  Copied ${count} file(s) into ./backend/uploads/."
+        else
+            echo "  No pre-existing uploads to preserve (or old container has no /app/uploads)."
+        fi
     fi
 fi
 
