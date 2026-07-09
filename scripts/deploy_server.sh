@@ -234,33 +234,6 @@ if [ ! -f nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem ]; then
         -subj "/CN=${DOMAIN_NAME}"
 fi
 
-# Uploads bind-mount migration: prior to backend/uploads/ being bind-
-# mounted from the host, profile photos and wordlists lived on the
-# container's writable layer and got wiped on every rebuild. The new
-# mount fixes that going forward, but a host upgrading past this line
-# still has files inside the OLD container's writable layer that
-# would be destroyed the instant the container is recreated below.
-# Copy them onto the host at ./backend/uploads/ first so the upgrade
-# preserves the data.
-#
-# Idempotent: skipped when ./backend/uploads/ already has any files
-# (fresh install or already-migrated host — we don't want to
-# clobber a populated host directory with a stale container copy).
-# Best-effort: docker cp failure is logged and doesn't abort the
-# deploy.
-if docker inspect redwire-backend >/dev/null 2>&1; then
-    mkdir -p ./backend/uploads
-    if [ -z "$(ls -A ./backend/uploads 2>/dev/null)" ]; then
-        echo -e "\n${BLUE}[Uploads migration] Preserving profile photos + wordlists onto the host bind mount...${NC}"
-        if docker cp redwire-backend:/app/uploads/. ./backend/uploads/ 2>/dev/null; then
-            count=$(find ./backend/uploads -type f 2>/dev/null | wc -l)
-            echo "  Copied ${count} file(s) into ./backend/uploads/."
-        else
-            echo "  No pre-existing uploads to preserve (or old container has no /app/uploads)."
-        fi
-    fi
-fi
-
 # 6. Start Services
 echo -e "\n${BLUE}[6/8] Starting Services...${NC}"
 if [ "$OFFLINE" -eq 1 ]; then
