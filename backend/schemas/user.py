@@ -34,6 +34,17 @@ def _validate_password_bcrypt_safe(v: str) -> str:
     return v
 
 
+def canonicalize_username(v: str) -> str:
+    """NFKC-normalize + casefold — the raw canonicalisation step.
+
+    Registration adds a strict ASCII allowlist on top (see
+    ``normalize_username`` below); login uses this raw form so it
+    matches whatever is stored regardless of what the user types.
+    Do NOT use this on user-chosen names at registration time — the
+    allowlist check is what closes the homograph spoof."""
+    return unicodedata.normalize("NFKC", v).casefold()
+
+
 def normalize_username(v: str) -> str:
     """NFKC-normalize + casefold + strict ASCII allowlist.
 
@@ -45,7 +56,7 @@ def normalize_username(v: str) -> str:
     ASCII allowlist after that — Cyrillic 'а' (U+0430), control chars,
     invisibles, etc. — falls out at the regex.
     """
-    v = unicodedata.normalize("NFKC", v).casefold()
+    v = canonicalize_username(v)
     if not _USERNAME_ALLOWED.fullmatch(v):
         raise ValueError(
             "Username must be 2-50 ASCII chars from [a-z0-9._-] and must "
@@ -159,6 +170,25 @@ class UserLogin(BaseModel):
     username: str = Field(..., max_length=50)
     password: str = Field(..., max_length=256)
     totp_code: Optional[str] = Field(default=None, min_length=6, max_length=6)
+
+    @field_validator("username")
+    @classmethod
+    def _canonicalize_username(cls, v: str) -> str:
+        # Registration casefolds via ``normalize_username`` (Unicode-
+        # homograph defense, GHSA-2hrj-c2v3-8p2v), so the row lands in
+        # the DB lowercased. Without matching canonicalisation here,
+        # a user who chose "JDoe" at signup can't log back in with
+        # "JDoe" (or any case other than the exact casefolded form)
+        # because the SQL lookup on /auth/login is byte-exact.
+        #
+        # Only canonicalize — no ASCII-allowlist validation. A junk
+        # username won't match any row; letting the request through
+        # to the standard "invalid credentials" response is what
+        # keeps the login surface free of user-enumeration leaks. A
+        # loud validation error here would say "this shape can't
+        # exist" for values that were once accepted by an older
+        # registration path or by an admin-side create.
+        return canonicalize_username(v)
 
 class Token(BaseModel):
     access_token: str

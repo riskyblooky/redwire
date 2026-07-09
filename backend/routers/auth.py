@@ -300,9 +300,18 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
             # JIT provision: create local user if they don't exist
             if not user:
                 from models.group import Group, user_groups
+                # Canonicalise the LDAP-returned username the same way
+                # UserLogin does so a subsequent login lookup on this
+                # row succeeds regardless of what casing the directory
+                # server echoes back. Falls back to credentials.username
+                # (already canonicalised by the UserLogin validator).
+                from schemas.user import canonicalize_username
+                jit_username = canonicalize_username(
+                    ldap_info.get("username") or credentials.username
+                )
                 new_user = User(
                     id=str(uuid.uuid4()),
-                    username=ldap_info.get("username", credentials.username),
+                    username=jit_username,
                     email=ldap_info.get("email", f"{credentials.username}@ldap.local"),
                     hashed_password=get_password_hash(str(uuid.uuid4())),  # random, can't login locally
                     full_name=ldap_info.get("full_name", ""),
