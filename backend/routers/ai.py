@@ -675,8 +675,14 @@ async def ai_chat(
                         yield _sse("done", {})
                         return
                     async for line in resp.aiter_lines():
-                        if line.startswith("data: "):
-                            payload_str = line[6:].strip()
+                        # SSE spec makes the space after "data:" optional
+                        # ("data:foo" and "data: foo" both mean the same
+                        # thing). Some upstreams omit it, which the old
+                        # `startswith("data: ")` check silently dropped.
+                        # Match the colon only; .strip() below handles
+                        # either shape.
+                        if line.startswith("data:"):
+                            payload_str = line[5:].strip()
                             if payload_str == "[DONE]":
                                 continue
                             # Pass the upstream provider's chunk through
