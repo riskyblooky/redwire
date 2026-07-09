@@ -16,7 +16,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug, ShieldOff, Plus, X, Layers } from 'lucide-react';
+import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug, ShieldOff, Plus, X, Layers, Clock, Link2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
 
@@ -30,6 +30,9 @@ export function AiSettingsManagement() {
     const [apiKey, setApiKey] = useState('');
     const [tlsVerify, setTlsVerify] = useState(true);
     const [customHeaders, setCustomHeaders] = useState<{ name: string; value: string }[]>([]);
+    const [extraQuery, setExtraQuery] = useState<{ name: string; value: string }[]>([]);
+    const [requestTimeout, setRequestTimeout] = useState('');
+    const [streamingOn, setStreamingOn] = useState(true);
     const [model, setModel] = useState('');
     const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [apiHasChanges, setApiHasChanges] = useState(false);
@@ -72,6 +75,23 @@ export function AiSettingsManagement() {
             } catch {
                 setCustomHeaders([]);
             }
+            try {
+                const parsedQ = settings.ai_extra_query ? JSON.parse(settings.ai_extra_query) : {};
+                if (parsedQ && typeof parsedQ === 'object' && !Array.isArray(parsedQ)) {
+                    setExtraQuery(
+                        Object.entries(parsedQ).map(([name, value]) => ({
+                            name,
+                            value: String(value ?? ''),
+                        }))
+                    );
+                } else {
+                    setExtraQuery([]);
+                }
+            } catch {
+                setExtraQuery([]);
+            }
+            setRequestTimeout(settings.ai_request_timeout_seconds || '');
+            setStreamingOn(settings.ai_streaming_enabled !== 'false');
             setModel(settings.ai_default_model || '');
             setEditorEnabled(settings.ai_enabled === 'true');
             setChatbotEnabled(settings.chatbot_enabled === 'true');
@@ -115,11 +135,20 @@ export function AiSettingsManagement() {
                 const value = row.value ?? '';
                 if (name) headerObj[name] = value;
             }
+            const queryObj: Record<string, string> = {};
+            for (const row of extraQuery) {
+                const name = (row.name ?? '').trim();
+                const value = row.value ?? '';
+                if (name) queryObj[name] = value;
+            }
             const payload: Record<string, string> = {
                 ai_api_url: apiUrl,
                 ai_default_model: model,
                 ai_tls_verify: tlsVerify ? 'true' : 'false',
                 ai_custom_headers: Object.keys(headerObj).length ? JSON.stringify(headerObj) : '',
+                ai_extra_query: Object.keys(queryObj).length ? JSON.stringify(queryObj) : '',
+                ai_request_timeout_seconds: requestTimeout.trim(),
+                ai_streaming_enabled: streamingOn ? 'true' : 'false',
             };
             if (apiKey && !apiKey.includes('...') && !apiKey.includes('***')) {
                 payload.ai_api_key = apiKey;
@@ -301,6 +330,110 @@ export function AiSettingsManagement() {
                                 <Plus className="h-3.5 w-3.5" />
                                 Add header
                             </Button>
+                        </div>
+                    </div>
+
+                    {/* Extra query params */}
+                    <div className="space-y-2">
+                        <Label className="text-slate-300 flex items-center gap-1.5">
+                            <Link2 className="h-3.5 w-3.5 text-cyan-400" />
+                            Extra query parameters
+                        </Label>
+                        <p className="text-[11px] text-slate-500 -mt-1">
+                            Appended to every AI-API request URL. Azure OpenAI needs <code className="text-violet-400/70">api-version=2024-06-01</code>; some proxies need a <code className="text-violet-400/70">project</code> or <code className="text-violet-400/70">tenant</code> id.
+                        </p>
+                        <div className="space-y-1.5">
+                            {extraQuery.map((row, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <Input
+                                        value={row.name}
+                                        onChange={(e) => {
+                                            const copy = [...extraQuery];
+                                            copy[idx] = { ...copy[idx], name: e.target.value };
+                                            setExtraQuery(copy);
+                                            markApiChanged();
+                                        }}
+                                        placeholder="param"
+                                        className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-600 font-mono text-xs h-9 flex-1"
+                                    />
+                                    <Input
+                                        value={row.value}
+                                        onChange={(e) => {
+                                            const copy = [...extraQuery];
+                                            copy[idx] = { ...copy[idx], value: e.target.value };
+                                            setExtraQuery(copy);
+                                            markApiChanged();
+                                        }}
+                                        placeholder="value"
+                                        className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-600 font-mono text-xs h-9 flex-[2]"
+                                    />
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                            setExtraQuery(extraQuery.filter((_, i) => i !== idx));
+                                            markApiChanged();
+                                        }}
+                                        className="h-9 w-9 text-slate-500 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+                                        aria-label="Remove query param"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setExtraQuery([...extraQuery, { name: '', value: '' }]);
+                                    markApiChanged();
+                                }}
+                                className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1.5 h-8"
+                            >
+                                <Plus className="h-3.5 w-3.5" />
+                                Add parameter
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Request timeout + streaming toggle */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                            <Label className="text-slate-300 flex items-center gap-1.5" htmlFor="ai-request-timeout">
+                                <Clock className="h-3.5 w-3.5 text-orange-400" />
+                                Request timeout (seconds)
+                            </Label>
+                            <Input
+                                id="ai-request-timeout"
+                                type="number"
+                                min={5}
+                                max={600}
+                                value={requestTimeout}
+                                onChange={(e) => { setRequestTimeout(e.target.value); markApiChanged(); }}
+                                placeholder="120"
+                                className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 font-mono text-sm h-9"
+                            />
+                            <p className="text-[11px] text-slate-500">
+                                Empty = default 120s. Bump higher for slow local models (Ollama on CPU can want 300–600). Bounded [5, 600].
+                            </p>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-slate-300 flex items-center gap-1.5">
+                                <Zap className={`h-3.5 w-3.5 ${streamingOn ? 'text-yellow-400' : 'text-slate-500'}`} />
+                                Streaming response
+                            </Label>
+                            <div className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-950/60 px-3 h-9">
+                                <span className="text-xs text-slate-400">
+                                    {streamingOn ? 'On (SSE)' : 'Off (buffered)'}
+                                </span>
+                                <Switch
+                                    checked={streamingOn}
+                                    onCheckedChange={(v) => { setStreamingOn(v); markApiChanged(); }}
+                                />
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                                Turn off if a proxy strips <code className="text-violet-400/70">text/event-stream</code>; the chat replies land as one buffered block.
+                            </p>
                         </div>
                     </div>
 

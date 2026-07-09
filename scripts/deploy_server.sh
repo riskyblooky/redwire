@@ -234,6 +234,35 @@ if [ ! -f nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem ]; then
         -subj "/CN=${DOMAIN_NAME}"
 fi
 
+# Uploads volume migration: prior to the uploads_data named volume
+# landing in docker-compose.yml, backend/uploads/ (profile photos,
+# wordlists) lived on the container's writable layer and got wiped on
+# every rebuild. The new volume mount fixes that going forward, but a
+# host upgrading past this line still has photos/wordlists inside the
+# OLD container's writable layer that would be destroyed the instant
+# the container is recreated below. Copy them into the new volume
+# first so the upgrade preserves the data.
+#
+# Idempotent: skipped when the volume already exists (fresh install
+# or already-migrated host). Best-effort: cp failure is logged and
+# doesn't abort the deploy.
+if docker inspect redwire-backend >/dev/null 2>&1; then
+    if ! docker volume inspect redwire_uploads_data >/dev/null 2>&1; then
+        echo -e "\n${BLUE}[Uploads migration] Preserving profile photos + wordlists into the new uploads_data volume...${NC}"
+        docker volume create redwire_uploads_data >/dev/null || true
+        docker run --rm \
+            --volumes-from redwire-backend \
+            -v redwire_uploads_data:/dest \
+            alpine:3 sh -c '
+                if [ -d /app/uploads ] && [ -n "$(ls -A /app/uploads 2>/dev/null)" ]; then
+                    cp -a /app/uploads/. /dest/ && echo "  Copied $(find /dest -type f | wc -l) file(s) into uploads_data."
+                else
+                    echo "  No pre-existing uploads to preserve."
+                fi
+            ' 2>&1 || echo -e "${RED}  Warning: upload migration step failed. Check manually before rebuild.${NC}"
+    fi
+fi
+
 # 6. Start Services
 echo -e "\n${BLUE}[6/8] Starting Services...${NC}"
 if [ "$OFFLINE" -eq 1 ]; then

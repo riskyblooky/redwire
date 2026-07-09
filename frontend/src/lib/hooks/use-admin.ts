@@ -99,6 +99,16 @@ export interface AiSettings {
     // values, ≤32 entries) and silently drops any invalid row so a
     // stale config can't brick chat.
     ai_custom_headers: string;
+    // Numeric string. Empty falls back to the 120s default. Bounded
+    // [5, 600] on the backend; a stray 0 or "abc" also falls back.
+    ai_request_timeout_seconds: string;
+    // JSON object string of extra query params merged onto every
+    // outbound AI-API request URL. Empty string means "none".
+    ai_extra_query: string;
+    // "true" / "false". When "false", the chat endpoint fetches the
+    // full response non-streaming and forwards it as a single chunk
+    // event — for proxies that strip SSE. Default "true".
+    ai_streaming_enabled: string;
     ai_default_model: string;
     chatbot_enabled: string;
     mcp_enabled: string;

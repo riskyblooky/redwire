@@ -229,6 +229,8 @@ async def _summarize_via_llm(
     model: str,
     tls_verify: bool = True,
     extra_headers: Optional[dict] = None,
+    extra_query: Optional[dict] = None,
+    request_timeout: float = 60.0,
 ) -> str:
     """Single non-streaming LLM call that compresses ``messages`` into
     a short bullet-point summary. Low temperature, explicit instruction
@@ -267,11 +269,17 @@ async def _summarize_via_llm(
         lower_extra = {k.lower(): k for k in extra_headers}
         headers = {k: v for k, v in headers.items() if k.lower() not in lower_extra}
         headers.update(extra_headers)
+    # Cap summarizer at min(60s, request_timeout) — even when the admin
+    # bumped chat to 300s for a slow local model, the summarizer call
+    # should stay short so a compaction miss falls back fast instead of
+    # blocking the whole chat turn.
+    summarizer_timeout = min(60.0, request_timeout) if request_timeout > 0 else 60.0
     try:
-        async with httpx.AsyncClient(timeout=60, verify=tls_verify) as client:
+        async with httpx.AsyncClient(timeout=summarizer_timeout, verify=tls_verify) as client:
             resp = await client.post(
                 f"{api_url}/chat/completions",
                 headers=headers,
+                params=extra_query or None,
                 json=payload,
             )
             if resp.status_code != 200:
@@ -316,6 +324,8 @@ async def compact_if_needed(
     model_hint: Optional[str] = None,
     tls_verify: bool = True,
     extra_headers: Optional[dict] = None,
+    extra_query: Optional[dict] = None,
+    request_timeout: float = 60.0,
 ) -> tuple[list[dict], dict]:
     """If ``messages`` exceeds ``threshold_pct%`` of ``max_context_tokens``,
     compact the head into a summary and return the reduced list.
@@ -357,6 +367,7 @@ async def compact_if_needed(
         summary_text = await _summarize_via_llm(
             to_summarize, api_url, api_key, model,
             tls_verify=tls_verify, extra_headers=extra_headers,
+            extra_query=extra_query, request_timeout=request_timeout,
         )
         _cache_set(cache_key, summary_text)
 

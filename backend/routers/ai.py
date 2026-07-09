@@ -95,6 +95,64 @@ def _ai_custom_headers(settings: dict) -> dict:
     return out
 
 
+DEFAULT_AI_TIMEOUT = 120.0
+_MIN_AI_TIMEOUT = 5.0
+_MAX_AI_TIMEOUT = 600.0
+
+
+def _ai_request_timeout(settings: dict) -> float:
+    """Resolve the admin's request-timeout override to a float.
+
+    Missing / non-numeric / out-of-range values fall back to the 120s
+    default. Bounded [5, 600] so a stray zero doesn't tighten it to
+    unusable and a runaway value doesn't wedge the worker on a hung
+    upstream."""
+    raw = (settings.get("ai_request_timeout_seconds") or "").strip()
+    if not raw:
+        return DEFAULT_AI_TIMEOUT
+    try:
+        v = float(raw)
+    except ValueError:
+        return DEFAULT_AI_TIMEOUT
+    if not _MIN_AI_TIMEOUT <= v <= _MAX_AI_TIMEOUT:
+        return DEFAULT_AI_TIMEOUT
+    return v
+
+
+def _ai_streaming_enabled(settings: dict) -> bool:
+    """Resolve the admin's streaming toggle. Default TRUE (stream)."""
+    return (settings.get("ai_streaming_enabled", "true") or "true").strip().lower() != "false"
+
+
+def _ai_extra_query(settings: dict) -> dict:
+    """Parse the admin-configured extra query params. Same shape and
+    guard set as ``_ai_custom_headers`` — JSON object of string→string,
+    invalid entries silently dropped. Merged onto every httpx request
+    URL via the ``params=`` kwarg."""
+    raw = settings.get("ai_extra_query")
+    if not raw or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        logger.warning("ai_extra_query is not valid JSON; ignoring")
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    out: dict[str, str] = {}
+    for name, value in list(parsed.items())[:_MAX_CUSTOM_HEADERS]:
+        if not isinstance(name, str) or not isinstance(value, str):
+            continue
+        if not name or len(name) > 128 or len(value) > 1024:
+            continue
+        # Reject control chars in query names / values. URL-encoding
+        # would happen client-side but this catches obvious junk.
+        if any(ord(c) < 32 for c in name + value):
+            continue
+        out[name] = value
+    return out
+
+
 def _merge_headers(base: dict, custom: dict) -> dict:
     """Return ``base`` merged with ``custom`` — custom wins. Case-insensitive
     de-dup so a custom ``authorization`` overrides ``Authorization``."""
@@ -155,6 +213,24 @@ class AiSettingsUpdate(BaseModel):
     # keep an over-generous KV row from producing an oversized request
     # or a huge parsed dict. See _ai_custom_headers for the guard set.
     ai_custom_headers: Optional[str] = Field(None, max_length=16384)
+    # Request timeout (seconds) for the chat / tool-use / summarizer
+    # calls. Local Ollama on CPU can legitimately take 3-5 minutes;
+    # the built-in 120s default kills those mid-flight. Bounded [5,
+    # 600] to prevent both a stray "0" from tightening it to unusable
+    # and a runaway value from wedging the worker on a hung upstream.
+    ai_request_timeout_seconds: Optional[str] = Field(None, max_length=8)
+    # JSON object of extra query parameters merged onto every AI-API
+    # request URL. Common use: Azure OpenAI needs ?api-version=... on
+    # every path. Users can put params on the base URL for endpoints
+    # where our code appends nothing, but that breaks for /models,
+    # /chat/completions, etc. — this KV formalises it. Same guard
+    # shape as ai_custom_headers.
+    ai_extra_query: Optional[str] = Field(None, max_length=4096)
+    # Streaming toggle. Some corporate proxies strip SSE. When "false"
+    # the chat handler falls back to a non-streaming POST and returns
+    # the full response as a single SSE ``chunk`` event, so the
+    # frontend contract is unchanged. Default "true".
+    ai_streaming_enabled: Optional[str] = Field(None, max_length=8)
     chatbot_enabled: Optional[str] = Field(None, max_length=8)
     mcp_enabled: Optional[str] = Field(None, max_length=8)
     # GHSA-q4x9-5gmc-fxh5 (a2): admin toggle for write-capable MCP tools.
@@ -212,6 +288,9 @@ async def get_ai_settings(
         # Raw stored JSON string. Frontend parses into a key/value
         # editor. Empty string → no custom headers.
         "ai_custom_headers": settings.get("ai_custom_headers", ""),
+        "ai_request_timeout_seconds": settings.get("ai_request_timeout_seconds", ""),
+        "ai_extra_query": settings.get("ai_extra_query", ""),
+        "ai_streaming_enabled": settings.get("ai_streaming_enabled", "true"),
         "chatbot_enabled": settings.get("chatbot_enabled", "false"),
         "mcp_enabled": settings.get("mcp_enabled", "false"),
         "ai_write_tools_enabled": settings.get("ai_write_tools_enabled", "false"),
@@ -265,14 +344,21 @@ async def fetch_models(
     if not api_key:
         raise HTTPException(status_code=400, detail="API key not configured")
 
+    # fetch-models is user-triggered from the admin UI; use a short
+    # cap regardless of the admin-set chat timeout — a slow /models
+    # response usually means "wrong URL," not "long-thinking model,"
+    # and the user is waiting on the button. min() so an admin who
+    # dropped the chat timeout below 15s still shortens this too.
+    fetch_timeout = min(15.0, _ai_request_timeout(settings))
     try:
-        async with httpx.AsyncClient(timeout=15, verify=_ai_tls_verify(settings)) as client:
+        async with httpx.AsyncClient(timeout=fetch_timeout, verify=_ai_tls_verify(settings)) as client:
             resp = await client.get(
                 f"{api_url}/models",
                 headers=_merge_headers(
                     {"Authorization": f"Bearer {api_key}"},
                     _ai_custom_headers(settings),
                 ),
+                params=_ai_extra_query(settings) or None,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -484,6 +570,9 @@ async def ai_chat(
     model = settings.get("ai_default_model", "gpt-4o")
     tls_verify = _ai_tls_verify(settings)
     custom_headers = _ai_custom_headers(settings)
+    extra_query = _ai_extra_query(settings)
+    request_timeout = _ai_request_timeout(settings)
+    streaming_on = _ai_streaming_enabled(settings)
 
     if not api_key:
         raise HTTPException(status_code=400, detail="API key not configured")
@@ -574,6 +663,7 @@ async def ai_chat(
                 threshold_pct=threshold_pct,
                 api_url=api_url, api_key=api_key, model=model,
                 model_hint=model, tls_verify=tls_verify, extra_headers=custom_headers,
+                extra_query=extra_query, request_timeout=request_timeout,
             )
             if _stats["fired"]:
                 yield _sse("context_compacted", _stats)
@@ -582,7 +672,7 @@ async def ai_chat(
             if tools:
                 max_rounds = 3
                 for _round in range(max_rounds):
-                    async with httpx.AsyncClient(timeout=120, verify=tls_verify) as client:
+                    async with httpx.AsyncClient(timeout=request_timeout, verify=tls_verify) as client:
                         payload = {
                             "model": model,
                             "messages": api_messages,
@@ -598,6 +688,7 @@ async def ai_chat(
                                 },
                                 custom_headers,
                             ),
+                            params=extra_query or None,
                             json=payload,
                         )
                         if resp.status_code != 200:
@@ -730,58 +821,104 @@ async def ai_chat(
                             threshold_pct=threshold_pct,
                             api_url=api_url, api_key=api_key, model=model,
                             model_hint=model, tls_verify=tls_verify, extra_headers=custom_headers,
+                            extra_query=extra_query, request_timeout=request_timeout,
                         )
                         if _stats["fired"]:
                             yield _sse("context_compacted", _stats)
 
                         # Loop back — let the LLM see the tool results.
 
-            # ── Final streaming response ─────────────────────────────
-            async with httpx.AsyncClient(timeout=120, verify=tls_verify) as client:
-                payload = {
-                    "model": model,
-                    "messages": api_messages,
-                    "stream": True,
-                }
-                async with client.stream(
-                    "POST",
-                    f"{api_url}/chat/completions",
-                    headers=_merge_headers(
-                        {
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        custom_headers,
-                    ),
-                    json=payload,
-                ) as resp:
+            # ── Final response ───────────────────────────────────────
+            # Streaming or non-streaming based on ``ai_streaming_enabled``.
+            # When streaming is off the whole response is fetched with a
+            # single POST and forwarded as ONE chunk event — the frontend
+            # SSE contract doesn't change, it just fires once. Corporate
+            # proxies that strip event-stream buffering fall through
+            # cleanly this way.
+            base_headers = _merge_headers(
+                {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                custom_headers,
+            )
+            if streaming_on:
+                async with httpx.AsyncClient(timeout=request_timeout, verify=tls_verify) as client:
+                    payload = {
+                        "model": model,
+                        "messages": api_messages,
+                        "stream": True,
+                    }
+                    async with client.stream(
+                        "POST",
+                        f"{api_url}/chat/completions",
+                        headers=base_headers,
+                        params=extra_query or None,
+                        json=payload,
+                    ) as resp:
+                        if resp.status_code != 200:
+                            body = await resp.aread()
+                            yield _sse("chunk", {
+                                "error": f"API error {resp.status_code}: {body.decode()[:200]}",
+                            })
+                            yield _sse("done", {})
+                            return
+                        async for line in resp.aiter_lines():
+                            # SSE spec makes the space after "data:" optional
+                            # ("data:foo" and "data: foo" both mean the same
+                            # thing). Some upstreams omit it, which the old
+                            # `startswith("data: ")` check silently dropped.
+                            # Match the colon only; .strip() below handles
+                            # either shape.
+                            if line.startswith("data:"):
+                                payload_str = line[5:].strip()
+                                if payload_str == "[DONE]":
+                                    continue
+                                # Pass the upstream provider's chunk through
+                                # under our ``chunk`` event type. Frontend
+                                # parses the unchanged OpenAI-style delta.
+                                try:
+                                    parsed = json.loads(payload_str)
+                                    yield _sse("chunk", parsed)
+                                except json.JSONDecodeError:
+                                    # Malformed upstream — surface as error.
+                                    yield _sse("chunk", {"error": "malformed upstream chunk"})
+            else:
+                # Non-streaming fallback. Fetch the full response and
+                # re-shape it into ONE OpenAI-style streaming delta so
+                # the frontend renderer doesn't care which mode it was.
+                async with httpx.AsyncClient(timeout=request_timeout, verify=tls_verify) as client:
+                    payload = {
+                        "model": model,
+                        "messages": api_messages,
+                        "stream": False,
+                    }
+                    resp = await client.post(
+                        f"{api_url}/chat/completions",
+                        headers=base_headers,
+                        params=extra_query or None,
+                        json=payload,
+                    )
                     if resp.status_code != 200:
-                        body = await resp.aread()
                         yield _sse("chunk", {
-                            "error": f"API error {resp.status_code}: {body.decode()[:200]}",
+                            "error": f"API error {resp.status_code}: {resp.text[:200]}",
                         })
                         yield _sse("done", {})
                         return
-                    async for line in resp.aiter_lines():
-                        # SSE spec makes the space after "data:" optional
-                        # ("data:foo" and "data: foo" both mean the same
-                        # thing). Some upstreams omit it, which the old
-                        # `startswith("data: ")` check silently dropped.
-                        # Match the colon only; .strip() below handles
-                        # either shape.
-                        if line.startswith("data:"):
-                            payload_str = line[5:].strip()
-                            if payload_str == "[DONE]":
-                                continue
-                            # Pass the upstream provider's chunk through
-                            # under our ``chunk`` event type. Frontend
-                            # parses the unchanged OpenAI-style delta.
-                            try:
-                                parsed = json.loads(payload_str)
-                                yield _sse("chunk", parsed)
-                            except json.JSONDecodeError:
-                                # Malformed upstream — surface as error.
-                                yield _sse("chunk", {"error": "malformed upstream chunk"})
+                    data = resp.json()
+                    text = ""
+                    try:
+                        text = data["choices"][0]["message"].get("content", "") or ""
+                    except (KeyError, IndexError, TypeError):
+                        text = ""
+                    # Shape as an OpenAI-style delta so the frontend
+                    # stream handler processes it identically.
+                    yield _sse("chunk", {
+                        "choices": [{
+                            "delta": {"content": text},
+                            "finish_reason": "stop",
+                        }],
+                    })
             yield _sse("done", {})
         except Exception as e:
             logger.exception("ai_chat stream failed")

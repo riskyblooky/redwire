@@ -108,6 +108,13 @@ services:
       VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:-}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
 
+    volumes:
+      # Persist backend/uploads/ across container rebuilds. profile
+      # photos and wordlist uploads are written here as regular files
+      # (evidence + vault files go to MinIO, not disk). Without this
+      # mount they live only on the container's writable layer and
+      # `docker compose build backend` + `up -d` wipes them.
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -208,6 +215,7 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  uploads_data:
 
 networks:
   redwire-network:
