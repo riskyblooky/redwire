@@ -93,6 +93,12 @@ export interface AiSettings {
     // verification. For operators pointing at an internal AI gateway
     // with a self-signed / private-CA cert. Default "true".
     ai_tls_verify: string;
+    // JSON object string of custom headers (name → value) merged into
+    // every outbound AI-API request. Empty string means "none". The
+    // backend validates (RFC 7230 header-token names, no CRLF in
+    // values, ≤32 entries) and silently drops any invalid row so a
+    // stale config can't brick chat.
+    ai_custom_headers: string;
     ai_default_model: string;
     chatbot_enabled: string;
     mcp_enabled: string;

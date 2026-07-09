@@ -228,6 +228,7 @@ async def _summarize_via_llm(
     api_key: str,
     model: str,
     tls_verify: bool = True,
+    extra_headers: Optional[dict] = None,
 ) -> str:
     """Single non-streaming LLM call that compresses ``messages`` into
     a short bullet-point summary. Low temperature, explicit instruction
@@ -256,14 +257,21 @@ async def _summarize_via_llm(
         "temperature": 0.2,
         "stream": False,
     }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    if extra_headers:
+        # Custom names override the built-in Authorization / Content-Type
+        # case-insensitively — same merge rule as the main chat router.
+        lower_extra = {k.lower(): k for k in extra_headers}
+        headers = {k: v for k, v in headers.items() if k.lower() not in lower_extra}
+        headers.update(extra_headers)
     try:
         async with httpx.AsyncClient(timeout=60, verify=tls_verify) as client:
             resp = await client.post(
                 f"{api_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json=payload,
             )
             if resp.status_code != 200:
@@ -307,6 +315,7 @@ async def compact_if_needed(
     model: str,
     model_hint: Optional[str] = None,
     tls_verify: bool = True,
+    extra_headers: Optional[dict] = None,
 ) -> tuple[list[dict], dict]:
     """If ``messages`` exceeds ``threshold_pct%`` of ``max_context_tokens``,
     compact the head into a summary and return the reduced list.
@@ -346,7 +355,8 @@ async def compact_if_needed(
     summary_text = _cache_get(cache_key)
     if summary_text is None:
         summary_text = await _summarize_via_llm(
-            to_summarize, api_url, api_key, model, tls_verify=tls_verify,
+            to_summarize, api_url, api_key, model,
+            tls_verify=tls_verify, extra_headers=extra_headers,
         )
         _cache_set(cache_key, summary_text)
 

@@ -43,6 +43,73 @@ def _ai_tls_verify(settings: dict) -> bool:
     return (settings.get("ai_tls_verify", "true") or "true").strip().lower() != "false"
 
 
+# Header shape guards. Names follow RFC 7230 token; values reject CRLF
+# to close header-injection (same class as email-header injection).
+# Bounds keep an admin misconfig from producing an oversized outbound
+# request or a huge parsed dict.
+_HEADER_NAME_RE = __import__("re").compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+_MAX_CUSTOM_HEADERS = 32
+_MAX_HEADER_NAME_LEN = 128
+_MAX_HEADER_VALUE_LEN = 4096
+
+
+def _ai_custom_headers(settings: dict) -> dict:
+    """Parse the admin-configured custom headers into a dict for httpx.
+
+    Stored as a JSON object string under key ``ai_custom_headers`` so
+    the KV table doesn't need a schema change. Missing / empty / invalid
+    JSON returns an empty dict — a broken config must not brick chat.
+
+    Applied guards:
+      - Value must be a JSON object of string→string.
+      - At most ``_MAX_CUSTOM_HEADERS`` entries.
+      - Name must match the RFC 7230 header-token pattern.
+      - Value must not contain CR or LF (header-injection defense).
+      - Per-name and per-value length caps.
+
+    Any entry that fails a guard is silently dropped, not raised, for
+    the same reason as above — the summarizer / chat loop shouldn't
+    500 because one row went stale."""
+    raw = settings.get("ai_custom_headers")
+    if not raw or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        logger.warning("ai_custom_headers is not valid JSON; ignoring")
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+
+    out: dict[str, str] = {}
+    for name, value in list(parsed.items())[:_MAX_CUSTOM_HEADERS]:
+        if not isinstance(name, str) or not isinstance(value, str):
+            continue
+        if len(name) > _MAX_HEADER_NAME_LEN or len(value) > _MAX_HEADER_VALUE_LEN:
+            continue
+        if not _HEADER_NAME_RE.match(name):
+            continue
+        if "\r" in value or "\n" in value:
+            continue
+        out[name] = value
+    return out
+
+
+def _merge_headers(base: dict, custom: dict) -> dict:
+    """Return ``base`` merged with ``custom`` — custom wins. Case-insensitive
+    de-dup so a custom ``authorization`` overrides ``Authorization``."""
+    if not custom:
+        return dict(base)
+    lower_custom = {k.lower(): k for k in custom}
+    merged: dict[str, str] = {}
+    for k, v in base.items():
+        if k.lower() in lower_custom:
+            continue
+        merged[k] = v
+    merged.update(custom)
+    return merged
+
+
 async def _get_ai_settings(db: AsyncSession) -> dict:
     """Load all AI settings as a dict."""
     result = await db.execute(select(AiSetting))
@@ -80,6 +147,14 @@ class AiSettingsUpdate(BaseModel):
     # into the backend image. "false" disables verification. Default
     # "true" (verify).
     ai_tls_verify: Optional[str] = Field(None, max_length=8)
+    # JSON object string mapping header name → value. Merged into every
+    # outbound httpx request against ai_api_url (fetch-models, chat,
+    # summarizer). Custom names override the built-in Authorization
+    # header case-insensitively so admins can plug in providers whose
+    # auth uses X-API-Key / api-key / x-goog-api-key etc. Bounded to
+    # keep an over-generous KV row from producing an oversized request
+    # or a huge parsed dict. See _ai_custom_headers for the guard set.
+    ai_custom_headers: Optional[str] = Field(None, max_length=16384)
     chatbot_enabled: Optional[str] = Field(None, max_length=8)
     mcp_enabled: Optional[str] = Field(None, max_length=8)
     # GHSA-q4x9-5gmc-fxh5 (a2): admin toggle for write-capable MCP tools.
@@ -134,6 +209,9 @@ async def get_ai_settings(
         # Surface as a string ("true" / "false") to match every other
         # boolean-ish setting the frontend consumes off this endpoint.
         "ai_tls_verify": settings.get("ai_tls_verify", "true"),
+        # Raw stored JSON string. Frontend parses into a key/value
+        # editor. Empty string → no custom headers.
+        "ai_custom_headers": settings.get("ai_custom_headers", ""),
         "chatbot_enabled": settings.get("chatbot_enabled", "false"),
         "mcp_enabled": settings.get("mcp_enabled", "false"),
         "ai_write_tools_enabled": settings.get("ai_write_tools_enabled", "false"),
@@ -191,7 +269,10 @@ async def fetch_models(
         async with httpx.AsyncClient(timeout=15, verify=_ai_tls_verify(settings)) as client:
             resp = await client.get(
                 f"{api_url}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers=_merge_headers(
+                    {"Authorization": f"Bearer {api_key}"},
+                    _ai_custom_headers(settings),
+                ),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -402,6 +483,7 @@ async def ai_chat(
     api_key = settings.get("ai_api_key", "")
     model = settings.get("ai_default_model", "gpt-4o")
     tls_verify = _ai_tls_verify(settings)
+    custom_headers = _ai_custom_headers(settings)
 
     if not api_key:
         raise HTTPException(status_code=400, detail="API key not configured")
@@ -491,7 +573,7 @@ async def ai_chat(
                 keep_recent_turns=keep_recent_turns,
                 threshold_pct=threshold_pct,
                 api_url=api_url, api_key=api_key, model=model,
-                model_hint=model, tls_verify=tls_verify,
+                model_hint=model, tls_verify=tls_verify, extra_headers=custom_headers,
             )
             if _stats["fired"]:
                 yield _sse("context_compacted", _stats)
@@ -509,10 +591,13 @@ async def ai_chat(
                         }
                         resp = await client.post(
                             f"{api_url}/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {api_key}",
-                                "Content-Type": "application/json",
-                            },
+                            headers=_merge_headers(
+                                {
+                                    "Authorization": f"Bearer {api_key}",
+                                    "Content-Type": "application/json",
+                                },
+                                custom_headers,
+                            ),
                             json=payload,
                         )
                         if resp.status_code != 200:
@@ -644,7 +729,7 @@ async def ai_chat(
                             keep_recent_turns=keep_recent_turns,
                             threshold_pct=threshold_pct,
                             api_url=api_url, api_key=api_key, model=model,
-                            model_hint=model, tls_verify=tls_verify,
+                            model_hint=model, tls_verify=tls_verify, extra_headers=custom_headers,
                         )
                         if _stats["fired"]:
                             yield _sse("context_compacted", _stats)
@@ -661,10 +746,13 @@ async def ai_chat(
                 async with client.stream(
                     "POST",
                     f"{api_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=_merge_headers(
+                        {
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        custom_headers,
+                    ),
                     json=payload,
                 ) as resp:
                     if resp.status_code != 200:

@@ -16,7 +16,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug, ShieldOff } from 'lucide-react';
+import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug, ShieldOff, Plus, X, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
 
@@ -29,6 +29,7 @@ export function AiSettingsManagement() {
     const [apiUrl, setApiUrl] = useState('https://api.openai.com/v1');
     const [apiKey, setApiKey] = useState('');
     const [tlsVerify, setTlsVerify] = useState(true);
+    const [customHeaders, setCustomHeaders] = useState<{ name: string; value: string }[]>([]);
     const [model, setModel] = useState('');
     const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [apiHasChanges, setApiHasChanges] = useState(false);
@@ -53,6 +54,24 @@ export function AiSettingsManagement() {
         if (settings) {
             setApiUrl(settings.ai_api_url || 'https://api.openai.com/v1');
             setTlsVerify(settings.ai_tls_verify !== 'false');
+            // Custom headers stored as a JSON object string. Parse into a
+            // list to render one row per header. Anything malformed falls
+            // back to an empty list so the editor still opens.
+            try {
+                const parsed = settings.ai_custom_headers ? JSON.parse(settings.ai_custom_headers) : {};
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    setCustomHeaders(
+                        Object.entries(parsed).map(([name, value]) => ({
+                            name,
+                            value: String(value ?? ''),
+                        }))
+                    );
+                } else {
+                    setCustomHeaders([]);
+                }
+            } catch {
+                setCustomHeaders([]);
+            }
             setModel(settings.ai_default_model || '');
             setEditorEnabled(settings.ai_enabled === 'true');
             setChatbotEnabled(settings.chatbot_enabled === 'true');
@@ -86,10 +105,21 @@ export function AiSettingsManagement() {
     // ── Save: API config ────────────────────────────────────────────────
     const handleSaveApiConfig = async () => {
         try {
+            // Serialise the custom headers back to a JSON object string.
+            // Empty rows are dropped so an accidental "Add header" click
+            // doesn't persist an empty entry. Duplicate names collapse to
+            // the last value — mirrors how the backend merge treats them.
+            const headerObj: Record<string, string> = {};
+            for (const row of customHeaders) {
+                const name = (row.name ?? '').trim();
+                const value = row.value ?? '';
+                if (name) headerObj[name] = value;
+            }
             const payload: Record<string, string> = {
                 ai_api_url: apiUrl,
                 ai_default_model: model,
                 ai_tls_verify: tlsVerify ? 'true' : 'false',
+                ai_custom_headers: Object.keys(headerObj).length ? JSON.stringify(headerObj) : '',
             };
             if (apiKey && !apiKey.includes('...') && !apiKey.includes('***')) {
                 payload.ai_api_key = apiKey;
@@ -209,6 +239,69 @@ export function AiSettingsManagement() {
                             checked={tlsVerify}
                             onCheckedChange={(v) => { setTlsVerify(v); markApiChanged(); }}
                         />
+                    </div>
+
+                    {/* Custom headers */}
+                    <div className="space-y-2">
+                        <Label className="text-slate-300 flex items-center gap-1.5">
+                            <Layers className="h-3.5 w-3.5 text-emerald-400" />
+                            Custom headers
+                        </Label>
+                        <p className="text-[11px] text-slate-500 -mt-1">
+                            Sent on every request to the AI API. Common uses: <code className="text-violet-400/70">X-API-Key</code> for Anthropic-style auth, <code className="text-violet-400/70">api-version</code> for Azure, tenant / project IDs for internal proxies. Custom names override the built-in <code className="text-violet-400/70">Authorization: Bearer &lt;key&gt;</code>.
+                        </p>
+                        <div className="space-y-1.5">
+                            {customHeaders.map((row, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <Input
+                                        value={row.name}
+                                        onChange={(e) => {
+                                            const copy = [...customHeaders];
+                                            copy[idx] = { ...copy[idx], name: e.target.value };
+                                            setCustomHeaders(copy);
+                                            markApiChanged();
+                                        }}
+                                        placeholder="Header-Name"
+                                        className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-600 font-mono text-xs h-9 flex-1"
+                                    />
+                                    <Input
+                                        value={row.value}
+                                        onChange={(e) => {
+                                            const copy = [...customHeaders];
+                                            copy[idx] = { ...copy[idx], value: e.target.value };
+                                            setCustomHeaders(copy);
+                                            markApiChanged();
+                                        }}
+                                        placeholder="value"
+                                        className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-600 font-mono text-xs h-9 flex-[2]"
+                                    />
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                            setCustomHeaders(customHeaders.filter((_, i) => i !== idx));
+                                            markApiChanged();
+                                        }}
+                                        className="h-9 w-9 text-slate-500 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+                                        aria-label="Remove header"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setCustomHeaders([...customHeaders, { name: '', value: '' }]);
+                                    markApiChanged();
+                                }}
+                                className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1.5 h-8"
+                            >
+                                <Plus className="h-3.5 w-3.5" />
+                                Add header
+                            </Button>
+                        </div>
                     </div>
 
                     <Separator className="bg-slate-800" />
