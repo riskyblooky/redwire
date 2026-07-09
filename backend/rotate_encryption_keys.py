@@ -28,8 +28,8 @@ For mode (a), do NOT rotate JWT_SECRET until this has completed — the old
 key is unrecoverable once JWT_SECRET changes.
 
 Usage (inside the backend container):
-    docker compose exec backend python3 rotate_encryption_keys.py --dry-run
-    docker compose exec backend python3 rotate_encryption_keys.py
+    docker compose -f docker-compose.dev.yml exec backend python3 rotate_encryption_keys.py --dry-run
+    docker compose -f docker-compose.dev.yml exec backend python3 rotate_encryption_keys.py
 
 Idempotent & resumable: each value is tried new-key-first (already migrated →
 skip), then old-key (re-key), then treated as legacy plaintext (encrypt fresh).

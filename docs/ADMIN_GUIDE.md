@@ -46,7 +46,7 @@ host in prod — everything else is internal to the Docker network.
   └─────────┘    └────────────┘   └────────┘  └───────────┘  └─────────┘
 ```
 
-**Ports exposed to the host (prod, `docker-compose.prod.yml`):**
+**Ports exposed to the host (prod, `docker-compose.yml`):**
 
 | Host port | Service | Purpose |
 |---|---|---|
@@ -57,7 +57,7 @@ Everything else (Postgres, Redis, MinIO, MCP, backend, frontend) is
 network-internal and unreachable from outside the host. This is by
 design — do not add `ports:` mappings for those services in prod.
 
-**Ports exposed in dev (`docker-compose.yml`) for local hacking:**
+**Ports exposed in dev (`docker-compose.dev.yml`) for local hacking:**
 
 | Host port | Service | Purpose |
 |---|---|---|
@@ -90,7 +90,7 @@ The script:
    - `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MINIO_ROOT_PASSWORD`, `JWT_SECRET` — each 32 random bytes as hex.
    - `VAULT_ENCRYPTION_KEY`, `TOTP_ENCRYPTION_KEY` — real **Fernet** keys (44-char base64). Hex values will NOT work for these.
 3. **Writes** `.env` and `credentials_DO_NOT_SHARE.txt` at mode `0600`.
-4. **Builds and starts** every service via `docker-compose.prod.yml`.
+4. **Builds and starts** every service via `docker-compose.yml`.
 5. **Runs Alembic migrations** (via `backend/migrate.py` — advances every
    plugin branch too, not just core).
 6. **Optionally bootstraps** a Let's Encrypt certificate via Certbot.
@@ -140,7 +140,7 @@ nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem
 nginx/certbot/conf/live/${DOMAIN_NAME}/privkey.pem
 ```
 
-Then `docker compose -f docker-compose.prod.yml restart nginx`. Nothing
+Then `docker compose restart nginx`. Nothing
 else changes; the nginx config already reads from that path.
 
 ### 3. Behind another reverse proxy (chained nginx / traefik / CDN)
@@ -256,19 +256,19 @@ cp path/to/backup/.env .env
 chmod 600 .env
 
 # 2. Start Postgres alone
-docker compose -f docker-compose.prod.yml up -d postgres
+docker compose up -d postgres
 
 # 3. Restore the DB
 gunzip -c redwire-YYYY-MM-DD.sql.gz | docker exec -i redwire-db psql -U redwire -d redwire
 
 # 4. Restore MinIO
-docker compose -f docker-compose.prod.yml up -d minio
+docker compose up -d minio
 docker exec redwire-minio mc alias set local http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
 docker cp ./evidence-YYYY-MM-DD redwire-minio:/tmp/evidence-restore
 docker exec redwire-minio mc mirror --overwrite /tmp/evidence-restore local/redwire-evidence
 
 # 5. Bring the rest up
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 Verify by logging in as the original admin and opening an engagement
@@ -310,9 +310,9 @@ survive the container swap.
 Bring the previous version's images back up:
 
 ```bash
-docker compose -f docker-compose.prod.yml down
+docker compose down
 git checkout <previous-tag>
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose up -d --build
 ```
 
 **Alembic migrations are one-way** in most cases — a rollback of the
@@ -351,7 +351,7 @@ service) and the backend (to connect). Change one at a time:
 ```bash
 # Example: rotate REDIS_PASSWORD
 sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=<new-value>/' .env
-docker compose -f docker-compose.prod.yml up -d --force-recreate redis backend
+docker compose up -d --force-recreate redis backend
 ```
 
 Both services need to restart together — old backend + new Redis (or
@@ -364,7 +364,7 @@ logged out on the next request. Do it during a maintenance window.
 
 ```bash
 sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
-docker compose -f docker-compose.prod.yml restart backend
+docker compose restart backend
 ```
 
 ### `VAULT_ENCRYPTION_KEY` / `TOTP_ENCRYPTION_KEY`
@@ -384,11 +384,11 @@ docker exec redwire-db pg_dump -U redwire redwire | gzip > pre-rotate-$(date +%F
 echo "VAULT_ENCRYPTION_KEY_NEW=$(python3 -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())")" >> .env
 
 # 3. Run the rotation script — decrypts under OLD, re-encrypts under NEW.
-docker compose -f docker-compose.prod.yml run --rm backend python rotate_encryption_keys.py
+docker compose run --rm backend python rotate_encryption_keys.py
 
 # 4. Promote NEW → active and remove OLD.
 # (Edit .env: VAULT_ENCRYPTION_KEY=<new value>, remove _NEW)
-docker compose -f docker-compose.prod.yml restart backend
+docker compose restart backend
 ```
 
 Same shape for `TOTP_ENCRYPTION_KEY`.
@@ -475,8 +475,8 @@ For the full plugin author reference, see
   restart the backend (`docker compose restart backend`). If the plugin
   ships frontend pages, rebuild the frontend image too:
   ```
-  docker compose -f docker-compose.prod.yml build frontend
-  docker compose -f docker-compose.prod.yml up -d frontend
+  docker compose build frontend
+  docker compose up -d frontend
   ```
 - **Uninstall:** `rm -rf backend/plugins/<slug>/` + restart. Any data the
   plugin persisted stays until you drop its tables (they're on their
@@ -532,8 +532,8 @@ bar shows `https://redwire.example.com` (no port), the port is 443, and
 changing `.env` doesn't help until you rebuild:
 
 ```bash
-docker compose -f docker-compose.prod.yml build --no-cache frontend
-docker compose -f docker-compose.prod.yml up -d frontend
+docker compose build --no-cache frontend
+docker compose up -d frontend
 ```
 
 Also possible: browser cache. Hard refresh (Cmd/Ctrl+Shift+R) or clear

@@ -82,9 +82,12 @@ class StorageService:
                         f"match the MinIO container's root user. If .env was "
                         f"regenerated after a prior deploy, the minio_data "
                         f"volume still carries the old root credential — "
-                        f"either restore .env to match, or "
-                        f"`docker compose down -v` the minio service and let "
-                        f"it re-init from the current .env."
+                        f"either restore .env to match, or wipe the minio "
+                        f"volume so it re-inits under the current .env: "
+                        f"`docker compose rm -sf minio && docker volume rm "
+                        f"redwire_minio_data && docker compose up -d minio`. "
+                        f"(Do NOT run `docker compose down -v` — that removes "
+                        f"the postgres volume too.)"
                     )
                 print(f"⏳ Bucket check failed (attempt {attempt}/{attempts}): "
                       f"{code} — retrying in {delay}s")

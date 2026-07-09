@@ -195,9 +195,22 @@ for info in z.infolist():
 z.close()
 "
     echo -e "${GREEN}Source files extracted.${NC}"
+
+    # Compose-file rename cleanup (2026-07): the previous convention was
+    # docker-compose.yml=dev + docker-compose.prod.yml=prod. New shape is
+    # docker-compose.yml=prod + docker-compose.dev.yml=dev, so a host that
+    # upgraded FROM the old zip has a stale docker-compose.prod.yml on
+    # disk (the extract step above overwrites docker-compose.yml with the
+    # new prod content but doesn't touch the legacy prod filename). Remove
+    # it explicitly so `docker compose down` / `up` operators aren't
+    # accidentally pointing at a stale file.
+    if [ -f docker-compose.prod.yml ]; then
+        echo "  Removing stale docker-compose.prod.yml (superseded by docker-compose.yml)"
+        rm -f docker-compose.prod.yml
+    fi
 else
     echo -e "\n${BLUE}[3/8] No migration zip found — using in-place source (git clone install).${NC}"
-    if [ ! -d backend ] || [ ! -d frontend ] || [ ! -f docker-compose.prod.yml ]; then
+    if [ ! -d backend ] || [ ! -d frontend ] || [ ! -f docker-compose.yml ]; then
         echo -e "${RED}Error: No redwire_migration_package.zip and no source tree in the current directory.${NC}"
         echo "Run this script from the root of a git clone of RedWire, or"
         echo "place redwire_migration_package.zip next to it."
@@ -232,7 +245,7 @@ if [ "$OFFLINE" -eq 1 ]; then
     echo "Loading Docker images from redwire_images.tar..."
     docker load -i redwire_images.tar
     echo "Bringing services up (no build)..."
-    docker compose -f docker-compose.prod.yml up -d --no-build
+    docker compose up -d --no-build
 else
     echo "Building images (requires internet)..."
     # Bake build metadata into the image so /health can report exactly
@@ -241,10 +254,10 @@ else
     # captured. Backend Dockerfile picks these up via ARG.
     export GIT_COMMIT=$(git rev-parse --short=12 HEAD 2>/dev/null || echo "unknown")
     export BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    docker compose -f docker-compose.prod.yml build \
+    docker compose build \
         --build-arg GIT_COMMIT="$GIT_COMMIT" \
         --build-arg BUILD_TIME="$BUILD_TIME"
-    docker compose -f docker-compose.prod.yml up -d
+    docker compose up -d
 fi
 
 echo "Waiting for services to be healthy..."
@@ -253,7 +266,7 @@ sleep 15 # Give DB time to initialize
 # 7. Database Migration (Safe)
 echo -e "\n${BLUE}[7/8] Running Database Migrations...${NC}"
 echo "Applying alembic migrations to update schema without data loss..."
-docker compose -f docker-compose.prod.yml run --rm backend python migrate.py upgrade heads
+docker compose run --rm backend python migrate.py upgrade heads
 echo -e "${GREEN}Migrations applied successfully!${NC}"
 
 # 7b. Re-key at-rest data onto freshly generated encryption key(s) (GHSA-pg99).
@@ -262,7 +275,7 @@ echo -e "${GREEN}Migrations applied successfully!${NC}"
 # under the new dedicated key; rows already on the new key are skipped.
 if [ "${NEEDS_ROTATION:-0}" -eq 1 ]; then
     echo -e "\n${BLUE}[7b] Re-keying existing vault/TOTP data onto the new encryption key(s)...${NC}"
-    docker compose -f docker-compose.prod.yml run --rm backend python3 rotate_encryption_keys.py
+    docker compose run --rm backend python3 rotate_encryption_keys.py
     echo -e "${GREEN}Encryption key rotation complete.${NC}"
 fi
 
@@ -299,22 +312,22 @@ if [[ "$SETUP_CERTBOT" =~ ^[Yy]$ ]]; then
     echo "Requesting certificate for $DOMAIN_NAME..."
 
     # Register account (if needed)
-    docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot certbot register \
+    docker compose run --rm --entrypoint certbot certbot register \
         --email "$CERTBOT_EMAIL" --agree-tos --no-eff-email --non-interactive || true
 
     # Request cert (using webroot)
-    docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot certbot certonly \
+    docker compose run --rm --entrypoint certbot certbot certonly \
         --webroot --webroot-path /var/www/certbot -d "$DOMAIN_NAME" --non-interactive --force-renewal
 
     echo "Reloading Nginx with new certificate..."
-    docker compose -f docker-compose.prod.yml restart nginx
+    docker compose restart nginx
     echo -e "${GREEN}Let's Encrypt certificate installed!${NC}"
 else
     echo -e "${BLUE}Skipping Certbot - using self-signed certificate.${NC}"
     echo "You can request a certificate later by running:"
-    echo "  docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot certbot certonly \\"
+    echo "  docker compose run --rm --entrypoint certbot certbot certonly \\"
     echo "    --webroot --webroot-path /var/www/certbot -d $DOMAIN_NAME --non-interactive"
-    echo "  docker compose -f docker-compose.prod.yml restart nginx"
+    echo "  docker compose restart nginx"
 fi
 
 echo -e "\n${GREEN}=== Deployment Complete! ===${NC}"

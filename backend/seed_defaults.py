@@ -3,7 +3,7 @@ seed_defaults.py — single entry point for everything we want present
 on a fresh install.
 
 Everything below is idempotent (existence-checked). The point is that an
-operator running `docker compose up` for the first time gets:
+operator running `docker compose -f docker-compose.dev.yml up` for the first time gets:
 
   - tags
   - configurable types (asset/engagement/testcase/finding/etc. dropdowns)

@@ -77,7 +77,7 @@ The deploy script is the supported install path. It:
   - `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MINIO_ROOT_PASSWORD`, `JWT_SECRET` — each 32 random bytes as hex
   - `VAULT_ENCRYPTION_KEY`, `TOTP_ENCRYPTION_KEY` — proper Fernet keys (32 URL-safe base64 bytes; hex will NOT work)
 - Writes `.env` and `credentials_DO_NOT_SHARE.txt` at mode `0600`
-- Builds and starts all services via `docker-compose.prod.yml`
+- Builds and starts all services via `docker-compose.yml`
 - Runs Alembic migrations
 - Optionally bootstraps a Let's Encrypt certificate via Certbot (skip for on-prem / internal deployments — a self-signed cert is installed and works fine)
 
@@ -97,11 +97,11 @@ openssl rand -hex 32
 python3 -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
 ```
 
-The Fernet keys are not interchangeable with the hex secrets — the vault and TOTP subsystems will fail closed on startup if either key is missing or malformed. Set `POSTGRES_USER`, `POSTGRES_DB`, `MINIO_ROOT_USER`, `NEXT_PUBLIC_API_URL`, `CORS_ORIGINS`, `DOMAIN_NAME`, and `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_USERNAME` to match your environment, then `docker compose -f docker-compose.prod.yml up -d`.
+The Fernet keys are not interchangeable with the hex secrets — the vault and TOTP subsystems will fail closed on startup if either key is missing or malformed. Set `POSTGRES_USER`, `POSTGRES_DB`, `MINIO_ROOT_USER`, `NEXT_PUBLIC_API_URL`, `CORS_ORIGINS`, `DOMAIN_NAME`, and `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_USERNAME` to match your environment, then `docker compose up -d`.
 
 ## Production deployment
 
-The Quick Start above is the production install path — `deploy_server.sh` and `docker-compose.prod.yml` are what runs on real deployments. The Compose file:
+The Quick Start above is the production install path — `deploy_server.sh` and `docker-compose.yml` are what runs on real deployments. The Compose file:
 
 - Builds the frontend with `NODE_OPTIONS="--max-old-space-size=2048"` (suitable for a 4 GB VPS)
 - Does not expose internal service ports (postgres, redis, minio, mcp) on the host
@@ -163,23 +163,26 @@ Migration files follow the convention `YYYY-MM-DD_<revid>_<desc>.py`.
 
 ### Common Docker commands
 
-All commands below target the production Compose file (`docker-compose.prod.yml`). For local development with hot-reload, swap `-f docker-compose.prod.yml` for `-f docker-compose.yml` or omit the flag entirely.
+The default `docker-compose.yml` is the **production** Compose file — `docker compose` with no `-f` flag targets prod. Dev-with-hot-reload lives in `docker-compose.dev.yml`; add `-f docker-compose.dev.yml` when you want that.
 
 ```bash
-# Start all services
-docker compose -f docker-compose.prod.yml up -d
+# Start all services (prod)
+docker compose up -d
 
 # Follow logs
-docker compose -f docker-compose.prod.yml logs -f
+docker compose logs -f
 
 # Stop all services
-docker compose -f docker-compose.prod.yml down
+docker compose down
 
 # Rebuild containers
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose up -d --build
 
 # Remove all data (destroys databases and volumes)
-docker compose -f docker-compose.prod.yml down -v
+docker compose down -v
+
+# Dev mode with hot-reload + host-published service ports
+docker compose -f docker-compose.dev.yml up -d
 ```
 
 ## Project structure
@@ -203,8 +206,8 @@ redwire/
 ├── mcp-server/             MCP server (Starlette + SSE)
 ├── nginx/                  Nginx config and Certbot volumes
 ├── scripts/                Deploy and operational scripts
-├── docker-compose.yml      Development orchestration
-├── docker-compose.prod.yml Production orchestration
+├── docker-compose.yml      Production orchestration (default)
+├── docker-compose.dev.yml  Development orchestration (hot-reload, host ports)
 └── .env.example            Environment template
 ```
 

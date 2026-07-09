@@ -1,5 +1,5 @@
 # Build context is the repo root for BOTH dev and prod builds (see
-# docker-compose.yml / .prod.yml). This lets us COPY plugin sources
+# docker-compose.yml and docker-compose.dev.yml). This lets us COPY plugin sources
 # out of ../backend/plugins/ into the image so the prebuild sync
 # script (frontend/scripts/sync-plugin-frontends.mjs) can bake plugin
 # React pages into the Next.js app tree at image build time.

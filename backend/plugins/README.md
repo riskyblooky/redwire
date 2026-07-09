@@ -52,15 +52,15 @@ always sees the latest source. The pre-hooks run on every `next dev`
 restart. If you add a plugin page, restart the frontend container.
 
 **Prod:** the frontend Docker build context is the repo root (see
-`docker-compose.prod.yml`), and `frontend/Dockerfile` `COPY
+`docker-compose.yml`), and `frontend/Dockerfile` `COPY
 backend/plugins/ /backend-plugins/` in its builder stage. So `next
 build` runs `sync-plugin-frontends.mjs` with plugin sources in scope,
 and plugin pages are baked into the resulting image. **A plugin
 change requires rebuilding the frontend image:**
 
 ```bash
-docker compose -f docker-compose.prod.yml build frontend
-docker compose -f docker-compose.prod.yml up -d frontend
+docker compose build frontend
+docker compose up -d frontend
 ```
 
 `.dockerignore` at the repo root keeps the build context lean —
