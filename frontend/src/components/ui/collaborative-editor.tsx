@@ -34,7 +34,7 @@ import * as decoding from 'lib0/decoding';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
-import { Wifi, WifiOff, Loader2, Users } from 'lucide-react';
+import { Wifi, WifiOff, Loader2, Users, Eye } from 'lucide-react';
 import {
     Bold, Italic, List as ListIcon, ListOrdered, Quote,
     Undo, Redo, Code, Heading as HeadingIcon, Strikethrough,
@@ -927,6 +927,15 @@ export default function CollaborativeEditor({
 
                 {/* Connection status + peer count */}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                    {disabled && (
+                        <span
+                            className="flex items-center gap-1 text-[10px] font-medium text-slate-300 bg-slate-800/70 border border-slate-700 rounded-full px-2 py-0.5"
+                            title="You don't have permission to edit this note. Live edits from others still appear as they happen."
+                        >
+                            <Eye className="h-3 w-3" />
+                            Read only
+                        </span>
+                    )}
                     {peerCount > 0 && (
                         <span className="flex items-center gap-1 text-[10px] text-emerald-400">
                             <Users className="h-3 w-3" />

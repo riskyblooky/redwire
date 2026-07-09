@@ -28,6 +28,43 @@ router = APIRouter(tags=["websocket"])
 _AUTH_FRAME_TIMEOUT_S = 5.0
 
 
+# Y.js binary wire format (see y-protocols).
+# Top-level msg type varUint:
+#   0 = MSG_SYNC — followed by a sub-type varUint
+#   1 = MSG_AWARENESS — cursor / presence updates
+# MSG_SYNC sub-types:
+#   0 = SyncStep1  — client sends its state vector, "give me what I'm missing"
+#   1 = SyncStep2  — server/peer response containing the missing updates
+#   2 = Update     — a new document mutation (WRITE)
+# Values 0-127 are single-byte varUints, so we can inspect data[0]/data[1].
+_YJS_MSG_SYNC = 0
+_YJS_MSG_AWARENESS = 1
+_YJS_SYNC_STEP1 = 0
+_YJS_SYNC_STEP2 = 1
+_YJS_SYNC_UPDATE = 2
+
+
+def _is_viewer_safe_binary(data: bytes) -> bool:
+    """True if a binary Y.js message is safe to relay from a read-only
+    client — awareness (cursor / presence) or SYNC step 1/2 (query
+    or state response). Blocks SYNC UPDATE, which would let a viewer
+    inject CRDT writes into peers' live ydoc.
+
+    Rejects a leading zero-length or truncated message (defensive
+    against a client dumping empty frames)."""
+    if not data:
+        return False
+    top = data[0]
+    if top == _YJS_MSG_AWARENESS:
+        return True
+    if top == _YJS_MSG_SYNC:
+        if len(data) < 2:
+            return False
+        subtype = data[1]
+        return subtype in (_YJS_SYNC_STEP1, _YJS_SYNC_STEP2)
+    return False
+
+
 async def _auth_via_first_frame(
     websocket: WebSocket,
     db: AsyncSession,
@@ -340,29 +377,33 @@ async def yjs_websocket_endpoint(
         return
 
     # 2b. Authorize against the note's engagement. Mirrors routers/notes.py:
-    #   - view requires NOTE_VIEW
-    #   - edit requires NOTE_EDIT (owner) or NOTE_EDIT_ANY (non-owner);
-    #     admin / read-only-admin / team-lead bypass the edit check
-    # Without this, the WS path is a softer door than the REST one.
-    #
-    # Admin / read-only-admin / team-lead bypass the VIEW gate too
-    # (mirrors notes.py:121). Previously an admin who wasn't a direct
-    # engagement member couldn't open the Y.js sync socket for any
-    # note in that engagement — the WS was a *stricter* door than
-    # the REST fetch of the same note, so the frontend loaded the
-    # note metadata fine and then hung on the collab handshake.
-    is_admin = role in (
+    #   - VIEW bypass: admin / read-only-admin / team-lead (three roles).
+    #     Previously an admin who wasn't a direct engagement member
+    #     couldn't open the Y.js sync socket at all — the WS was a
+    #     *stricter* door than the REST fetch, so the note metadata
+    #     loaded fine and the collab handshake silently hung.
+    #   - WRITE bypass: admin / team-lead only (two roles — no
+    #     read-only-admin). read-only-admin passes VIEW but must not
+    #     write, matching notes.py:203 and every other REST edit gate.
+    #     Previously this treated all three view-bypass roles as edit-
+    #     capable, which let read-only-admin save note content and
+    #     broadcast CRDT updates even though REST would 403 them.
+    is_admin_view = role in (
         UserRole.ADMIN.value,
         UserRole.READ_ONLY_ADMIN.value,
         UserRole.TEAM_LEAD.value,
     )
-    if not is_admin and not await check_engagement_permission(
+    if not is_admin_view and not await check_engagement_permission(
         user_id, note.engagement_id, Permission.NOTE_VIEW.value, db
     ):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    if is_admin:
+    is_admin_write = role in (
+        UserRole.ADMIN.value,
+        UserRole.TEAM_LEAD.value,
+    )
+    if is_admin_write:
         can_edit = True
     else:
         is_owner = note.created_by == user_id
@@ -397,9 +438,19 @@ async def yjs_websocket_endpoint(
             message = await websocket.receive()
 
             if "bytes" in message and message["bytes"]:
-                # Binary Y.js sync/awareness message — relay to other clients.
-                # Read-only viewers cannot broadcast CRDT updates.
-                if can_edit:
+                # Binary Y.js sync/awareness message. Read-only viewers
+                # may still emit query messages (Y.js sync step 1 asks
+                # peers for their state) and awareness messages (cursor
+                # / presence). Without at least step 1 going through,
+                # a read-only viewer never bootstraps from active peers
+                # — they see the DB snapshot from initial_content and
+                # then diverge from live edits. Blocking only Y.js
+                # UPDATE (write) messages preserves the CRDT integrity
+                # gate; the save_content JSON path below is still
+                # gated on can_edit so a forged UPDATE couldn't survive
+                # a reload either, but this stops it from polluting
+                # peers' live ydoc in the first place.
+                if can_edit or _is_viewer_safe_binary(message["bytes"]):
                     await room.relay_binary(websocket, message["bytes"])
 
             elif "text" in message and message["text"]:
