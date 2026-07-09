@@ -88,6 +88,11 @@ export interface AiSettings {
     ai_enabled: string;
     ai_api_key: string;
     ai_api_url: string;
+    // "true" / "false". Mirrors ldap_tls_verify: when "false", the
+    // backend's httpx client that hits ai_api_url skips certificate
+    // verification. For operators pointing at an internal AI gateway
+    // with a self-signed / private-CA cert. Default "true".
+    ai_tls_verify: string;
     ai_default_model: string;
     chatbot_enabled: string;
     mcp_enabled: string;

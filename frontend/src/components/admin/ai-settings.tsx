@@ -16,7 +16,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug } from 'lucide-react';
+import { Brain, Key, Globe, Cpu, RefreshCw, Save, CheckCircle2, AlertTriangle, Sparkles, MessageCircle, Unplug, ShieldOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
 
@@ -28,6 +28,7 @@ export function AiSettingsManagement() {
     // API config state
     const [apiUrl, setApiUrl] = useState('https://api.openai.com/v1');
     const [apiKey, setApiKey] = useState('');
+    const [tlsVerify, setTlsVerify] = useState(true);
     const [model, setModel] = useState('');
     const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [apiHasChanges, setApiHasChanges] = useState(false);
@@ -51,6 +52,7 @@ export function AiSettingsManagement() {
     useEffect(() => {
         if (settings) {
             setApiUrl(settings.ai_api_url || 'https://api.openai.com/v1');
+            setTlsVerify(settings.ai_tls_verify !== 'false');
             setModel(settings.ai_default_model || '');
             setEditorEnabled(settings.ai_enabled === 'true');
             setChatbotEnabled(settings.chatbot_enabled === 'true');
@@ -87,6 +89,7 @@ export function AiSettingsManagement() {
             const payload: Record<string, string> = {
                 ai_api_url: apiUrl,
                 ai_default_model: model,
+                ai_tls_verify: tlsVerify ? 'true' : 'false',
             };
             if (apiKey && !apiKey.includes('...') && !apiKey.includes('***')) {
                 payload.ai_api_key = apiKey;
@@ -183,8 +186,29 @@ export function AiSettingsManagement() {
                             className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 font-mono text-sm"
                         />
                         <p className="text-[11px] text-slate-500">
-                            Stored securely. Leave empty for local APIs that don't require authentication.
+                            Stored securely. Leave empty for local APIs that don't require authentication. JWTs and other long-form bearer tokens (up to 8 KB) are fine here.
                         </p>
+                    </div>
+
+                    {/* TLS verification toggle — mirrors ldap_tls_verify */}
+                    <div className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <ShieldOff className={`h-3.5 w-3.5 shrink-0 ${tlsVerify ? 'text-slate-500' : 'text-amber-400'}`} />
+                            <div className="min-w-0">
+                                <Label className="text-slate-300 text-sm cursor-pointer" htmlFor="ai-tls-verify">
+                                    Verify TLS certificate
+                                </Label>
+                                <p className="text-[11px] text-slate-500">
+                                    Off = accept any TLS cert on the API endpoint (self-signed or private CA).
+                                    Same as the LDAP toggle. Leave on unless you know why you're turning it off.
+                                </p>
+                            </div>
+                        </div>
+                        <Switch
+                            id="ai-tls-verify"
+                            checked={tlsVerify}
+                            onCheckedChange={(v) => { setTlsVerify(v); markApiChanged(); }}
+                        />
                     </div>
 
                     <Separator className="bg-slate-800" />

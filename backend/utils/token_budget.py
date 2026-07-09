@@ -227,6 +227,7 @@ async def _summarize_via_llm(
     api_url: str,
     api_key: str,
     model: str,
+    tls_verify: bool = True,
 ) -> str:
     """Single non-streaming LLM call that compresses ``messages`` into
     a short bullet-point summary. Low temperature, explicit instruction
@@ -256,7 +257,7 @@ async def _summarize_via_llm(
         "stream": False,
     }
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=60, verify=tls_verify) as client:
             resp = await client.post(
                 f"{api_url}/chat/completions",
                 headers={
@@ -305,6 +306,7 @@ async def compact_if_needed(
     api_key: str,
     model: str,
     model_hint: Optional[str] = None,
+    tls_verify: bool = True,
 ) -> tuple[list[dict], dict]:
     """If ``messages`` exceeds ``threshold_pct%`` of ``max_context_tokens``,
     compact the head into a summary and return the reduced list.
@@ -344,7 +346,7 @@ async def compact_if_needed(
     summary_text = _cache_get(cache_key)
     if summary_text is None:
         summary_text = await _summarize_via_llm(
-            to_summarize, api_url, api_key, model,
+            to_summarize, api_url, api_key, model, tls_verify=tls_verify,
         )
         _cache_set(cache_key, summary_text)
 

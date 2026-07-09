@@ -33,6 +33,16 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-server:3001").rstrip("/
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+def _ai_tls_verify(settings: dict) -> bool:
+    """Resolve the admin's TLS-verify toggle to the bool that httpx wants.
+
+    Default TRUE (verify). Only the explicit case-insensitive string
+    "false" flips to False, so a stray typo or missing row leaves the
+    secure default in place. Same evaluation shape as
+    ``settings.get("ldap_tls_verify", "true").lower() != "false"``."""
+    return (settings.get("ai_tls_verify", "true") or "true").strip().lower() != "false"
+
+
 async def _get_ai_settings(db: AsyncSession) -> dict:
     """Load all AI settings as a dict."""
     result = await db.execute(select(AiSetting))
@@ -55,9 +65,21 @@ class ChatRequest(BaseModel):
 
 class AiSettingsUpdate(BaseModel):
     ai_enabled: Optional[str] = Field(None, max_length=8)
-    ai_api_key: Optional[str] = Field(None, max_length=512)
+    # Widened from 512 to 8192: some corporate deployments authenticate
+    # against internal AI proxies with signed JWTs (~700-1500 chars) or
+    # long-lived opaque bearers. 8192 is arbitrary but well above what
+    # any reasonable auth token needs, and the underlying DB column is
+    # already TEXT so there's no schema constraint to relax.
+    ai_api_key: Optional[str] = Field(None, max_length=8192)
     ai_api_url: Optional[str] = Field(None, max_length=2048)
     ai_default_model: Optional[str] = Field(None, max_length=255)
+    # Per-provider toggle to skip TLS certificate verification on the
+    # AI-API HTTP client. Same shape and use case as ldap_tls_verify:
+    # some operators point RedWire at an internal AI gateway with a
+    # self-signed / private-CA cert and can't easily install the CA
+    # into the backend image. "false" disables verification. Default
+    # "true" (verify).
+    ai_tls_verify: Optional[str] = Field(None, max_length=8)
     chatbot_enabled: Optional[str] = Field(None, max_length=8)
     mcp_enabled: Optional[str] = Field(None, max_length=8)
     # GHSA-q4x9-5gmc-fxh5 (a2): admin toggle for write-capable MCP tools.
@@ -109,6 +131,9 @@ async def get_ai_settings(
         "ai_api_key": masked_key,
         "ai_api_url": settings.get("ai_api_url", "https://api.openai.com/v1"),
         "ai_default_model": settings.get("ai_default_model", ""),
+        # Surface as a string ("true" / "false") to match every other
+        # boolean-ish setting the frontend consumes off this endpoint.
+        "ai_tls_verify": settings.get("ai_tls_verify", "true"),
         "chatbot_enabled": settings.get("chatbot_enabled", "false"),
         "mcp_enabled": settings.get("mcp_enabled", "false"),
         "ai_write_tools_enabled": settings.get("ai_write_tools_enabled", "false"),
@@ -163,7 +188,7 @@ async def fetch_models(
         raise HTTPException(status_code=400, detail="API key not configured")
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, verify=_ai_tls_verify(settings)) as client:
             resp = await client.get(
                 f"{api_url}/models",
                 headers={"Authorization": f"Bearer {api_key}"},
@@ -376,6 +401,7 @@ async def ai_chat(
     api_url = settings.get("ai_api_url", "https://api.openai.com/v1").rstrip("/")
     api_key = settings.get("ai_api_key", "")
     model = settings.get("ai_default_model", "gpt-4o")
+    tls_verify = _ai_tls_verify(settings)
 
     if not api_key:
         raise HTTPException(status_code=400, detail="API key not configured")
@@ -465,7 +491,7 @@ async def ai_chat(
                 keep_recent_turns=keep_recent_turns,
                 threshold_pct=threshold_pct,
                 api_url=api_url, api_key=api_key, model=model,
-                model_hint=model,
+                model_hint=model, tls_verify=tls_verify,
             )
             if _stats["fired"]:
                 yield _sse("context_compacted", _stats)
@@ -474,7 +500,7 @@ async def ai_chat(
             if tools:
                 max_rounds = 3
                 for _round in range(max_rounds):
-                    async with httpx.AsyncClient(timeout=120) as client:
+                    async with httpx.AsyncClient(timeout=120, verify=tls_verify) as client:
                         payload = {
                             "model": model,
                             "messages": api_messages,
@@ -618,7 +644,7 @@ async def ai_chat(
                             keep_recent_turns=keep_recent_turns,
                             threshold_pct=threshold_pct,
                             api_url=api_url, api_key=api_key, model=model,
-                            model_hint=model,
+                            model_hint=model, tls_verify=tls_verify,
                         )
                         if _stats["fired"]:
                             yield _sse("context_compacted", _stats)
@@ -626,7 +652,7 @@ async def ai_chat(
                         # Loop back — let the LLM see the tool results.
 
             # ── Final streaming response ─────────────────────────────
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=120, verify=tls_verify) as client:
                 payload = {
                     "model": model,
                     "messages": api_messages,
