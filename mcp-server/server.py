@@ -37,6 +37,38 @@ REDWIRE_API_URL = os.getenv("REDWIRE_API_URL", "http://backend:8000")
 MCP_PORT = int(os.getenv("MCP_PORT", "3001"))
 CORS_ORIGINS = [o for o in os.getenv("CORS_ORIGINS", "").split(",") if o]
 
+# ── Enum mirrors ─────────────────────────────────────────────────────────────
+#
+# Hand-kept copies of the backend enums. The MCP server is a separate
+# container and can't import backend models — if you change an enum in
+# backend/models/, change it here too.
+#
+# These are advertised to the model in the tool schemas, so a wrong value
+# here is not cosmetic: the model is *constrained* to whatever we list, and
+# every value it picks then fails. Historically all of these were lowercase
+# and/or invented ("active", "planned", "informational", "blog"), so any
+# tool call carrying one of these filters failed 100% of the time — either
+# a 422 from the backend's Pydantic layer, or (for list_engagements, which
+# the in-app chatbot runs against the DB directly) an asyncpg
+# InvalidTextRepresentationError. Postgres enum values are UPPERCASE.
+ENGAGEMENT_STATUSES = (
+    "PROPOSED",
+    "SCOPING",
+    "PLANNING",
+    "IN_PROGRESS",
+    "REPORTING",
+    "COMPLETED",
+    "ON_HOLD",
+)
+# models/finding.py :: Severity — note INFO, not "informational".
+SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+# models/finding.py :: FindingStatus
+FINDING_STATUSES = ("OPEN", "IN_REVIEW", "VERIFIED", "REMEDIATED", "CLOSED")
+# models/cleanup_artifact.py :: CleanupArtifactStatus — there is no "completed".
+CLEANUP_STATUSES = ("PENDING", "CLEANED", "PARTIALLY_CLEANED", "NOT_APPLICABLE")
+# models/intel_item.py :: IntelItemType — there is no "blog" or "news".
+INTEL_ITEM_TYPES = ("CVE", "ADVISORY", "ARTICLE", "ZINE", "EXPLOIT", "OTHER")
+
 # ── Per-Session Auth ─────────────────────────────────────────────────────────
 # Each SSE connection MUST present its own bearer (JWT or API token) in the
 # Authorization header. It's validated at connect time and stored per-session;
@@ -153,14 +185,65 @@ async def _write_tools_enabled() -> bool:
         return False
 
 
+# Fields whose legal values are NOT a Postgres enum but rows in the
+# admin-editable `configurable_types` taxonomy (the same list the UI
+# dropdowns are built from). Hardcoding these drifts the moment an admin
+# edits the taxonomy — asset_type was advertised as IP_ADDRESS/DOMAIN
+# while the taxonomy actually said "IP Address"/"Domain", so the model
+# created assets whose type matched no dropdown option. Resolve them live
+# instead.
+_TAXONOMY_FIELDS: dict[tuple[str, str], str] = {
+    ("create_asset", "asset_type"): "asset",
+    ("update_asset", "asset_type"): "asset",
+    ("create_vault_item", "item_type"): "vault",
+    ("create_cleanup_artifact", "artifact_type"): "cleanup",
+}
+
+
+async def _taxonomy_values(category: str) -> list[str] | None:
+    """Live names from the configurable-types taxonomy, or None if it can't
+    be read — in which case the caller leaves the field unconstrained rather
+    than pinning the model to a stale list."""
+    try:
+        rows = await _api_get(f"/configurable-types/{category}")
+    except Exception as e:
+        logger.warning("taxonomy fetch failed for %r: %s", category, e)
+        return None
+    if not isinstance(rows, list):
+        return None
+    names = [r["name"] for r in rows if isinstance(r, dict) and r.get("name")]
+    return names or None
+
+
+async def _apply_taxonomy_enums(tools: list[Tool]) -> None:
+    """Overlay live taxonomy values onto the taxonomy-backed enum fields."""
+    cache: dict[str, list[str] | None] = {}
+    for tool in tools:
+        props = (tool.inputSchema or {}).get("properties") or {}
+        for field, spec in props.items():
+            category = _TAXONOMY_FIELDS.get((tool.name, field))
+            if not category:
+                continue
+            if category not in cache:
+                cache[category] = await _taxonomy_values(category)
+            values = cache[category]
+            if values:
+                spec["enum"] = values
+            else:
+                # Taxonomy unreadable — drop the stale hardcoded enum so the
+                # model isn't forced to pick a value we can't vouch for.
+                spec.pop("enum", None)
+
+
 @mcp.list_tools()
 async def list_tools() -> list[Tool]:
     """Return all available RedWire tools. Write tools are filtered out when
     the admin toggle ai_write_tools_enabled is off (the default)."""
     tools = _all_tools()
-    if await _write_tools_enabled():
-        return tools
-    return [t for t in tools if not _is_write_tool(t.name)]
+    if not await _write_tools_enabled():
+        tools = [t for t in tools if not _is_write_tool(t.name)]
+    await _apply_taxonomy_enums(tools)
+    return tools
 
 
 def _all_tools() -> list[Tool]:
@@ -168,14 +251,20 @@ def _all_tools() -> list[Tool]:
         # ── Engagements ──────────────────────────────────────────────
         Tool(
             name="list_engagements",
-            description="List all penetration test engagements. Optionally filter by status (active, completed, planned, cancelled).",
+            description=(
+                "List all penetration test engagements. Optionally filter by status. "
+                f"Valid statuses: {', '.join(ENGAGEMENT_STATUSES)}."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "status": {
                         "type": "string",
-                        "description": "Filter by status: active, completed, planned, cancelled",
-                        "enum": ["active", "completed", "planned", "cancelled"],
+                        "description": (
+                            "Filter by engagement status. Must be one of: "
+                            f"{', '.join(ENGAGEMENT_STATUSES)}."
+                        ),
+                        "enum": list(ENGAGEMENT_STATUSES),
                     },
                 },
             },
@@ -227,7 +316,7 @@ def _all_tools() -> list[Tool]:
                     "severity": {
                         "type": "string",
                         "description": "Severity level",
-                        "enum": ["critical", "high", "medium", "low", "informational"],
+                        "enum": list(SEVERITIES),
                     },
                     "description": {"type": "string", "description": "Detailed description (markdown)"},
                     "impact": {"type": "string", "description": "Business/technical impact (markdown)"},
@@ -246,8 +335,8 @@ def _all_tools() -> list[Tool]:
                     "finding_id": {"type": "string", "description": "The finding UUID"},
                     "engagement_id": {"type": "string", "description": "The engagement UUID"},
                     "title": {"type": "string", "description": "New title"},
-                    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "informational"]},
-                    "status": {"type": "string", "description": "New status"},
+                    "severity": {"type": "string", "enum": list(SEVERITIES)},
+                    "status": {"type": "string", "description": "New finding status", "enum": list(FINDING_STATUSES)},
                     "description": {"type": "string", "description": "Updated description (markdown)"},
                     "impact": {"type": "string", "description": "Updated impact (markdown)"},
                     "mitigations": {"type": "string", "description": "Updated mitigations (markdown)"},
@@ -534,7 +623,7 @@ def _all_tools() -> list[Tool]:
                     "title": {"type": "string", "description": "Updated title"},
                     "location": {"type": "string", "description": "Updated location"},
                     "description": {"type": "string", "description": "Updated description"},
-                    "status": {"type": "string", "description": "Updated status (pending, completed)"},
+                    "status": {"type": "string", "description": "Updated cleanup status", "enum": list(CLEANUP_STATUSES)},
                 },
                 "required": ["artifact_id", "engagement_id"],
             },
@@ -570,7 +659,7 @@ def _all_tools() -> list[Tool]:
                     "severity": {
                         "type": "string",
                         "description": "Default severity level",
-                        "enum": ["critical", "high", "medium", "low", "informational"],
+                        "enum": list(SEVERITIES),
                     },
                     "description": {"type": "string", "description": "Description (markdown)"},
                     "impact": {"type": "string", "description": "Impact statement (markdown)"},
@@ -588,7 +677,7 @@ def _all_tools() -> list[Tool]:
                 "properties": {
                     "template_id": {"type": "string", "description": "The template UUID"},
                     "title": {"type": "string", "description": "Updated title"},
-                    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "informational"]},
+                    "severity": {"type": "string", "enum": list(SEVERITIES)},
                     "description": {"type": "string", "description": "Updated description (markdown)"},
                     "impact": {"type": "string", "description": "Updated impact (markdown)"},
                     "mitigations": {"type": "string", "description": "Updated mitigations (markdown)"},
@@ -777,8 +866,8 @@ def _all_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "search": {"type": "string", "description": "Search across title, CVE ID, and content"},
-                    "item_type": {"type": "string", "description": "Filter by item type (e.g. cve, advisory, blog, news)"},
-                    "severity": {"type": "string", "description": "Filter by severity (critical, high, medium, low, informational)"},
+                    "item_type": {"type": "string", "description": "Filter by intel item type", "enum": list(INTEL_ITEM_TYPES)},
+                    "severity": {"type": "string", "description": "Filter by severity", "enum": list(SEVERITIES)},
                     "sort_by": {
                         "type": "string",
                         "enum": ["title", "created_at", "published_at", "item_type", "severity", "source"],

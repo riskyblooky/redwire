@@ -1084,9 +1084,26 @@ async def call_mcp_tool(
             return {"result": result}
     except HTTPException:
         raise
+    except ValueError as e:
+        # Bad tool argument (e.g. an engagement status that isn't in the
+        # enum) — a caller error, not a server fault. 400 so the message
+        # reaches the client instead of being logged as a crash.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"MCP tool {tool_name} failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _testcase_status(t) -> str:
+    """Collapse the is_executed / is_successful pair into the single status
+    string the list_testcases tool contract advertises."""
+    if not t.is_executed:
+        return "NOT_EXECUTED"
+    if t.is_successful is True:
+        return "PASSED"
+    if t.is_successful is False:
+        return "FAILED"
+    return "EXECUTED"
 
 
 async def _execute_mcp_tool(
@@ -1100,7 +1117,7 @@ async def _execute_mcp_tool(
     """
     from sqlalchemy import select, func
     from sqlalchemy import or_
-    from models.engagement import Engagement
+    from models.engagement import Engagement, EngagementStatus
     from models.finding import Finding
     from models.asset import Asset
     from models.testcase import TestCase
@@ -1141,7 +1158,24 @@ async def _execute_mcp_tool(
     if tool_name == "list_engagements":
         query = select(Engagement).order_by(Engagement.created_at.desc())
         if args.get("status"):
-            query = query.where(Engagement.status == args["status"])
+            # The model supplies this string, so it can be anything — an
+            # older tool schema advertised statuses that never existed
+            # ("active", "planned", "cancelled"). Binding it straight into
+            # the query handed asyncpg an invalid enum literal and blew up
+            # at execute time with a 500, which the model can't recover
+            # from. Resolve against the enum here and, on a miss, return a
+            # normal tool error naming the legal values so the model can
+            # simply retry with a real one.
+            raw_status = str(args["status"]).strip()
+            try:
+                status_enum = EngagementStatus(raw_status.upper())
+            except ValueError:
+                valid = ", ".join(s.value for s in EngagementStatus)
+                raise ValueError(
+                    f"Invalid engagement status {raw_status!r}. "
+                    f"Valid statuses are: {valid}."
+                )
+            query = query.where(Engagement.status == status_enum)
         query = _scope_engagement_query(query)
         result = await db.execute(query)
         engagements = result.scalars().all()
@@ -1213,10 +1247,15 @@ async def _execute_mcp_tool(
         query = _scope_by_engagement(query, Asset.engagement_id, accessible)
         result = await db.execute(query)
         assets = result.scalars().all()
+        # Asset has no `type` / `ip_address` columns — the real ones are
+        # `asset_type` and `identifier`. `a.type` raised AttributeError on
+        # every call, so this tool never once returned data; `ip_address`
+        # was a getattr default and silently reported null.
         return [
             {
-                "id": a.id, "name": a.name, "type": a.type,
-                "ip_address": getattr(a, 'ip_address', None),
+                "id": a.id, "name": a.name, "asset_type": a.asset_type,
+                "identifier": a.identifier,
+                "in_scope": a.in_scope, "is_pwned": a.is_pwned,
             }
             for a in assets
         ]
@@ -1231,11 +1270,17 @@ async def _execute_mcp_tool(
         query = _scope_by_engagement(query, TestCase.engagement_id, accessible)
         result = await db.execute(query)
         testcases = result.scalars().all()
+        # TestCase has no `status` / `result` columns — execution state
+        # lives in the `is_executed` / `is_successful` booleans. The old
+        # getattr defaults meant every test case came back as
+        # status=null result=null, so the model could never answer
+        # "which test cases failed?".
         return [
             {
                 "id": t.id, "title": t.title,
-                "status": getattr(t, 'status', None),
-                "result": getattr(t, 'result', None),
+                "category": t.category,
+                "status": _testcase_status(t),
+                "actual_result": t.actual_result,
             }
             for t in testcases
         ]
