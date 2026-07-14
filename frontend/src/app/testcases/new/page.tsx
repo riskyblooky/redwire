@@ -298,8 +298,12 @@ export default function NewTestCasePage() {
                     </div>
 
                     {/* Sidebar with Tags */}
-                    <div className="space-y-6">
-                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-6 overflow-hidden">
+                    {/* The whole column pins, not the first card — a `sticky`
+                        Tags card with ATT&CK below it stayed put while its
+                        siblings scrolled up and painted over it. Matches the
+                        sidebar on testcases/[id]/edit. */}
+                    <div className="space-y-6 lg:sticky lg:top-6 self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto custom-scrollbar">
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
                             <div className="h-1.5 bg-linear-to-r from-purple-500 via-pink-500 to-amber-500" />
                             <CardHeader className="pb-4">
                                 <CardTitle className="text-sm font-bold text-slate-200 tracking-wider uppercase">Tags</CardTitle>
