@@ -30,6 +30,7 @@ from utils.vault_access_log import should_log_vault_access
 # Only the file-blob helpers (encrypt_bytes / decrypt_bytes) need an
 # explicit wrap in this router; the secret-text columns no longer do.
 from utils.vault_crypto import encrypt_bytes, decrypt_bytes
+from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped
 from utils.storage import storage_service
 from sqlalchemy.orm import selectinload
 
@@ -202,7 +203,10 @@ async def upload_vault_file(
     # Force application/octet-stream + .enc suffix so any future direct
     # bucket access doesn't misadvertise a content type for the
     # ciphertext blob.
-    content = await file.read()
+    content = await read_upload_capped(
+        file, MAX_VAULT_FILE_BYTES,
+        detail=f"Vault file exceeds the {MAX_VAULT_FILE_BYTES}-byte size limit.",
+    )
     encrypted_content = encrypt_bytes(content)
     storage_key = f"vault/{uuid.uuid4()}.enc"
     await storage_service.upload_file(

@@ -22,7 +22,12 @@ from auth.rbac import can_modify_resource, check_engagement_permission
 from models.user import UserRole
 from models.permission import Permission
 from utils.storage import storage_service
-from utils.uploads import safe_content_type, sanitize_original_filename
+from utils.uploads import (
+    MAX_EVIDENCE_BYTES,
+    read_upload_capped,
+    safe_content_type,
+    sanitize_original_filename,
+)
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
@@ -889,6 +894,7 @@ async def upload_evidence(
     finding_id: str,
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
+    include_in_report: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -915,8 +921,10 @@ async def upload_evidence(
                 detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this finding."
             )
     
-    # Read file content
-    content = await file.read()
+    content = await read_upload_capped(
+        file, MAX_EVIDENCE_BYTES,
+        detail=f"Evidence upload exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    )
     file_size = len(content)
 
     # Generate unique filename for storage
@@ -951,13 +959,14 @@ async def upload_evidence(
         file_size=file_size,
         mime_type=safe_mime,
         description=description,
+        include_in_report=include_in_report,
         created_by=current_user.id
     )
-    
+
     db.add(new_evidence)
     await db.commit()
     await db.refresh(new_evidence)
-    
+
     # Log activity
     await create_activity_log(
         db,

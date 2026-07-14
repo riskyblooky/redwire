@@ -12,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { FileDropzone, SelectedFileCard } from '@/components/ui/file-dropzone';
+import { MAX_VAULT_FILE_BYTES } from '@/lib/upload-limits';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -1077,11 +1079,21 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                             {newItem.item_type === 'FILE' && (
                                 <div className="space-y-2">
                                     <Label>Choose File</Label>
-                                    <Input
-                                        type="file"
-                                        onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                                        className="bg-slate-950/50 border-slate-800"
-                                    />
+                                    {!selectedFile ? (
+                                        <FileDropzone
+                                            onFiles={(files) => setSelectedFile(files[0])}
+                                            maxSizeBytes={MAX_VAULT_FILE_BYTES}
+                                            disabled={isSubmitting}
+                                            compact
+                                            hint="Keys, certs, configs, or any secret file"
+                                        />
+                                    ) : (
+                                        <SelectedFileCard
+                                            file={selectedFile}
+                                            onRemove={() => setSelectedFile(null)}
+                                            disabled={isSubmitting}
+                                        />
+                                    )}
                                 </div>
                             )}
 

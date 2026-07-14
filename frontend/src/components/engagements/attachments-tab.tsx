@@ -60,6 +60,8 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { FileDropzone, SelectedFileCard } from '@/components/ui/file-dropzone';
+import { MAX_EVIDENCE_BYTES } from '@/lib/upload-limits';
 import { Textarea } from '@/components/ui/textarea';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -460,13 +462,22 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
 
                     <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                            <Label htmlFor="file">File</Label>
-                            <Input
-                                id="file"
-                                type="file"
-                                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                                className="bg-slate-900 border-slate-700 text-white"
-                            />
+                            <Label>File</Label>
+                            {!uploadFile ? (
+                                <FileDropzone
+                                    onFiles={(files) => setUploadFile(files[0])}
+                                    maxSizeBytes={MAX_EVIDENCE_BYTES}
+                                    disabled={uploadEvidence.isPending}
+                                    compact
+                                    hint="Scope, RoE, notes, or any artifact"
+                                />
+                            ) : (
+                                <SelectedFileCard
+                                    file={uploadFile}
+                                    onRemove={() => setUploadFile(null)}
+                                    disabled={uploadEvidence.isPending}
+                                />
+                            )}
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="description">Description (Optional)</Label>

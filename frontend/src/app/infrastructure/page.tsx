@@ -25,6 +25,8 @@ import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { FileDropzone, SelectedFileCard } from '@/components/ui/file-dropzone';
+import { MAX_VAULT_FILE_BYTES } from '@/lib/upload-limits';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
@@ -780,11 +782,19 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                             />
                                                         )}
                                                         {newVault.item_type === 'FILE' && (
-                                                            <input
-                                                                type="file"
-                                                                onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-                                                                className="text-xs text-slate-400 file:mr-2 file:px-3 file:py-1 file:rounded file:border-0 file:text-xs file:bg-slate-800 file:text-slate-300 file:cursor-pointer"
-                                                            />
+                                                            !selectedFile ? (
+                                                                <FileDropzone
+                                                                    onFiles={files => setSelectedFile(files[0])}
+                                                                    maxSizeBytes={MAX_VAULT_FILE_BYTES}
+                                                                    compact
+                                                                    hint="Keys, certs, or configs"
+                                                                />
+                                                            ) : (
+                                                                <SelectedFileCard
+                                                                    file={selectedFile}
+                                                                    onRemove={() => setSelectedFile(null)}
+                                                                />
+                                                            )
                                                         )}
                                                         <Input
                                                             value={newVault.description}

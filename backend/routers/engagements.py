@@ -26,7 +26,12 @@ from fastapi import UploadFile, File, Form
 import os
 import uuid
 from utils.storage import storage_service
-from utils.uploads import safe_content_type, sanitize_original_filename
+from utils.uploads import (
+    MAX_EVIDENCE_BYTES,
+    read_upload_capped,
+    safe_content_type,
+    sanitize_original_filename,
+)
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict, manager
 from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
@@ -797,6 +802,7 @@ async def upload_engagement_evidence(
     engagement_id: str,
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
+    include_in_report: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -808,8 +814,10 @@ async def upload_engagement_evidence(
         if not has_permission:
             raise HTTPException(status_code=403, detail="Insufficient permissions. You need the 'evidence_create' permission to upload to this engagement.")
 
-    # Read file content
-    content = await file.read()
+    content = await read_upload_capped(
+        file, MAX_EVIDENCE_BYTES,
+        detail=f"Attachment exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    )
     file_size = len(content)
 
     # Generate unique filename
@@ -836,13 +844,14 @@ async def upload_engagement_evidence(
         file_size=file_size,
         mime_type=safe_mime,
         description=description,
+        include_in_report=include_in_report,
         created_by=current_user.id
     )
-    
+
     db.add(new_evidence)
     await db.commit()
     await db.refresh(new_evidence)
-    
+
     # Log activity
     await create_activity_log(
         db,

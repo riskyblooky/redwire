@@ -34,6 +34,7 @@ from schemas.infra_vault import (
 # wrap the MinIO blob (separate at-rest layer for FILE-type vault items).
 from utils.vault_crypto import encrypt_bytes, decrypt_bytes
 from utils.storage import storage_service
+from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped
 
 router = APIRouter(prefix="/infra", tags=["infrastructure"])
 
@@ -521,7 +522,10 @@ async def upload_infra_vault_file(
     # rest the same way other vault columns are protected in Postgres
     # (RDW-057). Force application/octet-stream + .enc suffix so the
     # ciphertext blob isn't mis-advertised by a downstream content-type.
-    content = await file.read()
+    content = await read_upload_capped(
+        file, MAX_VAULT_FILE_BYTES,
+        detail=f"Vault file exceeds the {MAX_VAULT_FILE_BYTES}-byte size limit.",
+    )
     encrypted_content = encrypt_bytes(content)
     storage_key = f"infra-vault/{uuid.uuid4()}.enc"
     await storage_service.upload_file(

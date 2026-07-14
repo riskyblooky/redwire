@@ -772,6 +772,7 @@ async def upload_testcase_evidence(
     testcase_id: str,
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
+    include_in_report: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -779,7 +780,12 @@ async def upload_testcase_evidence(
     from models.evidence import Evidence
     from schemas.evidence import EvidenceResponse
     from utils.storage import storage_service
-    from utils.uploads import safe_content_type, sanitize_original_filename
+    from utils.uploads import (
+        MAX_EVIDENCE_BYTES,
+        read_upload_capped,
+        safe_content_type,
+        sanitize_original_filename,
+    )
     import os
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
@@ -814,8 +820,10 @@ async def upload_testcase_evidence(
                     detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this test case."
                 )
 
-    # Read file content
-    content = await file.read()
+    content = await read_upload_capped(
+        file, MAX_EVIDENCE_BYTES,
+        detail=f"Evidence upload exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    )
     file_size = len(content)
 
     # Generate unique filename
@@ -850,6 +858,7 @@ async def upload_testcase_evidence(
         file_size=file_size,
         mime_type=safe_mime,
         description=description,
+        include_in_report=include_in_report,
         created_by=current_user.id
     )
 

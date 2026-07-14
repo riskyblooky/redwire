@@ -19,6 +19,20 @@ from fastapi import HTTPException, UploadFile, status
 logger = logging.getLogger(__name__)
 
 
+# Shared caps for the attachment surfaces. Each is consumed by more than
+# one router (evidence upload lives in findings.py, testcases.py AND
+# engagements.py), so they live here rather than being redeclared per
+# router — a per-router copy would drift the moment one is tuned.
+#
+# The frontend mirrors these in `frontend/src/lib/upload-limits.ts` purely
+# to raise an early toast; the server stays the authority.
+MAX_EVIDENCE_BYTES = int(os.getenv("EVIDENCE_MAX_BYTES", str(100 * 1024 * 1024)))
+MAX_INTEL_ATTACHMENT_BYTES = int(
+    os.getenv("INTEL_ATTACHMENT_MAX_BYTES", str(50 * 1024 * 1024))
+)
+MAX_VAULT_FILE_BYTES = int(os.getenv("VAULT_FILE_MAX_BYTES", str(25 * 1024 * 1024)))
+
+
 def sanitize_original_filename(raw: Optional[str], fallback: str = "upload") -> str:
     """Normalize a user-supplied filename for safe storage in the DB
     ``original_filename`` column.

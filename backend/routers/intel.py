@@ -23,7 +23,11 @@ from schemas.intel import (
     IntelLinkRequest, LinkedEntitySummary, IntelAttachmentResponse,
 )
 from utils.storage import storage_service
-from utils.uploads import sanitize_original_filename
+from utils.uploads import (
+    MAX_INTEL_ATTACHMENT_BYTES,
+    read_upload_capped,
+    sanitize_original_filename,
+)
 from utils.ssrf import validate_outbound_url, validate_outbound_url_sync, OutboundURLError
 
 import logging
@@ -376,7 +380,10 @@ async def upload_intel_attachments(
     import uuid as _uuid
     created = []
     for file in files:
-        content = await file.read()
+        content = await read_upload_capped(
+            file, MAX_INTEL_ATTACHMENT_BYTES,
+            detail=f"Intel attachment exceeds the {MAX_INTEL_ATTACHMENT_BYTES}-byte size limit.",
+        )
         storage_key = f"intel/{item_id}/{_uuid.uuid4()}_{file.filename}"
         content_type = file.content_type or "application/octet-stream"
 

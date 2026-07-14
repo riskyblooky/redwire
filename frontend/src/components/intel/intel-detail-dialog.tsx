@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef } from 'react';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
+import { FileDropzone, formatFileSize } from '@/components/ui/file-dropzone';
+import { MAX_INTEL_ATTACHMENT_BYTES } from '@/lib/upload-limits';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +26,6 @@ import {
     Trash2,
     Paperclip,
     Download,
-    Upload,
 } from 'lucide-react';
 import { useIntelItem, useUnlinkIntel, useUploadIntelAttachment, useDeleteIntelAttachment } from '@/lib/hooks/use-intel';
 import { toast } from 'sonner';
@@ -77,7 +77,6 @@ export function IntelDetailDialog({ itemId, onClose }: IntelDetailDialogProps) {
     const unlinkIntel = useUnlinkIntel();
     const uploadAttachment = useUploadIntelAttachment();
     const deleteAttachment = useDeleteIntelAttachment();
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     if (!item && isLoading) {
         return (
@@ -100,16 +99,14 @@ export function IntelDetailDialog({ itemId, onClose }: IntelDetailDialogProps) {
     const TypeIcon = typeConf.icon;
     const allLinked = [...(item.linked_findings || []), ...(item.linked_testcases || []), ...(item.linked_notes || [])];
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files || files.length === 0) return;
+    const handleFileUpload = async (files: File[]) => {
+        if (files.length === 0) return;
         try {
-            await uploadAttachment.mutateAsync({ itemId, files: Array.from(files) });
+            await uploadAttachment.mutateAsync({ itemId, files });
             toast.success(`${files.length} file(s) uploaded`);
         } catch {
             toast.error('Upload failed');
         }
-        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleDownload = async (attachmentId: string) => {
@@ -119,12 +116,6 @@ export function IntelDetailDialog({ itemId, onClose }: IntelDetailDialogProps) {
         } catch {
             toast.error('Download failed');
         }
-    };
-
-    const formatFileSize = (bytes: number) => {
-        if (bytes < 1024) return `${bytes} B`;
-        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
     return (
@@ -187,29 +178,9 @@ export function IntelDetailDialog({ itemId, onClose }: IntelDetailDialogProps) {
                                     Attachments
                                     <span className="text-xs text-slate-500">({item.attachments?.length || 0})</span>
                                 </h4>
-                                <div>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        multiple
-                                        className="hidden"
-                                        onChange={handleFileUpload}
-                                    />
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 text-xs text-slate-400 hover:text-cyan-400 gap-1"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={uploadAttachment.isPending}
-                                    >
-                                        {uploadAttachment.isPending ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                            <Upload className="h-3 w-3" />
-                                        )}
-                                        Upload
-                                    </Button>
-                                </div>
+                                {uploadAttachment.isPending && (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                                )}
                             </div>
                             {item.attachments && item.attachments.length > 0 ? (
                                 <div className="space-y-1">
@@ -244,8 +215,17 @@ export function IntelDetailDialog({ itemId, onClose }: IntelDetailDialogProps) {
                                         </div>
                                     ))}
                                 </div>
-                            ) : (
-                                <p className="text-xs text-slate-500 italic py-2">No files attached yet. Click Upload to add files.</p>
+                            ) : null}
+
+                            {item.source === 'manual' && (
+                                <FileDropzone
+                                    onFiles={handleFileUpload}
+                                    multiple
+                                    maxSizeBytes={MAX_INTEL_ATTACHMENT_BYTES}
+                                    disabled={uploadAttachment.isPending}
+                                    compact
+                                    hint="Reports, IOCs, samples, or screenshots"
+                                />
                             )}
                         </div>
                     )}

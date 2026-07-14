@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { UploadCloud, X, FileIcon, Loader2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Loader2, UploadCloud } from 'lucide-react';
 import { useUploadEvidence } from '@/lib/hooks/use-evidence';
-import { Input } from '@/components/ui/input';
+import { FileDropzone, SelectedFileCard } from '@/components/ui/file-dropzone';
+import { MAX_EVIDENCE_BYTES } from '@/lib/upload-limits';
 import { toast } from 'sonner';
 
 interface EvidenceUploadProps {
@@ -13,150 +14,104 @@ interface EvidenceUploadProps {
     testcaseId?: string;
 }
 
-interface SelectedFile {
+interface StagedFile {
     file: File;
     description: string;
 }
 
 export function EvidenceUpload({ findingId, testcaseId }: EvidenceUploadProps) {
-    const [dragActive, setDragActive] = useState(false);
-    const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+    const [staged, setStaged] = useState<StagedFile[]>([]);
+    const [includeInReport, setIncludeInReport] = useState(true);
     const uploadMutation = useUploadEvidence({ findingId, testcaseId });
 
-    const handleDrag = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.type === "dragenter" || e.type === "dragover") {
-            setDragActive(true);
-        } else if (e.type === "dragleave") {
-            setDragActive(false);
-        }
-    }, []);
-
-    const handleDrop = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            const files = Array.from(e.dataTransfer.files).map(f => ({ file: f, description: '' }));
-            setSelectedFiles(prev => [...prev, ...files]);
-        }
-    }, []);
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        e.preventDefault();
-        if (e.target.files && e.target.files[0]) {
-            const files = Array.from(e.target.files).map(f => ({ file: f, description: '' }));
-            setSelectedFiles(prev => [...prev, ...files]);
-        }
+    const addFiles = (files: File[]) => {
+        setStaged((prev) => [...prev, ...files.map((file) => ({ file, description: '' }))]);
     };
 
     const removeFile = (index: number) => {
-        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+        setStaged((prev) => prev.filter((_, i) => i !== index));
     };
 
     const updateDescription = (index: number, description: string) => {
-        setSelectedFiles(prev => {
-            const next = [...prev];
-            next[index].description = description;
-            return next;
-        });
+        setStaged((prev) => prev.map((item, i) => (i === index ? { ...item, description } : item)));
     };
 
     const handleUpload = async () => {
+        const failed: string[] = [];
         let successCount = 0;
-        for (const item of selectedFiles) {
+
+        for (const item of staged) {
             try {
                 await uploadMutation.mutateAsync({
                     file: item.file,
-                    description: item.description
+                    description: item.description || undefined,
+                    includeInReport,
                 });
                 successCount++;
-            } catch (error) {
-                toast.error(`Failed to upload ${item.file.name}`);
+            } catch {
+                failed.push(item.file.name);
             }
         }
 
         if (successCount > 0) {
-            toast.success(`Successfully uploaded ${successCount} file${successCount > 1 ? 's' : ''}`);
+            toast.success(`Uploaded ${successCount} file${successCount > 1 ? 's' : ''}`);
         }
-        setSelectedFiles([]);
+        if (failed.length > 0) {
+            toast.error(`Failed to upload ${failed.join(', ')}`);
+        }
+
+        // Keep whatever failed staged so the user can retry without re-picking.
+        setStaged((prev) => prev.filter((item) => failed.includes(item.file.name)));
     };
 
     return (
         <div className="space-y-4">
-            <div
-                className={`relative border-2 border-dashed rounded-xl p-6 transition-all text-center ${dragActive ? 'border-primary bg-primary/10' : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
-                    }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-            >
-                <input
-                    type="file"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    multiple
-                    onChange={handleChange}
-                />
+            <FileDropzone
+                onFiles={addFiles}
+                multiple
+                maxSizeBytes={MAX_EVIDENCE_BYTES}
+                disabled={uploadMutation.isPending}
+                hint="Screenshots, PDFs, logs, or payload files"
+            />
 
-                <div className="flex flex-col items-center gap-2">
-                    <div className="p-3 rounded-full bg-slate-800 text-slate-400">
-                        <UploadCloud className="h-6 w-6" />
-                    </div>
-                    <div>
-                        <p className="text-sm font-medium text-white">
-                            Click to upload or drag and drop
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">
-                            Images, PDFs, logs, or payload files
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {selectedFiles.length > 0 && (
+            {staged.length > 0 && (
                 <div className="space-y-3">
-                    {selectedFiles.map((item, index) => (
-                        <Card key={index} className="p-4 border-slate-800 bg-slate-900/60 flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <FileIcon className="h-4 w-4 text-primary" />
-                                    <div className="text-sm min-w-0">
-                                        <p className="text-white font-medium truncate max-w-[200px]">{item.file.name}</p>
-                                        <p className="text-slate-500 text-[10px]">{(item.file.size / 1024).toFixed(1)} KB</p>
-                                    </div>
-                                </div>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => removeFile(index)}
-                                    className="h-8 w-8 text-slate-500 hover:text-white"
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
-                            <Input
-                                placeholder="Add description..."
-                                value={item.description}
-                                onChange={(e) => updateDescription(index, e.target.value)}
-                                className="h-8 text-xs bg-slate-950 border-slate-800 text-slate-300 placeholder:text-slate-600"
-                            />
-                        </Card>
+                    {staged.map((item, index) => (
+                        <SelectedFileCard
+                            key={`${item.file.name}-${index}`}
+                            file={item.file}
+                            onRemove={() => removeFile(index)}
+                            disabled={uploadMutation.isPending}
+                            description={item.description}
+                            onDescriptionChange={(value) => updateDescription(index, value)}
+                            descriptionPlaceholder="What does this evidence show?"
+                        />
                     ))}
+
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                        <Checkbox
+                            checked={includeInReport}
+                            onCheckedChange={(v) => setIncludeInReport(!!v)}
+                            disabled={uploadMutation.isPending}
+                        />
+                        Include in report
+                    </label>
 
                     <Button
                         onClick={handleUpload}
                         disabled={uploadMutation.isPending}
-                        className="w-full bg-primary hover:bg-primary/90 text-white font-medium shadow-lg shadow-primary/20"
+                        className="w-full"
                     >
                         {uploadMutation.isPending ? (
                             <>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Uploading...
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Uploading…
                             </>
                         ) : (
-                            `Upload ${selectedFiles.length} File${selectedFiles.length > 1 ? 's' : ''}`
+                            <>
+                                <UploadCloud className="mr-2 h-4 w-4" />
+                                Upload {staged.length} file{staged.length > 1 ? 's' : ''}
+                            </>
                         )}
                     </Button>
                 </div>
