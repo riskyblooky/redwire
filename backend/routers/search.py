@@ -265,6 +265,7 @@ def build_finding_clause(node: Any):
             Finding.description.ilike(f"%{node.term}%"),
             Finding.impact.ilike(f"%{node.term}%"),
             Finding.technical_details.ilike(f"%{node.term}%"),
+            cast(Finding.custom_fields, String).ilike(f"%{node.term}%"),
         )
     if isinstance(node, FieldNode):
         if node.field == "severity":
@@ -309,6 +310,7 @@ def build_asset_clause(node: Any):
             Asset.identifier.ilike(f"%{node.term}%"),
             Asset.description.ilike(f"%{node.term}%"),
             Asset.notes.ilike(f"%{node.term}%"),
+            cast(Asset.custom_fields, String).ilike(f"%{node.term}%"),
         )
     if isinstance(node, FieldNode):
         if node.field == "type":
@@ -347,6 +349,7 @@ def build_engagement_clause(node: Any):
             Engagement.name.ilike(f"%{node.term}%"),
             Engagement.client_name.ilike(f"%{node.term}%"),
             Engagement.description.ilike(f"%{node.term}%"),
+            cast(Engagement.custom_fields, String).ilike(f"%{node.term}%"),
         )
     if isinstance(node, FieldNode):
         if node.field == "type":
@@ -384,6 +387,7 @@ def build_testcase_clause(node: Any):
             TestCase.title.ilike(f"%{node.term}%"),
             TestCase.category.ilike(f"%{node.term}%"),
             TestCase.description.ilike(f"%{node.term}%"),
+            cast(TestCase.custom_fields, String).ilike(f"%{node.term}%"),
         )
     if isinstance(node, FieldNode):
         if node.field == "cat":
@@ -418,6 +422,7 @@ def build_client_clause(node: Any):
             Client.contact_name.ilike(f"%{node.term}%"),
             Client.contact_email.ilike(f"%{node.term}%"),
             Client.description.ilike(f"%{node.term}%"),
+            cast(Client.custom_fields, String).ilike(f"%{node.term}%"),
         )
     if isinstance(node, FieldNode):
         if node.field == "client":
