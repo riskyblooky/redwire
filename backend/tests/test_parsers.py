@@ -20,31 +20,6 @@ from __future__ import annotations
 
 import pytest
 
-# ─────────────────────────────────────────────────────────────────────
-# PRODUCT-BUG WORKAROUND (reported, not fixed here).
-#
-# utils/parsers/nessus.py and utils/parsers/burp.py annotate helper params
-# as ``Optional[ET.Element]`` where ``ET`` is ``defusedxml.ElementTree`` —
-# but defusedxml.ElementTree does NOT export ``Element``, and neither module
-# has ``from __future__ import annotations``. So the annotation is evaluated
-# at import time and raises ``AttributeError: module 'defusedxml.ElementTree'
-# has no attribute 'Element'``. Both parsers are therefore UNIMPORTABLE, and
-# any .nessus / Burp .xml upload routed through ``detect_and_parse`` 500s.
-# (nmap.py / nuclei.py are unaffected.)
-#
-# We prove the bug in ``test_nessus_module_import_bug`` below, then install a
-# harmless shim (the real stdlib ``Element`` class — a type-annotation target
-# only; defusedxml's parse-time protections live in fromstring/parse, which
-# are untouched) so the parsers' actual normalisation logic can still be
-# covered. Delete this shim once the source is fixed.
-# ─────────────────────────────────────────────────────────────────────
-import defusedxml.ElementTree as _defused_ET
-import xml.etree.ElementTree as _std_ET
-
-_NESSUS_BURP_IMPORT_BUG = not hasattr(_defused_ET, "Element")
-if _NESSUS_BURP_IMPORT_BUG:
-    _defused_ET.Element = _std_ET.Element  # type: ignore[attr-defined]
-
 from utils.parsers import (
     detect_and_parse,
     ParsedImportData,
@@ -55,30 +30,24 @@ from utils.parsers import burp as burp_parser
 from utils.parsers import nuclei as nuclei_parser
 
 
-def test_nessus_module_import_bug_is_present():
-    """Regression pin for the reported import-time bug.
+def test_nessus_and_burp_parsers_import_cleanly():
+    """Regression pin: both modules must stay importable.
 
-    If defusedxml.ElementTree gains ``Element`` (or the parsers add
-    ``from __future__ import annotations`` / drop the ``ET.Element``
-    annotation), this test's premise disappears — update/remove it and the
-    shim above. Until then, it documents WHY the shim exists.
+    They annotate helper params as ``Optional[ET.Element]`` where
+    ``ET = defusedxml.ElementTree`` (which does not export ``Element``). Only
+    ``from __future__ import annotations`` in each module keeps that hint from
+    being evaluated at import time and crashing the whole parser — and with it
+    every .nessus / Burp .xml upload through ``detect_and_parse``. Importing
+    the modules at the top of this file already exercises this; assert the
+    guard is present so a refactor that drops it fails loudly here.
     """
-    # The shim (if it fired) is what makes the parsers importable at all.
-    assert hasattr(_defused_ET, "Element")
-    if not _NESSUS_BURP_IMPORT_BUG:
-        pytest.skip("defusedxml now exports Element — bug fixed, shim obsolete")
-
-    # Two independent conditions combine into the crash. Assert both from the
-    # actual source so a fix to EITHER (add the future-import, or drop the
-    # ET.Element annotation) flips this test and prompts removing the shim.
     import pathlib
+
     for mod in (nessus_parser, burp_parser):
         src = pathlib.Path(mod.__file__).read_text()
-        assert "Optional[ET.Element]" in src, (
-            f"{mod.__name__}: annotation changed — re-evaluate the shim"
-        )
-        assert "from __future__ import annotations" not in src, (
-            f"{mod.__name__}: gained future-annotations — bug fixed, drop shim"
+        assert "from __future__ import annotations" in src, (
+            f"{mod.__name__}: lost future-annotations guard — Optional[ET.Element] "
+            f"will crash the module at import time again"
         )
 
 

@@ -118,7 +118,9 @@ class FindingResponse(FindingBase):
     id: str
     engagement_id: str
     status: FindingStatus
-    created_by: str
+    # Nullable: the column is created_by ON DELETE SET NULL (AuditMixin), so a
+    # finding whose creator was deleted must still serialize (was a 500 before).
+    created_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     updated_by: Optional[str] = None
@@ -172,7 +174,8 @@ class FindingTemplateResponse(FindingTemplateBase):
     usage_count: int = 0
     created_at: datetime
     updated_at: datetime
-    created_by: str
+    # Nullable for the same reason as FindingResponse.created_by above.
+    created_by: Optional[str] = None
     updated_by: Optional[str] = None
     status: TemplateStatus
     submitted_at: Optional[datetime] = None

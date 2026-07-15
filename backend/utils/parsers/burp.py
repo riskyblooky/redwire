@@ -5,6 +5,12 @@ Parses Burp Suite XML issue export files.
 Extracts issues → findings and host/URL → assets.
 """
 
+# defer annotation evaluation: the `Optional[ET.Element]` hints below reference
+# defusedxml.ElementTree, which does NOT export `Element`. Without this, the
+# annotations are evaluated at import time and raise AttributeError, making the
+# whole module unimportable (any Burp .xml upload then 500s).
+from __future__ import annotations
+
 import defusedxml.ElementTree as ET
 import html
 import re
