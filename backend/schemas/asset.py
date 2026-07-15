@@ -83,6 +83,7 @@ class AssetBase(BaseModel):
     is_pwned: bool = False
     is_scanned: bool = False
     in_scope: bool = True
+    custom_fields: Optional[dict] = None
 
 class AssetCreate(AssetBase):
     engagement_id: str = Field(..., max_length=UUID_FIELD)
@@ -96,6 +97,7 @@ class AssetUpdate(BaseModel):
     is_pwned: Optional[bool] = None
     is_scanned: Optional[bool] = None
     in_scope: Optional[bool] = None
+    custom_fields: Optional[dict] = None
 
 class AssetResponse(AssetBase):
     id: str

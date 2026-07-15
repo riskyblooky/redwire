@@ -29,6 +29,7 @@ from utils.uploads import (
     sanitize_original_filename,
 )
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
+from utils.custom_fields import validate_custom_fields
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
 from models.version_history import VersionHistory
@@ -399,7 +400,8 @@ async def create_finding(
         **finding_dict,
         created_by=current_user.id
     )
-    
+    new_finding.custom_fields = await validate_custom_fields("finding", finding_data.custom_fields, db)
+
     # Add assets if provided — only assets in the SAME engagement; foreign
     # ids are silently dropped from the .in_() filter.
     if asset_ids:
@@ -535,6 +537,12 @@ async def update_finding(
     
     # Update fields
     update_data = finding_data.model_dump(exclude_unset=True, exclude={"asset_ids", "asset_port_ids", "tag_ids", "attack_technique_ids"})
+
+    # Validate/apply custom fields separately (full-replace on save).
+    if "custom_fields" in update_data:
+        finding.custom_fields = await validate_custom_fields(
+            "finding", update_data.pop("custom_fields"), db
+        )
 
     # Two-person rule: a finding's author cannot self-attest the terminal-state
     # transitions that downstream reports + dashboards treat as reviewed work.

@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
@@ -115,6 +116,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
         classification_suffix: '' as string,
         tag_ids: [] as string[],
         attack_technique_ids: [] as string[],
+        custom_fields: {} as Record<string, unknown>,
     });
 
     useEffect(() => {
@@ -132,6 +134,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                 classification_suffix: (testcase as any).classification_suffix || '',
                 tag_ids: testcase.tags?.map(t => t.id) || [],
                 attack_technique_ids: testcase.attack_technique_ids || [],
+                custom_fields: (testcase.custom_fields as Record<string, unknown>) || {},
             });
             setIsDirty(false);
         }
@@ -410,6 +413,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                 />
                             </CardContent>
                         </Card>
+
+                        <CustomFieldsForm
+                            entity="testcase"
+                            value={formData.custom_fields}
+                            onChange={(cf) => { setFormData(prev => ({ ...prev, custom_fields: cf })); setIsDirty(true); }}
+                        />
                     </div>
                 </form>
             </div>

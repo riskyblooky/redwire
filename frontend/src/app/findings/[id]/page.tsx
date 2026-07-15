@@ -79,6 +79,7 @@ import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkEntityDialog, LinkedIdMap } from '@/components/ui/link-entity-dialog';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import {
     useLinkFindingToTestCase, useUnlinkFindingFromTestCase,
@@ -494,6 +495,11 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                             </section>
                                         </>
                                     )}
+                                    <CustomFieldsDisplay
+                                        entity="finding"
+                                        value={finding.custom_fields}
+                                        className="pt-2"
+                                    />
                                 </div>
                             </CardContent>
                         </Card>

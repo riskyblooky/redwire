@@ -75,6 +75,7 @@ export interface ClientType {
 }
 
 export interface Client {
+    custom_fields?: Record<string, unknown>;
     id: string;
     name: string;
     description?: string;
@@ -153,6 +154,7 @@ export interface Tag {
 }
 
 export interface Finding {
+    custom_fields?: Record<string, unknown>;
     id: string;
     engagement_id: string;
     title: string;
@@ -192,6 +194,7 @@ export interface AssetPort {
 }
 
 export interface Asset {
+    custom_fields?: Record<string, unknown>;
     id: string;
     engagement_id: string;
     name: string;
@@ -243,6 +246,7 @@ export interface Evidence {
 // Test Case types
 
 export interface TestCase {
+    custom_fields?: Record<string, unknown>;
     id: string;
     engagement_id?: string;
     title: string;

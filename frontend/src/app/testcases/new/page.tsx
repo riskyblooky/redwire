@@ -42,6 +42,7 @@ import { useTags } from '@/lib/hooks/use-tags';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { apiErrorMessage } from '@/lib/api';
 
 const categories = [
@@ -85,6 +86,7 @@ export default function NewTestCasePage() {
         notes: '',
         tag_ids: [] as string[],
         attack_technique_ids: [] as string[],
+        custom_fields: {} as Record<string, unknown>,
     });
 
     const handleChange = (field: string, value: any) => {
@@ -362,6 +364,12 @@ export default function NewTestCasePage() {
                                 />
                             </CardContent>
                         </Card>
+
+                        <CustomFieldsForm
+                            entity="testcase"
+                            value={formData.custom_fields}
+                            onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                        />
                     </div>
                 </form>
             </div>

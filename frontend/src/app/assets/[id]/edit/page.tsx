@@ -14,6 +14,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -136,6 +137,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
         identifier: '',
         description: '',
         notes: '',
+        custom_fields: {} as Record<string, unknown>,
     });
 
     // Normalize a stored asset_type string against the loaded types list
@@ -157,6 +159,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                 identifier: asset.identifier || '',
                 description: asset.description || '',
                 notes: asset.notes || '',
+                custom_fields: (asset.custom_fields as Record<string, unknown>) || {},
             });
             setIsDirty(false);
         }
@@ -353,6 +356,13 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                                     minHeight="100px"
                                 />
                             </div>
+
+                            <CustomFieldsForm
+                                entity="asset"
+                                value={formData.custom_fields}
+                                onChange={(cf) => { setFormData(prev => ({ ...prev, custom_fields: cf })); setIsDirty(true); }}
+                                className="pt-2"
+                            />
 
                         </CardContent>
                     </Card>

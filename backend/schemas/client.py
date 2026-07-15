@@ -15,6 +15,7 @@ class ClientBase(BaseModel):
     contact_name: Optional[str] = Field(None, max_length=NAME)
     contact_email: Optional[str] = Field(None, max_length=EMAIL)
     notes: Optional[str] = Field(None, max_length=LONG_TEXT)
+    custom_fields: Optional[dict] = None
 
 class ClientCreate(ClientBase):
     pass
@@ -27,6 +28,7 @@ class ClientUpdate(BaseModel):
     contact_name: Optional[str] = Field(None, max_length=NAME)
     contact_email: Optional[str] = Field(None, max_length=EMAIL)
     notes: Optional[str] = Field(None, max_length=LONG_TEXT)
+    custom_fields: Optional[dict] = None
 
 class ClientResponse(ClientBase):
     id: str
@@ -51,6 +53,7 @@ class ClientTreeNode(BaseModel):
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     notes: Optional[str] = None
+    custom_fields: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
     engagement_count: int = 0

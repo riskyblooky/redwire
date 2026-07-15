@@ -47,6 +47,7 @@ import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-modal';
 import { useNotes } from '@/lib/hooks/use-notes';
+import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { LinkEntityDialog } from '@/components/ui/link-entity-dialog';
 import {
     useLinkAssetToFinding, useUnlinkAssetFromFinding,
@@ -318,6 +319,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                             </section>
                                         </>
                                     )}
+                                    <CustomFieldsDisplay entity="asset" value={asset.custom_fields} className="pt-2" />
                                 </div>
                             </CardContent>
                         </Card>

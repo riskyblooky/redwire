@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,6 +49,7 @@ export default function NewAssetPage() {
         identifier: '',
         description: '',
         notes: '',
+        custom_fields: {} as Record<string, unknown>,
     });
 
     const handleChange = (field: string, value: string) => {
@@ -224,6 +226,13 @@ export default function NewAssetPage() {
                             </div>
 
                             {/* Actions */}
+                            <CustomFieldsForm
+                                entity="asset"
+                                value={formData.custom_fields}
+                                onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                                className="pt-2"
+                            />
+
                             <div className="flex justify-end gap-3 pt-4">
                                 <Button
                                     type="button"

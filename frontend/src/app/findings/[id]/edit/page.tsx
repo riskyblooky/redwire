@@ -61,6 +61,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { severityRating } from '@/lib/cvss31';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { apiErrorMessage } from '@/lib/api';
 
 const severities = [
@@ -139,6 +140,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
         asset_ids: [] as string[],
         tag_ids: [] as string[],
         attack_technique_ids: [] as string[],
+        custom_fields: {} as Record<string, unknown>,
     });
 
     const { data: assets = [] } = useAssets(formData.engagement_id);
@@ -201,6 +203,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                 asset_ids: finding.assets?.map((a: any) => a.id) || [],
                 tag_ids: finding.tags?.map((t: any) => t.id) || [],
                 attack_technique_ids: finding.attack_technique_ids || [],
+                custom_fields: (finding.custom_fields as Record<string, unknown>) || {},
             });
             // Initialize port selections from finding response
             if (finding.assets) {
@@ -351,6 +354,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
             asset_port_ids: Object.keys(assetPortIds).length > 0 ? assetPortIds : undefined,
             tag_ids: formData.tag_ids || [],
             attack_technique_ids: formData.attack_technique_ids || [],
+            custom_fields: formData.custom_fields,
         };
 
         try {
@@ -763,6 +767,12 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                 </div>
                             </CardContent>
                         </Card>
+
+                        <CustomFieldsForm
+                            entity="finding"
+                            value={formData.custom_fields}
+                            onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                        />
                     </div>
                 </form>
             </div>

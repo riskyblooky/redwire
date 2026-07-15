@@ -50,6 +50,7 @@ import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkEntityDialog, LinkedIdMap } from '@/components/ui/link-entity-dialog';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import {
     useLinkTestCaseToFinding, useUnlinkTestCaseFromFinding,
@@ -339,6 +340,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             <MarkdownPreview value={testcase.expected_result || 'None'} theme="dark" />
                                         </div>
                                     </section>
+                                    <CustomFieldsDisplay entity="testcase" value={testcase.custom_fields} className="pt-2" />
                                 </div>
                             </CardContent>
                         </Card>

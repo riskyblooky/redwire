@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info } from 'lucide-react';
+import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info, ListPlus } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -82,6 +82,7 @@ import {
 } from '@/lib/hooks/use-skills';
 import type { SkillCategory, Skill } from '@/lib/hooks/use-skills';
 import { WidgetManagement } from '@/components/admin/widget-management';
+import CustomFieldsManagement from '@/components/admin/custom-fields-management';
 import { PluginManagement } from '@/components/admin/plugin-management';
 import EmailSettings from '@/components/admin/email-settings';
 import { AboutPanel } from '@/components/admin/about-panel';
@@ -281,6 +282,9 @@ export default function AdminPage() {
                         </TabsTrigger>
                         <TabsTrigger value="widgets" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-fuchsia-500/10 data-[state=active]:text-fuchsia-400 data-[state=active]:shadow-[0_0_12px_rgba(217,70,239,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <LayoutGrid className="h-3.5 w-3.5" /> Widgets
+                        </TabsTrigger>
+                        <TabsTrigger value="custom-fields" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-violet-500/10 data-[state=active]:text-violet-400 data-[state=active]:shadow-[0_0_12px_rgba(139,92,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+                            <ListPlus className="h-3.5 w-3.5" /> Custom Fields
                         </TabsTrigger>
                         <TabsTrigger value="plugins" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400 data-[state=active]:shadow-[0_0_12px_rgba(16,185,129,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Plug className="h-3.5 w-3.5" /> Plugins
@@ -543,6 +547,10 @@ export default function AdminPage() {
 
                     <TabsContent value="widgets" className="space-y-6">
                         <WidgetManagement />
+                    </TabsContent>
+
+                    <TabsContent value="custom-fields" className="space-y-6">
+                        <CustomFieldsManagement />
                     </TabsContent>
 
                     <TabsContent value="plugins" className="space-y-6">

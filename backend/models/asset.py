@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Boolean
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship, backref
 from database import Base, AuditMixin
 from datetime import datetime
@@ -19,6 +19,9 @@ class Asset(Base, AuditMixin):
     is_pwned = Column(Boolean, default=False, nullable=False)
     is_scanned = Column(Boolean, default=False, nullable=False)
     in_scope = Column(Boolean, default=True, nullable=False)
+
+    # Admin-defined custom field values, keyed by CustomFieldDefinition.field_key.
+    custom_fields = Column(JSON, nullable=True, default=dict)
 
     # Relationships
     engagement = relationship("Engagement", back_populates="assets")

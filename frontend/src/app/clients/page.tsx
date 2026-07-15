@@ -104,6 +104,7 @@ import {
 } from '@/lib/hooks/use-clients';
 import { Textarea } from '@/components/ui/textarea';
 import { ClientDetailModal } from '@/components/clients/client-detail-modal';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { ClientStatsPanel } from '@/components/clients/client-stats-panel';
 import { apiErrorMessage } from '@/lib/api';
 
@@ -316,6 +317,7 @@ export default function ClientsPage() {
         contact_name: '',
         contact_email: '',
         notes: '',
+        custom_fields: {} as Record<string, unknown>,
     });
 
 
@@ -459,6 +461,7 @@ export default function ClientsPage() {
             contact_name: '',
             contact_email: '',
             notes: '',
+            custom_fields: {},
         });
         setEditingClient(null);
         setIsCreateDialogOpen(true);
@@ -474,6 +477,7 @@ export default function ClientsPage() {
             contact_name: client.contact_name || '',
             contact_email: client.contact_email || '',
             notes: client.notes || '',
+            custom_fields: (client.custom_fields as Record<string, unknown>) || {},
         });
         setEditingClient(client);
         setIsCreateDialogOpen(true);
@@ -490,6 +494,7 @@ export default function ClientsPage() {
                 contact_name: formData.contact_name || undefined,
                 contact_email: formData.contact_email || undefined,
                 notes: formData.notes || undefined,
+                custom_fields: formData.custom_fields,
             };
 
             if (editingClient) {
@@ -934,6 +939,12 @@ export default function ClientsPage() {
                                 className="bg-slate-800/50 border-slate-700 text-white min-h-[60px]"
                             />
                         </div>
+
+                        <CustomFieldsForm
+                            entity="client"
+                            value={formData.custom_fields}
+                            onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                        />
                     </div>
                     <DialogFooter>
                         <Button

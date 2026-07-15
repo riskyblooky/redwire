@@ -23,6 +23,7 @@ class TestCaseBase(BaseModel):
     notes: Optional[str] = Field(None, max_length=LONG_TEXT)
     classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    custom_fields: Optional[dict] = None
 
 class TestCaseCreate(TestCaseBase):
     engagement_id: str = Field(..., max_length=UUID_FIELD)
@@ -46,6 +47,7 @@ class TestCaseUpdate(BaseModel):
     classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
     tag_ids: Optional[list[str]] = None
     attack_technique_ids: Optional[list[str]] = None
+    custom_fields: Optional[dict] = None
 
 class LinkedFindingResponse(BaseModel):
     id: str

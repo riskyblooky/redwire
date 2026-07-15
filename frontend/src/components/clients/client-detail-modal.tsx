@@ -33,6 +33,7 @@ import {
     Users,
 } from 'lucide-react';
 import { Client, ClientType } from '@/lib/types';
+import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { useClientAccess, useGrantClientAccess, useRevokeClientAccess, ClientAccessUser } from '@/lib/hooks/use-clients';
 import { useUsers } from '@/lib/hooks/use-users';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -288,6 +289,9 @@ export function ClientDetailModal({
                             </div>
                         </>
                     )}
+
+                    {/* Custom Fields */}
+                    <CustomFieldsDisplay entity="client" value={client.custom_fields} heading="Custom Fields" />
 
                     {/* Engagement Count */}
                     {(client.engagement_count || 0) > 0 && (

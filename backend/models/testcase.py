@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Boolean
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship, backref
 from database import Base, AuditMixin
 from datetime import datetime
@@ -24,6 +24,9 @@ class TestCase(Base, AuditMixin):
     # Portion marking — null level means inherit (report/engagement default).
     classification_level = Column(String(20), nullable=True)
     classification_suffix = Column(String(120), nullable=True)
+
+    # Admin-defined custom field values, keyed by CustomFieldDefinition.field_key.
+    custom_fields = Column(JSON, nullable=True, default=dict)
 
     # Relationships
     engagement = relationship("Engagement", back_populates="testcases")

@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from database import Base, engine
 
 # Import routers
-from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, stats_pages, plugins as plugins_router
+from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, stats_pages, custom_fields, plugins as plugins_router
 from routers import imports as imports_router
 from routers import spray as spray_router
 from routers import attack_techniques as attack_techniques_router
@@ -82,6 +82,7 @@ openapi_tags = [
     {"name": "calendar", "description": "Engagement calendar and scheduling views"},
     {"name": "dashboard", "description": "Dashboard widget definitions and user layout customization"},
     {"name": "stats-pages", "description": "Global, shared, tabbed stats pages (admin/curator-managed)"},
+    {"name": "custom-fields", "description": "Admin-defined custom fields on assets, testcases, findings, and clients"},
 
     # ── Automation & Notifications ───────────────────────────────────
     {"name": "automations", "description": "Automation rules and event-driven actions. Two scopes: org-wide rules (admin-curated) and per-user personal rules (owner-scoped, notify-self only)"},
@@ -680,6 +681,7 @@ app.include_router(infra.router)
 app.include_router(skills.router)
 app.include_router(dashboard_widgets.router)
 app.include_router(stats_pages.router)
+app.include_router(custom_fields.router)
 app.include_router(imports_router.router)
 app.include_router(plugins_router.router)
 app.include_router(spray_router.router)

@@ -27,6 +27,7 @@ import { useInfraByEntity } from '@/lib/hooks/use-infra';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
+import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import { TechniquePicker } from '@/components/ui/technique-picker';
@@ -592,6 +593,8 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
+
+                                <CustomFieldsDisplay entity="finding" value={finding.custom_fields} />
 
                                 {/* Linked Notes */}
                                 {linkedNotes.length > 0 && (

@@ -51,6 +51,7 @@ import { toast } from 'sonner';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { CvssCalculatorModal } from '@/components/findings/cvss-calculator-modal';
 import { TechniquePicker } from '@/components/ui/technique-picker';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { severityRating } from '@/lib/cvss31';
 import { apiErrorMessage } from '@/lib/api';
 
@@ -100,6 +101,7 @@ export default function NewFindingPage() {
         asset_ids: [] as string[],
         tag_ids: [] as string[],
         attack_technique_ids: [] as string[],
+        custom_fields: {} as Record<string, unknown>,
     });
 
     const { data: assets = [], isLoading: isLoadingAssets } = useAssets(formData.engagement_id);
@@ -248,6 +250,7 @@ export default function NewFindingPage() {
             tag_ids: formData.tag_ids || [],
             attack_technique_ids: formData.attack_technique_ids || [],
             testcase_id: testCaseIdParam || undefined,
+            custom_fields: formData.custom_fields,
         };
 
         try {
@@ -731,7 +734,11 @@ export default function NewFindingPage() {
                             </CardContent>
                         </Card>
 
-
+                        <CustomFieldsForm
+                            entity="finding"
+                            value={formData.custom_fields}
+                            onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                        />
                     </div>
                 </form>
             </div>

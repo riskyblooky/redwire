@@ -15,6 +15,7 @@ from models.user import UserRole
 from models.permission import Permission
 import uuid
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
+from utils.custom_fields import validate_custom_fields
 from utils.versioning import create_version_snapshot
 from models.discussion import ResourceType
 from models.version_history import VersionHistory
@@ -207,6 +208,7 @@ async def create_testcase(
         created_by=current_user.id,
         **testcase_dict
     )
+    db_testcase.custom_fields = await validate_custom_fields("testcase", testcase_data.custom_fields, db)
 
     # Add tags if provided
     if tag_ids:
@@ -293,6 +295,12 @@ async def update_testcase(
     # GHSA-73v7-5vx4-gfwm: never let the update body re-parent a test case to
     # another engagement (cross-engagement injection / move-by-mass-assign).
     update_data.pop("engagement_id", None)
+
+    # Validate/apply custom fields separately (full-replace on save).
+    if "custom_fields" in update_data:
+        db_testcase.custom_fields = await validate_custom_fields(
+            "testcase", update_data.pop("custom_fields"), db
+        )
 
     # Capture change summary before applying updates
     change_details = build_change_summary(db_testcase, update_data, label=f"Updated test case '{db_testcase.title}'")

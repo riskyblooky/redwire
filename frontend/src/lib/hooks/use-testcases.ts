@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 
 export interface TestCase {
+    custom_fields?: Record<string, unknown>;
     id: string;
     engagement_id: string;
     parent_id: string | null;
@@ -32,6 +33,7 @@ export interface TestCase {
 }
 
 export interface TestCaseCreate {
+    custom_fields?: Record<string, unknown>;
     engagement_id: string;
     parent_id?: string | null;
     title: string;

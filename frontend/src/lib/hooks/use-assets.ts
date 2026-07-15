@@ -4,6 +4,7 @@ import api from '../api';
 import { Asset } from '../types';
 
 export interface AssetCreate {
+    custom_fields?: Record<string, unknown>;
     engagement_id: string;
     name: string;
     asset_type: string;
@@ -16,6 +17,7 @@ export interface AssetCreate {
 }
 
 export interface AssetUpdate {
+    custom_fields?: Record<string, unknown>;
     id: string;
     engagement_id?: string;
     name?: string;

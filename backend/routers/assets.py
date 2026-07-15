@@ -22,6 +22,7 @@ import csv
 import defusedxml.ElementTree as ET
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.uploads import read_upload_capped
+from utils.custom_fields import validate_custom_fields
 from models.discussion import ResourceType
 
 logger = logging.getLogger(__name__)
@@ -870,7 +871,9 @@ async def create_asset(
         created_by=current_user.id,
         **asset_data.model_dump()
     )
-    
+    # Validate/coerce custom field values against the active definitions.
+    db_asset.custom_fields = await validate_custom_fields("asset", asset_data.custom_fields, db)
+
     db.add(db_asset)
     await db.commit()
     await db.refresh(db_asset)
@@ -930,6 +933,13 @@ async def update_asset(
     
     # Update fields
     update_data = asset_update.model_dump(exclude_unset=True)
+
+    # Custom fields are validated + applied separately (full-replace on save)
+    # so the raw dict doesn't flow through the change-summary/automation diff.
+    if "custom_fields" in update_data:
+        db_asset.custom_fields = await validate_custom_fields(
+            "asset", update_data.pop("custom_fields"), db
+        )
 
     # Capture change summary before applying updates
     change_details = build_change_summary(db_asset, update_data, label=f"Updated asset '{db_asset.name}'")

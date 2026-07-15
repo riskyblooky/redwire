@@ -26,6 +26,7 @@ import { useNotes } from '@/lib/hooks/use-notes';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
+import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import {
     useLinkAssetToFinding, useUnlinkAssetFromFinding,
@@ -641,6 +642,8 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                         </div>
                                     </>
                                 )}
+
+                                <CustomFieldsDisplay entity="asset" value={asset.custom_fields} />
 
                                 {/* Linked Notes */}
                                 {linkedNotes.length > 0 && (

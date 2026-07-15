@@ -75,6 +75,7 @@ class FindingBase(BaseModel):
     cvss_vector: Optional[str] = Field(None, max_length=CVSS_VECTOR)
     classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    custom_fields: Optional[dict] = None
 
 class FindingCreate(FindingBase):
     engagement_id: str = Field(..., max_length=UUID_FIELD)
@@ -103,6 +104,7 @@ class FindingUpdate(BaseModel):
     asset_port_ids: Optional[dict[str, list[str]]] = None  # {asset_id: [port_id, ...]}
     tag_ids: Optional[list[str]] = None
     attack_technique_ids: Optional[list[str]] = None
+    custom_fields: Optional[dict] = None
 
 class FindingResponse(FindingBase):
     id: str

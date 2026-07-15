@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
 import uuid
@@ -19,6 +19,9 @@ class Client(Base, AuditMixin):
     contact_name = Column(String(255), nullable=True)
     contact_email = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
+
+    # Admin-defined custom field values, keyed by CustomFieldDefinition.field_key.
+    custom_fields = Column(JSON, nullable=True, default=dict)
 
     # Relationships
     client_type = relationship("ConfigurableType", foreign_keys=[client_type_id])

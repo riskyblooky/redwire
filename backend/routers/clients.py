@@ -18,6 +18,7 @@ from schemas.configurable_type import (
 )
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
+from utils.custom_fields import validate_custom_fields
 from models.permission import Permission
 
 router = APIRouter(prefix="/clients", tags=["clients"])
@@ -329,6 +330,9 @@ async def create_client(
         contact_name=data.contact_name,
         contact_email=data.contact_email,
         notes=data.notes,
+        # Client create is explicit field-by-field, so custom_fields must be
+        # set here — it does NOT flow through a **model_dump like the others.
+        custom_fields=await validate_custom_fields("client", data.custom_fields, db),
         created_by=current_user.id,
     )
     db.add(new_client)
@@ -360,6 +364,12 @@ async def update_client(
         raise HTTPException(status_code=404, detail="Client not found.")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Validate/apply custom fields separately (full-replace on save).
+    if "custom_fields" in update_data:
+        client.custom_fields = await validate_custom_fields(
+            "client", update_data.pop("custom_fields"), db
+        )
 
     # Prevent circular parent reference
     if "parent_id" in update_data:

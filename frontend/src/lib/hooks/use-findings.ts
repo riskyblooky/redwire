@@ -3,6 +3,7 @@ import api from '../api';
 import { Asset, Tag, Evidence } from '../types';
 
 export interface Finding {
+    custom_fields?: Record<string, unknown>;
     id: string;
     engagement_id: string;
     title: string;
@@ -38,6 +39,7 @@ export interface Finding {
 
 
 export interface FindingCreate {
+    custom_fields?: Record<string, unknown>;
     engagement_id: string;
     title: string;
     category?: string;
