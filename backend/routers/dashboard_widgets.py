@@ -38,6 +38,7 @@ from models.associations import EngagementAssignment
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
 from auth.rbac import apply_stats_scope
+from utils.custom_fields import get_active_definitions
 
 logger = logging.getLogger(__name__)
 
@@ -869,13 +870,63 @@ def _apply_joins(query, req: "QueryPreviewRequest"):
     return query
 
 
-def _build_query(req: QueryPreviewRequest):
+# Query-builder tables that carry admin-defined custom fields. Custom-field
+# columns are referenced as "cf:<field_key>" so they can't collide with a real
+# column name; the value lives in the entity's custom_fields JSON.
+_CF_TABLE_TO_ENTITY = {
+    "findings": "finding",
+    "assets": "asset",
+    "testcases": "testcase",
+    "clients": "client",
+    "engagements": "engagement",
+}
+# Aggregations that need a numeric operand — a cf field used here is cast to
+# float. count / count_distinct work on the raw text.
+_NUMERIC_AGGS = {"avg", "sum", "max", "min", "median", "p95", "p99"}
+
+
+async def _cf_map_for_table(table: str, db: AsyncSession) -> dict:
+    """Return {"cf:<key>": field_type} for a query-builder table's active
+    custom fields, or {} when the table carries none."""
+    entity = _CF_TABLE_TO_ENTITY.get(table)
+    if not entity:
+        return {}
+    defs = await get_active_definitions(entity, db)
+    return {f"cf:{d.field_key}": d.field_type for d in defs}
+
+
+def _col_expr(model, col_name: str, *, numeric: bool = False):
+    """Resolve a column reference to a SQLAlchemy expression. Real columns via
+    getattr; ``cf:<key>`` references via JSON extraction from custom_fields.
+    ``numeric`` casts the extracted text to Float for numeric aggregation."""
+    if col_name.startswith("cf:"):
+        key = col_name[3:]
+        # `->>` extracts a JSON field as text. Used instead of `.astext`
+        # (JSONB-only) so it works on our generic JSON column. Explicit text
+        # return type so a numeric cast and text comparisons resolve cleanly.
+        expr = model.custom_fields.op("->>", return_type=SAString)(key)
+        return cast(expr, Float) if numeric else expr
+    return getattr(model, col_name)
+
+
+def _build_query(req: QueryPreviewRequest, cf_map: dict | None = None):
     """Build a safe SQLAlchemy query from a structured definition. No raw SQL.
-    Supports: standard group-by, time-series bucketing, and multi-series."""
+    Supports: standard group-by, time-series bucketing, and multi-series.
+
+    ``cf_map`` maps allowed ``cf:<key>`` references to their custom-field type
+    for the request's table (empty/None when the table has no custom fields).
+    A cf column passes the allowlist only if it's in this map."""
+    cf_map = cf_map or {}
     if req.table not in _TABLE_MAP:
         raise HTTPException(400, f"Table '{req.table}' is not allowed. Allowed: {list(_TABLE_MAP.keys())}")
     model = _TABLE_MAP[req.table]
     allowed = _ALLOWED_COLUMNS[req.table]
+
+    def _ok(col: str, kind: str) -> bool:
+        """Allowlist check that also permits validated cf: references."""
+        if col.startswith("cf:"):
+            return col in cf_map
+        return col in allowed.get(kind, [])
 
     # Normalise group_by to a list. Single-string form still works —
     # callers built against the old shape don't need to change. Every
@@ -886,20 +937,20 @@ def _build_query(req: QueryPreviewRequest):
     if len(group_by_cols) > 3:
         raise HTTPException(400, "group_by supports up to 3 columns")
     for col_name in group_by_cols:
-        if col_name not in allowed["group_by"]:
+        if not _ok(col_name, "group_by"):
             raise HTTPException(400, f"Cannot group by '{col_name}'. Allowed: {allowed['group_by']}")
 
-    if req.value_column not in allowed["aggregate"]:
+    if not _ok(req.value_column, "aggregate"):
         raise HTTPException(400, f"Cannot aggregate '{req.value_column}'. Allowed: {allowed['aggregate']}")
     if req.aggregation not in _AGG_FUNCS:
         raise HTTPException(400, f"Unknown aggregation '{req.aggregation}'. Allowed: {list(_AGG_FUNCS.keys())}")
 
-    value_col = getattr(model, req.value_column)
+    value_col = _col_expr(model, req.value_column, numeric=req.aggregation in _NUMERIC_AGGS)
     agg_fn = _AGG_FUNCS[req.aggregation]
 
     # Validate series_by
     if req.series_by:
-        if req.series_by not in allowed.get("series_by", []):
+        if not _ok(req.series_by, "series_by"):
             raise HTTPException(400, f"Cannot split series by '{req.series_by}'. Allowed: {allowed.get('series_by', [])}")
 
     # ── Time-series mode ──
@@ -913,7 +964,7 @@ def _build_query(req: QueryPreviewRequest):
         bucket = func.date_trunc(req.time_bucket, date_col).label("date")
 
         if req.series_by:
-            series_col = getattr(model, req.series_by)
+            series_col = _col_expr(model, req.series_by)
             query = select(
                 bucket,
                 series_col.label("series"),
@@ -929,7 +980,7 @@ def _build_query(req: QueryPreviewRequest):
         # Multi-column: emit a labelN column per dim, group by all of them.
         # Frontend renders as a compound key ("Critical / Open") for
         # single-bucket viz, or as a 2D heatmap when there are exactly 2.
-        cols = [getattr(model, c) for c in group_by_cols]
+        cols = [_col_expr(model, c) for c in group_by_cols]
         selects: list = []
         for i, col in enumerate(cols):
             selects.append(col.label(f"label{i}" if i > 0 else "label"))
@@ -949,9 +1000,9 @@ def _build_query(req: QueryPreviewRequest):
         conditions = []
         filter_allowed = allowed.get("filter_columns", allowed["group_by"])
         for f in req.filters:
-            if f.column not in filter_allowed and f.column not in allowed["aggregate"]:
+            if not (_ok(f.column, "filter_columns") or _ok(f.column, "aggregate")):
                 raise HTTPException(400, f"Cannot filter by '{f.column}'. Allowed: {filter_allowed}")
-            col = getattr(model, f.column)
+            col = _col_expr(model, f.column)
             op = _FILTER_OPS.get(f.operator)
             if not op:
                 raise HTTPException(400, f"Unknown filter operator '{f.operator}'")
@@ -1116,7 +1167,8 @@ async def _run_single_query(
         behavior of the built-in /stats/* pages.
     """
     _assert_query_access(req, current_user)
-    query = _build_query(req)
+    cf_map = await _cf_map_for_table(req.table, db)
+    query = _build_query(req, cf_map)
 
     strip_identifiers = False
     if stats_scope:
@@ -1229,17 +1281,43 @@ async def get_widget_data(
 @router.get("/widgets/query-schema")
 async def get_query_schema(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Return the query builder schema — available tables, columns, join paths, etc.
-    Used by the frontend to build the visual query builder dynamically."""
+    Used by the frontend to build the visual query builder dynamically.
+
+    Admin-defined custom fields are appended as ``cf:<key>`` columns on the
+    tables that carry them (group-by / filter / series for all types; also
+    aggregate for number fields). ``custom_field_labels`` maps each cf column
+    to its friendly label so the builder UI shows real names."""
+    cf_labels: dict[str, str] = {}
     schema = {}
     for table_name, columns in _ALLOWED_COLUMNS.items():
+        group_by = list(columns["group_by"])
+        aggregate = list(columns["aggregate"])
+        filter_columns = list(columns.get("filter_columns", columns["group_by"]))
+        series_by = list(columns.get("series_by", []))
+
+        entity = _CF_TABLE_TO_ENTITY.get(table_name)
+        if entity:
+            for d in await get_active_definitions(entity, db):
+                ref = f"cf:{d.field_key}"
+                cf_labels[ref] = d.label
+                # Multiselect stores an array — usable as a filter but not a
+                # clean group-by dimension, so keep it out of group/series.
+                if d.field_type != "multiselect":
+                    group_by.append(ref)
+                    series_by.append(ref)
+                filter_columns.append(ref)
+                if d.field_type == "number":
+                    aggregate.append(ref)
+
         schema[table_name] = {
-            "group_by": columns["group_by"],
-            "aggregate": columns["aggregate"],
+            "group_by": group_by,
+            "aggregate": aggregate,
             "date_columns": columns.get("date_columns", []),
-            "filter_columns": columns.get("filter_columns", columns["group_by"]),
-            "series_by": columns.get("series_by", []),
+            "filter_columns": filter_columns,
+            "series_by": series_by,
             "joins": sorted({jt for (ft, jt) in _JOIN_PATHS.keys() if ft == table_name}),
             "sensitive": table_name in _SENSITIVE_TABLES,
         }
@@ -1251,6 +1329,7 @@ async def get_query_schema(
         "date_ranges": ["7d", "30d", "90d", "quarter", "year", "all", "custom"],
         "time_buckets": ["day", "week", "month"],
         "sensitive_tables": sorted(_SENSITIVE_TABLES),
+        "custom_field_labels": cf_labels,
     }
 
 

@@ -61,6 +61,8 @@ export interface QuerySchema {
     filter_operators: string[];
     date_ranges: string[];
     time_buckets: string[];
+    // Maps a "cf:<key>" custom-field column to its friendly label.
+    custom_field_labels?: Record<string, string>;
 }
 
 export interface ComputedMetric {

@@ -243,6 +243,13 @@ export function WidgetManagement() {
     const { data: schema } = useQuerySchema();
     const { data: metricsData } = useComputedMetrics();
 
+    // Friendly label for a column: custom fields ("cf:key") show their admin
+    // label with a "(custom)" hint; real columns show as-is.
+    const colLabel = (c: string) => {
+        const cf = schema?.custom_field_labels?.[c];
+        return cf ? `${cf} (custom)` : c;
+    };
+
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -797,7 +804,7 @@ export function WidgetManagement() {
                                                 </SelectTrigger>
                                                 <SelectContent className="bg-slate-950 border-slate-800">
                                                     {tSchema.group_by.map(c => (
-                                                        <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{c}</SelectItem>
+                                                        <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{colLabel(c)}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -823,7 +830,7 @@ export function WidgetManagement() {
                                                 </SelectTrigger>
                                                 <SelectContent className="bg-slate-950 border-slate-800">
                                                     {tSchema.aggregate.map(c => (
-                                                        <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{c}</SelectItem>
+                                                        <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{colLabel(c)}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
@@ -858,7 +865,7 @@ export function WidgetManagement() {
                                                         <SelectContent className="bg-slate-950 border-slate-800">
                                                             <SelectItem value="__none__" className="text-slate-400 focus:bg-slate-800 focus:text-white text-xs">No date filter</SelectItem>
                                                             {tSchema.date_columns.map(c => (
-                                                                <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{c}</SelectItem>
+                                                                <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{colLabel(c)}</SelectItem>
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
@@ -911,7 +918,7 @@ export function WidgetManagement() {
                                                             <SelectContent className="bg-slate-950 border-slate-800">
                                                                 <SelectItem value="__none__" className="text-slate-400 focus:bg-slate-800 focus:text-white text-xs">No split (single series)</SelectItem>
                                                                 {tSchema.series_by.map(c => (
-                                                                    <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{c}</SelectItem>
+                                                                    <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{colLabel(c)}</SelectItem>
                                                                 ))}
                                                             </SelectContent>
                                                         </Select>
@@ -951,7 +958,7 @@ export function WidgetManagement() {
                                                 </SelectTrigger>
                                                 <SelectContent className="bg-slate-950 border-slate-800">
                                                     {tSchema.filter_columns.map(c => (
-                                                        <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{c}</SelectItem>
+                                                        <SelectItem key={c} value={c} className="text-slate-200 focus:bg-slate-800 focus:text-white text-xs">{colLabel(c)}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>
