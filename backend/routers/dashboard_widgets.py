@@ -64,6 +64,14 @@ _STATS_IDENTIFIER_COLUMNS = frozenset({
     "target_hostname", "domain", "source",
 })
 
+# Columns whose values are a users.id — when one is used as a group-by or
+# series dimension, its UUID labels are resolved to usernames so charts read
+# as names, not IDs. (Resolution runs before stats redaction, so admins see
+# names and non-admin global-mode viewers still get them masked.)
+_USER_REF_COLUMNS = frozenset({
+    "user_id", "created_by", "updated_by", "actor_id", "owner_user_id",
+})
+
 
 # ── Schemas ──────────────────────────────────────────────────────────
 
@@ -262,7 +270,9 @@ _ALLOWED_COLUMNS: dict[str, dict[str, list[str]]] = {
         "aggregate": ["id"],
         "date_columns": ["created_at"],
         "filter_columns": ["action", "resource_type", "user_id", "engagement_id"],
-        "series_by": ["action", "resource_type"],
+        # user_id splits activity into one series per user (labels resolved to
+        # usernames by _resolve_user_labels).
+        "series_by": ["action", "resource_type", "user_id"],
     },
     # ── Collaboration ──────────────────────────────────────────────
     "threads": {
@@ -1144,6 +1154,58 @@ def _redact_identifiers(result: dict, group_by_cols: list[str], series_by: Optio
     return result
 
 
+async def _resolve_user_labels(
+    result: dict, group_by_cols: list[str], series_by: Optional[str], db: AsyncSession
+) -> dict:
+    """Replace users.id UUID labels with usernames wherever a user-reference
+    column is used as a group-by dimension or a multi-series split. One users
+    lookup per query, only when such a column is present."""
+    mode = result.get("mode")
+    gb_idx = [i for i, c in enumerate(group_by_cols) if c in _USER_REF_COLUMNS]
+    series_is_user = series_by in _USER_REF_COLUMNS
+
+    # Collect the UUIDs that need resolving.
+    ids: set[str] = set()
+    if mode == "standard" and gb_idx:
+        for entry in result.get("data", []):
+            labels = entry.get("labels") or [entry.get("label")]
+            for i in gb_idx:
+                if i < len(labels) and labels[i] not in (None, "(none)"):
+                    ids.add(str(labels[i]))
+    elif mode == "multi_series" and series_is_user:
+        ids = {str(s) for s in result.get("series", []) if s and s != "(none)"}
+
+    if not ids:
+        return result
+
+    rows = (await db.execute(select(User.id, User.username).where(User.id.in_(ids)))).all()
+    name_map = {str(r.id): r.username for r in rows}
+    resolve = lambda v: name_map.get(str(v), str(v))  # noqa: E731
+
+    if mode == "standard" and gb_idx:
+        is_multi = len(group_by_cols) > 1
+        for entry in result.get("data", []):
+            if is_multi:
+                labels = entry.get("labels", [])
+                for i in gb_idx:
+                    if i < len(labels):
+                        labels[i] = resolve(labels[i])
+                entry["labels"] = labels
+                entry["dims"] = dict(zip(group_by_cols, labels))
+                entry["label"] = " / ".join(labels)
+            else:
+                entry["label"] = resolve(entry.get("label"))
+    elif mode == "multi_series" and series_is_user:
+        smap = {s: resolve(s) for s in result.get("series", [])}
+        for entry in result.get("data", []):
+            for original, resolved in list(smap.items()):
+                if original in entry and original != resolved:
+                    entry[resolved] = entry.pop(original)
+        result["series"] = [smap[s] for s in result.get("series", [])]
+
+    return result
+
+
 async def _run_single_query(
     req: QueryPreviewRequest,
     current_user: User,
@@ -1186,6 +1248,9 @@ async def _run_single_query(
     else:
         result = _format_standard_result(rows, _group_by_list(req))
 
+    # Resolve user-id dimensions to usernames first, THEN redact — so admins
+    # read names and non-admin global-mode viewers still get them masked.
+    result = await _resolve_user_labels(result, _group_by_list(req), req.series_by, db)
     if strip_identifiers:
         result = _redact_identifiers(result, _group_by_list(req), req.series_by)
     return result
