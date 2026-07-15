@@ -38,6 +38,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
 import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X, KeyRound } from 'lucide-react';
 import { useEngagementsPage, useDeleteEngagement } from '@/lib/hooks/use-engagements';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
@@ -143,6 +144,7 @@ const EngagementRow = ({ engagement, handleView, handleEdit, handleDelete, handl
             <TableCell className="text-slate-300 text-sm">
                 {engagement.end_date ? new Date(engagement.end_date).toLocaleDateString() : <span className="text-slate-500">—</span>}
             </TableCell>
+            <CustomFieldListCells entity="engagement" value={engagement.custom_fields} />
             <TableCell className="text-right">
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -832,6 +834,7 @@ export default function EngagementsPage() {
                                                     End Date <SortIcon field="end_date" />
                                                 </div>
                                             </TableHead>
+                                            <CustomFieldListHeads entity="engagement" />
                                             <TableHead className="text-slate-300 text-right">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>

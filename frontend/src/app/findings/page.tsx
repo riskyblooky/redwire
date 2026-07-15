@@ -26,6 +26,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
 import {
     Plus, Search, Eye, Edit, Trash2, Bug, Filter, Loader2,
     AlertTriangle, AlertCircle, Info, ShieldAlert, MessageSquare,
@@ -78,6 +79,7 @@ const FindingRow = ({ finding, router, severityColors, statusColors, getSeverity
             <TableCell className="text-slate-400 text-sm">
                 {new Date(finding.created_at).toLocaleDateString()}
             </TableCell>
+            <CustomFieldListCells entity="finding" value={finding.custom_fields} />
             <TableCell className="text-right pr-6">
                 <div className="flex justify-end gap-1">
                     <Button
@@ -351,6 +353,7 @@ export default function FindingsPage() {
                                                     Created <SortIcon field="created_at" />
                                                 </div>
                                             </TableHead>
+                                            <CustomFieldListHeads entity="finding" />
                                             <TableHead className="text-right text-slate-300 font-semibold pr-6">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>

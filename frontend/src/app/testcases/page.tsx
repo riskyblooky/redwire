@@ -29,6 +29,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
 import {
     Plus, Search, Eye, Edit, Trash2, CheckSquare, Loader2, MessageSquare,
     ChevronRight, ChevronDown, CornerDownRight
@@ -294,6 +295,7 @@ export default function TestCasesPage() {
                                                 Status
                                             </TableHead>
                                             <TableHead className="text-slate-300 font-semibold">Result</TableHead>
+                                            <CustomFieldListHeads entity="testcase" />
                                             <TableHead className="text-right text-slate-300 font-semibold pr-6">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -372,6 +374,7 @@ export default function TestCasesPage() {
                                                                 )
                                                             ) : '—'}
                                                         </TableCell>
+                                                        <CustomFieldListCells entity="testcase" value={tc.custom_fields} />
                                                         <TableCell className="text-right pr-6">
                                                             <div className="flex justify-end gap-1">
                                                                 <Button

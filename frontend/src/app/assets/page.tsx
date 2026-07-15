@@ -26,6 +26,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
 import {
     Plus, Search, Eye, Edit, Trash2, Server, Loader2, MessageSquare,
     ArrowUpDown, ArrowUp, ArrowDown
@@ -99,6 +100,7 @@ function AssetListRow({ asset, handleView, handleEdit, handleDelete, deleteAsset
             <TableCell className="text-slate-400 text-sm truncate max-w-xs">
                 {asset.description || '—'}
             </TableCell>
+            <CustomFieldListCells entity="asset" value={asset.custom_fields} />
             <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
                     <Button
@@ -321,6 +323,7 @@ export default function AssetsPage() {
                                             </TableHead>
                                             <TableHead className="text-slate-300">Discussions</TableHead>
                                             <TableHead className="text-slate-300">Description</TableHead>
+                                            <CustomFieldListHeads entity="asset" />
                                             <TableHead className="text-slate-300 text-right">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>
