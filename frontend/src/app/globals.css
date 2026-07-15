@@ -562,7 +562,15 @@
 .dashboard-grid .react-grid-item {
   transition: all 200ms ease;
   border-radius: 0.75rem;
-  overflow: hidden;
+  /* overflow visible so chart tooltips can extend beyond the widget instead
+     of being clipped; the widget Card handles its own rounding/containment. */
+  overflow: visible;
+}
+
+/* Lift the hovered widget above its neighbours so an escaping chart tooltip
+   renders on top of adjacent widgets, not behind them. */
+.dashboard-grid .react-grid-item:hover {
+  z-index: 4;
 }
 
 /* Editing mode: allow overflow for resize handles, add border */

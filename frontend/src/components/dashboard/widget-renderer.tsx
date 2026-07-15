@@ -49,10 +49,22 @@ const ICON_MAP: Record<string, any> = {
 };
 
 // ── Theme constants ────────────────────────────────────────────────
+// Themed via CSS variables so tooltips follow the user's selected accent
+// theme (--popover / --border / --foreground change per theme_preference).
+// wrapperStyle z-index + allowEscapeViewBox let the tooltip render above and
+// outside the widget card instead of being clipped by it.
 const TOOLTIP_STYLE = {
-    contentStyle: { backgroundColor: '#1a2235', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' },
-    itemStyle: { color: '#e2e8f0' },
-    labelStyle: { color: '#94a3b8' },
+    contentStyle: {
+        backgroundColor: 'hsl(var(--popover))',
+        border: '1px solid hsl(var(--border))',
+        borderRadius: '8px',
+        color: 'hsl(var(--popover-foreground))',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+    },
+    itemStyle: { color: 'hsl(var(--popover-foreground))' },
+    labelStyle: { color: 'hsl(var(--muted-foreground))' },
+    wrapperStyle: { zIndex: 50, outline: 'none' },
+    allowEscapeViewBox: { x: true, y: true } as { x: boolean; y: boolean },
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -147,7 +159,7 @@ function WidgetShell({ widget, children, isEditing, onRemove }: {
 }) {
     const Icon = ICON_MAP[widget.icon || ''] || BarChart3;
     return (
-        <Card className="border-slate-800/60 bg-slate-900/50 backdrop-blur-md h-full relative group/widget overflow-hidden flex flex-col">
+        <Card className="border-slate-800/60 bg-slate-900/50 backdrop-blur-md h-full relative group/widget flex flex-col">
             {isEditing && onRemove && (
                 <button
                     onClick={onRemove}

@@ -303,7 +303,7 @@ export default function DashboardPage() {
                                                 </button>
                                             </>
                                         )}
-                                        <div className="h-full overflow-hidden">
+                                        <div className="h-full">
                                             <WidgetRenderer widget={widget} isEditing={isEditing}
                                                 engagementId={engagementId}
                                                 onRemove={() => handleRemoveWidget(widget.id)} />

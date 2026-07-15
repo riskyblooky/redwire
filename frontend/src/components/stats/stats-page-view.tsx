@@ -186,7 +186,7 @@ export default function StatsPageView({ page, widgets, canManage, onRename, onDe
                                                 </button>
                                             </>
                                         )}
-                                        <div className="h-full overflow-hidden">
+                                        <div className="h-full">
                                             <WidgetRenderer widget={widget} isEditing={isEditing}
                                                 engagementId={null}
                                                 onRemove={() => handleRemoveWidget(widget.id)} />
