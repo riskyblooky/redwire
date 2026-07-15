@@ -19,6 +19,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
+import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs, compareCustomFieldValues } from '@/components/custom-fields/custom-field-list-columns';
 import { ColumnToggle } from '@/components/ui/column-toggle';
 import { useRouter } from 'next/navigation';
 import {
@@ -297,6 +298,7 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                         )}
                     </div>
                 </TableCell>}
+                <CustomFieldListCells entity="testcase" value={testcase.custom_fields} isVisible={col} />
                 <TableCell className="text-right">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-white" onClick={(e) => e.stopPropagation()}><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
@@ -383,7 +385,9 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
     const router = useRouter();
     const canCreateTestCase = usePermission(engagementId, 'testcase_create');
     const updateTestCase = useUpdateTestCase();
-    const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_testcases', TESTCASES_COLUMNS);
+    const cfListDefs = useCustomFieldListDefs('testcase');
+    const testcaseColumns = useMemo(() => [...TESTCASES_COLUMNS, ...customFieldColumnDefs(cfListDefs)], [cfListDefs]);
+    const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_testcases', testcaseColumns);
     const col = (key: string) => visibleCols.has(key);
 
     // Data
@@ -492,7 +496,12 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                     case 'created_at': cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
                     case 'unresolved_thread_count': cmp = (a.unresolved_thread_count || 0) - (b.unresolved_thread_count || 0); break;
                     case 'created_by_username': cmp = (a.created_by_username || '').localeCompare(b.created_by_username || ''); break;
-                    default: cmp = a.title.localeCompare(b.title);
+                    default:
+                        if (sortField.startsWith('cf:')) {
+                            cmp = compareCustomFieldValues((a.custom_fields as any)?.[sortField.slice(3)], (b.custom_fields as any)?.[sortField.slice(3)]);
+                        } else {
+                            cmp = a.title.localeCompare(b.title);
+                        }
                 }
                 return sortOrder === 'desc' ? -cmp : cmp;
             });
@@ -604,7 +613,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                             <TreePine className="h-3.5 w-3.5" />Back to Tree
                         </Button>
                     )}
-                    <ColumnToggle columns={TESTCASES_COLUMNS} visible={visibleCols} onToggle={toggleCol} />
+                    <ColumnToggle columns={testcaseColumns} visible={visibleCols} onToggle={toggleCol} />
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button size="icon" variant="ghost" className="h-9 w-9 text-slate-400 hover:text-white" title="View Settings">
@@ -745,6 +754,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                                         {col('createdBy') && <TableHead className="text-slate-400 cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort('created_by_username')}><span className="flex items-center">Created By <SortIcon field="created_by_username" currentField={sortField} order={sortOrder} /></span></TableHead>}
                                         {col('created') && <TableHead className="text-slate-400 cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort('created_at')}><span className="flex items-center">Created <SortIcon field="created_at" currentField={sortField} order={sortOrder} /></span></TableHead>}
                                         {col('links') && <TableHead className="text-slate-400">Links</TableHead>}
+                                        <CustomFieldListHeads entity="testcase" isVisible={col} sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                                         <TableHead className="text-slate-400 text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>

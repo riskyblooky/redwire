@@ -772,6 +772,10 @@ async def get_assets(
         sort_column = Asset.name
     elif sort_by == 'asset_type':
         sort_column = Asset.asset_type
+    elif sort_by and sort_by.startswith('cf:'):
+        # Sort by a custom field value (JSON text). Numeric fields sort
+        # lexically — acceptable for v1.
+        sort_column = Asset.custom_fields.op('->>')(sort_by[3:])
 
     # When searching, sort by relevance first (best match first)
     if search:

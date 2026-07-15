@@ -18,6 +18,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
+import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs } from '@/components/custom-fields/custom-field-list-columns';
 import { ColumnToggle } from '@/components/ui/column-toggle';
 import { useRouter } from 'next/navigation';
 import {
@@ -315,6 +316,7 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
                         )}
                     </div>
                 </TableCell>}
+                <CustomFieldListCells entity="asset" value={asset.custom_fields} isVisible={col} />
                 <TableCell className="text-right">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -484,8 +486,14 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
         return map;
     }, [testcases]);
 
-    // Column visibility
-    const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_assets', ASSETS_COLUMNS);
+    // Column visibility — merge custom-field (show_in_list) columns so they
+    // appear in the ColumnToggle and can be shown/hidden like any other.
+    const cfListDefs = useCustomFieldListDefs('asset');
+    const assetColumns = useMemo(
+        () => [...ASSETS_COLUMNS, ...customFieldColumnDefs(cfListDefs)],
+        [cfListDefs],
+    );
+    const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_assets', assetColumns);
     const col = (key: string) => visibleCols.has(key);
 
     // Client-side asset filtering (post server-fetch)
@@ -568,7 +576,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                     <Button size="icon" variant="ghost" className={cn("h-9 w-9", showAdvancedFilters || hasAssetFilters ? "text-primary bg-primary/10" : "text-slate-400 hover:text-white")} title="Advanced Filters" onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}>
                         <Filter className="h-4 w-4" />
                     </Button>
-                    <ColumnToggle columns={ASSETS_COLUMNS} visible={visibleCols} onToggle={toggleCol} />
+                    <ColumnToggle columns={assetColumns} visible={visibleCols} onToggle={toggleCol} />
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button size="icon" variant="ghost" className="h-9 w-9 text-slate-400 hover:text-white" title="View Settings">
@@ -808,6 +816,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                                     {col('createdBy') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('created_by_username')}><div className="flex items-center">Created By <SortIcon field="created_by_username" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                     {col('created') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('created_at')}><div className="flex items-center">Created <SortIcon field="created_at" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                     {col('links') && <TableHead className="text-slate-400">Links</TableHead>}
+                                    <CustomFieldListHeads entity="asset" isVisible={col} sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                                     <TableHead className="text-slate-400 text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>

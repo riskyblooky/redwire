@@ -4,7 +4,7 @@
  * Stores visible column state in localStorage so preferences survive reloads.
  * Returns [visibleCols, toggleCol] where visibleCols is a Set<string>.
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 export interface ColumnDef {
     key: string;
@@ -35,6 +35,35 @@ export function useColumnVisibility(
     useEffect(() => {
         localStorage.setItem(storageKey, JSON.stringify([...visible]));
     }, [visible, storageKey]);
+
+    // Default brand-new columns (e.g. a just-added custom field, which loads
+    // async after mount) to VISIBLE instead of hidden. A separate ":known"
+    // list distinguishes "column never seen" (default on) from "user hid it"
+    // (stay off). On first migration we seed known with the current columns so
+    // existing hide choices are preserved.
+    const knownRef = useRef<Set<string> | null>(null);
+    const columnsKey = columns.map(c => c.key).join(',');
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (knownRef.current === null) {
+            const raw = localStorage.getItem(storageKey + ':known');
+            if (raw) {
+                try { knownRef.current = new Set(JSON.parse(raw)); }
+                catch { knownRef.current = new Set(); }
+            } else {
+                knownRef.current = new Set(columns.map(c => c.key));
+                localStorage.setItem(storageKey + ':known', JSON.stringify([...knownRef.current]));
+                return;
+            }
+        }
+        const fresh = columns.filter(c => !knownRef.current!.has(c.key));
+        if (fresh.length > 0) {
+            fresh.forEach(c => knownRef.current!.add(c.key));
+            localStorage.setItem(storageKey + ':known', JSON.stringify([...knownRef.current!]));
+            setVisible(prev => new Set([...prev, ...fresh.map(c => c.key)]));
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [columnsKey, storageKey]);
 
     const toggle = useCallback((key: string) => {
         const col = columns.find(c => c.key === key);

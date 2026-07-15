@@ -16,6 +16,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
+import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs, compareCustomFieldValues } from '@/components/custom-fields/custom-field-list-columns';
 import { ColumnToggle } from '@/components/ui/column-toggle';
 import { useRouter } from 'next/navigation';
 import {
@@ -234,6 +235,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                         )}
                     </div>
                 </TableCell>}
+                <CustomFieldListCells entity="finding" value={finding.custom_fields} isVisible={col} />
                 <TableCell className="text-right">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -335,7 +337,9 @@ const FINDINGS_COLUMNS: ColumnDef[] = [
 export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLinkAsset, onLinkIntel, onLinkInfra }: FindingsTabProps) {
     const router = useRouter();
     const canCreateFinding = usePermission(engagementId, 'finding_create');
-    const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_findings', FINDINGS_COLUMNS);
+    const cfListDefs = useCustomFieldListDefs('finding');
+    const findingColumns = useMemo(() => [...FINDINGS_COLUMNS, ...customFieldColumnDefs(cfListDefs)], [cfListDefs]);
+    const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_findings', findingColumns);
     const col = (key: string) => visibleCols.has(key);
 
     // Data
@@ -435,6 +439,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                 else if (sortField === 'created_at') comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
                 else if (sortField === 'unresolved_thread_count') comparison = (a.unresolved_thread_count || 0) - (b.unresolved_thread_count || 0);
                 else if (sortField === 'created_by_username') comparison = (a.created_by_username || '').localeCompare(b.created_by_username || '');
+                else if (sortField.startsWith('cf:')) comparison = compareCustomFieldValues((a.custom_fields as any)?.[sortField.slice(3)], (b.custom_fields as any)?.[sortField.slice(3)]);
                 else comparison = String((a as any)[sortField]).localeCompare(String((b as any)[sortField]));
                 return sortOrder === 'asc' ? comparison : -comparison;
             }
@@ -461,7 +466,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                     >
                         <Filter className="h-4 w-4" />
                     </Button>
-                    <ColumnToggle columns={FINDINGS_COLUMNS} visible={visibleCols} onToggle={toggleCol} />
+                    <ColumnToggle columns={findingColumns} visible={visibleCols} onToggle={toggleCol} />
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button size="icon" variant="ghost" className="h-9 w-9 text-slate-400 hover:text-white" title="View Settings">
@@ -596,6 +601,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                                 {col('createdBy') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('created_by_username')}><div className="flex items-center">Created By <SortIcon field="created_by_username" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                 {col('created') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('created_at')}><div className="flex items-center">Created <SortIcon field="created_at" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                 {col('links') && <TableHead className="text-slate-400">Links</TableHead>}
+                                <CustomFieldListHeads entity="finding" isVisible={col} sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                                 <TableHead className="text-right text-slate-400">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
