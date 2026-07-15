@@ -155,13 +155,22 @@ export function useResetLayout() {
 // Response shape:
 //   single-query widget → { data: [...], mode?: 'standard' | 'time_series' | 'multi_series', series?: string[] }
 //   composite widget    → { results: [{data, mode, ...}, ...], mode: 'composite' }
+// `context` selects the backend scoping model: 'dashboard' (default)
+// assignment-scopes non-admins; 'stats' honors the platform Stats Scope
+// Mode for shared global stats pages. It's part of the query key so the
+// same widget rendered in both places doesn't share a cache entry.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useCustomWidgetData(widgetId: string | undefined) {
+export function useCustomWidgetData(
+    widgetId: string | undefined,
+    context: 'dashboard' | 'stats' = 'dashboard',
+) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return useQuery<any>({
-        queryKey: ['dashboard', 'widget-data', widgetId],
+        queryKey: ['dashboard', 'widget-data', widgetId, context],
         queryFn: async () => {
-            const { data } = await api.get(`/dashboard/widgets/${widgetId}/data`);
+            const { data } = await api.get(`/dashboard/widgets/${widgetId}/data`, {
+                params: context === 'stats' ? { context: 'stats' } : undefined,
+            });
             return data;
         },
         enabled: !!widgetId,

@@ -155,9 +155,10 @@ class Permission(str, enum.Enum):
     RUNBOOK_EDIT = "runbook_edit"
     RUNBOOK_DELETE = "runbook_delete"
 
-    # Dashboard Widgets
-    MANAGE_DASHBOARD_WIDGETS = "manage_dashboard_widgets"  # Admin: CRUD widget definitions
+    # Dashboard & Stats
+    MANAGE_DASHBOARD_WIDGETS = "manage_dashboard_widgets"  # CRUD widget definitions + query builder
     CUSTOMIZE_DASHBOARD = "customize_dashboard"  # User: customize own layout
+    MANAGE_STATS_PAGES = "manage_stats_pages"  # Create/arrange global stats-page tabs
 
 
 class GroupPermissions(Base):
@@ -268,6 +269,11 @@ PERMISSION_CATEGORIES = {
     "Analytics": [
         Permission.VIEW_ALL_ANALYTICS,
     ],
+    "Dashboard & Stats": [
+        Permission.MANAGE_DASHBOARD_WIDGETS,
+        Permission.CUSTOMIZE_DASHBOARD,
+        Permission.MANAGE_STATS_PAGES,
+    ],
     "Notes": [
         Permission.NOTE_VIEW,
         Permission.NOTE_CREATE,
@@ -366,6 +372,15 @@ GLOBAL_PERMISSIONS = [
     Permission.RUNBOOK_CREATE,
     Permission.RUNBOOK_EDIT,
     Permission.RUNBOOK_DELETE,
+    # Dashboard & Stats. These were previously declared in the Permission
+    # enum but never listed here, so has_global_permission() rejected any
+    # group grant of them (the `permission not in GLOBAL_PERMISSIONS: return
+    # False` gate) — making them silently ADMIN-only and impossible to
+    # delegate. Wiring them in makes them grantable via the permission-group
+    # admin UI, which is what a "stats curator" role needs.
+    Permission.MANAGE_DASHBOARD_WIDGETS,
+    Permission.CUSTOMIZE_DASHBOARD,
+    Permission.MANAGE_STATS_PAGES,
 ]
 
 ENGAGEMENT_PERMISSIONS = [

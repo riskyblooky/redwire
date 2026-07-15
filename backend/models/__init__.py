@@ -40,6 +40,7 @@ from models.infra_item import InfraItem, InfraType, InfraStatus
 from models.infra_vault_item import InfraVaultItem
 from models.skill import SkillCategory, Skill, UserSkill, EngagementSkill
 from models.dashboard_widget import DashboardWidget
+from models.stats_page import StatsPage
 from models.notification import Notification, NotificationPreference
 from models.automation import AutomationRule
 from models.plugin import PluginState, PluginSetting

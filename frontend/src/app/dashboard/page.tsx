@@ -34,21 +34,13 @@ import {
 import WidgetRenderer from '@/components/dashboard/widget-renderer';
 import WidgetPicker from '@/components/dashboard/widget-picker';
 import { RedWireSpinner } from '@/components/ui/redwire-spinner';
+import { SIZE_SPANS, layoutToRGL, rglToLayout } from '@/lib/widget-layout';
 
 // Load the grid component client-only (ssr:false) to avoid CJS/ESM issues
 const DashboardGrid = dynamic(
     () => import('@/components/dashboard/dashboard-grid'),
     { ssr: false }
 );
-
-/* ── Size → default grid dimensions ────────────────────────────── */
-const SIZE_SPANS: Record<string, { col: number; row: number }> = {
-    small: { col: 1, row: 1 },
-    medium: { col: 2, row: 1 },
-    large: { col: 2, row: 2 },
-    wide: { col: 3, row: 1 },
-    full: { col: 6, row: 1 },
-};
 
 /* ── Quick Action ───────────────────────────────────────────────── */
 function QuickAction({ icon: Icon, label, onClick, color }: { icon: any; label: string; onClick: () => void; color: string }) {
@@ -63,36 +55,6 @@ function QuickAction({ icon: Icon, label, onClick, color }: { icon: any; label: 
             <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider group-hover:text-white transition-colors">{label}</span>
         </button>
     );
-}
-
-/* ── Layout <-> react-grid-layout conversion ───────────────────── */
-function layoutToRGL(items: LayoutItem[], widgets: DashboardWidgetDef[]): any[] {
-    const widgetMap = new Map(widgets.map(w => [w.id, w]));
-    return items.map((item, idx) => {
-        const widget = widgetMap.get(item.widget_id);
-        const defaults = SIZE_SPANS[widget?.size || 'medium'] || SIZE_SPANS.medium;
-        return {
-            i: item.widget_id,
-            x: item.x ?? (idx % 6),
-            y: item.y ?? Math.floor(idx / 3),
-            w: item.w || defaults.col,
-            h: item.h || defaults.row,
-            minW: 1,
-            maxW: 6,
-            minH: 1,
-            maxH: 4,
-        };
-    });
-}
-
-function rglToLayout(rglLayout: any[]): LayoutItem[] {
-    return rglLayout.map(l => ({
-        widget_id: l.i,
-        x: l.x,
-        y: l.y,
-        w: l.w,
-        h: l.h,
-    }));
 }
 
 /* ══════════════ Dashboard Page ══════════════ */

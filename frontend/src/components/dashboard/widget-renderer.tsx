@@ -6,7 +6,7 @@
  * Chart data hooks use stable memoized params to avoid infinite re-fetch.
  */
 
-import { useMemo } from 'react';
+import { useMemo, createContext, useContext } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { DashboardWidgetDef } from '@/lib/hooks/use-dashboard-widgets';
@@ -32,6 +32,13 @@ import {
 } from '@/lib/hooks/use-stats';
 import { useDashboardStats } from '@/lib/hooks/use-analytics';
 import { useCustomWidgetData } from '@/lib/hooks/use-dashboard-widgets';
+
+// Selects the backend scoping model for custom_query widget data. The
+// dashboard leaves the default ('dashboard' → assignment-scoped); a shared
+// stats page provides 'stats' so the widget honors the platform Stats Scope
+// Mode. Only custom_query widgets read this — built-in /stats/* data sources
+// already scope server-side.
+export const WidgetDataContext = createContext<'dashboard' | 'stats'>('dashboard');
 
 // ── Icons ──────────────────────────────────────────────────────────
 const ICON_MAP: Record<string, any> = {
@@ -600,9 +607,11 @@ function ListWidget({ widget, stats, isEditing, onRemove }: {
 // ══════════════════════════════════════════════════════════════════
 
 function useResolvedChartData(widget: DashboardWidgetDef): { data: any[] | null; series?: string[]; mode?: string } {
+    const dataContext = useContext(WidgetDataContext);
     const builtInData = useWidgetChartData(widget.data_source === 'custom_query' ? '__none__' : widget.data_source);
     const { data: customData } = useCustomWidgetData(
-        widget.data_source === 'custom_query' ? widget.id : undefined
+        widget.data_source === 'custom_query' ? widget.id : undefined,
+        dataContext,
     );
 
     if (widget.data_source === 'custom_query') {

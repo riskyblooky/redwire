@@ -37,10 +37,31 @@ from models.spray import SprayCampaign, SprayResult
 from models.associations import EngagementAssignment
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
+from auth.rbac import apply_stats_scope
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+_ADMIN_ROLES = (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
+
+# Group-by / series columns that name a specific entity (an engagement,
+# client, user, host, campaign, …). When a global stats page is viewed by
+# a non-admin in "global" STATS_SCOPE_MODE, apply_stats_scope() returns
+# platform-wide rows but flags strip_identifiers — mirroring the built-in
+# /stats/* endpoints, which null out names while keeping counts. For an
+# arbitrary group-by we do the analog: any dimension in this set has its
+# label masked to "Redacted N" (distinct originals keep distinct masks, so
+# the row count / per-entity aggregate is preserved but the identity is
+# not). Non-identity dimensions (severity, status, category, type, role,
+# is_*, …) are never masked.
+_STATS_IDENTIFIER_COLUMNS = frozenset({
+    "engagement_id", "client_id", "client_name",
+    "created_by", "updated_by", "user_id", "actor_id", "owner_user_id",
+    "parent_id", "finding_id", "testcase_id", "thread_id",
+    "campaign_id", "feed_id",
+    "target_hostname", "domain", "source",
+})
 
 
 # ── Schemas ──────────────────────────────────────────────────────────
@@ -1003,38 +1024,119 @@ def _format_time_series_result(rows, has_series: bool):
     }
 
 
+def _group_by_list(req: QueryPreviewRequest) -> list[str]:
+    return req.group_by if isinstance(req.group_by, list) else [req.group_by]
+
+
+def _apply_assignment_scope(query, req: QueryPreviewRequest, current_user: User):
+    """Restrict a query to the caller's assigned engagements. Used for the
+    dashboard runtime path (always) and the stats path in scoped mode."""
+    eng_sq = select(EngagementAssignment.engagement_id).where(
+        EngagementAssignment.user_id == current_user.id
+    )
+    model = _TABLE_MAP[req.table]
+    if req.table == "engagements":
+        return query.where(model.id.in_(eng_sq))
+    if hasattr(model, "engagement_id"):
+        return query.where(model.engagement_id.in_(eng_sq))
+    return query
+
+
+def _redact_identifiers(result: dict, group_by_cols: list[str], series_by: Optional[str]) -> dict:
+    """Mask identity-bearing dimension labels in-place, mirroring the
+    strip_identifiers behavior of the built-in /stats endpoints: counts
+    stay real, names disappear. Distinct originals map to distinct
+    "Redacted N" labels so row cardinality and per-entity values survive.
+    """
+    mode = result.get("mode")
+
+    if mode in ("standard",):
+        redact_idx = [i for i, c in enumerate(group_by_cols) if c in _STATS_IDENTIFIER_COLUMNS]
+        if not redact_idx:
+            return result
+        # One independent mask counter per redacted dimension.
+        maps: dict[int, dict[str, str]] = {i: {} for i in redact_idx}
+
+        def _mask(dim_i: int, original: str) -> str:
+            m = maps[dim_i]
+            if original not in m:
+                m[original] = f"Redacted {len(m) + 1}"
+            return m[original]
+
+        is_multi = len(group_by_cols) > 1
+        for entry in result.get("data", []):
+            if is_multi:
+                labels = entry.get("labels", [])
+                for i in redact_idx:
+                    if i < len(labels):
+                        labels[i] = _mask(i, labels[i])
+                entry["labels"] = labels
+                entry["dims"] = dict(zip(group_by_cols, labels))
+                entry["label"] = " / ".join(labels)
+            else:
+                entry["label"] = _mask(0, entry.get("label", "(none)"))
+        return result
+
+    if mode == "multi_series" and series_by in _STATS_IDENTIFIER_COLUMNS:
+        # Series names are the identity here — remap the series keys on
+        # every pivoted row and the series list.
+        series_map: dict[str, str] = {}
+        for s in result.get("series", []):
+            series_map[s] = f"Redacted {len(series_map) + 1}"
+        for entry in result.get("data", []):
+            for original, masked in series_map.items():
+                if original in entry:
+                    entry[masked] = entry.pop(original)
+        result["series"] = [series_map[s] for s in result.get("series", [])]
+
+    # time_series (no series) has only date+value — nothing to redact.
+    return result
+
+
 async def _run_single_query(
     req: QueryPreviewRequest,
     current_user: User,
     db: AsyncSession,
     *,
     scope_to_user: bool = False,
+    stats_scope: bool = False,
 ) -> dict:
     """Execute one QueryPreviewRequest and return its formatted result.
-    Shared by the single-query preview, the multi-query preview, and
-    the widget-data endpoint. When ``scope_to_user`` is True, non-admin
-    callers are constrained to their own engagement assignments.
+    Shared by the single-query preview, the multi-query preview, and the
+    widget-data endpoint.
+
+    Scoping:
+      - ``scope_to_user`` (dashboard runtime): non-admin callers are always
+        restricted to their own engagement assignments.
+      - ``stats_scope`` (global stats-page runtime): honor the platform
+        STATS_SCOPE_MODE toggle via apply_stats_scope — admins and
+        global-mode callers see platform-wide data (global mode additionally
+        masks identity dimensions), scoped-mode non-admins are assignment-
+        restricted. This is what makes a shared stats page match the
+        behavior of the built-in /stats/* pages.
     """
     _assert_query_access(req, current_user)
     query = _build_query(req)
-    if scope_to_user and current_user.role not in (
-        UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD,
-    ):
-        eng_sq = select(EngagementAssignment.engagement_id).where(
-            EngagementAssignment.user_id == current_user.id
+
+    strip_identifiers = False
+    if stats_scope:
+        is_admin_eff, _allowed, strip_identifiers = await apply_stats_scope(
+            None, db, current_user
         )
-        model = _TABLE_MAP[req.table]
-        if req.table == "engagements":
-            query = query.where(model.id.in_(eng_sq))
-        elif hasattr(model, "engagement_id"):
-            query = query.where(model.engagement_id.in_(eng_sq))
+        if not is_admin_eff:
+            query = _apply_assignment_scope(query, req, current_user)
+    elif scope_to_user and current_user.role not in _ADMIN_ROLES:
+        query = _apply_assignment_scope(query, req, current_user)
+
     rows = (await db.execute(query)).all()
     if req.time_bucket and req.date_column:
-        return _format_time_series_result(rows, has_series=bool(req.series_by))
-    return _format_standard_result(
-        rows,
-        req.group_by if isinstance(req.group_by, list) else [req.group_by],
-    )
+        result = _format_time_series_result(rows, has_series=bool(req.series_by))
+    else:
+        result = _format_standard_result(rows, _group_by_list(req))
+
+    if strip_identifiers:
+        result = _redact_identifiers(result, _group_by_list(req), req.series_by)
+    return result
 
 
 @router.post("/widgets/query-preview")
@@ -1072,10 +1174,19 @@ async def query_preview_multi(
 @router.get("/widgets/{widget_id}/data")
 async def get_widget_data(
     widget_id: str,
+    context: str = Query("dashboard"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get data for a custom-query widget.
+
+    ``context`` selects the scoping model:
+      - ``dashboard`` (default): non-admins are always restricted to their
+        assigned engagements — the personal-dashboard behavior.
+      - ``stats``: the widget is rendered on a shared, global stats page, so
+        honor the platform STATS_SCOPE_MODE toggle (global → platform-wide
+        with identities masked for non-admins; scoped → assignment-limited),
+        matching the built-in /stats pages.
 
     Widget shapes:
       - Single-query: ``config.query = {...}`` — returns one result payload.
@@ -1083,6 +1194,9 @@ async def get_widget_data(
         ``{results: [...]}`` in the same order for ratio / percentage /
         delta / overlay widget types.
     """
+    use_stats = context == "stats"
+    scope_kwargs = {"stats_scope": True} if use_stats else {"scope_to_user": True}
+
     result = await db.execute(select(DashboardWidget).where(DashboardWidget.id == widget_id))
     widget = result.scalar_one_or_none()
     if not widget:
@@ -1101,7 +1215,7 @@ async def get_widget_data(
         results = []
         for q_cfg in queries_config:
             sub_req = QueryPreviewRequest(**q_cfg)
-            results.append(await _run_single_query(sub_req, current_user, db, scope_to_user=True))
+            results.append(await _run_single_query(sub_req, current_user, db, **scope_kwargs))
         return {"results": results, "mode": "composite"}
 
     # Single-query path (legacy shape).
@@ -1109,7 +1223,7 @@ async def get_widget_data(
     if not query_config:
         return {"data": []}
     req = QueryPreviewRequest(**query_config)
-    return await _run_single_query(req, current_user, db, scope_to_user=True)
+    return await _run_single_query(req, current_user, db, **scope_kwargs)
 
 
 @router.get("/widgets/query-schema")
