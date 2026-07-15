@@ -76,6 +76,7 @@ from models.finding import Finding, Tag
 from models.evidence import Evidence
 from models.testcase import TestCase
 from models.cleanup_artifact import CleanupArtifact
+from models.custom_field_definition import CustomFieldDefinition
 from models.report_layout import ReportLayout, ReportSection, SectionType
 from models.report_theme import ReportTheme
 from models.marking_profile import MarkingProfile
@@ -214,6 +215,20 @@ async def _do_generate_report(
         finding_id_set = set(config.finding_ids)
         findings = [f for f in findings if str(f.id) in finding_id_set]
 
+    # 4b. Report-visible finding custom fields (show_in_report only). Passed
+    # into the generators so per-finding cards render them; DB-free generators
+    # get the definitions precomputed here, matching the theme/profile pattern.
+    finding_cf_result = await db.execute(
+        select(CustomFieldDefinition)
+        .where(
+            CustomFieldDefinition.entity_type == "finding",
+            CustomFieldDefinition.show_in_report == True,  # noqa: E712
+            CustomFieldDefinition.is_active == True,  # noqa: E712
+        )
+        .order_by(CustomFieldDefinition.position)
+    )
+    finding_custom_fields = list(finding_cf_result.scalars().all())
+
     # 5. Fetch Test Cases
     testcases_result = await db.execute(
         select(TestCase)
@@ -305,7 +320,7 @@ async def _do_generate_report(
         print(f"[reports] report.generated event emit error (non-fatal): {_e}")
 
     if config.report_format == ReportFormat.PDF:
-        generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile)
+        generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields)
         pdf_content = generator.generate()
         filename = f"Report_{safe_name}.pdf"
         return Response(
@@ -315,7 +330,7 @@ async def _do_generate_report(
         )
 
     elif config.report_format == ReportFormat.MARKDOWN:
-        generator = MarkdownReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme)
+        generator = MarkdownReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, finding_custom_fields=finding_custom_fields)
         md_content = generator.generate()
         filename = f"Report_{safe_name}.md"
         return Response(
@@ -325,7 +340,7 @@ async def _do_generate_report(
         )
 
     elif config.report_format == ReportFormat.HTML:
-        generator = HTMLReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile)
+        generator = HTMLReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields)
         html_content = generator.generate()
         filename = f"Report_{safe_name}.html"
         return Response(
@@ -366,6 +381,7 @@ async def _do_generate_report(
                     "severity": f.severity.value if f.severity else None,
                     "status": f.status.value if f.status else None,
                     "category": f.category,
+                    "custom_fields": f.custom_fields or {},
                     "description": f.description,
                     "impact": f.impact,
                     "technical_details": f.technical_details,

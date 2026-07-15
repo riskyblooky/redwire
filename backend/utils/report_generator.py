@@ -157,6 +157,30 @@ def _severity_rank(severity) -> int:
     return _SEVERITY_RANK.get(key, 0)
 
 
+def _format_report_cf_value(field_type, value) -> Optional[str]:
+    """Display string for a custom-field value in a report, or None if empty."""
+    if value is None or value == "" or value == []:
+        return None
+    if field_type == "boolean":
+        return "Yes" if value else "No"
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
+    return str(value)
+
+
+def _report_cf_rows(defs, custom_fields) -> list:
+    """(label, display_value) pairs for report-visible custom fields that have
+    a value on this record. ``defs`` is the precomputed show_in_report
+    definition list; ``custom_fields`` is the record's JSON dict (may be None)."""
+    cf = custom_fields or {}
+    rows = []
+    for d in (defs or []):
+        v = _format_report_cf_value(d.field_type, cf.get(d.field_key))
+        if v is not None:
+            rows.append((d.label, v))
+    return rows
+
+
 def _v(val) -> str:
     if val is None:
         return 'N/A'
@@ -700,6 +724,7 @@ class PDFReportGenerator:
         storage=None,
         markdown_image_map: Optional[dict] = None,
         marking_profile=None,
+        finding_custom_fields=None,
     ):
         self.engagement = engagement
         self.sections = sections
@@ -708,6 +733,8 @@ class PDFReportGenerator:
         self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
         self.storage = storage
+        # Report-visible finding custom-field definitions (show_in_report).
+        self.finding_custom_fields = finding_custom_fields or []
         # Portion marking — None when no profile is selected (marking disabled).
         self.marking = MarkingEngine(marking_profile, engagement) if marking_profile else None
         # Document banner level (high-water mark), computed in generate().
@@ -1591,6 +1618,10 @@ class PDFReportGenerator:
         _add_md_row('RECOMMENDATIONS', finding.mitigations)
         _add_md_row('REFERENCES', finding.references)
 
+        # Admin-defined custom fields flagged show_in_report.
+        for _cf_label, _cf_value in _report_cf_rows(self.finding_custom_fields, finding.custom_fields):
+            _add_row(_cf_label.upper(), _cf_value)
+
         if body_rows:
             body_t = Table(body_rows, colWidths=[1.3 * inch, 5.1 * inch])
             body_t.setStyle(TableStyle([
@@ -2121,6 +2152,7 @@ class MarkdownReportGenerator:
         testcases: List[TestCase],
         cleanup_artifacts: List[CleanupArtifact] = None,
         theme: Optional[ReportTheme] = None,
+        finding_custom_fields=None,
     ):
         self.engagement = engagement
         self.sections = sections
@@ -2128,6 +2160,7 @@ class MarkdownReportGenerator:
         self.testcases = testcases
         self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
+        self.finding_custom_fields = finding_custom_fields or []
 
     def generate(self) -> str:
         parts = []
@@ -2198,6 +2231,12 @@ class MarkdownReportGenerator:
 
             if finding.references:
                 md += f'#### References\n\n{_markdown_from_html(finding.references)}\n\n'
+
+            cf_rows = _report_cf_rows(self.finding_custom_fields, finding.custom_fields)
+            if cf_rows:
+                for _label, _value in cf_rows:
+                    md += f'- **{_label}:** {_value}\n'
+                md += '\n'
 
             md += '---\n\n'
 
@@ -2275,7 +2314,8 @@ class HTMLReportGenerator:
 
     def __init__(self, engagement, sections, findings, testcases,
                  cleanup_artifacts=None, theme=None, storage=None,
-                 markdown_image_map=None, marking_profile=None):
+                 markdown_image_map=None, marking_profile=None,
+                 finding_custom_fields=None):
         self.engagement = engagement
         self.sections = sections
         self.findings = sorted(findings, key=lambda x: _severity_rank(x.severity), reverse=True)
@@ -2283,6 +2323,7 @@ class HTMLReportGenerator:
         self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
         self.storage = storage
+        self.finding_custom_fields = finding_custom_fields or []
         self.markdown_image_map = markdown_image_map or {}
         self.marking = MarkingEngine(marking_profile, engagement) if marking_profile else None
         self._banner_level = self._compute_banner_level()
@@ -2514,6 +2555,9 @@ class HTMLReportGenerator:
                              ('Recommendations', f.mitigations), ('References', f.references)):
                 if val:
                     out.append(f'<div class="label">{lbl}</div>{self._md(val)}')
+            # Admin-defined custom fields flagged show_in_report.
+            for _cf_label, _cf_value in _report_cf_rows(self.finding_custom_fields, f.custom_fields):
+                out.append(f'<div class="label">{_escape_xml(_cf_label)}</div><div>{_escape_xml(_cf_value)}</div>')
             # Evidence images
             for ev in (f.evidence or []):
                 if not getattr(ev, 'include_in_report', False):
