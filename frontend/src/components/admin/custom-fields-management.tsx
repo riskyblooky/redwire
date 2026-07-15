@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import {
     Plus, Pencil, Trash2, Loader2, ChevronUp, ChevronDown, ListPlus,
-    Server, ClipboardCheck, Bug, Building2, EyeOff,
+    Server, ClipboardCheck, Bug, Building2, Briefcase, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
@@ -35,6 +35,7 @@ import {
 } from '@/lib/hooks/use-custom-fields';
 
 const ENTITIES: { key: CustomFieldEntity; label: string; icon: React.ElementType }[] = [
+    { key: 'engagement', label: 'Engagements', icon: Briefcase },
     { key: 'finding', label: 'Findings', icon: Bug },
     { key: 'asset', label: 'Assets', icon: Server },
     { key: 'testcase', label: 'Test Cases', icon: ClipboardCheck },

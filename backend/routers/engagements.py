@@ -33,6 +33,7 @@ from utils.uploads import (
     sanitize_original_filename,
 )
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict, manager
+from utils.custom_fields import validate_custom_fields
 from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
@@ -385,6 +386,7 @@ async def create_engagement(
         **data,
         created_by=current_user.id
     )
+    new_engagement.custom_fields = await validate_custom_fields("engagement", engagement_data.custom_fields, db)
     db.add(new_engagement)
     await db.flush() # Get ID
 
@@ -489,6 +491,11 @@ async def update_engagement(
     update_data = engagement_data.model_dump(exclude_unset=True)
     user_ids = update_data.pop("assigned_user_ids", None)
     assignments_data = update_data.pop("assignments", None)
+    # Validate/apply custom fields separately (full-replace on save).
+    if "custom_fields" in update_data:
+        engagement.custom_fields = await validate_custom_fields(
+            "engagement", update_data.pop("custom_fields"), db
+        )
     # tag_ids semantics: None = don't touch, [] = clear all, [...] = replace.
     # Sentinel object distinguishes "field absent" from "explicit empty list".
     _TAG_NOT_SET = object()

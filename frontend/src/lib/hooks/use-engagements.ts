@@ -33,6 +33,7 @@ export interface EngagementPhase {
 }
 
 export interface Engagement {
+    custom_fields?: Record<string, unknown>;
     id: string;
     name: string;
     client_name: string;

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Enum as SQLEnum, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Enum as SQLEnum, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
 from models.associations import EngagementAssignment
@@ -39,6 +39,9 @@ class Engagement(Base, AuditMixin):
     default_classification_level = Column(String(20), nullable=True)
     default_classification_suffix = Column(String(120), nullable=True)
     ceiling_classification_level = Column(String(20), nullable=True)
+
+    # Admin-defined custom field values, keyed by CustomFieldDefinition.field_key.
+    custom_fields = Column(JSON, nullable=True, default=dict)
 
     # Relationships
     marking_profile = relationship("MarkingProfile")

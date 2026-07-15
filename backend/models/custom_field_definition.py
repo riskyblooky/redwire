@@ -21,6 +21,7 @@ class CustomFieldEntity(str, enum.Enum):
     TESTCASE = "testcase"
     FINDING = "finding"
     CLIENT = "client"
+    ENGAGEMENT = "engagement"
 
 
 class CustomFieldType(str, enum.Enum):

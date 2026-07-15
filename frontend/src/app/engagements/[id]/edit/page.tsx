@@ -38,6 +38,7 @@ import { useClients } from '@/lib/hooks/use-clients';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { TeamManagementDialog } from '@/components/engagements/team-management-dialog';
 import { TagPickerField } from '@/components/engagements/tag-picker-field';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -140,6 +141,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         marking_profile_id: '', default_classification_level: '',
         default_classification_suffix: '', ceiling_classification_level: '',
         tag_ids: [] as string[],
+        custom_fields: {} as Record<string, unknown>,
     });
     const [detailsDirty, setDetailsDirty] = useState(false);
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
@@ -192,6 +194,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 default_classification_suffix: engagement.default_classification_suffix || '',
                 ceiling_classification_level:  engagement.ceiling_classification_level || '',
                 tag_ids:                       (engagement.tags || []).map(t => t.id),
+                custom_fields:                 (engagement.custom_fields as Record<string, unknown>) || {},
             });
             setDetailsDirty(false);
         }
@@ -485,6 +488,12 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                             setFormData(prev => ({ ...prev, tag_ids: ids }));
                                             setDetailsDirty(true);
                                         }}
+                                    />
+
+                                    <CustomFieldsForm
+                                        entity="engagement"
+                                        value={formData.custom_fields}
+                                        onChange={(cf) => { setFormData(prev => ({ ...prev, custom_fields: cf })); setDetailsDirty(true); }}
                                     />
 
                                     <SectionDivider label="Classification Marking" />

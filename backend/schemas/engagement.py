@@ -52,6 +52,7 @@ class EngagementBase(BaseModel):
     default_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     default_classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
     ceiling_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
+    custom_fields: Optional[dict] = None
 
 class EngagementCreate(EngagementBase):
     # Override the Base's optional start_date to hard-require it at
@@ -86,6 +87,7 @@ class EngagementUpdate(BaseModel):
     assignments: Optional[List[EngagementAssignmentCreate]] = None
     # None = don't touch, [] = clear all — same semantics as findings.
     tag_ids: Optional[List[str]] = None
+    custom_fields: Optional[dict] = None
 
 class EngagementResponse(EngagementBase):
     id: str

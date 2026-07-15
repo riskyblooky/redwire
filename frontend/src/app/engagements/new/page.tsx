@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -71,6 +72,7 @@ const initialForm = {
     objectives: '',
     assigned_user_ids: [] as string[],
     tag_ids: [] as string[],
+    custom_fields: {} as Record<string, unknown>,
 };
 
 export default function NewEngagementPage() {
@@ -318,6 +320,12 @@ export default function NewEngagementPage() {
                                     setFormData(prev => ({ ...prev, tag_ids: ids }));
                                     setDetailsDirty(true);
                                 }}
+                            />
+
+                            <CustomFieldsForm
+                                entity="engagement"
+                                value={formData.custom_fields}
+                                onChange={(cf) => { setFormData(prev => ({ ...prev, custom_fields: cf })); setDetailsDirty(true); }}
                             />
                         </CardContent>
                     </Card>

@@ -29,6 +29,7 @@ import { useFindingsTimeline } from '@/lib/hooks/use-stats';
 import { useTestCases } from '@/lib/hooks/use-testcases';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
+import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { useDeleteEngagement } from '@/lib/hooks/use-engagements';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -417,6 +418,9 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                             </CardContent>
                         </Card>
                     </div>
+
+                    {/* Custom Fields */}
+                    <CustomFieldsDisplay entity="engagement" value={engagement.custom_fields} />
 
                     {/* Tags */}
                     {engagement.tags && engagement.tags.length > 0 && (

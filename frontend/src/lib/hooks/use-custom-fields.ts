@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
-export type CustomFieldEntity = 'asset' | 'testcase' | 'finding' | 'client';
+export type CustomFieldEntity = 'asset' | 'testcase' | 'finding' | 'client' | 'engagement';
 
 export type CustomFieldType =
     | 'text' | 'textarea' | 'number' | 'date' | 'boolean'
