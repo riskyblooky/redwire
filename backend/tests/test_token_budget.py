@@ -185,8 +185,10 @@ async def test_compact_above_threshold_fires_and_replaces_prefix(monkeypatch):
         msgs.append({"role": "user", "content": "u" * 100})
         msgs.append({"role": "assistant", "content": "a" * 100})
 
-    # Stub the summarizer to avoid a real HTTP call.
-    async def fake_summarize(messages, api_url, api_key, model):
+    # Stub the summarizer to avoid a real HTTP call. Accept **kwargs so the
+    # fake keeps matching compact_if_needed's evolving call signature
+    # (tls_verify / extra_headers / extra_query / request_timeout, etc.).
+    async def fake_summarize(messages, api_url, api_key, model, **kwargs):
         return "[Earlier: stub summary]"
 
     monkeypatch.setattr(token_budget, "_summarize_via_llm", fake_summarize)
