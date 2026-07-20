@@ -29,6 +29,7 @@ import { useFindingsTimeline } from '@/lib/hooks/use-stats';
 import { useTestCases } from '@/lib/hooks/use-testcases';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
+import { ClientEditDialog } from '@/components/clients/client-edit-dialog';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { useDeleteEngagement } from '@/lib/hooks/use-engagements';
@@ -128,6 +129,8 @@ const PHASE_LABELS: Record<string, string> = {
 
 export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onDelete, canEditEngagement, canDeleteEngagement, onViewClientDetail }: OverviewTabProps) {
     const router = useRouter();
+
+    const [clientEditOpen, setClientEditOpen] = useState(false);
 
     // Data hooks
     const findingsParams = useMemo(() => ({ engagement_id: engagementId }), [engagementId]);
@@ -325,9 +328,16 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                                 <CardTitle className="text-sm font-medium text-slate-400 flex items-center justify-between">
                                     <div className="flex items-center gap-2"><Building2 className="h-4 w-4" />Client Information</div>
                                     {(engagement as any).client && (
-                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-primary" onClick={() => onViewClientDetail?.()}>
-                                            <Eye className="h-3.5 w-3.5" />
-                                        </Button>
+                                        <div className="flex items-center gap-1">
+                                            {canEditEngagement && (
+                                                <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-white" onClick={() => setClientEditOpen(true)} title="Edit client">
+                                                    <Edit className="h-3.5 w-3.5" />
+                                                </Button>
+                                            )}
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-primary" onClick={() => onViewClientDetail?.()} title="View client">
+                                                <Eye className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </div>
                                     )}
                                 </CardTitle>
                             </CardHeader>
@@ -519,6 +529,11 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                 </div>
             </div>
         </div>
+        <ClientEditDialog
+            open={clientEditOpen}
+            onOpenChange={setClientEditOpen}
+            clientId={(engagement as any).client?.id ?? null}
+        />
         </>
     );
 }
