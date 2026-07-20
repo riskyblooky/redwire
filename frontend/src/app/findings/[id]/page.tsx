@@ -296,8 +296,9 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
         }
         try {
             await updateFinding.mutateAsync({ id: id, status: newStatus });
+            toast.success(`Status updated to ${newStatus.replace('_', ' ')}`);
         } catch (err) {
-            console.error('Failed to update status:', err);
+            toast.error(getErrorMessage(err, 'Failed to update finding status'));
         }
     };
 
