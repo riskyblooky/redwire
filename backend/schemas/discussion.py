@@ -66,7 +66,10 @@ class ActivityLogResponse(BaseModel):
     engagement_id: str
     user_id: str
     action: str
-    resource_type: ResourceType
+    # Stored as a free String on the model (many loggers use types outside the
+    # ResourceType enum: spray, user, stats_page, import, …). Typing this as the
+    # enum made a single out-of-enum row 500 the entire log fetch.
+    resource_type: str
     resource_id: str
     resource_name: Optional[str]
     details: Optional[str]
