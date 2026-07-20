@@ -57,16 +57,21 @@ async def create_calendar_event(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new manual calendar event."""
-    # Check global calendar_create permission
+    # An Out-of-Office block is self-service availability — it is always
+    # created for the caller themselves (created_by below) and is
+    # creator-only to edit/delete — so any authenticated user may create
+    # one. Regular (shared) events still require the global calendar_create
+    # permission.
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
+    is_ooo = (event_data.event_type or "EVENT").upper() == "OOO"
+    if not is_admin and not is_ooo:
         has_perm = await has_global_permission(current_user, Permission.CALENDAR_CREATE, db)
         if not has_perm:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions. You need the 'calendar_create' permission to create calendar events."
             )
-    
+
     new_event = CalendarEvent(
         **event_data.model_dump(),
         created_by=current_user.id
