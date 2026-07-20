@@ -49,6 +49,8 @@ from models.finding import Finding
 from models.testcase import TestCase
 from models.user import User, UserRole
 from models.vault import VaultItem
+from models.note import Note
+from models.discussion import Comment, Thread
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -297,6 +299,85 @@ def build_finding_clause(node: Any):
         inner = build_finding_clause(node.child)
         return not_(inner) if inner is not None else None
     return None
+
+
+def build_note_clause(node: Any):
+    """Walk AST and produce a SQLAlchemy boolean expression for Note."""
+    if node is None:
+        return None
+    if isinstance(node, TextNode):
+        if not node.term:
+            return None
+        return or_(
+            Note.title.ilike(f"%{node.term}%"),
+            Note.content.ilike(f"%{node.term}%"),
+        )
+    if isinstance(node, FieldNode):
+        if node.field == "engagement":
+            return Engagement.name.ilike(f"%{node.value}%")
+        if node.field == "client":
+            return Engagement.client_name.ilike(f"%{node.value}%")
+        return or_(
+            Note.title.ilike(f"%{node.value}%"),
+            Note.content.ilike(f"%{node.value}%"),
+        )
+    if isinstance(node, CategoryNode):
+        if node.category == "note":
+            return build_note_clause(TextNode(term=node.term))
+        return None
+    if isinstance(node, AndNode):
+        clauses = [c for c in (build_note_clause(ch) for ch in node.children) if c is not None]
+        return and_(*clauses) if clauses else None
+    if isinstance(node, OrNode):
+        clauses = [c for c in (build_note_clause(ch) for ch in node.children) if c is not None]
+        return or_(*clauses) if clauses else None
+    if isinstance(node, NotNode):
+        inner = build_note_clause(node.child)
+        return not_(inner) if inner is not None else None
+    return None
+
+
+def build_comment_clause(node: Any):
+    """Walk AST and produce a SQLAlchemy boolean expression for Comment."""
+    if node is None:
+        return None
+    if isinstance(node, TextNode):
+        if not node.term:
+            return None
+        return Comment.content.ilike(f"%{node.term}%")
+    if isinstance(node, FieldNode):
+        if node.field == "engagement":
+            return Engagement.name.ilike(f"%{node.value}%")
+        if node.field == "client":
+            return Engagement.client_name.ilike(f"%{node.value}%")
+        return Comment.content.ilike(f"%{node.value}%")
+    if isinstance(node, CategoryNode):
+        if node.category == "comment":
+            return build_comment_clause(TextNode(term=node.term))
+        return None
+    if isinstance(node, AndNode):
+        clauses = [c for c in (build_comment_clause(ch) for ch in node.children) if c is not None]
+        return and_(*clauses) if clauses else None
+    if isinstance(node, OrNode):
+        clauses = [c for c in (build_comment_clause(ch) for ch in node.children) if c is not None]
+        return or_(*clauses) if clauses else None
+    if isinstance(node, NotNode):
+        inner = build_comment_clause(node.child)
+        return not_(inner) if inner is not None else None
+    return None
+
+
+# Map a thread's parent entity to its page route for comment deep-links.
+_COMMENT_ROUTE = {"finding": "/findings", "testcase": "/testcases", "asset": "/assets"}
+
+
+def _comment_url(resource_type, resource_id, engagement_id, comment_id):
+    rt = (resource_type or "").lower()
+    if rt in _COMMENT_ROUTE and resource_id:
+        base = f"{_COMMENT_ROUTE[rt]}/{resource_id}?engagementId={engagement_id}"
+    else:
+        base = f"/engagements/{resource_id or engagement_id}?tab=overview"
+    return f"{base}&commentId={comment_id}"
 
 
 def build_asset_clause(node: Any):
@@ -818,6 +899,76 @@ async def global_search(
             items.sort(key=lambda x: x["match_count"], reverse=True)
         if items:
             results.append({"category": "vault", "items": items})
+
+    # ── Notes ────────────────────────────────────────────────────────────
+    if _should_search_category(ast, "note"):
+        clause = build_note_clause(ast) if ast else None
+        note_q = select(
+            Note.id, Note.title, Note.content, Note.engagement_id,
+            Engagement.name.label("engagement_name"), Engagement.client_name,
+        ).join(Engagement, Note.engagement_id == Engagement.id)
+        if clause is not None:
+            note_q = note_q.where(clause)
+        note_q = scope_to_engagements(note_q, Note.engagement_id)
+        note_q = note_q.order_by(Note.updated_at.desc()).limit(limit)
+        rows = (await db.execute(note_q)).all()
+        items = []
+        for row in rows:
+            fields = {
+                "Title": row.title or "",
+                "Content": _snippet(row.content),
+                "Engagement": row.engagement_name or "",
+            }
+            items.append({
+                "id": row.id,
+                "title": row.title or "Untitled note",
+                "subtitle": row.engagement_name or "",
+                "description": _snippet(row.content),
+                "fields": fields,
+                "engagement_name": row.engagement_name,
+                "url": f"/engagements/{row.engagement_id}?tab=notes&noteId={row.id}",
+                "match_count": _count_matches(fields, text_terms),
+            })
+        if sort == "relevance":
+            items.sort(key=lambda x: x["match_count"], reverse=True)
+        if items:
+            results.append({"category": "notes", "items": items})
+
+    # ── Comments ─────────────────────────────────────────────────────────
+    if _should_search_category(ast, "comment"):
+        clause = build_comment_clause(ast) if ast else None
+        comment_q = select(
+            Comment.id, Comment.content, Comment.thread_id,
+            Thread.resource_type, Thread.resource_id, Thread.title.label("thread_title"),
+            Thread.engagement_id,
+            Engagement.name.label("engagement_name"), Engagement.client_name,
+        ).join(Thread, Comment.thread_id == Thread.id).join(Engagement, Thread.engagement_id == Engagement.id)
+        if clause is not None:
+            comment_q = comment_q.where(clause)
+        comment_q = scope_to_engagements(comment_q, Thread.engagement_id)
+        comment_q = comment_q.order_by(Comment.created_at.desc()).limit(limit)
+        rows = (await db.execute(comment_q)).all()
+        items = []
+        for row in rows:
+            fields = {
+                "Comment": _snippet(row.content),
+                "Thread": row.thread_title or "",
+                "Engagement": row.engagement_name or "",
+            }
+            items.append({
+                "id": row.id,
+                "title": _snippet(row.content, 80) or "(empty comment)",
+                "subtitle": f"in “{row.thread_title}”" if row.thread_title else "",
+                "description": _snippet(row.content),
+                "fields": fields,
+                "engagement_name": row.engagement_name,
+                "url": _comment_url(row.resource_type, row.resource_id, row.engagement_id, row.id),
+                "match_count": _count_matches(fields, text_terms),
+            })
+        if sort == "relevance":
+            items.sort(key=lambda x: x["match_count"], reverse=True)
+        if items:
+            results.append({"category": "comments", "items": items})
 
     return {
         "query": q,

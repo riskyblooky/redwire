@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import {
     Search, Loader2, Briefcase, AlertTriangle, Monitor, ClipboardCheck,
-    Building2, Lock, ArrowRight, FileQuestion, ExternalLink, ChevronDown,
+    Building2, Lock, ArrowRight, FileQuestion, ExternalLink, ChevronDown, StickyNote, MessageSquare,
     BookOpen, Clock, X, Zap, SortAsc, SortDesc, Sparkles, HelpCircle, ChevronRight, Tag,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -40,6 +40,8 @@ const categoryMeta: Record<string, { label: string; singularLabel: string; icon:
     testcases:   { label: 'Test Cases',  singularLabel: 'Test Case',  icon: ClipboardCheck, color: 'text-amber-400', borderColor: 'border-amber-500/20' },
     clients:     { label: 'Clients',     singularLabel: 'Client',     icon: Building2,     color: 'text-emerald-400', borderColor: 'border-emerald-500/20' },
     vault:       { label: 'Vault Items', singularLabel: 'Vault Item', icon: Lock,          color: 'text-orange-400', borderColor: 'border-orange-500/20' },
+    notes:       { label: 'Notes',       singularLabel: 'Note',       icon: StickyNote,    color: 'text-teal-400',   borderColor: 'border-teal-500/20' },
+    comments:    { label: 'Comments',    singularLabel: 'Comment',    icon: MessageSquare, color: 'text-indigo-400', borderColor: 'border-indigo-500/20' },
 };
 
 // ── query tokenizer for live highlighting ────────────────────────────────
