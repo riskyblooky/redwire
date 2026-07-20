@@ -59,7 +59,7 @@ const PHASE_COLORS: Record<string, { bg: string; text: string; label: string }> 
 };
 
 const STATUS_PHASE_INDEX: Record<string, number> = {
-    PROPOSED: -1, SCOPING: 0, PLANNING: 1, IN_PROGRESS: 2, REPORTING: 3, COMPLETED: 4, ON_HOLD: -1,
+    PROPOSED: -1, PLANNING: 0, SCOPING: 1, IN_PROGRESS: 2, REPORTING: 3, COMPLETED: 4, ON_HOLD: -1,
 };
 
 function getPhaseHealth(phase: EngagementPhase, engagementStatus: string): 'on-time' | 'late' | 'completed' | 'future' {
@@ -75,8 +75,8 @@ function getPhaseHealth(phase: EngagementPhase, engagementStatus: string): 'on-t
 }
 
 const ENGAGEMENT_STATUSES = [
-    { value: 'SCOPING',     label: 'Scoping'     },
     { value: 'PLANNING',    label: 'Planning'    },
+    { value: 'SCOPING',     label: 'Scoping'     },
     { value: 'IN_PROGRESS', label: 'In Progress' },
     { value: 'REPORTING',   label: 'Reporting'   },
     { value: 'COMPLETED',   label: 'Completed'   },

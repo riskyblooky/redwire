@@ -105,8 +105,8 @@ const PHASE_COLORS: Record<string, { bg: string; label: string; border: string }
 // Status-to-phase index mapping for on-time/late calculation
 const STATUS_PHASE_INDEX: Record<string, number> = {
     PROPOSED: -1,
-    SCOPING: 0,
-    PLANNING: 1,
+    PLANNING: 0,
+    SCOPING: 1,
     IN_PROGRESS: 2,
     REPORTING: 3,
     COMPLETED: 4,

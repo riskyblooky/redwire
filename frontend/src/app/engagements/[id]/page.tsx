@@ -202,8 +202,8 @@ const statusColors: Record<string, string> = {
 
 
 const engagementStatuses = [
-    { value: 'SCOPING', label: 'Scoping' },
     { value: 'PLANNING', label: 'Planning' },
+    { value: 'SCOPING', label: 'Scoping' },
     { value: 'IN_PROGRESS', label: 'In Progress' },
     { value: 'REPORTING', label: 'Reporting' },
     { value: 'COMPLETED', label: 'Completed' },

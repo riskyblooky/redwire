@@ -169,7 +169,17 @@ async def get_engagements(
     if not include_proposed:
         base_filters.append(Engagement.status != EngagementStatus.PROPOSED)
 
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    # "See all engagements" is granted by the admin roles OR the
+    # VIEW_ALL_ENGAGEMENTS global permission (via a group). The list endpoint
+    # previously only checked the role trio, so a user granted the permission
+    # could open a single engagement by URL (check_engagement_permission
+    # honors it) but saw an empty list here — the regression this fixes.
+    from auth.permissions import has_global_permission
+    can_view_all = (
+        current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+        or await has_global_permission(current_user, Permission.VIEW_ALL_ENGAGEMENTS, db)
+    )
+    if not can_view_all:
         from routers.clients import get_accessible_client_ids
         accessible_client_ids = await get_accessible_client_ids(current_user.id, db)
         conditions = [Engagement.assigned_users.any(User.id == current_user.id)]
@@ -377,6 +387,16 @@ async def create_engagement(
             )
         data["client_name"] = client.name
     
+    # Engagement names must be globally unique (case-insensitive). Many
+    # engagement-selector dropdowns key on name, so a duplicate makes picking
+    # one select the wrong row — or both.
+    _name = (data.get("name") or "").strip()
+    if (await db.execute(
+        select(Engagement.id).where(func.lower(Engagement.name) == _name.lower()).limit(1)
+    )).scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="An engagement with this name already exists.")
+
     # Strip timezone info from dates (asyncpg requires naive datetimes for DateTime columns)
     for date_field in ('start_date', 'end_date'):
         if data.get(date_field) and hasattr(data[date_field], 'tzinfo') and data[date_field].tzinfo:
@@ -489,6 +509,19 @@ async def update_engagement(
         )
 
     update_data = engagement_data.model_dump(exclude_unset=True)
+
+    # Enforce the same global name uniqueness on rename (excluding self).
+    if "name" in update_data:
+        _new_name = (update_data["name"] or "").strip()
+        if (await db.execute(
+            select(Engagement.id).where(
+                func.lower(Engagement.name) == _new_name.lower(),
+                Engagement.id != engagement_id,
+            ).limit(1)
+        )).scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail="An engagement with this name already exists.")
+
     user_ids = update_data.pop("assigned_user_ids", None)
     assignments_data = update_data.pop("assignments", None)
     # Validate/apply custom fields separately (full-replace on save).
