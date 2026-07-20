@@ -115,6 +115,7 @@ async def get_engagements(
     skip: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=MAX_LIST_LIMIT),
     include_proposed: bool = Query(False, description="Include PROPOSED engagements in results"),
+    mine: bool = Query(False, description="Restrict to the caller's assigned engagements even if they can otherwise see all"),
     q: Optional[str] = Query(None, max_length=200,
                              description="Case-insensitive substring search over name, description, client_name"),
     engagement_status: Optional[str] = Query(None, alias="status",
@@ -175,7 +176,9 @@ async def get_engagements(
     # could open a single engagement by URL (check_engagement_permission
     # honors it) but saw an empty list here — the regression this fixes.
     from auth.permissions import has_global_permission
-    can_view_all = (
+    # `mine=true` lets an all-access user (admin / VIEW_ALL) narrow the list to
+    # just their own assignments — so it forces the assignment filter on.
+    can_view_all = (not mine) and (
         current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
         or await has_global_permission(current_user, Permission.VIEW_ALL_ENGAGEMENTS, db)
     )

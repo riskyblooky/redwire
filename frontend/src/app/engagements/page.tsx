@@ -288,12 +288,16 @@ export default function EngagementsPage() {
     // Any filter/sort/search change resets to page 1 so the user isn't
     // stranded on an empty tail page (e.g. was on page 8/10, applies a
     // filter that leaves 2 pages of results).
+    // All-access users (admins / team leads) can narrow the list to just the
+    // engagements they're assigned to.
+    const [showMine, setShowMine] = useState<boolean>(false);
     useEffect(() => {
         setPage(1);
-    }, [showProposed, pageSize, searchTerm, statusFilter, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
+    }, [showProposed, showMine, pageSize, searchTerm, statusFilter, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
 
     const engagementsQuery = useEngagementsPage({
         includeProposed: canSeeProposed && showProposed,
+        mine: canSeeProposed && showMine,
         page,
         pageSize,
         q: searchTerm,
@@ -718,6 +722,23 @@ export default function EngagementsPage() {
                                         className="h-9 px-2 rounded-md bg-slate-800/50 border border-slate-700 text-slate-300 text-sm [color-scheme:dark] focus:outline-none focus:ring-1 focus:ring-primary"
                                     />
                                 </div>
+                                {/* My Engagements toggle (all-access users only) */}
+                                {canSeeProposed && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowMine(v => !v)}
+                                        className={cn(
+                                            'h-9 px-3 rounded-md border text-xs font-medium flex items-center gap-1.5 transition-colors',
+                                            showMine
+                                                ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/20'
+                                                : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white',
+                                        )}
+                                        title="Show only engagements I'm assigned to"
+                                    >
+                                        <span className={cn('h-1.5 w-1.5 rounded-full', showMine ? 'bg-indigo-400' : 'bg-slate-500')} />
+                                        My Engagements
+                                    </button>
+                                )}
                                 {/* Show Proposed toggle (admins / team leads only) */}
                                 {canSeeProposed && (
                                     <button

@@ -114,6 +114,7 @@ export interface EngagementsPage {
 
 export interface EngagementsPageQuery {
     includeProposed?: boolean;
+    mine?: boolean;     // restrict to the caller's assignments (for all-access users)
     page?: number;      // 1-indexed
     pageSize?: number;
     q?: string;
@@ -138,6 +139,7 @@ export interface EngagementsPageQuery {
  */
 export function useEngagementsPage(options?: EngagementsPageQuery) {
     const includeProposed = !!options?.includeProposed;
+    const mine = !!options?.mine;
     const page = Math.max(1, options?.page ?? 1);
     const pageSize = options?.pageSize ?? 25;
     const skip = (page - 1) * pageSize;
@@ -151,7 +153,7 @@ export function useEngagementsPage(options?: EngagementsPageQuery) {
 
     return useQuery<EngagementsPage>({
         queryKey: ['engagements', 'page', {
-            includeProposed, page, pageSize, q, statusFilter, typeFilter,
+            includeProposed, mine, page, pageSize, q, statusFilter, typeFilter,
             dateFrom, dateTo, sortBy, sortOrder,
         }],
         queryFn: async () => {
@@ -159,6 +161,7 @@ export function useEngagementsPage(options?: EngagementsPageQuery) {
             params.set('skip', String(skip));
             params.set('limit', String(pageSize));
             if (includeProposed) params.set('include_proposed', 'true');
+            if (mine) params.set('mine', 'true');
             if (q) params.set('q', q);
             if (statusFilter) params.set('status', statusFilter);
             if (typeFilter) params.set('type', typeFilter);
