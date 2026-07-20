@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { Comment } from '@/lib/hooks/use-discussions';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, Trash2 } from 'lucide-react';
@@ -18,12 +19,27 @@ interface CommentItemProps {
     currentUserId?: string;
     isAdmin?: boolean;
     users?: any[];
+    /** When true (deep-linked via ?commentId=), scroll to and flash this comment. */
+    highlight?: boolean;
 }
 
-export default function CommentItem({ comment, engagementId, currentUserId, isAdmin, users }: CommentItemProps) {
+export default function CommentItem({ comment, engagementId, currentUserId, isAdmin, users, highlight }: CommentItemProps) {
     const resolveComment = useResolveComment();
     const deleteComment = useDeleteComment();
     const { confirm, ConfirmDialog } = useConfirmDialog();
+
+    const rootRef = useRef<HTMLDivElement>(null);
+    const [flash, setFlash] = useState(false);
+    useEffect(() => {
+        if (!highlight) return;
+        // Let the thread finish expanding, then scroll into view and flash.
+        const t = setTimeout(() => {
+            rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setFlash(true);
+        }, 150);
+        const off = setTimeout(() => setFlash(false), 3200);
+        return () => { clearTimeout(t); clearTimeout(off); };
+    }, [highlight]);
 
     const handleResolve = async () => {
         if (comment.is_resolvable && !comment.is_resolved) {
@@ -57,8 +73,8 @@ export default function CommentItem({ comment, engagementId, currentUserId, isAd
 
     return (
         <>
-            <div className="group relative">
-                <div className="flex gap-3 p-3 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 transition-colors">
+            <div ref={rootRef} id={`comment-${comment.id}`} className="group relative scroll-mt-24">
+                <div className={`flex gap-3 p-3 rounded-lg transition-colors ${flash ? 'bg-indigo-500/15 ring-2 ring-indigo-500/60' : 'bg-slate-800/30 hover:bg-slate-800/50'}`}>
                     {/* Avatar */}
                     <UserAvatar
                         user={user}

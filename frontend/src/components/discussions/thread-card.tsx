@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Thread } from '@/lib/hooks/use-discussions';
 import { useComments, useUpdateThread, useDeleteThread } from '@/lib/hooks/use-discussions';
 import { useCanDelete } from '@/lib/hooks/use-permissions';
@@ -16,11 +16,20 @@ interface ThreadCardProps {
     currentUserId?: string;
     isAdmin?: boolean;
     users?: any[];
+    /** Deep-link target comment id (?commentId=). If it lives in this thread,
+     *  auto-expand and let CommentItem scroll/flash it. */
+    targetCommentId?: string | null;
 }
 
-export default function ThreadCard({ thread, currentUserId, isAdmin, users }: ThreadCardProps) {
+export default function ThreadCard({ thread, currentUserId, isAdmin, users, targetCommentId }: ThreadCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const { data: comments = [], isLoading } = useComments(thread.id);
+
+    // Auto-expand once when the deep-linked comment is in this thread.
+    const containsTarget = !!targetCommentId && comments.some((c: any) => c.id === targetCommentId);
+    useEffect(() => {
+        if (containsTarget) setIsExpanded(true);
+    }, [containsTarget]);
     const updateThread = useUpdateThread();
     const deleteThread = useDeleteThread();
     const canDelete = useCanDelete(thread.engagement_id, 'discussion', thread.created_by);
@@ -139,6 +148,7 @@ export default function ThreadCard({ thread, currentUserId, isAdmin, users }: Th
                                             currentUserId={currentUserId}
                                             isAdmin={isAdmin}
                                             users={users}
+                                            highlight={comment.id === targetCommentId}
                                         />
                                     ))}
                                 </div>

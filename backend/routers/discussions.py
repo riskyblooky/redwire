@@ -418,6 +418,27 @@ async def get_comments(
     
     return response_comments
 
+def _comment_deep_link(thread, comment_id: str) -> str:
+    """Build a URL that opens the thread's parent entity and jumps to the
+    comment. The frontend reads ?commentId= to expand the thread, scroll to
+    the comment, and highlight it."""
+    rt = (thread.resource_type or "").lower()
+    rid = thread.resource_id
+    eid = thread.engagement_id
+    if rt == "finding":
+        base = f"/findings/{rid}?engagementId={eid}"
+    elif rt == "testcase":
+        base = f"/testcases/{rid}?engagementId={eid}"
+    elif rt == "asset":
+        base = f"/assets/{rid}?engagementId={eid}"
+    elif rt == "engagement":
+        base = f"/engagements/{rid}?tab=overview"
+    else:
+        base = f"/engagements/{eid}?tab=overview"
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}commentId={comment_id}"
+
+
 @router.post("/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
 async def create_comment(
     comment_data: CommentCreate,
@@ -489,7 +510,7 @@ async def create_comment(
             actor_id=current_user.id,
             title=f"You were mentioned in a discussion",
             message=f"{current_user.full_name or current_user.username} mentioned you in thread '{thread.title}'",
-            link=f"/engagements/{thread.engagement_id}?tab=overview",
+            link=_comment_deep_link(thread, new_comment.id),
             engagement_id=thread.engagement_id,
         )
         await db.commit()

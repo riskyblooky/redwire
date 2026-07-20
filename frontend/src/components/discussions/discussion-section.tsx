@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useThreads, ResourceType } from '@/lib/hooks/use-discussions';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
@@ -56,15 +57,26 @@ export default function DiscussionSection({
         },
     });
 
-    // Auto-collapse if there are no threads after initial load
+    // Deep-link target comment (?commentId=) — from a mention notification or
+    // a comment link. Keep the section open so the thread can auto-expand.
+    const searchParams = useSearchParams();
+    const targetCommentId = searchParams?.get('commentId') || null;
+
+    // Auto-collapse if there are no threads after initial load (unless we're
+    // deep-linking to a specific comment, in which case stay open).
     useEffect(() => {
         if (!isLoading && !hasInitialized.current) {
             hasInitialized.current = true;
-            if (threads.length === 0) {
+            if (threads.length === 0 && !targetCommentId) {
                 setIsCollapsed(true);
             }
         }
-    }, [isLoading, threads.length]);
+    }, [isLoading, threads.length, targetCommentId]);
+
+    // If a deep-link arrives after mount, make sure the section is expanded.
+    useEffect(() => {
+        if (targetCommentId) setIsCollapsed(false);
+    }, [targetCommentId]);
 
     const totalComments = threads.reduce((sum, thread) => sum + (thread.comment_count || 0), 0);
 
@@ -134,6 +146,7 @@ export default function DiscussionSection({
                                     currentUserId={currentUserId}
                                     isAdmin={isAdmin}
                                     users={users}
+                                    targetCommentId={targetCommentId}
                                 />
                             ))}
                         </div>

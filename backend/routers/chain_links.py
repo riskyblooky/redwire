@@ -333,10 +333,13 @@ async def create_chain_link(
         raise HTTPException(status_code=409, detail="These two items are already linked in a chain")
     await db.refresh(link)
 
+    # Log with the app-standard resource_type ("vault", not the internal
+    # "vault_item") so activity-log icons and links resolve correctly.
+    _log_rt = "vault" if body.source_type == "vault_item" else body.source_type
     await create_activity_log(
         db, engagement_id=engagement_id, user_id=current_user.id,
         action="linked_chain",
-        resource_type=body.source_type, resource_id=body.source_id,
+        resource_type=_log_rt, resource_id=body.source_id,
         resource_name=_node_name(src),
         details=f"Chained '{_node_name(src)}' → '{_node_name(tgt)}'",
     )
