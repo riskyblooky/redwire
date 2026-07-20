@@ -199,6 +199,20 @@ export function useResolveComment() {
     });
 }
 
+export function useUpdateComment() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ id, content }: { id: string; content: string }) => {
+            const { data } = await api.put<Comment>(`/discussions/comments/${id}`, { content });
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['comments', data.thread_id] });
+        },
+    });
+}
+
 export function useDeleteComment() {
     const queryClient = useQueryClient();
 

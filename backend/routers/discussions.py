@@ -523,6 +523,63 @@ async def create_comment(
     await _broadcast_discussion_update(thread.engagement_id, comment_data.thread_id, "created_comment")
     return response
 
+@router.put("/comments/{comment_id}", response_model=CommentResponse)
+async def update_comment(
+    comment_id: str,
+    comment_data: CommentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit a comment's content. Author-only; admins/team-leads may edit any."""
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(Comment).options(selectinload(Comment.author), selectinload(Comment.resolver))
+        .where(Comment.id == comment_id)
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    # You may only edit your own comment (admins/team-leads may edit any). The
+    # author additionally needs discussion_edit on the engagement, mirroring
+    # how delete requires discussion_delete.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        if comment.created_by != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="You can only edit your own comments.")
+        thread_r = await db.execute(select(Thread).where(Thread.id == comment.thread_id))
+        thread = thread_r.scalar_one_or_none()
+        if not thread or not thread.engagement_id or not await check_engagement_permission(
+            current_user.id, thread.engagement_id, Permission.DISCUSSION_EDIT.value, db
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'discussion_edit' permission to edit comments.",
+            )
+
+    if comment_data.content is not None:
+        new_content = comment_data.content.strip()
+        if not new_content:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Comment content cannot be empty.")
+        comment.content = new_content
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Comment).options(selectinload(Comment.author), selectinload(Comment.resolver))
+        .where(Comment.id == comment_id)
+    )
+    comment = result.scalar_one()
+    comment_dict = CommentResponse.model_validate(comment).model_dump()
+    comment_dict["author_name"] = comment.author.username if comment.author else None
+    comment_dict["author_profile_photo"] = comment.author.profile_photo if comment.author else None
+    comment_dict["resolver_name"] = comment.resolver.username if comment.resolver else None
+    return CommentResponse(**comment_dict)
+
+
 @router.put("/comments/{comment_id}/resolve", response_model=CommentResponse)
 async def resolve_comment(
     comment_id: str,

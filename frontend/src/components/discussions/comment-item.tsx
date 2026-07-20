@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Comment } from '@/lib/hooks/use-discussions';
 import { Button } from '@/components/ui/button';
-import { CheckCircle, Trash2 } from 'lucide-react';
-import { useResolveComment, useDeleteComment } from '@/lib/hooks/use-discussions';
+import { CheckCircle, Trash2, Pencil, Loader2 } from 'lucide-react';
+import { useResolveComment, useDeleteComment, useUpdateComment } from '@/lib/hooks/use-discussions';
 import { useCanDelete } from '@/lib/hooks/use-permissions';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
@@ -26,7 +26,25 @@ interface CommentItemProps {
 export default function CommentItem({ comment, engagementId, currentUserId, isAdmin, users, highlight }: CommentItemProps) {
     const resolveComment = useResolveComment();
     const deleteComment = useDeleteComment();
+    const updateComment = useUpdateComment();
     const { confirm, ConfirmDialog } = useConfirmDialog();
+
+    const [isEditing, setIsEditing] = useState(false);
+    const [draft, setDraft] = useState(comment.content || '');
+    const canEditComment = comment.created_by === currentUserId || !!isAdmin;
+
+    const handleSaveEdit = async () => {
+        const trimmed = draft.trim();
+        if (!trimmed) { toast.error('Comment cannot be empty'); return; }
+        if (trimmed === (comment.content || '')) { setIsEditing(false); return; }
+        try {
+            await updateComment.mutateAsync({ id: comment.id, content: trimmed });
+            setIsEditing(false);
+            toast.success('Comment updated');
+        } catch (error: any) {
+            toast.error(getErrorMessage(error, 'Failed to update comment'));
+        }
+    };
 
     const rootRef = useRef<HTMLDivElement>(null);
     const [flash, setFlash] = useState(false);
@@ -103,14 +121,48 @@ export default function CommentItem({ comment, engagementId, currentUserId, isAd
                             )}
                         </div>
 
-                        {/* Content — render as Markdown */}
-                        <div className="text-sm text-slate-300 [&_.wmde-markdown]:!text-[0.8125rem] [&_.wmde-markdown]:!leading-relaxed">
-                            <MarkdownPreview value={comment.content || ''} />
-                        </div>
+                        {/* Content — render as Markdown, or an inline editor */}
+                        {isEditing ? (
+                            <div className="space-y-2">
+                                <textarea
+                                    autoFocus
+                                    value={draft}
+                                    onChange={e => setDraft(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Escape') { setIsEditing(false); setDraft(comment.content || ''); } }}
+                                    rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-md px-2.5 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-primary resize-y"
+                                />
+                                <div className="flex items-center gap-2">
+                                    <Button size="sm" className="h-7 text-xs bg-primary hover:bg-primary/90 text-white"
+                                        onClick={handleSaveEdit} disabled={updateComment.isPending}>
+                                        {updateComment.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save'}
+                                    </Button>
+                                    <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-400"
+                                        onClick={() => { setIsEditing(false); setDraft(comment.content || ''); }}>
+                                        Cancel
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-sm text-slate-300 [&_.wmde-markdown]:!text-[0.8125rem] [&_.wmde-markdown]:!leading-relaxed">
+                                <MarkdownPreview value={comment.content || ''} />
+                            </div>
+                        )}
                     </div>
 
                     {/* Actions */}
                     <div className="shrink-0 flex items-start gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {canEditComment && !isEditing && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => { setDraft(comment.content || ''); setIsEditing(true); }}
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-white hover:bg-slate-700/50"
+                                title="Edit comment"
+                            >
+                                <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                        )}
                         {canResolve && (
                             <Button
                                 variant="ghost"
