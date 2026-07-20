@@ -205,6 +205,8 @@ async def _do_generate_report(
             selectinload(Finding.assets),
             selectinload(Finding.evidence),
             selectinload(Finding.tags),
+            selectinload(Finding.testcases),
+            selectinload(Finding.vault_items),
         )
     )
     if config.exclude_severities:
@@ -233,7 +235,12 @@ async def _do_generate_report(
     testcases_result = await db.execute(
         select(TestCase)
         .where(TestCase.engagement_id == config.engagement_id)
-        .options(selectinload(TestCase.tags))
+        .options(
+            selectinload(TestCase.tags),
+            selectinload(TestCase.findings),
+            selectinload(TestCase.assets),
+            selectinload(TestCase.vault_items),
+        )
         .order_by(TestCase.category, TestCase.title)
     )
     testcases = list(testcases_result.scalars().all())
@@ -394,6 +401,8 @@ async def _do_generate_report(
                     "updated_at": f.updated_at.isoformat() if f.updated_at else None,
                     "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in (f.tags or [])],
                     "assets": [{"id": a.id, "name": a.name, "identifier": a.identifier} for a in (f.assets or [])],
+                    "testcases": [{"id": tc.id, "title": tc.title} for tc in (f.testcases or [])],
+                    "vault_items": [{"id": v.id, "name": v.name, "item_type": v.item_type} for v in (f.vault_items or [])],
                     "evidence": [
                         {
                             "id": e.id,
@@ -425,6 +434,9 @@ async def _do_generate_report(
                     "created_at": tc.created_at.isoformat() if tc.created_at else None,
                     "updated_at": tc.updated_at.isoformat() if tc.updated_at else None,
                     "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in (tc.tags or [])],
+                    "findings": [{"id": fn.id, "title": fn.title, "severity": fn.severity.value if fn.severity else None} for fn in (tc.findings or [])],
+                    "assets": [{"id": a.id, "name": a.name, "identifier": a.identifier} for a in (tc.assets or [])],
+                    "vault_items": [{"id": v.id, "name": v.name, "item_type": v.item_type} for v in (tc.vault_items or [])],
                 }
                 for tc in testcases
             ],
