@@ -15,6 +15,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FilterValueInput, referenceKind } from '@/components/dashboard/filter-value-input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -949,7 +950,10 @@ export function WidgetManagement() {
                                         <div key={idx} className="flex items-center gap-2">
                                             <Select value={filter.column} onValueChange={v => {
                                                 const filters = [...activeQuery.filters];
-                                                filters[idx] = { ...filters[idx], column: v };
+                                                // Reset the value when switching between a reference column
+                                                // and a plain one, so an id doesn't linger on a text filter.
+                                                const resetValue = referenceKind(v) !== referenceKind(filters[idx].column);
+                                                filters[idx] = { ...filters[idx], column: v, ...(resetValue ? { value: '' } : {}) };
                                                 updateActiveQuery({ filters });
                                                 setPreviewData(null);
                                             }}>
@@ -977,14 +981,16 @@ export function WidgetManagement() {
                                                     ))}
                                                 </SelectContent>
                                             </Select>
-                                            <Input value={filter.value} placeholder="value"
-                                                onChange={e => {
+                                            <FilterValueInput
+                                                column={filter.column}
+                                                value={filter.value}
+                                                onChange={v => {
                                                     const filters = [...activeQuery.filters];
-                                                    filters[idx] = { ...filters[idx], value: e.target.value };
+                                                    filters[idx] = { ...filters[idx], value: v };
                                                     updateActiveQuery({ filters });
                                                     setPreviewData(null);
                                                 }}
-                                                className="bg-slate-900 border-slate-700 text-white h-7 text-[11px] flex-1" />
+                                            />
                                             <button onClick={() => {
                                                 updateActiveQuery({ filters: activeQuery.filters.filter((_, i) => i !== idx) });
                                                 setPreviewData(null);
