@@ -22,7 +22,7 @@ import { useRouter } from 'next/navigation';
 import {
     Search, Plus, Bug, Loader2, ArrowUpDown, ArrowUp, ArrowDown,
     Lock, Sparkles, Server, MoreVertical, Trash2, Edit, MessageSquare,
-    StickyNote, Radar, Settings, Filter, X, Link as LinkIcon, Paperclip,
+    StickyNote, Radar, Settings, Filter, X, Link as LinkIcon, Paperclip, GitBranch,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -81,6 +81,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { FindingDetailSheet } from '@/components/engagements/finding-detail-sheet';
+import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
 
 // ── Constants ────────────────────────────────────────────────────────
 const severityColors: Record<string, string> = {
@@ -121,6 +122,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
     const [intelDetailId, setIntelDetailId] = useState<string | null>(null);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
+    const [chainDialogOpen, setChainDialogOpen] = useState(false);
 
     // Unified link/unlink wiring (vault, cleanup, asset; intel/infra handled by the dialog internally)
     const linkVault = useLinkFindingToVaultItem();
@@ -247,6 +249,9 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                             <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={(e) => { e.stopPropagation(); setLinkDialogOpen(true); }}>
                                 <LinkIcon className="h-4 w-4 mr-2" />Link…
                             </DropdownMenuItem>
+                            <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={(e) => { e.stopPropagation(); setChainDialogOpen(true); }}>
+                                <GitBranch className="h-4 w-4 mr-2" />Attack Chain
+                            </DropdownMenuItem>
 
                             <DropdownMenuSub>
                                 <DropdownMenuSubTrigger className="text-slate-300 focus:bg-slate-800/50 focus:text-white data-[state=open]:bg-slate-800/50 data-[state=open]:text-white">
@@ -296,6 +301,15 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                 onLink={handleEntityLink}
                 onUnlink={handleEntityUnlink}
                 allowedTypes={['vault', 'cleanup', 'assets', 'intel', 'infra']}
+            />
+            <ChainLinksDialog
+                open={chainDialogOpen}
+                onOpenChange={setChainDialogOpen}
+                engagementId={engagementId}
+                entityType="finding"
+                entityId={finding.id}
+                entityName={finding.title}
+                canEdit={canEdit}
             />
             <AttachmentQuickAddDialog
                 open={attachmentDialogOpen}

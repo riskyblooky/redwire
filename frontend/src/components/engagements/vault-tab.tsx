@@ -52,6 +52,8 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { SprayTracker } from './spray-tracker';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
+import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
+import { GitBranch } from 'lucide-react';
 
 interface VaultTabProps {
     engagementId: string;
@@ -73,6 +75,7 @@ const VaultItemCard = ({
 }: any) => {
     const canDeleteVault = useCanDelete(engagementId, 'vault', item.created_by);
     const canEditVault = useCanEdit(engagementId, 'vault', item.created_by);
+    const [chainOpen, setChainOpen] = useState(false);
     const noteCount = item._noteCount || 0;
 
     // GHSA-fp69-w2mg-4pqp: ``item`` carries metadata only; the
@@ -168,6 +171,10 @@ const VaultItemCard = ({
                                 <LinkIcon className="h-4 w-4 mr-2" />
                                 Link Resources
                             </DropdownMenuItem>
+                            <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={() => setChainOpen(true)}>
+                                <GitBranch className="h-4 w-4 mr-2" />
+                                Attack Chain
+                            </DropdownMenuItem>
                             {canDeleteVault && (
                                 <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={() => handleDeleteItem(item.id)}>
                                     <Trash2 className="h-4 w-4 mr-2" />
@@ -176,6 +183,7 @@ const VaultItemCard = ({
                             )}
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    <ChainLinksDialog open={chainOpen} onOpenChange={setChainOpen} engagementId={engagementId} entityType="vault_item" entityId={item.id} entityName={item.name} canEdit={canEditVault} />
                 </div>
                 <CardDescription className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
                     <TooltipProvider delayDuration={200}>
@@ -421,6 +429,7 @@ const VaultItemRow = ({
 }: any) => {
     const canDeleteVault = useCanDelete(engagementId, 'vault', item.created_by);
     const canEditVault = useCanEdit(engagementId, 'vault', item.created_by);
+    const [chainOpen, setChainOpen] = useState(false);
     const noteCount = item._noteCount || 0;
     // GHSA-fp69-w2mg-4pqp: see VaultItemCard for the parallel rationale.
     const revealed = revealedItems[item.id];
@@ -549,6 +558,9 @@ const VaultItemRow = ({
                         <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={() => onLink(item)}>
                             <LinkIcon className="h-4 w-4 mr-2" /> Link Resources
                         </DropdownMenuItem>
+                        <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={() => setChainOpen(true)}>
+                            <GitBranch className="h-4 w-4 mr-2" /> Attack Chain
+                        </DropdownMenuItem>
                         {item.item_type === 'FILE' && (
                             <DropdownMenuItem className="text-slate-300 focus:bg-slate-800" onClick={() => handleSecureDownload(item.id, item.filename || 'file')}>
                                 <Download className="h-4 w-4 mr-2" /> Download
@@ -561,6 +573,7 @@ const VaultItemRow = ({
                         )}
                     </DropdownMenuContent>
                 </DropdownMenu>
+                <ChainLinksDialog open={chainOpen} onOpenChange={setChainOpen} engagementId={engagementId} entityType="vault_item" entityId={item.id} entityName={item.name} canEdit={canEditVault} />
             </div>
         </div>
     );

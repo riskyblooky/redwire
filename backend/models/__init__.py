@@ -32,6 +32,7 @@ from models.api_token import ApiToken
 from models.version_history import VersionHistory
 from models.attack_graph_layout import AttackGraphLayout
 from models.attacker_node import AttackerNode, AttackerNodeEdge
+from models.chain_link import ChainLink
 from models.wordlist import WordlistEntry, WordlistMeta, WordlistStatus
 from models.intel_feed import IntelFeed
 from models.intel_item import IntelItem, IntelItemType, IntelSeverity

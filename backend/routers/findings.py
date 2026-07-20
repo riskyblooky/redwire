@@ -892,9 +892,14 @@ async def delete_finding(
         details=f"Deleted finding: {finding.title}"
     )
 
+    # Sweep any chain edges this finding participated in (polymorphic,
+    # no DB FK — see utils/chain_links.py).
+    from utils.chain_links import sweep_chain_links
+    await sweep_chain_links(db, "finding", finding.id)
+
     await db.delete(finding)
     await db.commit()
-    
+
     return None
 
 @router.post("/{finding_id}/evidence", response_model=EvidenceResponse)

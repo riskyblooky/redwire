@@ -80,6 +80,7 @@ import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkEntityDialog, LinkedIdMap } from '@/components/ui/link-entity-dialog';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
+import { ChainLinksSection } from '@/components/engagements/chain-links-section';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import {
     useLinkFindingToTestCase, useUnlinkFindingFromTestCase,
@@ -747,6 +748,18 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                             )}
                                         </div>
                                     )}
+
+                                    {/* Attack Chain */}
+                                    <div className="mb-4">
+                                        <ChainLinksSection
+                                            engagementId={finding.engagement_id}
+                                            entityType="finding"
+                                            entityId={finding.id}
+                                            entityName={finding.title}
+                                            canEdit={canEdit}
+                                        />
+                                    </div>
+                                    <Separator className="bg-slate-800/60 mb-4" />
 
                                     {/* Linked Resources header with + Link button */}
                                     <div className="flex items-center justify-between mb-3">

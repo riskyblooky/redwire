@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from database import Base, engine
 
 # Import routers
-from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, stats_pages, custom_fields, plugins as plugins_router
+from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, chain_links, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, stats_pages, custom_fields, plugins as plugins_router
 from routers import imports as imports_router
 from routers import spray as spray_router
 from routers import attack_techniques as attack_techniques_router
@@ -661,6 +661,7 @@ app.include_router(tags.router)
 app.include_router(runbooks.router)
 app.include_router(search.router)
 app.include_router(attack_graph.router)
+app.include_router(chain_links.router)
 app.include_router(report_layouts.router)
 app.include_router(report_layout_templates.router)
 app.include_router(report_themes.router)

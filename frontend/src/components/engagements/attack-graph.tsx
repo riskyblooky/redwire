@@ -26,7 +26,7 @@ import api from '@/lib/api';
 import {
     Monitor, AlertTriangle, ClipboardCheck, Sparkles,
     Loader2, Maximize2, Minimize2, LayoutDashboard, X, Eye, EyeOff, RefreshCw,
-    Crosshair, Plus, Trash2, Link, Download, BookMarked, Pencil, Check, Server
+    Crosshair, Plus, Trash2, Link, Download, BookMarked, Pencil, Check, Server, Key
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -60,6 +60,7 @@ interface GraphData {
         source: string;
         target: string;
         label?: string;
+        kind?: string; // 'chain' for causal chain edges; undefined for factual associations
     }>;
     pinned_positions?: Record<string, { x: number; y: number }> | null;
     pinned_by?: string | null;
@@ -131,7 +132,12 @@ const typeConfig: Record<string, { bg: string; border: string; text: string; ico
     cleanup: { bg: '#0d1a06', border: '#84cc16', text: '#84cc16', icon: Sparkles, accent: 'bg-lime-500/20 text-lime-400' },
     attacker: { bg: '#1a0d1f', border: '#a855f7', text: '#a855f7', icon: Crosshair, accent: 'bg-primary/20 text-primary' },
     infra: { bg: '#06201d', border: '#2dd4bf', text: '#2dd4bf', icon: Server, accent: 'bg-teal-500/20 text-teal-300' },
+    vault: { bg: '#1a1705', border: '#eab308', text: '#eab308', icon: Key, accent: 'bg-yellow-500/20 text-yellow-400' },
 };
+
+// Colour for operator-authored causal chain edges — distinct from the muted
+// slate of factual association edges.
+const CHAIN_EDGE_COLOR = '#818cf8'; // indigo-400
 
 // ── Custom Node ──
 function GraphNode({ data, type }: { data: GraphNodeData; type?: string }) {
@@ -194,6 +200,7 @@ const nodeTypes = {
     cleanup: (props: any) => <GraphNode data={props.data} type="cleanup" />,
     attacker: (props: any) => <GraphNode data={props.data} type="attacker" />,
     infra: (props: any) => <GraphNode data={props.data} type="infra" />,
+    vault: (props: any) => <GraphNode data={props.data} type="vault" />,
 };
 
 // ── Layouts Popover ──
@@ -685,19 +692,24 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
             position: pinnedPos?.[n.id] ?? allPositionsRef.current[n.id] ?? { x: 0, y: 0 },
         }));
 
-        const allRfEdges: Edge[] = allLinkedEdges.map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            label: e.label,
-            type: 'smoothstep' as const,
-            animated: true,
-            style: { stroke: '#475569', strokeWidth: 1.5 },
-            labelStyle: { fill: '#64748b', fontSize: 9, fontWeight: 600 },
-            labelBgStyle: { fill: '#0f172a', fillOpacity: 0.9 },
-            labelBgPadding: [4, 2] as [number, number],
-            markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#475569' },
-        }));
+        const allRfEdges: Edge[] = allLinkedEdges.map((e) => {
+            const isChain = e.kind === 'chain';
+            const stroke = isChain ? CHAIN_EDGE_COLOR : '#475569';
+            return {
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                label: e.label,
+                data: { kind: e.kind },
+                type: 'smoothstep' as const,
+                animated: true,
+                style: { stroke, strokeWidth: isChain ? 2 : 1.5 },
+                labelStyle: { fill: isChain ? '#a5b4fc' : '#64748b', fontSize: 9, fontWeight: isChain ? 700 : 600 },
+                labelBgStyle: { fill: '#0f172a', fillOpacity: 0.9 },
+                labelBgPadding: [4, 2] as [number, number],
+                markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: stroke },
+            };
+        });
 
         // Compute full layout (or use pinned/existing positions)
         let positionedAllNodes: Node[];
@@ -764,9 +776,12 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
     // Highlight edges connected to selected node
     useEffect(() => {
         setEdges(currentEdges => currentEdges.map(edge => {
+            const isChain = (edge.data as { kind?: string } | undefined)?.kind === 'chain';
             if (!selectedNode) {
-                // No selection — default styling
-                return { ...edge, style: { stroke: '#475569', strokeWidth: 1.5 }, animated: true, labelStyle: { fill: '#64748b', fontSize: 9, fontWeight: 600 } };
+                // No selection — restore each edge's base styling (chain edges
+                // keep their distinct indigo; associations go muted slate).
+                const stroke = isChain ? CHAIN_EDGE_COLOR : '#475569';
+                return { ...edge, style: { stroke, strokeWidth: isChain ? 2 : 1.5 }, animated: true, labelStyle: { fill: isChain ? '#a5b4fc' : '#64748b', fontSize: 9, fontWeight: isChain ? 700 : 600 } };
             }
             const isConnected = edge.source === selectedNode.id || edge.target === selectedNode.id;
             if (isConnected) {
@@ -1004,7 +1019,7 @@ ${edgeCells.join('\n')}
 
     // Counts for the legend
     const counts = useMemo(() => {
-        if (!graphData) return { assets: 0, testcases: 0, findings: 0, cleanup: 0, attackers: 0, infra: 0 };
+        if (!graphData) return { assets: 0, testcases: 0, findings: 0, cleanup: 0, attackers: 0, infra: 0, vault: 0 };
         return {
             assets: graphData.nodes.filter((n) => n.type === 'asset').length,
             testcases: graphData.nodes.filter((n) => n.type === 'testcase').length,
@@ -1012,6 +1027,7 @@ ${edgeCells.join('\n')}
             cleanup: graphData.nodes.filter((n) => n.type === 'cleanup').length,
             attackers: graphData.nodes.filter((n) => n.type === 'attacker').length,
             infra: graphData.nodes.filter((n) => n.type === 'infra').length,
+            vault: graphData.nodes.filter((n) => n.type === 'vault').length,
         };
     }, [graphData, showUnlinked, linkedNodeIds]);
 
@@ -1079,9 +1095,10 @@ ${edgeCells.join('\n')}
                                 : type === 'asset' ? 'assets'
                                 : type === 'attacker' ? 'attackers'
                                 : type === 'infra' ? 'infra'
+                                : type === 'vault' ? 'vault'
                                 : 'cleanup';
                             const count = counts[countKey as keyof typeof counts];
-                            const label = type === 'testcase' ? 'Tests' : type === 'infra' ? 'Infra' : type + 's';
+                            const label = type === 'testcase' ? 'Tests' : type === 'infra' ? 'Infra' : type === 'vault' ? 'Vault' : type + 's';
                             return (
                                 <div key={type} className="flex items-center gap-1.5">
                                     <div className="w-2.5 h-2.5 rounded-sm" style={{ background: cfg.border }} />

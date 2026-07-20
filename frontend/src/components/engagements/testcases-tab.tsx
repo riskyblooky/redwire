@@ -102,6 +102,7 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TestCaseDetailSheet } from '@/components/engagements/testcase-detail-sheet';
+import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
 import {
     DndContext,
     closestCenter,
@@ -148,6 +149,7 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
     const [intelDetailId, setIntelDetailId] = useState<string | null>(null);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
+    const [chainDialogOpen, setChainDialogOpen] = useState(false);
 
     // Unified link/unlink wiring (matches the testcase detail sheet pattern)
     const linkFinding = useLinkTestCaseToFinding();
@@ -306,6 +308,7 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                             <DropdownMenuItem className="text-emerald-400 focus:bg-emerald-500/10 focus:text-emerald-400" onClick={(e) => { e.stopPropagation(); router.push(`/testcases/new?parentId=${testcase.id}&engagementId=${engagementId}`); }}><Plus className="h-4 w-4 mr-2" />Add Sub-Test Case</DropdownMenuItem>
 
                             <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={(e) => { e.stopPropagation(); setLinkDialogOpen(true); }}><LinkIcon className="h-4 w-4 mr-2" />Link…</DropdownMenuItem>
+                            <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={(e) => { e.stopPropagation(); setChainDialogOpen(true); }}><GitBranch className="h-4 w-4 mr-2" />Attack Chain</DropdownMenuItem>
 
                             <DropdownMenuSub>
                                 <DropdownMenuSubTrigger className="text-slate-300 focus:bg-slate-800/50 focus:text-white data-[state=open]:bg-slate-800/50 data-[state=open]:text-white">
@@ -340,6 +343,15 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                 linkedIds={linkedIds}
                 onLink={handleEntityLink}
                 onUnlink={handleEntityUnlink}
+            />
+            <ChainLinksDialog
+                open={chainDialogOpen}
+                onOpenChange={setChainDialogOpen}
+                engagementId={engagementId}
+                entityType="testcase"
+                entityId={testcase.id}
+                entityName={testcase.title}
+                canEdit={canEdit}
             />
             <AttachmentQuickAddDialog
                 open={attachmentDialogOpen}

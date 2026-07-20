@@ -18,6 +18,8 @@ from models.associations import (
 from models.attack_graph_layout import AttackGraphLayout
 from models.attacker_node import AttackerNode, AttackerNodeEdge
 from models.infra_item import InfraItem
+from models.vault import VaultItem
+from models.chain_link import ChainLink
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.user import UserRole
@@ -265,6 +267,76 @@ async def get_attack_graph(
                 "target": f"testcase-{row.testcase_id}",
                 "label": "enabled",
             })
+
+    # ── Chain Links (causal attack-chain edges) ──
+    # Operator-authored directed "led to" edges over testcases / findings /
+    # vault items. Vault items aren't otherwise graphed, so we surface only
+    # the ones that actually participate in a chain (mirrors the in-play
+    # infra rule); testcase/finding nodes are already emitted above.
+    chain_rows = (await db.execute(
+        select(ChainLink).where(ChainLink.engagement_id == engagement_id)
+    )).scalars().all()
+
+    _CHAIN_PREFIX = {"testcase": "testcase", "finding": "finding", "vault_item": "vault"}
+
+    chain_vault_ids = set()
+    for cl in chain_rows:
+        if cl.source_type == "vault_item":
+            chain_vault_ids.add(cl.source_id)
+        if cl.target_type == "vault_item":
+            chain_vault_ids.add(cl.target_id)
+    if chain_vault_ids:
+        result = await db.execute(
+            select(VaultItem.id, VaultItem.name, VaultItem.item_type)
+            .where(VaultItem.id.in_(chain_vault_ids), VaultItem.engagement_id == engagement_id)
+        )
+        for row in result.all():
+            nodes.append({
+                "id": f"vault-{row.id}",
+                "type": "vault",
+                "data": {
+                    "label": row.name,
+                    "subtitle": row.item_type,
+                    "entityId": row.id,
+                },
+            })
+
+    # Only draw a chain edge when both endpoints resolved to a rendered node
+    # (defends against a dangling edge whose entity was deleted).
+    _node_ids = {n["id"] for n in nodes}
+    for cl in chain_rows:
+        src = f"{_CHAIN_PREFIX.get(cl.source_type, cl.source_type)}-{cl.source_id}"
+        tgt = f"{_CHAIN_PREFIX.get(cl.target_type, cl.target_type)}-{cl.target_id}"
+        if src not in _node_ids or tgt not in _node_ids:
+            continue
+        edges.append({
+            "id": f"chain-{cl.id}",
+            "source": src,
+            "target": tgt,
+            "label": cl.note or "led to",
+            "kind": "chain",
+        })
+
+    # A finding↔testcase pair that now has an explicit chain edge in the SAME
+    # direction as the factual "discovered" association edge (testcase →
+    # finding) shouldn't draw both — that's the same fact twice. Match on the
+    # directed pair, not an unordered one: a chain edge running the opposite
+    # way (finding → testcase, e.g. a post-exploit follow-on) is a distinct
+    # relationship and the "discovered" edge should still render.
+    chain_directed = {
+        (
+            f"{_CHAIN_PREFIX.get(cl.source_type, cl.source_type)}-{cl.source_id}",
+            f"{_CHAIN_PREFIX.get(cl.target_type, cl.target_type)}-{cl.target_id}",
+        )
+        for cl in chain_rows
+    }
+    if chain_directed:
+        edges = [
+            e for e in edges
+            if not (e.get("kind") != "chain"
+                    and e.get("label") == "discovered"
+                    and (e["source"], e["target"]) in chain_directed)
+        ]
 
     # ── Attacker Nodes ──
     result = await db.execute(

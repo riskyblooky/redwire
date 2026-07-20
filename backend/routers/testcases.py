@@ -567,9 +567,15 @@ async def delete_testcase(
         details=details
     )
 
+    # Sweep chain edges for this testcase and every cascade-deleted
+    # descendant (polymorphic, no DB FK — see utils/chain_links.py).
+    from utils.chain_links import sweep_chain_links
+    swept_ids = [db_testcase.id] + [d.id for d in descendants] if cascade else [db_testcase.id]
+    await sweep_chain_links(db, "testcase", swept_ids)
+
     await db.delete(db_testcase)
     await db.commit()
-    
+
     return None
 
 @router.post("/{testcase_id}/findings/{finding_id}", status_code=status.HTTP_200_OK)

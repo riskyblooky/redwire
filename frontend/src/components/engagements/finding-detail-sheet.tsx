@@ -30,6 +30,7 @@ import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
+import { ChainLinksSection } from '@/components/engagements/chain-links-section';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import { Shield } from 'lucide-react';
@@ -595,6 +596,16 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 )}
 
                                 <CustomFieldsDisplay entity="finding" value={finding.custom_fields} />
+
+                                {/* Attack Chain */}
+                                <ChainLinksSection
+                                    engagementId={engagementId}
+                                    entityType="finding"
+                                    entityId={finding.id}
+                                    entityName={finding.title}
+                                    canEdit={canEdit}
+                                />
+                                <Separator className="bg-slate-800/60" />
 
                                 {/* Linked Notes */}
                                 {linkedNotes.length > 0 && (
