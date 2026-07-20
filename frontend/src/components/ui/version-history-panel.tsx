@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useVersionHistory, useVersionSnapshot, VersionSummary } from '@/lib/hooks/use-versions';
+import { useVersionHistory, useVersionSnapshot, useRestoreVersion, VersionSummary } from '@/lib/hooks/use-versions';
+import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
+import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { GitCommitHorizontal, ChevronDown, Clock, User, ArrowRight, Loader2, History, X } from 'lucide-react';
+import { GitCommitHorizontal, ChevronDown, Clock, User, ArrowRight, Loader2, History, X, RotateCcw } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn, parseUTCDate } from '@/lib/utils';
 
@@ -207,7 +209,28 @@ export function VersionHistoryPanel({ entityType, entityId, currentData }: Versi
         entityType, entityId, selectedVersionId,
     );
 
+    const restoreVersion = useRestoreVersion(entityType, entityId);
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+
     const latestVersion = versions[0];
+
+    const handleRestore = async () => {
+        if (!selectedVersion) return;
+        const ok = await confirm({
+            title: `Restore to version ${selectedVersion.version}?`,
+            description: 'The current values will be replaced with this version. Your current state is snapshotted first, so you can undo this by restoring again.',
+            confirmLabel: 'Restore',
+            variant: 'warning',
+        });
+        if (!ok) return;
+        try {
+            await restoreVersion.mutateAsync(selectedVersion.id);
+            toast.success(`Restored to version ${selectedVersion.version}`);
+            setDiffOpen(false);
+        } catch (e) {
+            toast.error(getErrorMessage(e, 'Failed to restore version'));
+        }
+    };
 
     const handleSelectVersion = (v: VersionSummary) => {
         setSelectedVersionId(v.id);
@@ -359,8 +382,25 @@ export function VersionHistoryPanel({ entityType, entityId, currentData }: Versi
                             )}
                         </div>
                     ) : null}
+                    {selectedVersion && (
+                        <div className="px-6 py-3 border-t border-slate-800 sticky bottom-0 bg-slate-900 flex items-center justify-between gap-3">
+                            <span className="text-[11px] text-slate-500">Restoring snapshots the current state first, so it can be undone.</span>
+                            <Button
+                                size="sm"
+                                onClick={handleRestore}
+                                disabled={restoreVersion.isPending}
+                                className="bg-amber-600 hover:bg-amber-500 text-white gap-1.5 shrink-0"
+                            >
+                                {restoreVersion.isPending
+                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    : <RotateCcw className="h-3.5 w-3.5" />}
+                                Restore this version
+                            </Button>
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
+            <ConfirmDialog />
         </>
     );
 }

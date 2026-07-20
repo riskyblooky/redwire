@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
 export interface VersionSummary {
@@ -45,5 +45,24 @@ export function useVersionSnapshot(
             return data;
         },
         enabled: !!entityId && !!versionId,
+    });
+}
+
+/** Restore an entity to a prior version. The backend snapshots the current
+ *  state first, so this is reversible. */
+export function useRestoreVersion(entityType: 'finding' | 'testcase', entityId: string) {
+    const qc = useQueryClient();
+    const basePath = entityType === 'finding' ? 'findings' : 'testcases';
+    return useMutation({
+        mutationFn: async (versionId: string) => {
+            const { data } = await api.post(`/${basePath}/${entityId}/versions/${versionId}/restore`);
+            return data;
+        },
+        onSuccess: () => {
+            // Refresh the entity (list + detail via partial match) and its history.
+            qc.invalidateQueries({ queryKey: [basePath] });
+            qc.invalidateQueries({ queryKey: [entityType, entityId] });
+            qc.invalidateQueries({ queryKey: ['versions', entityType, entityId] });
+        },
     });
 }

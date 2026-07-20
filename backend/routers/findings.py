@@ -845,6 +845,64 @@ async def get_finding_version(
     }
 
 
+@router.post("/{finding_id}/versions/{version_id}/restore")
+async def restore_finding_version(
+    finding_id: str,
+    version_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Restore a finding to a prior version's field values. The current state
+    is snapshotted first, so a restore is itself reversible."""
+    finding = (await db.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, finding.engagement_id, Permission.FINDING_EDIT.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'finding_edit' permission to restore a finding version.",
+            )
+
+    v = (await db.execute(
+        select(VersionHistory).where(
+            VersionHistory.id == version_id,
+            VersionHistory.entity_type == "finding",
+            VersionHistory.entity_id == finding_id,
+        )
+    )).scalar_one_or_none()
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+
+    from utils.versioning import FINDING_VERSIONED_FIELDS
+    snap = v.snapshot or {}
+    update_data = {f: snap[f] for f in FINDING_VERSIONED_FIELDS if f in snap}
+    # Snapshots store enums as their string value — coerce back before applying.
+    if update_data.get("severity") is not None:
+        update_data["severity"] = Severity(update_data["severity"])
+    if update_data.get("status") is not None:
+        update_data["status"] = FindingStatus(update_data["status"])
+
+    # Snapshot the current state first, then apply the restored values.
+    await create_version_snapshot(db, finding, "finding", update_data, current_user.id)
+    for field, value in update_data.items():
+        setattr(finding, field, value)
+    finding.updated_by = current_user.id
+    await db.commit()
+
+    await create_activity_log(
+        db, engagement_id=finding.engagement_id, user_id=current_user.id,
+        action="restored_version", resource_type="finding", resource_id=finding.id,
+        resource_name=finding.title, details=f"Restored finding to version {v.version}",
+    )
+    return {"status": "ok", "restored_version": v.version}
+
+
 @router.delete("/{finding_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_finding(
     finding_id: str,

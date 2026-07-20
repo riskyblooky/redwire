@@ -461,6 +461,57 @@ async def get_testcase_version(
     }
 
 
+@router.post("/{testcase_id}/versions/{version_id}/restore")
+async def restore_testcase_version(
+    testcase_id: str,
+    version_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Restore a test case to a prior version's field values (snapshotting the
+    current state first, so a restore is reversible)."""
+    tc = (await db.execute(select(TestCase).where(TestCase.id == testcase_id))).scalar_one_or_none()
+    if not tc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test case not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        is_owner = tc.created_by == current_user.id
+        perm = Permission.TESTCASE_EDIT.value if is_owner else Permission.TESTCASE_EDIT_ANY.value
+        if not await check_engagement_permission(current_user.id, tc.engagement_id, perm, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. You need the '{perm}' permission to restore a test case version.",
+            )
+
+    v = (await db.execute(
+        select(VersionHistory).where(
+            VersionHistory.id == version_id,
+            VersionHistory.entity_type == "testcase",
+            VersionHistory.entity_id == testcase_id,
+        )
+    )).scalar_one_or_none()
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+
+    from utils.versioning import TESTCASE_VERSIONED_FIELDS
+    snap = v.snapshot or {}
+    update_data = {f: snap[f] for f in TESTCASE_VERSIONED_FIELDS if f in snap}
+
+    await create_version_snapshot(db, tc, "testcase", update_data, current_user.id)
+    for field, value in update_data.items():
+        setattr(tc, field, value)
+    tc.updated_by = current_user.id
+    await db.commit()
+
+    await create_activity_log(
+        db, engagement_id=tc.engagement_id, user_id=current_user.id,
+        action="restored_version", resource_type="testcase", resource_id=tc.id,
+        resource_name=tc.title, details=f"Restored test case to version {v.version}",
+    )
+    return {"status": "ok", "restored_version": v.version}
+
+
 @router.delete("/{testcase_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_testcase(
     testcase_id: str,
