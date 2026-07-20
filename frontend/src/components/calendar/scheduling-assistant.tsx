@@ -52,6 +52,21 @@ import {
     max as dateMax, min as dateMin,
 } from 'date-fns';
 
+// Percentage of the scheduling window a member's OoO covers (0–100). Uses
+// parseISO to stay consistent with getBarStyle's date handling. Overlapping
+// OoO blocks may double-count, so the result is clamped to 100.
+function oooOverlapPct(oooEvents: any[] | undefined, winStart: Date, winEnd: Date): number {
+    const winMs = Math.max(1, winEnd.getTime() - winStart.getTime());
+    let overlapMs = 0;
+    for (const o of oooEvents || []) {
+        if (!o?.start_time || !o?.end_time) continue;
+        const s = Math.max(winStart.getTime(), parseISO(o.start_time).getTime());
+        const e = Math.min(winEnd.getTime(), parseISO(o.end_time).getTime());
+        if (e > s) overlapMs += e - s;
+    }
+    return Math.min(100, (overlapMs / winMs) * 100);
+}
+
 interface SchedulingAssistantProps {
     defaultStart: Date;
     defaultEnd: Date;
@@ -82,6 +97,9 @@ export function SchedulingAssistant({
     const lastAppliedEngRef = useRef<string | null>(null);
     const [userRoles, setUserRoles] = useState<Record<string, string>>({});
     const [excludeOoo, setExcludeOoo] = useState(true);
+    // Exclude a member only when their OoO covers at least this % of the
+    // window — so a brief appointment doesn't drop someone from suggestions.
+    const [oooThreshold, setOooThreshold] = useState(50);
     const [prioritizeSkills, setPrioritizeSkills] = useState(true);
 
     const { data: allEngagements = [] } = useEngagements();
@@ -269,7 +287,7 @@ export function SchedulingAssistant({
         const candidates = [...availability]
             .filter(m => !assignedUserIds.has(m.user.id))
             .filter(m => excludeBusy ? m.engagement_count === 0 : true)
-            .filter(m => excludeOoo ? !(m.ooo_events && m.ooo_events.length > 0) : true)
+            .filter(m => excludeOoo ? oooOverlapPct(m.ooo_events, effectiveStart, effectiveEnd) < oooThreshold : true)
             .sort((a, b) => computeScore(b) - computeScore(a))
             .slice(0, slotsToFill)
             .map(m => m.user.id);
@@ -287,7 +305,7 @@ export function SchedulingAssistant({
                 ? 'Ranked by skill match + availability'
                 : excludeBusy ? 'Free members only' : 'Prioritized by least busy',
         });
-    }, [availability, autoAssignCount, excludeBusy, excludeOoo, onSelectUsers, assignedUserIds, computeScore, engagementSkills]);
+    }, [availability, autoAssignCount, excludeBusy, excludeOoo, oooThreshold, effectiveStart, effectiveEnd, onSelectUsers, assignedUserIds, computeScore, engagementSkills]);
 
     const setUserRole = useCallback((userId: string, roleId: string) => {
         setUserRoles(prev => ({ ...prev, [userId]: roleId }));
@@ -892,6 +910,21 @@ export function SchedulingAssistant({
                                             className="rounded border-slate-600 bg-slate-800 text-red-500 focus:ring-red-500/20 h-3.5 w-3.5"
                                         />
                                     </label>
+                                    {excludeOoo && (
+                                        <div className="flex items-center justify-between gap-2 pl-3">
+                                            <span className="text-[10px] text-slate-500">…if OoO ≥</span>
+                                            <div className="flex items-center gap-1.5 flex-1">
+                                                <input
+                                                    type="range" min={5} max={100} step={5}
+                                                    value={oooThreshold}
+                                                    onChange={e => setOooThreshold(Number(e.target.value))}
+                                                    className="flex-1 h-1 accent-red-500 cursor-pointer"
+                                                    title="Only exclude members whose Out-of-Office covers at least this % of the window"
+                                                />
+                                                <span className="text-[10px] text-slate-400 tabular-nums w-8 text-right">{oooThreshold}%</span>
+                                            </div>
+                                        </div>
+                                    )}
                                     <label className="flex items-center justify-between cursor-pointer">
                                         <span className="text-[11px] text-slate-400">Prioritize skill match</span>
                                         <input
