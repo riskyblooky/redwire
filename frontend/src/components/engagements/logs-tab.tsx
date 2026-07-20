@@ -262,17 +262,22 @@ export function LogsTab({ engagementId }: LogsTabProps) {
                             <TableBody>
                                 {logs.map((log) => {
                                     const resourceType = log.resource_type?.toLowerCase();
-                                    const link = (resourceType === 'engagement')
-                                        ? `/engagements/${log.resource_id}`
-                                        : (resourceType === 'finding')
-                                            ? `/findings/${log.resource_id}?engagementId=${engagementId}`
-                                            : (resourceType === 'asset')
-                                                ? `/assets/edit/${log.resource_id}?engagementId=${engagementId}`
-                                                : (resourceType === 'evidence')
-                                                    ? `/engagements/${engagementId}?tab=attachments`
-                                                    : (resourceType === 'testcase')
-                                                        ? `/testcases/${log.resource_id}?engagementId=${engagementId}`
-                                                        : null;
+                                    // Map each logged resource_type to where it actually lives.
+                                    // Types that aren't navigable from here (user, stats_page,
+                                    // spray, import, auth_setting) fall through to null.
+                                    const link = (() => {
+                                        switch (resourceType) {
+                                            case 'engagement':       return `/engagements/${log.resource_id}`;
+                                            case 'finding':          return `/findings/${log.resource_id}?engagementId=${engagementId}`;
+                                            case 'asset':            return `/assets/${log.resource_id}?engagementId=${engagementId}`;
+                                            case 'testcase':         return `/testcases/${log.resource_id}?engagementId=${engagementId}`;
+                                            case 'vault':            return `/engagements/${engagementId}?tab=vault`;
+                                            case 'cleanup_artifact': return `/engagements/${engagementId}?tab=cleanup`;
+                                            case 'note':             return `/engagements/${engagementId}?tab=notes&noteId=${log.resource_id}`;
+                                            case 'evidence':         return `/engagements/${engagementId}?tab=attachments`;
+                                            default:                 return null;
+                                        }
+                                    })();
 
                                     return (
                                         <TableRow
@@ -284,7 +289,7 @@ export function LogsTab({ engagementId }: LogsTabProps) {
                                             onClick={() => link && window.location.assign(link)}
                                         >
                                             <TableCell className="text-xs text-slate-500 font-mono whitespace-nowrap">
-                                                {new Date(log.created_at).toLocaleString()}
+                                                {parseUTCDate(log.created_at).toLocaleString()}
                                                 <div className="text-[10px] opacity-60">
                                                     {formatDistanceToNow(parseUTCDate(log.created_at), { addSuffix: true })}
                                                 </div>

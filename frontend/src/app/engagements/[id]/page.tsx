@@ -293,8 +293,11 @@ const getResourceLink = (activity: any) => {
     switch (type) {
         case 'engagement': return `/engagements/${resourceId}`;
         case 'finding': return `/findings/${resourceId}?engagementId=${engagementId}`;
-        case 'asset': return `/assets/edit/${resourceId}?engagementId=${engagementId}`;
+        case 'asset': return `/assets/${resourceId}?engagementId=${engagementId}`;
         case 'testcase': return `/testcases/${resourceId}?engagementId=${engagementId}`;
+        case 'vault': return `/engagements/${engagementId}?tab=vault`;
+        case 'cleanup_artifact': return `/engagements/${engagementId}?tab=cleanup`;
+        case 'note': return `/engagements/${engagementId}?tab=notes&noteId=${resourceId}`;
         case 'evidence': return `/engagements/${engagementId}?tab=attachments`;
         case 'comment': return `/findings/${activity.finding_id || resourceId}?engagementId=${engagementId}#discussion`;
         default: return null;
