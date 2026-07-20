@@ -706,14 +706,17 @@ export function SchedulingAssistant({
                                                 <Tooltip key={ooo.id}>
                                                     <TooltipTrigger asChild>
                                                         <div
-                                                            className="absolute top-0 bottom-0 opacity-50 hover:opacity-80 transition-opacity"
+                                                            className="absolute top-0 bottom-0 z-10 opacity-80 hover:opacity-100 transition-opacity"
                                                             style={{
                                                                 left: style.left,
                                                                 width: style.width,
                                                                 minWidth: '4px',
-                                                                background: 'repeating-linear-gradient(135deg, transparent, transparent 2px, rgba(239,68,68,0.3) 2px, rgba(239,68,68,0.3) 4px)',
-                                                                borderLeft: '2px solid rgba(239,68,68,0.5)',
-                                                                borderRight: '2px solid rgba(239,68,68,0.5)',
+                                                                // Render ABOVE the engagement bars (z-10) so overlapping
+                                                                // engagements can't bury OoO. The hatch stays translucent
+                                                                // so the engagement underneath still reads through it.
+                                                                background: 'repeating-linear-gradient(135deg, transparent, transparent 2px, rgba(239,68,68,0.5) 2px, rgba(239,68,68,0.5) 4px)',
+                                                                borderLeft: '2px solid rgba(239,68,68,0.85)',
+                                                                borderRight: '2px solid rgba(239,68,68,0.85)',
                                                             }}
                                                         />
                                                     </TooltipTrigger>
