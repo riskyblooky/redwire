@@ -61,22 +61,24 @@ export default function DiscussionSection({
     // a comment link. Keep the section open so the thread can auto-expand.
     const searchParams = useSearchParams();
     const targetCommentId = searchParams?.get('commentId') || null;
+    const targetThreadId = searchParams?.get('threadId') || null;
+    const hasDeepLink = !!(targetCommentId || targetThreadId);
 
     // Auto-collapse if there are no threads after initial load (unless we're
-    // deep-linking to a specific comment, in which case stay open).
+    // deep-linking to a specific comment/thread, in which case stay open).
     useEffect(() => {
         if (!isLoading && !hasInitialized.current) {
             hasInitialized.current = true;
-            if (threads.length === 0 && !targetCommentId) {
+            if (threads.length === 0 && !hasDeepLink) {
                 setIsCollapsed(true);
             }
         }
-    }, [isLoading, threads.length, targetCommentId]);
+    }, [isLoading, threads.length, hasDeepLink]);
 
     // If a deep-link arrives after mount, make sure the section is expanded.
     useEffect(() => {
-        if (targetCommentId) setIsCollapsed(false);
-    }, [targetCommentId]);
+        if (hasDeepLink) setIsCollapsed(false);
+    }, [hasDeepLink]);
 
     const totalComments = threads.reduce((sum, thread) => sum + (thread.comment_count || 0), 0);
 
@@ -147,6 +149,7 @@ export default function DiscussionSection({
                                     isAdmin={isAdmin}
                                     users={users}
                                     targetCommentId={targetCommentId}
+                                    targetThreadId={targetThreadId}
                                 />
                             ))}
                         </div>

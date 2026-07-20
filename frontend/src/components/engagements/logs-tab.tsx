@@ -93,6 +93,24 @@ const resourceTypeColors: Record<string, string> = {
 
 const PAGE_SIZE = 25;
 
+// comment / thread activity logs store the THREAD id in resource_id (not the
+// parent entity), so resolve the thread on click and deep-link to the finding
+// / testcase / asset / engagement it lives on, opening (?threadId=) the thread.
+const THREAD_ROUTE: Record<string, string> = { finding: '/findings', testcase: '/testcases', asset: '/assets' };
+async function openThreadFromLog(threadId: string, engagementId: string) {
+    try {
+        const { data: thread } = await api.get(`/discussions/threads/${threadId}`);
+        const rt = (thread.resource_type || '').toLowerCase();
+        let base: string;
+        if (rt === 'engagement') base = `/engagements/${thread.resource_id || engagementId}?tab=overview`;
+        else if (THREAD_ROUTE[rt] && thread.resource_id) base = `${THREAD_ROUTE[rt]}/${thread.resource_id}?engagementId=${thread.engagement_id || engagementId}`;
+        else base = `/engagements/${engagementId}?tab=overview`;
+        window.location.assign(`${base}&threadId=${thread.id}`);
+    } catch {
+        // Thread was likely deleted — nothing to navigate to.
+    }
+}
+
 export function LogsTab({ engagementId }: LogsTabProps) {
     const [search, setSearch] = useState('');
     const debouncedSearch = useDebounce(search, 500);
@@ -279,14 +297,21 @@ export function LogsTab({ engagementId }: LogsTabProps) {
                                         }
                                     })();
 
+                                    // comment/thread logs resolve their thread on click (link is null above).
+                                    const isThreadLog = resourceType === 'comment' || resourceType === 'thread';
+                                    const clickable = !!link || (isThreadLog && !!log.resource_id);
+
                                     return (
                                         <TableRow
                                             key={log.id}
                                             className={cn(
                                                 "border-slate-800 transition-all duration-200",
-                                                link ? "cursor-pointer hover:bg-primary/90/5" : "hover:bg-slate-800/30"
+                                                clickable ? "cursor-pointer hover:bg-primary/90/5" : "hover:bg-slate-800/30"
                                             )}
-                                            onClick={() => link && window.location.assign(link)}
+                                            onClick={() => {
+                                                if (link) window.location.assign(link);
+                                                else if (isThreadLog && log.resource_id) openThreadFromLog(log.resource_id, engagementId);
+                                            }}
                                         >
                                             <TableCell className="text-xs text-slate-500 font-mono whitespace-nowrap">
                                                 {parseUTCDate(log.created_at).toLocaleString()}

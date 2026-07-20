@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Thread } from '@/lib/hooks/use-discussions';
 import { useComments, useUpdateThread, useDeleteThread } from '@/lib/hooks/use-discussions';
 import { useCanDelete } from '@/lib/hooks/use-permissions';
@@ -19,17 +19,35 @@ interface ThreadCardProps {
     /** Deep-link target comment id (?commentId=). If it lives in this thread,
      *  auto-expand and let CommentItem scroll/flash it. */
     targetCommentId?: string | null;
+    /** Deep-link target thread id (?threadId=). If this IS that thread,
+     *  auto-expand, scroll into view, and flash it. */
+    targetThreadId?: string | null;
 }
 
-export default function ThreadCard({ thread, currentUserId, isAdmin, users, targetCommentId }: ThreadCardProps) {
+export default function ThreadCard({ thread, currentUserId, isAdmin, users, targetCommentId, targetThreadId }: ThreadCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const { data: comments = [], isLoading } = useComments(thread.id);
 
+    const rootRef = useRef<HTMLDivElement>(null);
+    const [flash, setFlash] = useState(false);
+
     // Auto-expand once when the deep-linked comment is in this thread.
     const containsTarget = !!targetCommentId && comments.some((c: any) => c.id === targetCommentId);
+    const isTargetThread = !!targetThreadId && thread.id === targetThreadId;
     useEffect(() => {
-        if (containsTarget) setIsExpanded(true);
-    }, [containsTarget]);
+        if (containsTarget || isTargetThread) setIsExpanded(true);
+    }, [containsTarget, isTargetThread]);
+
+    // Scroll to and flash the card when it's the deep-linked thread.
+    useEffect(() => {
+        if (!isTargetThread) return;
+        const t = setTimeout(() => {
+            rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setFlash(true);
+        }, 150);
+        const off = setTimeout(() => setFlash(false), 3200);
+        return () => { clearTimeout(t); clearTimeout(off); };
+    }, [isTargetThread]);
     const updateThread = useUpdateThread();
     const deleteThread = useDeleteThread();
     const canDelete = useCanDelete(thread.engagement_id, 'discussion', thread.created_by);
@@ -54,7 +72,7 @@ export default function ThreadCard({ thread, currentUserId, isAdmin, users, targ
 
     return (
         <>
-            <div className="border border-slate-800 rounded-lg bg-slate-900/30 overflow-hidden">
+            <div ref={rootRef} className={`rounded-lg overflow-hidden scroll-mt-24 transition-colors ${flash ? 'border-2 border-indigo-500/60 bg-indigo-500/10' : 'border border-slate-800 bg-slate-900/30'}`}>
                 {/* Thread Header */}
                 <div
                     className="p-4 cursor-pointer hover:bg-slate-800/30 transition-colors"
