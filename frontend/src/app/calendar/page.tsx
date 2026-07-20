@@ -109,7 +109,14 @@ export default function CalendarPage() {
     // `currentMonth` is a legacy name kept for the metrics strip that
     // computes on a whole-month window regardless of the active view.
     // `currentDate` is the reference date used for the visible view.
-    const [currentDate, setCurrentDate] = useState(new Date());
+    // On a weekend, default to the upcoming Monday: the week view is Mon–Fri,
+    // so a Sat/Sun visit would otherwise land on the just-ended work week and
+    // hide anything scheduled for the week ahead (e.g. an OoO starting today).
+    const [currentDate, setCurrentDate] = useState(() => {
+        const now = new Date();
+        const dow = now.getDay(); // 0 = Sun, 6 = Sat
+        return dow === 0 ? addDays(now, 1) : dow === 6 ? addDays(now, 2) : now;
+    });
     const currentMonth = currentDate;
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState<any>(null);
