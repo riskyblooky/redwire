@@ -38,7 +38,7 @@ import {
     LayoutGrid, List, ArrowUpDown, Server, Target,
 } from 'lucide-react';
 import api, { apiErrorMessage } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import {
     DropdownMenu,
@@ -205,7 +205,7 @@ const VaultItemCard = ({
                             </TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
-                    • {new Date(item.created_at).toLocaleString()}
+                    • {parseUTCDate(item.created_at).toLocaleString()}
                 </CardDescription>
             </CardHeader>
 
@@ -539,7 +539,7 @@ const VaultItemRow = ({
             </div>
             {/* Date + time */}
             <div className="w-40 flex-shrink-0 text-[10px] text-slate-500">
-                {new Date(item.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })}
+                {parseUTCDate(item.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })}
             </div>
             {/* Actions */}
             <div className="flex-shrink-0">

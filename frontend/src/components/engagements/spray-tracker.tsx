@@ -28,7 +28,7 @@ import {
     Trash2, ArrowLeft, Search, Eye, EyeOff, ChevronRight,
     AlertTriangle, Server, Target, FileText, Vault, Plus, Filter, KeyRound,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import Link from 'next/link';
 import { usePermission } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -297,7 +297,7 @@ export function SprayTracker({ engagementId }: SprayTrackerProps) {
                                             <span className="text-slate-500">✕ {campaign.failed}</span>
                                         </div>
                                         <span className="text-[9px] text-slate-600">
-                                            {new Date(campaign.created_at).toLocaleDateString()}
+                                            {parseUTCDate(campaign.created_at).toLocaleDateString()}
                                         </span>
                                     </div>
                                 </CardContent>

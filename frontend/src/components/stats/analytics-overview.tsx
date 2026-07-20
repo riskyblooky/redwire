@@ -35,6 +35,7 @@
 
 import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { parseUTCDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -842,7 +843,7 @@ export default function AnalyticsOverview() {
                                                             <span className="text-slate-600">/{op.testcases_total}</span>
                                                         </td>
                                                         <td className="py-2.5 px-3 text-slate-500">
-                                                            {op.last_active ? new Date(op.last_active).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+                                                            {op.last_active ? parseUTCDate(op.last_active).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                                                         </td>
                                                     </tr>
                                                     );

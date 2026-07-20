@@ -35,7 +35,7 @@ import {
     useLinkTestCaseToCleanup, useUnlinkTestCaseFromCleanup,
 } from '@/lib/hooks/use-entity-links';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import Link from 'next/link';
 
 // ── colour maps ──────────────────────────────────────────────────────
@@ -611,7 +611,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <Clock className="h-3 w-3" /> Created
                                         </span>
-                                        <span className="text-slate-300">{new Date(testcase.created_at).toLocaleString()}</span>
+                                        <span className="text-slate-300">{parseUTCDate(testcase.created_at).toLocaleString()}</span>
                                     </div>
                                 </div>
                             </div>

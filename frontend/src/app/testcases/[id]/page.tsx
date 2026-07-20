@@ -39,7 +39,7 @@ import DiscussionSection from '@/components/discussions/discussion-section';
 import { MarkdownEditor, MarkdownPreview } from '@/components/ui/markdown-editor';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
@@ -796,7 +796,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                                 <Clock className="h-3 w-3" /> Created
                                             </span>
-                                            <span className="text-slate-300">{new Date(testcase.created_at).toLocaleString()}</span>
+                                            <span className="text-slate-300">{parseUTCDate(testcase.created_at).toLocaleString()}</span>
                                         </div>
                                     </div>
                                 </div>

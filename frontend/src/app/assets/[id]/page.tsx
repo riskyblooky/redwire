@@ -30,7 +30,7 @@ import { toast } from 'sonner';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useAuthStore } from '@/stores/auth-store';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -710,7 +710,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <Clock className="h-3 w-3" /> Added
                                         </span>
-                                        <span className="text-slate-300">{new Date(asset.created_at).toLocaleString()}</span>
+                                        <span className="text-slate-300">{parseUTCDate(asset.created_at).toLocaleString()}</span>
                                     </div>
                                 </div>
                             </CardContent>

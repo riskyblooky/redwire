@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { parseUTCDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -293,8 +294,8 @@ export function ApiTokenManagement() {
                                                     <Badge variant="destructive" className="text-xs">Revoked</Badge>
                                                 )}
                                             </td>
-                                            <td className="py-2 px-3 text-slate-500">{new Date(t.created_at).toLocaleDateString()}</td>
-                                            <td className="py-2 px-3 text-slate-500">{t.last_used_at ? new Date(t.last_used_at).toLocaleDateString() : '—'}</td>
+                                            <td className="py-2 px-3 text-slate-500">{parseUTCDate(t.created_at).toLocaleDateString()}</td>
+                                            <td className="py-2 px-3 text-slate-500">{t.last_used_at ? parseUTCDate(t.last_used_at).toLocaleDateString() : '—'}</td>
                                             <td className="py-2 px-3 text-right">
                                                 {t.is_active && (
                                                     <Button size="icon" variant="ghost" onClick={() => handleRevoke(t.id)} className="text-red-400 hover:text-red-300 h-8 w-8">

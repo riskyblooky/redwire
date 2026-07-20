@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { GitCommitHorizontal, ChevronDown, Clock, User, ArrowRight, Loader2, History, X } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 
 // Human-readable field labels
 const FIELD_LABELS: Record<string, string> = {
@@ -51,7 +51,7 @@ function timeAgo(dateStr: string) {
     if (hrs < 24) return `${hrs}h ago`;
     const days = Math.floor(hrs / 24);
     if (days < 30) return `${days}d ago`;
-    return new Date(dateStr).toLocaleDateString();
+    return parseUTCDate(dateStr).toLocaleDateString();
 }
 
 /**
@@ -329,7 +329,7 @@ export function VersionHistoryPanel({ entityType, entityId, currentData }: Versi
                                 </span>
                                 <span className="flex items-center gap-1">
                                     <Clock className="h-3 w-3" />
-                                    {new Date(selectedVersion.created_at).toLocaleString()}
+                                    {parseUTCDate(selectedVersion.created_at).toLocaleString()}
                                 </span>
                             </div>
                         )}

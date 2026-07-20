@@ -23,6 +23,7 @@ import '@xyflow/react/dist/style.css';
 import Dagre from '@dagrejs/dagre';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { parseUTCDate } from '@/lib/utils';
 import {
     Monitor, AlertTriangle, ClipboardCheck, Sparkles,
     Loader2, Maximize2, Minimize2, LayoutDashboard, X, Eye, EyeOff, RefreshCw,
@@ -367,7 +368,7 @@ function LayoutsPopover({ engagementId, layouts, onRefreshLayouts, onRefreshGrap
                                         <div className="flex-1 min-w-0">
                                             <p className={`text-xs font-medium truncate ${layout.is_active ? 'text-indigo-300' : 'text-white'}`}>{layout.name}</p>
                                             <p className="text-[10px] text-slate-500">
-                                                {layout.pinned_by_username} · {new Date(layout.pinned_at).toLocaleDateString()}
+                                                {layout.pinned_by_username} · {parseUTCDate(layout.pinned_at).toLocaleDateString()}
                                             </p>
                                         </div>
                                     )}

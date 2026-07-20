@@ -14,7 +14,7 @@ import {
     CheckCircle2, Clock, AlertTriangle, MinusCircle, MapPin,
     Bug, CheckSquare, Server, Calendar, User, Loader2,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 
 const ARTIFACT_TYPES: Record<string, { label: string; icon: any; color: string; bg: string; border: string }> = {
     SSH_KEY: { label: 'SSH Key', icon: Key, color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
@@ -177,7 +177,7 @@ export function CleanupDetailModal({ artifact: partialArtifact, open, onOpenChan
                                 </div>
                                 <div className="flex items-center gap-1.5 text-slate-500">
                                     <Calendar className="h-3 w-3" />
-                                    <span>{artifact?.created_at ? new Date(artifact.created_at).toLocaleString() : '—'}</span>
+                                    <span>{artifact?.created_at ? parseUTCDate(artifact.created_at).toLocaleString() : '—'}</span>
                                 </div>
                             </div>
                             {artifact?.cleaned_at && (
@@ -189,7 +189,7 @@ export function CleanupDetailModal({ artifact: partialArtifact, open, onOpenChan
                                     </div>
                                     <div className="flex items-center gap-1.5 text-slate-500">
                                         <Calendar className="h-3 w-3" />
-                                        <span>{new Date(artifact.cleaned_at).toLocaleString()}</span>
+                                        <span>{parseUTCDate(artifact.cleaned_at).toLocaleString()}</span>
                                     </div>
                                 </div>
                             )}

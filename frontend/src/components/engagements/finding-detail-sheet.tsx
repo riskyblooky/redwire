@@ -40,7 +40,7 @@ import {
     useLinkFindingToCleanup, useUnlinkFindingFromCleanup,
 } from '@/lib/hooks/use-entity-links';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import Link from 'next/link';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 
@@ -644,14 +644,14 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <Clock className="h-3 w-3" /> Created
                                         </span>
-                                        <span className="text-slate-300">{new Date(finding.created_at).toLocaleString()}</span>
+                                        <span className="text-slate-300">{parseUTCDate(finding.created_at).toLocaleString()}</span>
                                     </div>
                                     {finding.updated_at && (
                                         <div className="flex items-center justify-between text-[10px]">
                                             <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                                 <Clock className="h-3 w-3" /> Updated
                                             </span>
-                                            <span className="text-slate-300">{new Date(finding.updated_at).toLocaleString()}</span>
+                                            <span className="text-slate-300">{parseUTCDate(finding.updated_at).toLocaleString()}</span>
                                         </div>
                                     )}
                                 </div>

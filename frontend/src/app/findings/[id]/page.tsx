@@ -65,7 +65,7 @@ import { EvidenceUpload } from '@/components/findings/evidence-upload';
 import { EvidenceCard } from '@/components/findings/evidence-card';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
@@ -913,7 +913,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                     <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                         <Clock className="h-3 w-3" /> Logged
                                     </span>
-                                    <span className="text-slate-300">{new Date(finding.created_at).toLocaleString()}</span>
+                                    <span className="text-slate-300">{parseUTCDate(finding.created_at).toLocaleString()}</span>
                                 </div>
                             </div>
                         </Card>

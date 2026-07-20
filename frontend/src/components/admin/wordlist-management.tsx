@@ -14,6 +14,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { parseUTCDate } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
@@ -284,7 +285,7 @@ export function WordlistManagement() {
                                         </TableCell>
                                         <TableCell>
                                             <span className="text-slate-400 text-sm">
-                                                {new Date(wl.created_at).toLocaleDateString()}
+                                                {parseUTCDate(wl.created_at).toLocaleDateString()}
                                             </span>
                                         </TableCell>
                                         <TableCell className="text-right">

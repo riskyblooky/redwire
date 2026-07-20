@@ -281,7 +281,7 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                             <RadixTooltipTrigger asChild>
                                 <span className="cursor-default">{formatDistanceToNow(parseUTCDate(testcase.created_at), { addSuffix: true })}</span>
                             </RadixTooltipTrigger>
-                            <RadixTooltipContent side="top"><span className="text-xs">{new Date(testcase.created_at).toLocaleString()}</span></RadixTooltipContent>
+                            <RadixTooltipContent side="top"><span className="text-xs">{parseUTCDate(testcase.created_at).toLocaleString()}</span></RadixTooltipContent>
                         </RadixTooltip>
                     </RadixTooltipProvider>
                 </TableCell>}

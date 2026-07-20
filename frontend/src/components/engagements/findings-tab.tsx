@@ -219,7 +219,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                             <RadixTooltipTrigger asChild>
                                 <span className="cursor-default">{formatDistanceToNow(parseUTCDate(finding.created_at), { addSuffix: true })}</span>
                             </RadixTooltipTrigger>
-                            <RadixTooltipContent side="top"><span className="text-xs">{new Date(finding.created_at).toLocaleString()}</span></RadixTooltipContent>
+                            <RadixTooltipContent side="top"><span className="text-xs">{parseUTCDate(finding.created_at).toLocaleString()}</span></RadixTooltipContent>
                         </RadixTooltip>
                     </RadixTooltipProvider>
                 </TableCell>}

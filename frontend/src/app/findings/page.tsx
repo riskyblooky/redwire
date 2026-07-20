@@ -14,6 +14,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
+import { parseUTCDate } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,7 +78,7 @@ const FindingRow = ({ finding, router, severityColors, statusColors, getSeverity
                 {finding.assets && finding.assets.length > 0 ? finding.assets[0].name : '—'}
             </TableCell>
             <TableCell className="text-slate-400 text-sm">
-                {new Date(finding.created_at).toLocaleDateString()}
+                {parseUTCDate(finding.created_at).toLocaleDateString()}
             </TableCell>
             <CustomFieldListCells entity="finding" value={finding.custom_fields} />
             <TableCell className="text-right pr-6">

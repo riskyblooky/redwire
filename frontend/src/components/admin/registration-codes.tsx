@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { parseUTCDate } from '@/lib/utils';
 import { RegistrationCode } from '@/lib/types';
 import {
     Table,
@@ -255,7 +256,7 @@ export function RegistrationCodeManagement() {
                                                 />
                                             </TableCell>
                                             <TableCell className="text-slate-400 text-xs">
-                                                {new Date(code.created_at).toLocaleDateString()}
+                                                {parseUTCDate(code.created_at).toLocaleDateString()}
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-1">
@@ -319,7 +320,7 @@ export function RegistrationCodeManagement() {
                                             <p className="text-xs text-slate-400">{user.email}</p>
                                         </div>
                                         <span className="text-[10px] text-slate-500 font-mono">
-                                            {new Date(user.created_at).toLocaleDateString()}
+                                            {parseUTCDate(user.created_at).toLocaleDateString()}
                                         </span>
                                     </div>
                                 ))}

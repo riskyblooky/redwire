@@ -300,7 +300,7 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
                             <RadixTooltipTrigger asChild>
                                 <span className="cursor-default">{formatDistanceToNow(parseUTCDate(asset.created_at), { addSuffix: true })}</span>
                             </RadixTooltipTrigger>
-                            <RadixTooltipContent side="top"><span className="text-xs">{new Date(asset.created_at).toLocaleString()}</span></RadixTooltipContent>
+                            <RadixTooltipContent side="top"><span className="text-xs">{parseUTCDate(asset.created_at).toLocaleString()}</span></RadixTooltipContent>
                         </RadixTooltip>
                     </RadixTooltipProvider>
                 </TableCell>}

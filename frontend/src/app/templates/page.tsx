@@ -32,7 +32,7 @@ import { useState, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import {
     useFindingTemplates,
     useDeleteFindingTemplate,
@@ -1083,7 +1083,7 @@ export default function TemplatesPage() {
                                                             </TableCell>
                                                             <TableCell className="hidden lg:table-cell text-slate-400 text-xs whitespace-nowrap">
                                                                 {template.updated_at
-                                                                    ? new Date(template.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                                                                    ? parseUTCDate(template.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
                                                                     : '—'}
                                                             </TableCell>
                                                             <TableCell className="text-right">
@@ -1313,7 +1313,7 @@ export default function TemplatesPage() {
                                                             </TableCell>
                                                             <TableCell className="hidden lg:table-cell text-slate-400 text-xs whitespace-nowrap">
                                                                 {template.updated_at
-                                                                    ? new Date(template.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                                                                    ? parseUTCDate(template.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
                                                                     : '—'}
                                                             </TableCell>
                                                             <TableCell className="text-right">
@@ -1549,7 +1549,7 @@ export default function TemplatesPage() {
                                                             </TableCell>
                                                             <TableCell className="hidden lg:table-cell text-slate-400 text-xs whitespace-nowrap">
                                                                 {rb.updated_at
-                                                                    ? new Date(rb.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                                                                    ? parseUTCDate(rb.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
                                                                     : '—'}
                                                             </TableCell>
                                                             <TableCell className="text-center">
