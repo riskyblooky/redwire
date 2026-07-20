@@ -101,6 +101,9 @@ export function SchedulingAssistant({
     // window — so a brief appointment doesn't drop someone from suggestions.
     const [oooThreshold, setOooThreshold] = useState(50);
     const [prioritizeSkills, setPrioritizeSkills] = useState(true);
+    // "Assign selected people to an engagement" action (month / custom views).
+    const [assignEngId, setAssignEngId] = useState<string>('');
+    const [assignRoleId, setAssignRoleId] = useState<string>('');
 
     const { data: allEngagements = [] } = useEngagements();
     const { data: engagementRoles = [] } = useEngagementRoles();
@@ -357,6 +360,34 @@ export function SchedulingAssistant({
         }
     };
 
+    // Assign the currently-selected people to a chosen engagement with a role,
+    // MERGING with (not replacing) that engagement's existing assignments so no
+    // one is dropped. Used from the month/custom views where there's no
+    // engagement context of its own.
+    const handleAssignSelected = async () => {
+        if (!assignEngId) { toast.warning('Pick an engagement to assign to'); return; }
+        const eng = allEngagements.find(e => e.id === assignEngId);
+        if (!eng) return;
+        const existing = ((eng as any).assignment_details || []).map((a: any) => ({
+            user_id: a.user_id, ...(a.role_id ? { role_id: a.role_id } : {}),
+        }));
+        const existingIds = new Set(existing.map((a: any) => a.user_id));
+        const additions = selectedUserIds
+            .filter(uid => !existingIds.has(uid))
+            .map(uid => ({ user_id: uid, ...(assignRoleId ? { role_id: assignRoleId } : {}) }));
+        if (additions.length === 0) {
+            toast.info('All selected people are already on that engagement');
+            return;
+        }
+        try {
+            await updateEngagement.mutateAsync({ id: assignEngId, assignments: [...existing, ...additions] });
+            toast.success(`Assigned ${additions.length} ${additions.length === 1 ? 'person' : 'people'} to ${eng.name}`);
+            onSelectUsers?.([]);
+        } catch (error: any) {
+            toast.error('Failed to assign', { description: apiErrorMessage(error, 'An error occurred.') });
+        }
+    };
+
     const getBarStyle = (engStart: string | null, engEnd: string | null) => {
         if (!engStart) return { left: '0%', width: '0%' };
         const eStart = parseISO(engStart);
@@ -584,6 +615,40 @@ export function SchedulingAssistant({
                                 {assignedUserIds.size} assigned
                             </Badge>
                         )}
+                    </div>
+                )}
+
+                {/* Assign selected → engagement (month / custom views) */}
+                {dateMode !== 'engagement' && selectedUserIds.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 bg-green-500/5 border border-green-500/20 rounded-lg px-3 py-2">
+                        <UserPlus className="h-4 w-4 text-green-400 shrink-0" />
+                        <span className="text-xs text-slate-300 font-medium whitespace-nowrap">
+                            {selectedUserIds.length} selected → assign to
+                        </span>
+                        <Select value={assignEngId} onValueChange={setAssignEngId}>
+                            <SelectTrigger className="h-7 text-[11px] bg-slate-800 border-slate-700 w-48"><SelectValue placeholder="Engagement…" /></SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-slate-700 max-h-64">
+                                {allEngagements.map(e => (
+                                    <SelectItem key={e.id} value={e.id} className="text-xs text-slate-200">{e.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <span className="text-[11px] text-slate-500">as</span>
+                        <Select value={assignRoleId} onValueChange={setAssignRoleId}>
+                            <SelectTrigger className="h-7 text-[11px] bg-slate-800 border-slate-700 w-36"><SelectValue placeholder="Role (optional)" /></SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-slate-700 max-h-64">
+                                {engagementRoles.map((r: any) => (
+                                    <SelectItem key={r.id} value={r.id} className="text-xs text-slate-200">{r.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-500 text-white ml-auto gap-1.5"
+                            onClick={handleAssignSelected} disabled={updateEngagement.isPending || !assignEngId}>
+                            {updateEngagement.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
+                            Assign
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-400 hover:text-white"
+                            onClick={() => onSelectUsers?.([])}>Clear</Button>
                     </div>
                 )}
 
