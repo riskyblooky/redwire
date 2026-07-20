@@ -4,11 +4,58 @@ import React from 'react';
 import ReactMarkdownPreview from '@uiw/react-markdown-preview';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { AuthImage } from './auth-image';
+import { useUsers } from '@/lib/hooks/use-users';
+import { UserAvatar } from './user-avatar';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
+
+/** A @mention chip that reveals the mentioned user's avatar + display name on
+ *  hover. Falls back to the plain styled chip when the user can't be resolved
+ *  (e.g. the viewer can't list users, or the username no longer exists). */
+function MentionChip({ className, children }: { className?: string; children: React.ReactNode }) {
+    const { data: users = [] } = useUsers();
+    const text = React.Children.toArray(children)
+        .map((c) => (typeof c === 'string' ? c : ''))
+        .join('');
+    const username = text.replace(/^@/, '').trim();
+    const u = users.find((x) => x.username.toLowerCase() === username.toLowerCase());
+
+    const chip = <span className={className}>{children}</span>;
+    if (!u) return chip;
+
+    return (
+        <TooltipProvider delayDuration={150}>
+            <Tooltip>
+                <TooltipTrigger asChild>{chip}</TooltipTrigger>
+                <TooltipContent side="top" className="bg-slate-800 border-slate-700">
+                    <div className="flex items-center gap-2">
+                        <UserAvatar
+                            user={{ id: u.id, username: u.username, profile_photo: u.profile_photo }}
+                            className="h-6 w-6 text-[8px]"
+                        />
+                        <div className="leading-tight">
+                            <div className="text-xs font-semibold text-white">{u.full_name || u.username}</div>
+                            <div className="text-[10px] text-slate-400">@{u.username}</div>
+                        </div>
+                    </div>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+    );
+}
 
 const COMPONENTS = {
     // Route img tags through AuthImage so /api/markdown-images/* fetches
     // with the user's JWT. External / data: URLs fall through to <img>.
     img: ({ node, ...rest }: any) => <AuthImage {...rest} />,
+    // @mention chips (class "mention-tag", emitted by processMentionsInMarkdown)
+    // become hover targets that reveal the user's avatar + display name. Every
+    // other span passes through unchanged.
+    span: ({ node, className, children, ...rest }: any) => {
+        if (typeof className === 'string' && className.split(' ').includes('mention-tag')) {
+            return <MentionChip className={className}>{children}</MentionChip>;
+        }
+        return <span className={className} {...rest}>{children}</span>;
+    },
 };
 
 // skipHtml=false is required so TipTap-emitted formatting renders
