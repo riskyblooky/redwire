@@ -130,6 +130,15 @@ interface TreeNodeProps {
     dragPosition: 'above' | 'below' | 'inside' | null;
 }
 
+/** Engagements on this client plus all descendants. `engagement_count` from
+ *  the API is direct-only, so a parent's badge wouldn't change when a sub-client
+ *  is dragged under it — this rollup makes the count reflect the whole subtree. */
+function subtreeEngagementCount(node: Client): number {
+    let sum = node.engagement_count || 0;
+    for (const child of node.children || []) sum += subtreeEngagementCount(child);
+    return sum;
+}
+
 function TreeNode({ node, depth, expandedNodes, toggleNode, onEdit, onDelete, onView, onCreateChild, onSelect, selectedId, clientTypes, onDragStart, onDragOver, onDragLeave, onDrop, dragOverId, dragPosition }: TreeNodeProps) {
     const isExpanded = expandedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
@@ -190,12 +199,20 @@ function TreeNode({ node, depth, expandedNodes, toggleNode, onEdit, onDelete, on
                             {clientType.name}
                         </Badge>
                     )}
-                    {node.engagement_count > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] text-slate-500 shrink-0">
-                            <Briefcase className="h-3 w-3" />
-                            {node.engagement_count}
-                        </span>
-                    )}
+                    {(() => {
+                        const total = subtreeEngagementCount(node);
+                        if (total === 0) return null;
+                        const hasNested = total !== (node.engagement_count || 0);
+                        return (
+                            <span
+                                className="flex items-center gap-1 text-[10px] text-slate-500 shrink-0"
+                                title={hasNested ? `${total} engagements (including sub-clients)` : `${total} engagement${total === 1 ? '' : 's'}`}
+                            >
+                                <Briefcase className="h-3 w-3" />
+                                {total}
+                            </span>
+                        );
+                    })()}
                 </div>
 
                 {/* Contact Info (on hover) */}
