@@ -104,6 +104,7 @@ export function SchedulingAssistant({
     // "Assign selected people to an engagement" action (month / custom views).
     const [assignEngId, setAssignEngId] = useState<string>('');
     const [assignRoleId, setAssignRoleId] = useState<string>('');
+    const [assignEngPickerOpen, setAssignEngPickerOpen] = useState(false);
 
     const { data: allEngagements = [] } = useEngagements();
     const { data: engagementRoles = [] } = useEngagementRoles();
@@ -625,14 +626,38 @@ export function SchedulingAssistant({
                         <span className="text-xs text-slate-300 font-medium whitespace-nowrap">
                             {selectedUserIds.length} selected → assign to
                         </span>
-                        <Select value={assignEngId} onValueChange={setAssignEngId}>
-                            <SelectTrigger className="h-7 text-[11px] bg-slate-800 border-slate-700 w-48"><SelectValue placeholder="Engagement…" /></SelectTrigger>
-                            <SelectContent className="bg-slate-900 border-slate-700 max-h-64">
-                                {allEngagements.map(e => (
-                                    <SelectItem key={e.id} value={e.id} className="text-xs text-slate-200">{e.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                        <Popover open={assignEngPickerOpen} onOpenChange={setAssignEngPickerOpen}>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" role="combobox"
+                                    className="h-7 text-[11px] bg-slate-800 border-slate-700 text-white w-48 justify-between font-normal hover:bg-slate-700 hover:text-white">
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                        <Target className="h-3 w-3 shrink-0 text-slate-400" />
+                                        <span className="truncate">{assignEngId ? (allEngagements.find(e => e.id === assignEngId)?.name || 'Engagement…') : 'Engagement…'}</span>
+                                    </span>
+                                    <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 p-0 bg-slate-900 border-slate-700" align="start">
+                                <Command className="bg-slate-900">
+                                    <CommandInput placeholder="Search engagements…" className="text-white text-xs" />
+                                    <CommandList className="max-h-60">
+                                        <CommandEmpty>No engagement found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {allEngagements.map(e => (
+                                                <CommandItem key={e.id} value={`${e.name} ${e.client_name ?? ''}`}
+                                                    onSelect={() => { setAssignEngId(e.id); setAssignEngPickerOpen(false); }}
+                                                    className="text-slate-200 text-xs">
+                                                    <Check className={cn('mr-2 h-3.5 w-3.5', assignEngId === e.id ? 'opacity-100' : 'opacity-0')} />
+                                                    <Target className="h-3 w-3 text-primary mr-1.5 shrink-0" />
+                                                    <span className="truncate flex-1">{e.name}</span>
+                                                    {e.client_name && <span className="text-[10px] text-slate-500 ml-2 truncate">{e.client_name}</span>}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
                         <span className="text-[11px] text-slate-500">as</span>
                         <Select value={assignRoleId} onValueChange={setAssignRoleId}>
                             <SelectTrigger className="h-7 text-[11px] bg-slate-800 border-slate-700 w-36"><SelectValue placeholder="Role (optional)" /></SelectTrigger>
@@ -976,18 +1001,18 @@ export function SchedulingAssistant({
                                         />
                                     </label>
                                     {excludeOoo && (
-                                        <div className="flex items-center justify-between gap-2 pl-3">
-                                            <span className="text-[10px] text-slate-500">…if OoO ≥</span>
-                                            <div className="flex items-center gap-1.5 flex-1">
-                                                <input
-                                                    type="range" min={5} max={100} step={5}
-                                                    value={oooThreshold}
-                                                    onChange={e => setOooThreshold(Number(e.target.value))}
-                                                    className="flex-1 h-1 accent-red-500 cursor-pointer"
-                                                    title="Only exclude members whose Out-of-Office covers at least this % of the window"
-                                                />
-                                                <span className="text-[10px] text-slate-400 tabular-nums w-8 text-right">{oooThreshold}%</span>
+                                        <div className="pl-3 space-y-1">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] text-slate-500">…if OoO covers ≥</span>
+                                                <span className="text-[10px] text-slate-400 tabular-nums">{oooThreshold}%</span>
                                             </div>
+                                            <input
+                                                type="range" min={5} max={100} step={5}
+                                                value={oooThreshold}
+                                                onChange={e => setOooThreshold(Number(e.target.value))}
+                                                className="w-full h-1 accent-red-500 cursor-pointer"
+                                                title="Only exclude members whose Out-of-Office covers at least this % of the window"
+                                            />
                                         </div>
                                     )}
                                     <label className="flex items-center justify-between cursor-pointer">
