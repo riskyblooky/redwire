@@ -447,6 +447,33 @@
   display: inline;
 }
 
+/* TipTap lists — base styling for ALL editors. @tailwindcss/typography isn't
+   installed, so the `prose` class on the editor is a no-op and Tailwind's
+   preflight resets ul/ol to no markers / no indent. Without this, bullet and
+   ordered lists render identical to a paragraph (most visible in the
+   collaborative notes editor, which has no per-component list CSS). */
+.ProseMirror ul:not([data-type="taskList"]) {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.ProseMirror li {
+  margin: 0.25rem 0;
+}
+.ProseMirror li::marker {
+  color: #94a3b8;
+}
+/* Task lists carry their own checkbox UI — never give them disc bullets. */
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
 /* TipTap tables — rendered both in the editor and in MarkdownPreview */
 .ProseMirror table,
 .prose table {
