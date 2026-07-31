@@ -17,9 +17,18 @@ import logging
 import time
 from typing import Dict, Set, Optional
 from fastapi import WebSocket
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+# Live note content autosaves every few seconds while someone is typing
+# (the Y.js room debounces DB writes to ~3s). Writing an activity-log row on
+# every one of those would flood the engagement audit trail, which is why the
+# content path was left un-logged. Instead we coalesce: at most one
+# "updated_note" activity-log entry per note per this window. Title edits (via
+# PATCH /notes/{id}) share the same action, so an active editing session
+# produces a single rolling "edited note" entry rather than a stream.
+NOTE_UPDATE_LOG_DEBOUNCE = timedelta(minutes=10)
 
 
 class YjsRoom:
@@ -196,10 +205,58 @@ async def save_note_content(note_id: str, content: str, user_id: str):
             result = await db.execute(select(Note).where(Note.id == note_id))
             note = result.scalar_one_or_none()
             if note:
+                changed = note.content != content
                 note.content = content
                 note.updated_by = user_id
                 note.updated_at = datetime.utcnow()
+                engagement_id = note.engagement_id
+                note_title = note.title
                 await db.commit()
                 logger.debug(f"Y.js persisted note {note_id}")
+
+                # Debounced audit logging: only when the content actually
+                # changed and no recent "updated_note" entry exists for it.
+                if changed and engagement_id:
+                    await _maybe_log_note_update(db, engagement_id, note_id, note_title, user_id)
     except Exception as e:
         logger.warning(f"Y.js save_note_content error: {e}")
+
+
+async def _maybe_log_note_update(db, engagement_id: str, note_id: str, note_title: str, user_id: str):
+    """Write an 'updated_note' activity log unless a recent one already exists.
+
+    Coalesces the high-frequency content-autosave stream into at most one audit
+    entry per note per NOTE_UPDATE_LOG_DEBOUNCE window so the engagement log
+    reflects "this note was edited" without spamming every keystroke-batch.
+    """
+    try:
+        from models.discussion import ActivityLog
+        from utils.collaboration import create_activity_log
+        from sqlalchemy import select
+
+        cutoff = datetime.utcnow() - NOTE_UPDATE_LOG_DEBOUNCE
+        recent = await db.execute(
+            select(ActivityLog.id)
+            .where(
+                ActivityLog.resource_type == "note",
+                ActivityLog.resource_id == note_id,
+                ActivityLog.action == "updated_note",
+                ActivityLog.created_at >= cutoff,
+            )
+            .limit(1)
+        )
+        if recent.scalar_one_or_none():
+            return  # within the debounce window — an entry already covers this edit session
+
+        await create_activity_log(
+            db,
+            engagement_id=engagement_id,
+            user_id=user_id,
+            action="updated_note",
+            resource_type="note",
+            resource_id=note_id,
+            resource_name=note_title,
+            details="Edited note content",
+        )
+    except Exception as e:
+        logger.warning(f"Y.js note-update activity log error: {e}")
