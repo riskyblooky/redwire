@@ -88,11 +88,20 @@ export interface FindingTemplate {
 }
 
 
+// The findings list is rendered as a single list and its counts / severity
+// breakdowns are computed client-side from the whole array, so we need the full
+// set — not the endpoint's default page of 100. 500 is the backend's
+// MAX_LIST_LIMIT (its own sanctioned ceiling); request it explicitly so the
+// list doesn't silently truncate at 100 with no paging control to reveal the rest.
+const FINDINGS_FETCH_LIMIT = 500;
+
 export function useFindings(params?: { engagement_id?: string; severity?: string; status?: string }) {
     return useQuery({
         queryKey: ['findings', params],
         queryFn: async () => {
-            const { data } = await api.get<Finding[]>('/findings', { params });
+            const { data } = await api.get<Finding[]>('/findings', {
+                params: { ...params, limit: FINDINGS_FETCH_LIMIT },
+            });
             return data;
         },
         staleTime: 30_000,

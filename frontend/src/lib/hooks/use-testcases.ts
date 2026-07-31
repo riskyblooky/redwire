@@ -120,12 +120,20 @@ export function flattenTree(
     return result;
 }
 
+// The test-case list is rendered as a single tree/list and its counts are
+// computed client-side from the whole array, so we need the full set — not the
+// endpoint's default page of 100. 500 is the backend's MAX_LIST_LIMIT (its own
+// sanctioned ceiling); request it explicitly so the list doesn't silently
+// truncate at 100 with no paging control to reveal the rest.
+const TESTCASES_FETCH_LIMIT = 500;
+
 // Fetch all test cases
 export function useTestCases(engagementId?: string) {
     return useQuery({
         queryKey: engagementId ? ['testcases', 'engagement', engagementId] : ['testcases'],
         queryFn: async () => {
-            const params = engagementId ? { engagement_id: engagementId } : {};
+            const params: Record<string, any> = { limit: TESTCASES_FETCH_LIMIT };
+            if (engagementId) params.engagement_id = engagementId;
             const { data } = await api.get<TestCase[]>('/testcases', { params });
             return data;
         },
