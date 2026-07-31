@@ -8,7 +8,7 @@ import Link from '@tiptap/extension-link';
 import { AuthAwareImage as Image } from './auth-image-node-view';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { CodeBlockWithMermaid } from './mermaid-codeblock';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
@@ -41,7 +41,7 @@ import {
     Link as LinkIcon, Image as ImageIcon, CheckSquare, CodeXml, ChevronDown,
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    Table as TableIcon, Trash2, Plus, Minus,
+    Table as TableIcon, Trash2, Plus, Minus, Workflow,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -326,6 +326,16 @@ const MenuBar = ({ editor }: { editor: any }) => {
                 <Button type="button" variant="ghost" size="icon" onClick={() => editor.chain().focus().toggleCodeBlock().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('codeBlock') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}>
                     <CodeXml className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon"
+                    onClick={() => editor.chain().focus().insertContent({
+                        type: 'codeBlock',
+                        attrs: { language: 'mermaid' },
+                        content: [{ type: 'text', text: 'graph TD\n    A[Start] --> B[End]' }],
+                    }).run()}
+                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('codeBlock', { language: 'mermaid' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    title="Insert Mermaid diagram (renders when viewed)">
+                    <Workflow className="h-4 w-4" />
                 </Button>
 
                 <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
@@ -771,7 +781,7 @@ export default function CollaborativeEditor({
             StarterKit.configure({
                 codeBlock: false,
             }),
-            CodeBlockLowlight.configure({
+            CodeBlockWithMermaid.configure({
                 lowlight,
                 HTMLAttributes: { class: 'hljs' },
             }),

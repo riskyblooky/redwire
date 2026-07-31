@@ -8,7 +8,7 @@ import Link from '@tiptap/extension-link';
 import { AuthAwareImage as Image } from './auth-image-node-view';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { CodeBlockWithMermaid } from './mermaid-codeblock';
 import Mention from '@tiptap/extension-mention';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
@@ -746,7 +746,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             StarterKit.configure({
                 codeBlock: false, // We'll use CodeBlockLowlight instead
             }),
-            CodeBlockLowlight.configure({
+            CodeBlockWithMermaid.configure({
                 lowlight,
                 HTMLAttributes: {
                     class: 'hljs',
