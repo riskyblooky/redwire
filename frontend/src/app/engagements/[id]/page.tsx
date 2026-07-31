@@ -1330,9 +1330,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Server className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Assets</span>
-                            {assets.length > 0 && (
+                            {totalAssets > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-blue-500/20 text-blue-400 border-none px-1.5 h-4 text-[10px]">
-                                    {assets.length}
+                                    {totalAssets}
                                 </Badge>
                             )}
                         </TabsTrigger>
