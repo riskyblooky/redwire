@@ -6,7 +6,7 @@ import {
     NodeViewWrapper,
     NodeViewProps,
 } from '@tiptap/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pencil, Check } from 'lucide-react';
 import { MermaidDiagram } from './mermaid-diagram';
 import { cn } from '@/lib/utils';
@@ -50,18 +50,48 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
     const editable = editor.isEditable;
     const [editing, setEditing] = useState<boolean>(editable && !content.trim());
     const [draft, setDraft] = useState<string>(content);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const editStartedAt = useRef<number>(0);
 
     useEffect(() => {
         setDraft(node.attrs.content || '');
     }, [node.attrs.content]);
 
+    // When entering edit mode, focus the textarea on the next frame — after it
+    // has actually mounted. autoFocus alone races with ProseMirror reclaiming
+    // focus on the node re-render.
+    useEffect(() => {
+        if (editing) {
+            const id = requestAnimationFrame(() => {
+                const el = textareaRef.current;
+                if (el) {
+                    el.focus();
+                    const len = el.value.length;
+                    el.setSelectionRange(len, len);
+                }
+            });
+            return () => cancelAnimationFrame(id);
+        }
+    }, [editing]);
+
     const startEdit = () => {
         setDraft(node.attrs.content || '');
+        editStartedAt.current = Date.now();
         setEditing(true);
     };
     const finishEdit = () => {
         if (draft !== content) updateAttributes({ content: draft });
         setEditing(false);
+    };
+    // ProseMirror steals focus back to the editable right after the textarea
+    // mounts, which fires a spurious blur. Ignore blurs in the first moments of
+    // an edit (and re-grab focus); a genuine click-away later still renders.
+    const handleBlur = () => {
+        if (Date.now() - editStartedAt.current < 400) {
+            requestAnimationFrame(() => textareaRef.current?.focus());
+            return;
+        }
+        finishEdit();
     };
 
     // Read-only surfaces (disabled editor) just render the diagram.
@@ -82,6 +112,7 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
                     </span>
                     <button
                         type="button"
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={finishEdit}
                         className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-slate-100"
                     >
@@ -89,10 +120,10 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
                     </button>
                 </div>
                 <textarea
-                    autoFocus
+                    ref={textareaRef}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    onBlur={finishEdit}
+                    onBlur={handleBlur}
                     onKeyDown={(e) => {
                         if (e.key === 'Escape') {
                             e.preventDefault();
@@ -117,6 +148,9 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
         >
             <button
                 type="button"
+                // Don't let ProseMirror focus/select on mousedown — that focus
+                // dance is what was blurring the textarea the instant it opened.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={startEdit}
                 title="Edit diagram"
                 className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded bg-slate-800/90 px-1.5 py-0.5 text-[11px] text-slate-300 opacity-0 shadow transition-opacity hover:bg-slate-700 hover:text-slate-100 group-hover:opacity-100"
