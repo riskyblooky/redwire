@@ -8,7 +8,8 @@ import Link from '@tiptap/extension-link';
 import { AuthAwareImage as Image } from './auth-image-node-view';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import { CodeBlockWithMermaid } from './mermaid-codeblock';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { Mermaid } from './mermaid-extension';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
@@ -328,13 +329,9 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     <CodeXml className="h-4 w-4" />
                 </Button>
                 <Button type="button" variant="ghost" size="icon"
-                    onClick={() => editor.chain().focus().insertContent({
-                        type: 'codeBlock',
-                        attrs: { language: 'mermaid' },
-                        content: [{ type: 'text', text: 'graph TD\n    A[Start] --> B[End]' }],
-                    }).run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('codeBlock', { language: 'mermaid' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Insert Mermaid diagram (renders when viewed)">
+                    onClick={() => editor.chain().focus().insertMermaid().run()}
+                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('mermaid') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    title="Insert Mermaid diagram">
                     <Workflow className="h-4 w-4" />
                 </Button>
 
@@ -781,10 +778,11 @@ export default function CollaborativeEditor({
             StarterKit.configure({
                 codeBlock: false,
             }),
-            CodeBlockWithMermaid.configure({
+            CodeBlockLowlight.configure({
                 lowlight,
                 HTMLAttributes: { class: 'hljs' },
             }),
+            Mermaid,
             Markdown.configure({
                 html: false,
                 transformPastedText: true,
