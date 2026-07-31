@@ -24,7 +24,6 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import { common, createLowlight } from 'lowlight';
-import { Mermaid } from './mermaid-extension';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import MentionList, { MentionListRef, MentionSuggestionItem } from './mention-list';
 import api, { apiErrorMessage } from '@/lib/api';
@@ -497,9 +496,13 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => (editor.chain().focus() as any).insertMermaid().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('mermaid') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Insert Mermaid diagram"
+                    onClick={() => editor.chain().focus().insertContent({
+                        type: 'codeBlock',
+                        attrs: { language: 'mermaid' },
+                        content: [{ type: 'text', text: 'graph TD\n    A[Start] --> B[End]' }],
+                    }).run()}
+                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('codeBlock', { language: 'mermaid' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    title="Insert Mermaid diagram (renders when viewed)"
                 >
                     <Workflow className="h-4 w-4" />
                 </Button>
@@ -749,7 +752,6 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                     class: 'hljs',
                 },
             }),
-            Mermaid,
             Markdown.configure({
                 html: false,
                 transformPastedText: true,

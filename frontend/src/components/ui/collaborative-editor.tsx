@@ -26,7 +26,6 @@ import { fixedCursorPlugin } from '@/lib/fixed-cursor-plugin';
 import { yCursorPluginKey } from '@tiptap/y-tiptap';
 import { Extension } from '@tiptap/core';
 import { common, createLowlight } from 'lowlight';
-import { Mermaid } from './mermaid-extension';
 import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -776,7 +775,6 @@ export default function CollaborativeEditor({
                 lowlight,
                 HTMLAttributes: { class: 'hljs' },
             }),
-            Mermaid,
             Markdown.configure({
                 html: false,
                 transformPastedText: true,
