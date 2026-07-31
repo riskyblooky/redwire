@@ -4,9 +4,31 @@ import React from 'react';
 import ReactMarkdownPreview from '@uiw/react-markdown-preview';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { AuthImage } from './auth-image';
+import { MermaidDiagram } from './mermaid-diagram';
 import { useUsers } from '@/lib/hooks/use-users';
 import { UserAvatar } from './user-avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
+
+// Reconstruct the raw text of a fenced code block from react-markdown's
+// (possibly syntax-highlighted) children. Highlighters wrap each source line
+// in a `.code-line` element and split tokens into spans; walking the tree and
+// re-inserting a newline at each line boundary gives back the original source.
+function extractCodeText(children: any): string {
+    if (children == null) return '';
+    if (typeof children === 'string') return children;
+    if (typeof children === 'number') return String(children);
+    if (Array.isArray(children)) return children.map(extractCodeText).join('');
+    if (React.isValidElement(children)) {
+        const props: any = (children as any).props || {};
+        const cls: string = typeof props.className === 'string' ? props.className : '';
+        const inner = extractCodeText(props.children);
+        if (cls.split(' ').includes('code-line') && !inner.endsWith('\n')) {
+            return inner + '\n';
+        }
+        return inner;
+    }
+    return '';
+}
 
 /** A @mention chip that reveals the mentioned user's avatar + display name on
  *  hover. Falls back to the plain styled chip when the user can't be resolved
@@ -47,6 +69,24 @@ const COMPONENTS = {
     // Route img tags through AuthImage so /api/markdown-images/* fetches
     // with the user's JWT. External / data: URLs fall through to <img>.
     img: ({ node, ...rest }: any) => <AuthImage {...rest} />,
+    // ```mermaid fenced blocks render as live diagrams. We intercept at the
+    // <pre> level (not <code>) so the whole code-block wrapper is replaced by
+    // the diagram — a <div> inside <pre> would be invalid and inherit the
+    // monospace code styling. Non-mermaid fences pass straight through with
+    // their highlighted children intact.
+    pre: ({ node, children, ...rest }: any) => {
+        const kids = React.Children.toArray(children);
+        const codeEl = kids.find((c) => React.isValidElement(c)) as React.ReactElement | undefined;
+        const cls: string =
+            codeEl && typeof (codeEl.props as any)?.className === 'string'
+                ? (codeEl.props as any).className
+                : '';
+        if (cls.split(' ').includes('language-mermaid')) {
+            const chart = extractCodeText((codeEl!.props as any).children).replace(/\n+$/, '');
+            return <MermaidDiagram chart={chart} />;
+        }
+        return <pre {...rest}>{children}</pre>;
+    },
     // @mention chips (class "mention-tag", emitted by processMentionsInMarkdown)
     // become hover targets that reveal the user's avatar + display name. Every
     // other span passes through unchanged.

@@ -24,6 +24,7 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import { common, createLowlight } from 'lowlight';
+import { Mermaid } from './mermaid-extension';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import MentionList, { MentionListRef, MentionSuggestionItem } from './mention-list';
 import api, { apiErrorMessage } from '@/lib/api';
@@ -37,7 +38,7 @@ import {
     Sparkles, Send, X, ClipboardPaste, Loader2, Database,
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    Table as TableIcon, Trash2, Plus, Minus,
+    Table as TableIcon, Trash2, Plus, Minus, Workflow,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -492,6 +493,16 @@ const MenuBar = ({ editor }: { editor: any }) => {
                 >
                     <CodeXml className="h-4 w-4" />
                 </Button>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => (editor.chain().focus() as any).insertMermaid().run()}
+                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('mermaid') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    title="Insert Mermaid diagram"
+                >
+                    <Workflow className="h-4 w-4" />
+                </Button>
 
                 <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
 
@@ -738,6 +749,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                     class: 'hljs',
                 },
             }),
+            Mermaid,
             Markdown.configure({
                 html: false,
                 transformPastedText: true,
