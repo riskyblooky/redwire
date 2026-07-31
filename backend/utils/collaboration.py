@@ -2,6 +2,7 @@ from models.discussion import ActivityLog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional, List, Dict, Any
+import asyncio
 import json
 import logging
 from fastapi import WebSocket
@@ -28,7 +29,7 @@ async def create_notification(
     if not skip_self_check and user_id == actor_id:
         return None
 
-    from models.notification import Notification, NotificationPreference
+    from models.notification import Notification, NotificationPreference, EVENT_TYPES
 
     # Check preferences
     pref_result = await db.execute(
@@ -39,6 +40,9 @@ async def create_notification(
     )
     pref = pref_result.scalar_one_or_none()
     site_muted = pref.site_muted if pref else False
+    # Email is opt-in: absent a preference row (or an explicit choice), email
+    # stays muted. Matches the NotificationPreference model + API default.
+    email_muted = pref.email_muted if pref else True
 
     # Always persist the notification (user can view history)
     notif = Notification(
@@ -70,7 +74,67 @@ async def create_notification(
         except Exception as e:
             logger.warning(f"Failed to push notification via WebSocket: {e}")
 
+    # Email dispatch (opt-in per event via email_muted). Sent on a background
+    # task with its own DB session so a slow SMTP relay never blocks the request
+    # and a fan-out (notify_engagement_users looping N members) doesn't serialize
+    # N SMTP round-trips into the response. send_email itself is a no-op when
+    # SMTP is disabled, so this is safe even on installs that never configured mail.
+    if not email_muted:
+        try:
+            from models.user import User
+            urow = await db.execute(select(User.email).where(User.id == user_id))
+            to_email = urow.scalar_one_or_none()
+            if to_email:
+                event_label = EVENT_TYPES.get(event_type, event_type)
+                asyncio.create_task(
+                    _dispatch_notification_email(
+                        to_email=to_email,
+                        subject=f"RedWire — {title}",
+                        title=title,
+                        message=message,
+                        link=link,
+                        heading=event_label,
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"Failed to queue notification email: {e}")
+
     return notif
+
+
+async def _dispatch_notification_email(
+    to_email: str,
+    subject: str,
+    title: str,
+    message: Optional[str],
+    link: Optional[str],
+    heading: str,
+):
+    """Background sender for notification emails. Opens its own short-lived
+    session (the request's session is closing by the time this runs) and
+    resolves relative notification links to absolute URLs via FRONTEND_URL."""
+    try:
+        import os
+        from database import AsyncSessionLocal
+        from utils.email_service import send_notification_email
+
+        abs_link = link
+        if link and link.startswith("/"):
+            base = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+            abs_link = f"{base}{link}"
+
+        async with AsyncSessionLocal() as db:
+            await send_notification_email(
+                db,
+                to_email=to_email,
+                subject=subject,
+                title=title,
+                message=message,
+                link=abs_link,
+                heading=heading,
+            )
+    except Exception as e:
+        logger.warning(f"Notification email send failed for {to_email}: {e}")
 
 
 async def notify_engagement_users(

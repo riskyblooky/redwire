@@ -272,3 +272,105 @@ async def send_test_email(db: AsyncSession, to_email: str) -> bool:
     </div>
     """
     return await send_email(db, to_email, "RedWire — SMTP Test Successful", html)
+
+
+def render_notification_email(
+    heading: str,
+    title: str,
+    message: Optional[str] = None,
+    link: Optional[str] = None,
+    link_label: str = "Open in RedWire",
+    meta: Optional[list] = None,
+) -> tuple:
+    """Build a dark-themed HTML + plaintext body for a notification-style email.
+
+    This is the shared "nice email" renderer — used for per-user notification
+    emails and for automation email actions, so both land as a styled card
+    instead of a raw ``<pre>`` JSON dump. Every caller-supplied string is
+    HTML-escaped into the HTML part, so finding titles / note names / automation
+    details are all safe to pass through verbatim. ``meta`` is an optional list
+    of ``(label, value)`` rows rendered as a small key/value table.
+
+    Returns ``(html_body, text_body)``.
+    """
+    import html as _html
+
+    def esc(s):
+        return _html.escape(str(s)) if s is not None else ""
+
+    meta_html = ""
+    meta_text_lines = []
+    if meta:
+        rows = ""
+        for label, value in meta:
+            if value is None or value == "":
+                continue
+            rows += (
+                "<tr>"
+                f"<td style='padding:4px 12px 4px 0;color:#64748b;font-size:12px;white-space:nowrap;vertical-align:top;'>{esc(label)}</td>"
+                f"<td style='padding:4px 0;color:#cbd5e1;font-size:12px;'>{esc(value)}</td>"
+                "</tr>"
+            )
+            meta_text_lines.append(f"{label}: {value}")
+        if rows:
+            meta_html = f"<table style='margin:12px 0;border-collapse:collapse;'>{rows}</table>"
+
+    message_html = (
+        f"<p style='font-size:14px;line-height:1.6;color:#cbd5e1;margin:12px 0;white-space:pre-wrap;'>{esc(message)}</p>"
+        if message else ""
+    )
+
+    button_html = ""
+    if link:
+        button_html = (
+            "<div style='text-align:center;margin:28px 0 8px;'>"
+            f"<a href='{esc(link)}' style='display:inline-block;padding:11px 28px;background:#4f46e5;color:#ffffff;"
+            f"text-decoration:none;font-weight:600;font-size:13px;border-radius:8px;'>{esc(link_label)}</a>"
+            "</div>"
+        )
+
+    html = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; background: #0a0f1a; color: #e2e8f0; border-radius: 12px;">
+        <div style="margin-bottom: 20px;">
+            <span style="color:#ef4444;font-size:18px;font-weight:700;">RedWire</span>
+            <span style="color:#475569;font-size:12px;margin-left:8px;">{esc(heading)}</span>
+        </div>
+        <h1 style="font-size:16px;font-weight:600;color:#f1f5f9;margin:0 0 4px;line-height:1.4;">{esc(title)}</h1>
+        {message_html}
+        {meta_html}
+        {button_html}
+        <hr style="border:none;border-top:1px solid #1e293b;margin:24px 0 12px;" />
+        <p style="font-size:11px;color:#475569;">You're receiving this because email notifications are enabled for this event in your RedWire profile. Manage them under Profile → Notifications.</p>
+    </div>
+    """
+
+    text_parts = [f"RedWire — {heading}", "", title]
+    if message:
+        text_parts += ["", str(message)]
+    if meta_text_lines:
+        text_parts += [""] + meta_text_lines
+    if link:
+        text_parts += ["", f"{link_label}: {link}"]
+    text = "\n".join(text_parts)
+    return html, text
+
+
+async def send_notification_email(
+    db: AsyncSession,
+    to_email: str,
+    subject: str,
+    title: str,
+    message: Optional[str] = None,
+    link: Optional[str] = None,
+    heading: str = "Notification",
+    link_label: str = "Open in RedWire",
+    meta: Optional[list] = None,
+) -> bool:
+    """Render and send a styled notification email. Subject is stripped of
+    CR/LF so a resource name spliced into it can't trip the header guard."""
+    subject = (subject or "RedWire Notification").replace("\r", " ").replace("\n", " ")
+    html, text = render_notification_email(
+        heading=heading, title=title, message=message,
+        link=link, link_label=link_label, meta=meta,
+    )
+    return await send_email(db, to_email, subject, html, text)

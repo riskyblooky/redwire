@@ -563,41 +563,39 @@ async def _execute_email(
     subject_template = action.get("subject", f"RedWire Automation: {rule_name}")
     body_template = action.get("body_template", "")
 
-    # Template variable substitution. GHSA-m28w-p732-3rm5: keep two parallel
-    # bodies — text uses raw values, HTML uses html.escape'd values — so a
-    # finding title containing HTML metacharacters can't break out of the
-    # <pre> wrapper. The rule author's literal HTML in body_template
-    # (e.g. "<strong>finding</strong>: {{resource_name}}") is preserved
-    # because we only escape the *substituted values*, not the template
-    # itself.
-    import html as _html
+    # Template variable substitution into a single plain-text message. The
+    # message is rendered into the shared styled email card below, which
+    # HTML-escapes every value — so a finding title with HTML metacharacters
+    # is displayed literally rather than injected. GHSA-m28w-p732-3rm5.
     subject = subject_template
-    body_text = body_template
-    body_html = body_template
+    message_text = body_template
     for key, val in context.items():
         placeholder = f"{{{{{key}}}}}"
         str_val = str(val) if val is not None else ""
         subject = subject.replace(placeholder, str_val)
-        body_text = body_text.replace(placeholder, str_val)
-        body_html = body_html.replace(placeholder, _html.escape(str_val))
+        message_text = message_text.replace(placeholder, str_val)
 
+    # No body template → build a readable summary instead of dumping raw JSON
+    # (the "someone got an email that was just JSON" complaint).
     if not body_template:
-        import json
-        body_text = json.dumps({
-            "rule": rule_name,
-            "trigger": context.get("action"),
-            "resource_type": context.get("resource_type"),
-            "resource_name": context.get("resource_name"),
-            "engagement_id": context.get("engagement_id"),
-            "details": context.get("details"),
-        }, indent=2)
-        # The fallback JSON is entirely user-data-derived (resource_name,
-        # details, etc.) — escape the whole serialized form for the HTML
-        # part.
-        body_html = _html.escape(body_text)
+        message_text = str(
+            context.get("details") or f"Automation rule '{rule_name}' fired."
+        )
 
-    # Wrap basic text in HTML for HTML body
-    html_body = f"<pre style='font-family: monospace; padding: 16px; background: #f8f9fa; border-radius: 8px;'>{body_html}</pre>"
+    from utils.email_service import render_notification_email
+
+    meta = [
+        ("Trigger", context.get("action")),
+        ("Type", context.get("resource_type")),
+        ("Resource", context.get("resource_name")),
+    ]
+    html_body, body_text = render_notification_email(
+        heading="Automation",
+        title=rule_name,
+        message=message_text,
+        meta=meta,
+    )
+    subject = subject.replace("\r", " ").replace("\n", " ")
 
     try:
         for to_email in recipients:
