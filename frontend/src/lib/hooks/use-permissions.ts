@@ -47,6 +47,15 @@ export function useGlobalPermission(permission: string): boolean {
 function useEngagementPermissions(engagementId: string | undefined) {
     const { user } = useAuthStore();
 
+    // admin and team_lead are short-circuited to "allow" by every consumer of
+    // this hook (usePermission / usePermissions / useCanEdit / useCanDelete)
+    // WITHOUT ever reading the response — so fetching their per-engagement
+    // permissions is pure waste, and on the engagements list it fires one
+    // GET /my-permissions request per row. Skip the fetch for those two roles.
+    // read_only_admin is intentionally NOT skipped: useCanEdit/useCanDelete
+    // don't grant it edit/delete, so they still consult the real permissions.
+    const roleGrantsAll = user?.role === 'admin' || user?.role === 'team_lead';
+
     return useQuery<string[]>({
         queryKey: ['engagement-permissions', engagementId, user?.id],
         queryFn: async () => {
@@ -54,7 +63,7 @@ function useEngagementPermissions(engagementId: string | undefined) {
             const response = await api.get(`/engagements/${engagementId}/my-permissions`);
             return response.data;
         },
-        enabled: !!engagementId && !!user,
+        enabled: !!engagementId && !!user && !roleGrantsAll,
         staleTime: 1000 * 60 * 5, // Cache for 5 minutes
     });
 }
