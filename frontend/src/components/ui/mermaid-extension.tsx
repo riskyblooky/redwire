@@ -87,7 +87,9 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
                 selected ? 'border-indigo-500/60' : 'border-transparent hover:border-slate-700/60',
             )}
         >
-            <Popover open={open} onOpenChange={onOpenChange}>
+            {/* modal traps focus in the portal so ProseMirror can't reclaim it
+                and snap the popover shut (the open/close flicker). */}
+            <Popover open={open} onOpenChange={onOpenChange} modal>
                 <PopoverTrigger asChild>
                     <button
                         type="button"
