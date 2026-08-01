@@ -924,9 +924,9 @@ async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
                 if changes:
                     it["content_kind"] = "diff"
                     it["changes"] = changes
-                elif ent is not None:
-                    it["content_kind"] = "text"
-                    it["content"] = _feed_cap(getattr(ent, "description", None))
+                # No computable diff (a no-op re-save, or a change to a
+                # non-versioned field) → leave it as a plain log line rather than
+                # showing the current description as if it were the edit's content.
             elif cat == "created" and ent is not None:
                 it["content_kind"] = "text"
                 it["content"] = _feed_cap(getattr(ent, "description", None))
