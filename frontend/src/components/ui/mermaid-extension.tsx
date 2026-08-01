@@ -9,19 +9,21 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Pencil, Check } from 'lucide-react';
 import { MermaidDiagram } from './mermaid-diagram';
+import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { cn } from '@/lib/utils';
 
 /**
- * Obsidian-style live Mermaid block. The diagram renders inline in the editor;
- * an Edit affordance swaps it for a source textarea, and clicking away (blur)
- * re-renders. Source lives in the `content` attribute (atom node), so the
- * NodeView owns the edit UX rather than ProseMirror text.
+ * Live Mermaid block. The diagram renders inline in the editor; the source is
+ * edited in a Popover with a live preview, and closing the popover (Done,
+ * Escape, or clicking away) commits and re-renders. Source lives in the
+ * `content` attribute (atom node).
  *
- * Why the Edit button works now: TipTap's default node-view `stopEvent` returns
- * true for events targeting BUTTON / TEXTAREA (so the DOM handles them) EXCEPT
- * for drag events. The first cut set `draggable: true` + a drag handle on the
- * whole node, so a mousedown on the button started a drag instead of a click.
- * This node is NOT draggable — button clicks and textarea typing just work.
+ * Why the editor is a Popover and not an inline textarea: an editable field
+ * placed inside the ProseMirror DOM fights the editor's selection sync — the
+ * moment the textarea takes focus, ProseMirror maps the DOM selection onto the
+ * atom node (selecting it) and the field loses focus. The Popover content is
+ * rendered in a portal at the document root, completely outside the editor's
+ * DOM, so focus/caret/selection all behave like a normal form field.
  *
  * Markdown round-trip:
  *   serialize → a ```mermaid fenced block (plain markdown on disk / for the
@@ -48,103 +50,32 @@ const STARTER = `graph TD
 function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewProps) {
     const content: string = node.attrs.content || '';
     const editable = editor.isEditable;
-    const [editing, setEditing] = useState<boolean>(editable && !content.trim());
+    const [open, setOpen] = useState<boolean>(false);
     const [draft, setDraft] = useState<string>(content);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    // Latest draft, readable from the document-level listener without stale closure.
-    const draftRef = useRef<string>(draft);
-    draftRef.current = draft;
 
     useEffect(() => {
         setDraft(node.attrs.content || '');
     }, [node.attrs.content]);
 
-    // When entering edit mode, focus the textarea on the next frame — after it
-    // has actually mounted. autoFocus alone races with ProseMirror reclaiming
-    // focus on the node re-render.
-    useEffect(() => {
-        if (editing) {
-            const id = requestAnimationFrame(() => {
-                const el = textareaRef.current;
-                if (el) {
-                    el.focus();
-                    const len = el.value.length;
-                    el.setSelectionRange(len, len);
-                }
-            });
-            return () => cancelAnimationFrame(id);
-        }
-    }, [editing]);
-
-    const startEdit = () => {
+    const openEditor = () => {
         setDraft(node.attrs.content || '');
-        setEditing(true);
+        setOpen(true);
     };
-    const finishEdit = () => {
-        if (draftRef.current !== (node.attrs.content || '')) {
-            updateAttributes({ content: draftRef.current });
+    const commitAndClose = () => {
+        if (draft !== (node.attrs.content || '')) {
+            updateAttributes({ content: draft });
         }
-        setEditing(false);
+        setOpen(false);
     };
-
-    // Finish editing only on a genuine click OUTSIDE the node — not on blur.
-    // Blur fired every time ProseMirror reclaimed focus (even when clicking
-    // within the textarea to move the caret), which kept snapping back to render
-    // mode. A click-outside check lets the user click around inside the source
-    // freely; Done / Escape / clicking elsewhere still commit + render.
-    useEffect(() => {
-        if (!editing) return;
-        const onDown = (e: MouseEvent) => {
-            const root = textareaRef.current?.closest('.mermaid-node');
-            if (root && !root.contains(e.target as globalThis.Node)) {
-                finishEdit();
-            }
-        };
-        document.addEventListener('mousedown', onDown, true);
-        return () => document.removeEventListener('mousedown', onDown, true);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [editing]);
+    // Radix drives this on Done, Escape, and click-outside.
+    const onOpenChange = (next: boolean) => (next ? openEditor() : commitAndClose());
 
     // Read-only surfaces (disabled editor) just render the diagram.
     if (!editable) {
         return (
             <NodeViewWrapper className="my-3">
                 <MermaidDiagram chart={content} />
-            </NodeViewWrapper>
-        );
-    }
-
-    if (editing) {
-        return (
-            <NodeViewWrapper className="mermaid-node my-3 rounded-lg border border-indigo-500/40 bg-slate-900/40">
-                <div className="flex items-center justify-between border-b border-slate-800/60 px-2 py-1">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                        Editing mermaid — click away to render
-                    </span>
-                    <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={finishEdit}
-                        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-slate-100"
-                    >
-                        <Check className="h-3 w-3" /> Done
-                    </button>
-                </div>
-                <textarea
-                    ref={textareaRef}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                            e.preventDefault();
-                            finishEdit();
-                        }
-                    }}
-                    spellCheck={false}
-                    rows={Math.max(4, draft.split('\n').length + 1)}
-                    placeholder="graph TD; A --> B"
-                    className="w-full resize-y bg-transparent px-3 py-2 font-mono text-[12px] leading-relaxed text-slate-200 outline-none"
-                />
             </NodeViewWrapper>
         );
     }
@@ -156,18 +87,68 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
                 selected ? 'border-indigo-500/60' : 'border-transparent hover:border-slate-700/60',
             )}
         >
-            <button
-                type="button"
-                // Don't let ProseMirror focus/select on mousedown — that focus
-                // dance is what was blurring the textarea the instant it opened.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={startEdit}
-                title="Edit diagram"
-                className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded bg-slate-800/90 px-1.5 py-0.5 text-[11px] text-slate-300 opacity-0 shadow transition-opacity hover:bg-slate-700 hover:text-slate-100 group-hover:opacity-100"
-            >
-                <Pencil className="h-3 w-3" /> Edit
-            </button>
-            <div className="p-2" onDoubleClick={startEdit} title="Double-click to edit">
+            <Popover open={open} onOpenChange={onOpenChange}>
+                <PopoverTrigger asChild>
+                    <button
+                        type="button"
+                        title="Edit diagram"
+                        className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded bg-slate-800/90 px-1.5 py-0.5 text-[11px] text-slate-300 opacity-0 shadow transition-opacity hover:bg-slate-700 hover:text-slate-100 group-hover:opacity-100"
+                    >
+                        <Pencil className="h-3 w-3" /> Edit
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="start"
+                    side="bottom"
+                    className="w-[min(90vw,560px)] p-0 bg-slate-900 border-slate-700"
+                    onOpenAutoFocus={(e) => {
+                        // Focus the source field, not the Done button (first focusable).
+                        e.preventDefault();
+                        requestAnimationFrame(() => {
+                            const el = textareaRef.current;
+                            if (el) {
+                                el.focus();
+                                const len = el.value.length;
+                                el.setSelectionRange(len, len);
+                            }
+                        });
+                    }}
+                >
+                    <div className="flex items-center justify-between border-b border-slate-800 px-3 py-1.5">
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                            Edit Mermaid diagram
+                        </span>
+                        <button
+                            type="button"
+                            onClick={commitAndClose}
+                            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-slate-100"
+                        >
+                            <Check className="h-3 w-3" /> Done
+                        </button>
+                    </div>
+                    <textarea
+                        ref={textareaRef}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        spellCheck={false}
+                        rows={Math.max(5, draft.split('\n').length + 1)}
+                        placeholder="graph TD; A --> B"
+                        className="w-full resize-y bg-transparent px-3 py-2 font-mono text-[12px] leading-relaxed text-slate-200 outline-none"
+                    />
+                    <div className="max-h-[320px] overflow-auto border-t border-slate-800 p-2">
+                        <div className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                            Preview
+                        </div>
+                        {draft.trim() ? (
+                            <MermaidDiagram chart={draft} />
+                        ) : (
+                            <div className="py-4 text-center text-xs text-slate-500">Empty diagram</div>
+                        )}
+                    </div>
+                </PopoverContent>
+            </Popover>
+
+            <div className="p-2" onDoubleClick={openEditor} title="Double-click to edit">
                 {content.trim() ? (
                     <MermaidDiagram chart={content} />
                 ) : (
