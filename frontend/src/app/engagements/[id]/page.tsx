@@ -107,7 +107,7 @@ import { useQuery, useQueryClient as useQC } from '@tanstack/react-query';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { TeamManagementDialog } from '@/components/engagements/team-management-dialog';
 import { AttachmentsTab } from '@/components/engagements/attachments-tab';
-import { LogsTab } from '@/components/engagements/logs-tab';
+import { ActivityTab } from '@/components/engagements/activity-tab';
 import { ReportingTab } from '@/components/engagements/reporting-tab';
 import { VaultTab } from '@/components/engagements/vault-tab';
 import { NotesTab } from '@/components/engagements/notes-tab';
@@ -1317,7 +1317,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                             className="px-3 h-8 rounded-md text-xs font-semibold border border-transparent data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-400 data-[state=active]:border-orange-500/30 hover:text-orange-400/80 transition-colors"
                         >
                             <History className="h-3.5 w-3.5 mr-1.5" />
-                            Logs
+                            Activity
                         </TabsTrigger>
                     </TabsList>
                 </div>
@@ -1447,7 +1447,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                     </TabsList>
 
                     <TabsContent value="logs" className="mt-6 focus-visible:outline-hidden focus-visible:ring-0">
-                        <LogsTab engagementId={id} />
+                        <ActivityTab engagementId={id} />
                     </TabsContent>
 
                     <TabsContent value="reporting" className="mt-8 focus-visible:outline-hidden focus-visible:ring-0">

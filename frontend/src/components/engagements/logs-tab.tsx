@@ -67,7 +67,7 @@ interface LogsTabProps {
     engagementId: string;
 }
 
-const resourceTypeIcons: Record<string, any> = {
+export const resourceTypeIcons: Record<string, any> = {
     engagement: Target,
     finding: Bug,
     asset: Server,
@@ -79,7 +79,7 @@ const resourceTypeIcons: Record<string, any> = {
     cleanup_artifact: Sparkles,
 };
 
-const resourceTypeColors: Record<string, string> = {
+export const resourceTypeColors: Record<string, string> = {
     engagement: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
     finding: 'bg-red-500/10 text-red-400 border-red-500/20',
     asset: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -97,7 +97,7 @@ const PAGE_SIZE = 25;
 // parent entity), so resolve the thread on click and deep-link to the finding
 // / testcase / asset / engagement it lives on, opening (?threadId=) the thread.
 const THREAD_ROUTE: Record<string, string> = { finding: '/findings', testcase: '/testcases', asset: '/assets' };
-async function openThreadFromLog(threadId: string, engagementId: string) {
+export async function openThreadFromLog(threadId: string, engagementId: string) {
     try {
         const { data: thread } = await api.get(`/discussions/threads/${threadId}`);
         const rt = (thread.resource_type || '').toLowerCase();

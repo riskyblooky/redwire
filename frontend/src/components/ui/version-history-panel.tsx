@@ -60,7 +60,7 @@ function timeAgo(dateStr: string) {
  * Compute a simple line diff between two strings.
  * Returns arrays of { type, text } where type is 'add', 'remove', or 'same'.
  */
-function computeLineDiff(oldText: string, newText: string) {
+export function computeLineDiff(oldText: string, newText: string) {
     const oldLines = (oldText || '').split('\n');
     const newLines = (newText || '').split('\n');
 

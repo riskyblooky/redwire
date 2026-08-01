@@ -15,7 +15,7 @@ from schemas.discussion import (
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission, is_engagement_member
 from models.permission import Permission
-from datetime import datetime
+from datetime import datetime, timedelta
 from utils.collaboration import create_activity_log
 from utils.collaboration import manager
 import logging
@@ -757,5 +757,312 @@ async def get_activity_log(
         response_logs.append(log_dict)
     
     return {"items": response_logs, "total": total}
+
+
+# ── Activity Feed (content-diff "single pane of glass") ────────────────────
+# A content-rich view over the same activity_logs spine: chronological, filtered
+# to human-authored content, and enriched with the actual text people posted
+# (+ field-level diffs for finding/testcase edits). Built for a team lead who
+# needs to see everything happening in an engagement without clicking into each
+# resource.
+
+# Resource types that carry content worth surfacing in the feed.
+FEED_CONTENT_TYPES = {
+    "finding", "testcase", "note", "comment", "asset", "evidence",
+    "cleanup_artifact", "vault",
+}
+
+# Coarse action buckets → the action-string prefixes they cover.
+_FEED_ACTION_PREFIXES = {
+    "created": ("created", "uploaded", "imported"),
+    "updated": ("updated", "edited", "restored", "stripped", "resolved", "reopened", "linked", "unlinked"),
+    "deleted": ("deleted",),
+    "commented": ("commented", "created_thread"),
+}
+
+_FEED_FIELD_LABELS = {
+    "title": "Title", "category": "Category", "description": "Description",
+    "severity": "Severity", "status": "Status", "cvss_score": "CVSS Score",
+    "cvss_vector": "CVSS Vector", "impact": "Impact",
+    "technical_details": "Technical Details", "steps_to_reproduce": "Steps to Reproduce",
+    "mitigations": "Mitigations", "references": "References",
+    "steps": "Steps", "expected_result": "Expected Result",
+    "actual_result": "Actual Result", "notes": "Notes",
+    "is_executed": "Executed", "is_successful": "Successful",
+}
+
+_FEED_CONTENT_CAP = 6000
+
+
+def _feed_action_category(action: str) -> str:
+    for cat, prefixes in _FEED_ACTION_PREFIXES.items():
+        if any(action.startswith(p) for p in prefixes):
+            return cat
+    return "other"
+
+
+def _feed_cap(text) -> Optional[str]:
+    if text is None:
+        return None
+    s = str(text)
+    return s if len(s) <= _FEED_CONTENT_CAP else s[:_FEED_CONTENT_CAP] + "\n… (truncated)"
+
+
+def _feed_as_dt(v):
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _feed_scalarize(v):
+    return getattr(v, "value", v)
+
+
+def _feed_to_text(v) -> str:
+    if v is None:
+        return ""
+    return str(_feed_scalarize(v))
+
+
+def _feed_diff_for_update(item: dict, snapshots: list, entity, versioned_fields) -> list:
+    """Correlate an 'updated' log to the version snapshot taken just before it
+    (same request → near-identical timestamp) and diff that pre-edit state
+    against the resulting state (the next snapshot, or the live entity if it was
+    the most recent edit). Returns [] when no snapshot plausibly matches (e.g. a
+    no-op save that skipped snapshotting)."""
+    if not snapshots:
+        return []
+    target = _feed_as_dt(item.get("created_at"))
+    if target is None:
+        return []
+    # Snapshots are the pre-edit state, created microseconds before this log.
+    candidates = [s for s in snapshots if s.created_at <= target + timedelta(seconds=2)]
+    if not candidates:
+        return []
+    before = max(candidates, key=lambda s: s.version)
+    # If the closest snapshot is far from the log, this edit had no snapshot.
+    if abs((target - before.created_at).total_seconds()) > 20:
+        return []
+
+    higher = [s for s in snapshots if s.version > before.version]
+    if higher:
+        after_state = min(higher, key=lambda s: s.version).snapshot or {}
+    elif entity is not None:
+        after_state = {f: _feed_scalarize(getattr(entity, f, None)) for f in versioned_fields}
+    else:
+        after_state = {}
+
+    before_snap = before.snapshot or {}
+    fields = before.changed_fields or list(versioned_fields)
+    changes = []
+    for f in fields:
+        oldv = before_snap.get(f)
+        newv = after_state.get(f)
+        if oldv == newv:
+            continue
+        changes.append({
+            "field": f,
+            "label": _FEED_FIELD_LABELS.get(f, f),
+            "old": _feed_cap(_feed_to_text(oldv)),
+            "new": _feed_cap(_feed_to_text(newv)),
+        })
+    return changes
+
+
+async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
+    """Attach content / diffs to feed items in place, batching per resource type."""
+    from models.finding import Finding
+    from models.testcase import TestCase
+    from models.note import Note
+    from models.asset import Asset
+    from models.evidence import Evidence
+    from models.version_history import VersionHistory
+    from utils.versioning import FINDING_VERSIONED_FIELDS, TESTCASE_VERSIONED_FIELDS
+
+    by_type: dict = {}
+    for it in items:
+        by_type.setdefault((it.get("resource_type") or "").lower(), []).append(it)
+
+    async def load_map(model, ids):
+        ids = [i for i in ids if i]
+        if not ids:
+            return {}
+        rows = (await db.execute(select(model).where(model.id.in_(ids)))).scalars().all()
+        return {r.id: r for r in rows}
+
+    # Findings & test cases — content on create, field diff on update.
+    for rtype, model, versioned, entity_type in (
+        ("finding", Finding, FINDING_VERSIONED_FIELDS, "finding"),
+        ("testcase", TestCase, TESTCASE_VERSIONED_FIELDS, "testcase"),
+    ):
+        group = by_type.get(rtype, [])
+        if not group:
+            continue
+        ids = {it.get("resource_id") for it in group}
+        emap = await load_map(model, ids)
+        clean_ids = [i for i in ids if i]
+        vrows = (await db.execute(
+            select(VersionHistory)
+            .where(VersionHistory.entity_type == entity_type)
+            .where(VersionHistory.entity_id.in_(clean_ids))
+            .order_by(VersionHistory.entity_id, VersionHistory.version.asc())
+        )).scalars().all() if clean_ids else []
+        vmap: dict = {}
+        for v in vrows:
+            vmap.setdefault(v.entity_id, []).append(v)
+
+        for it in group:
+            ent = emap.get(it.get("resource_id"))
+            cat = it.get("action_category")
+            if cat == "updated":
+                changes = _feed_diff_for_update(it, vmap.get(it.get("resource_id"), []), ent, versioned)
+                if changes:
+                    it["content_kind"] = "diff"
+                    it["changes"] = changes
+                elif ent is not None:
+                    it["content_kind"] = "text"
+                    it["content"] = _feed_cap(getattr(ent, "description", None))
+            elif cat == "created" and ent is not None:
+                it["content_kind"] = "text"
+                it["content"] = _feed_cap(getattr(ent, "description", None))
+
+    # Notes — current content (no version history).
+    group = by_type.get("note", [])
+    if group:
+        emap = await load_map(Note, {it.get("resource_id") for it in group})
+        for it in group:
+            ent = emap.get(it.get("resource_id"))
+            if ent is not None and it.get("action_category") in ("created", "updated"):
+                it["content_kind"] = "text"
+                it["content"] = _feed_cap(ent.content)
+
+    # Assets — identifier + description/notes.
+    group = by_type.get("asset", [])
+    if group:
+        emap = await load_map(Asset, {it.get("resource_id") for it in group})
+        for it in group:
+            ent = emap.get(it.get("resource_id"))
+            if ent is not None and it.get("action_category") in ("created", "updated"):
+                body = ent.description or ent.notes
+                if body:
+                    prefix = f"**{ent.identifier}**\n\n" if getattr(ent, "identifier", None) else ""
+                    it["content_kind"] = "text"
+                    it["content"] = _feed_cap(prefix + body)
+
+    # Evidence — the caption/description.
+    group = by_type.get("evidence", [])
+    if group:
+        emap = await load_map(Evidence, {it.get("resource_id") for it in group})
+        for it in group:
+            ent = emap.get(it.get("resource_id"))
+            if ent is not None and ent.description:
+                it["content_kind"] = "text"
+                it["content"] = _feed_cap(ent.description)
+
+    # Comments — resource_id is the THREAD id; pick the comment closest in time.
+    group = by_type.get("comment", [])
+    if group:
+        thread_ids = [it.get("resource_id") for it in group if it.get("resource_id")]
+        if thread_ids:
+            crows = (await db.execute(
+                select(Comment).where(Comment.thread_id.in_(thread_ids))
+            )).scalars().all()
+            cmap: dict = {}
+            for c in crows:
+                cmap.setdefault(c.thread_id, []).append(c)
+            for it in group:
+                comments = cmap.get(it.get("resource_id"), [])
+                if not comments:
+                    continue
+                target = _feed_as_dt(it.get("created_at"))
+                best = (min(comments, key=lambda c: abs((c.created_at - target).total_seconds()))
+                        if target else comments[-1])
+                it["content_kind"] = "text"
+                it["content"] = _feed_cap(best.content)
+
+    # vault / cleanup_artifact / engagement: event line only (vault = secret safety).
+
+
+@router.get("/activity/feed")
+async def get_activity_feed(
+    engagement_id: str,
+    resource_types: Optional[str] = None,      # CSV of resource types
+    action_category: Optional[str] = None,     # created | updated | deleted | commented
+    user_id: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    include_all: bool = False,
+    sort_order: Optional[str] = "desc",
+    limit: int = Query(25, ge=1, le=MAX_LIST_LIMIT),
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Content-rich activity feed for an engagement — the activity stream filtered
+    to content-bearing events and enriched with the actual text people posted,
+    plus field diffs for finding/testcase edits. Same membership scoping as
+    ``/activity`` (non-admins see only engagements they're assigned to)."""
+    base_query = select(ActivityLog).where(ActivityLog.engagement_id == engagement_id)
+
+    if resource_types:
+        types = [t.strip() for t in resource_types.split(",") if t.strip()]
+        if types:
+            base_query = base_query.where(ActivityLog.resource_type.in_(types))
+    elif not include_all:
+        base_query = base_query.where(ActivityLog.resource_type.in_(FEED_CONTENT_TYPES))
+
+    if action_category:
+        prefixes = _FEED_ACTION_PREFIXES.get(action_category)
+        if prefixes:
+            base_query = base_query.where(or_(*[ActivityLog.action.like(f"{p}%") for p in prefixes]))
+
+    if user_id:
+        base_query = base_query.where(ActivityLog.user_id == user_id)
+
+    if search:
+        term = f"%{search}%"
+        base_query = base_query.where(or_(
+            ActivityLog.details.ilike(term),
+            ActivityLog.resource_name.ilike(term),
+            ActivityLog.action.ilike(term),
+        ))
+
+    if date_from:
+        base_query = base_query.where(ActivityLog.created_at >= date_from)
+    if date_to:
+        base_query = base_query.where(ActivityLog.created_at <= date_to)
+
+    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+        from models.engagement import Engagement
+        base_query = base_query.join(Engagement).where(
+            Engagement.assigned_users.any(User.id == current_user.id)
+        )
+
+    total = (await db.execute(select(func.count()).select_from(base_query.subquery()))).scalar() or 0
+
+    order = ActivityLog.created_at.asc() if sort_order == "asc" else ActivityLog.created_at.desc()
+    page_query = base_query.options(selectinload(ActivityLog.user)).order_by(order).offset(offset).limit(limit)
+    logs = (await db.execute(page_query)).scalars().all()
+
+    items = []
+    for log in logs:
+        d = ActivityLogResponse.model_validate(log).model_dump()
+        d["user_name"] = log.user.username if log.user else "System"
+        d["user_profile_photo"] = log.user.profile_photo if log.user else None
+        d["action_category"] = _feed_action_category(log.action or "")
+        d["content_kind"] = "none"
+        d["content"] = None
+        d["changes"] = []
+        items.append(d)
+
+    await _enrich_feed_items(db, items)
+    return {"items": items, "total": total}
+
 
 # Helper function removed - moved to utils.collaboration.create_activity_log
