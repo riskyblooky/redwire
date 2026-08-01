@@ -881,6 +881,8 @@ async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
     from models.note import Note
     from models.asset import Asset
     from models.evidence import Evidence
+    from models.cleanup_artifact import CleanupArtifact
+    from models.vault import VaultItem
     from models.version_history import VersionHistory
     from utils.versioning import FINDING_VERSIONED_FIELDS, TESTCASE_VERSIONED_FIELDS
 
@@ -963,6 +965,41 @@ async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
             if ent is not None and ent.description:
                 it["content_kind"] = "text"
                 it["content"] = _feed_cap(ent.description)
+
+    # Cleanup artifacts — location / description / cleanup notes.
+    group = by_type.get("cleanup_artifact", [])
+    if group:
+        emap = await load_map(CleanupArtifact, {it.get("resource_id") for it in group})
+        for it in group:
+            ent = emap.get(it.get("resource_id"))
+            if ent is not None and it.get("action_category") in ("created", "updated"):
+                parts = []
+                if getattr(ent, "location", None):
+                    parts.append(f"**Location:** {ent.location}")
+                if ent.description:
+                    parts.append(ent.description)
+                if getattr(ent, "cleanup_notes", None):
+                    parts.append(f"**Cleanup notes:** {ent.cleanup_notes}")
+                if parts:
+                    it["content_kind"] = "text"
+                    it["content"] = _feed_cap("\n\n".join(parts))
+
+    # Vault — only the NON-secret description column. Selected explicitly so the
+    # encrypted username/password/note are never loaded or decrypted.
+    group = by_type.get("vault", [])
+    if group:
+        ids = [it.get("resource_id") for it in group if it.get("resource_id")]
+        desc_map = {}
+        if ids:
+            rows = (await db.execute(
+                select(VaultItem.id, VaultItem.description).where(VaultItem.id.in_(ids))
+            )).all()
+            desc_map = {r[0]: r[1] for r in rows}
+        for it in group:
+            desc = desc_map.get(it.get("resource_id"))
+            if desc and it.get("action_category") in ("created", "updated"):
+                it["content_kind"] = "text"
+                it["content"] = _feed_cap(desc)
 
     # Comments — resource_id is the THREAD id; pick the comment closest in time.
     group = by_type.get("comment", [])
