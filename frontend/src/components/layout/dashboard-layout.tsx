@@ -743,22 +743,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                     />
                                 </div>
                                 <div className="w-20 flex justify-center">
-                                    <TooltipProvider>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <div>
-                                                    <Switch
-                                                        checked={!pref.email_muted}
-                                                        disabled
-                                                        className="opacity-40"
-                                                    />
-                                                </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                                <p>Email notifications coming soon</p>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </TooltipProvider>
+                                    <Switch
+                                        checked={!pref.email_muted}
+                                        onCheckedChange={() => handleNotifPrefToggle(pref.event_type, 'email_muted', pref.email_muted)}
+                                    />
                                 </div>
                             </div>
                         ))}
