@@ -737,15 +737,16 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
                         )}
 
 
-                        {/* Collaborative Y.js editor */}
-                        <div className="flex-1 overflow-y-auto">
+                        {/* Collaborative Y.js editor — fills the pane; scrolling
+                            lives inside the editor so its toolbar stays pinned. */}
+                        <div className="flex-1 min-h-0 p-0">
                             <CollaborativeEditor
                                 key={selectedNote.id}
                                 noteId={selectedNote.id}
                                 engagementId={engagementId}
                                 placeholder="Start writing your notes..."
                                 disabled={!canEditNote}
-                                minHeight="calc(100vh - 500px)"
+                                minHeight="0"
                             />
                         </div>
                     </>

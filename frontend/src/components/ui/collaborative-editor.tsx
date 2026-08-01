@@ -928,9 +928,12 @@ export default function CollaborativeEditor({
     }, [ydoc, awareness]);
 
     return (
-        <div className={cn("flex flex-col border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", className)}>
-            {/* Toolbar */}
-            <div className="relative">
+        <div
+            className={cn("flex flex-col h-full border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", className)}
+            style={{ minHeight }}
+        >
+            {/* Toolbar — pinned; never scrolls with the content */}
+            <div className="relative shrink-0">
                 <MenuBar editor={editor} />
 
                 {/* Connection status + peer count */}
@@ -968,10 +971,9 @@ export default function CollaborativeEditor({
                 </div>
             </div>
 
-            {/* Editor content */}
+            {/* Editor content — the only scrolling region, so the toolbar stays put */}
             <div
-                className="overflow-y-auto"
-                style={{ minHeight }}
+                className="flex-1 min-h-0 overflow-y-auto"
                 onClick={() => editor?.commands.focus()}
             >
                 <EditorContent editor={editor} />
