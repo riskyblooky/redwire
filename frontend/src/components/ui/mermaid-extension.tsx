@@ -51,7 +51,9 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
     const [editing, setEditing] = useState<boolean>(editable && !content.trim());
     const [draft, setDraft] = useState<string>(content);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const editStartedAt = useRef<number>(0);
+    // Latest draft, readable from the document-level listener without stale closure.
+    const draftRef = useRef<string>(draft);
+    draftRef.current = draft;
 
     useEffect(() => {
         setDraft(node.attrs.content || '');
@@ -76,23 +78,32 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
 
     const startEdit = () => {
         setDraft(node.attrs.content || '');
-        editStartedAt.current = Date.now();
         setEditing(true);
     };
     const finishEdit = () => {
-        if (draft !== content) updateAttributes({ content: draft });
+        if (draftRef.current !== (node.attrs.content || '')) {
+            updateAttributes({ content: draftRef.current });
+        }
         setEditing(false);
     };
-    // ProseMirror steals focus back to the editable right after the textarea
-    // mounts, which fires a spurious blur. Ignore blurs in the first moments of
-    // an edit (and re-grab focus); a genuine click-away later still renders.
-    const handleBlur = () => {
-        if (Date.now() - editStartedAt.current < 400) {
-            requestAnimationFrame(() => textareaRef.current?.focus());
-            return;
-        }
-        finishEdit();
-    };
+
+    // Finish editing only on a genuine click OUTSIDE the node — not on blur.
+    // Blur fired every time ProseMirror reclaimed focus (even when clicking
+    // within the textarea to move the caret), which kept snapping back to render
+    // mode. A click-outside check lets the user click around inside the source
+    // freely; Done / Escape / clicking elsewhere still commit + render.
+    useEffect(() => {
+        if (!editing) return;
+        const onDown = (e: MouseEvent) => {
+            const root = textareaRef.current?.closest('.mermaid-node');
+            if (root && !root.contains(e.target as globalThis.Node)) {
+                finishEdit();
+            }
+        };
+        document.addEventListener('mousedown', onDown, true);
+        return () => document.removeEventListener('mousedown', onDown, true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editing]);
 
     // Read-only surfaces (disabled editor) just render the diagram.
     if (!editable) {
@@ -123,7 +134,6 @@ function MermaidNodeView({ node, updateAttributes, editor, selected }: NodeViewP
                     ref={textareaRef}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    onBlur={handleBlur}
                     onKeyDown={(e) => {
                         if (e.key === 'Escape') {
                             e.preventDefault();
