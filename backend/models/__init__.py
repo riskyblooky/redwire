@@ -5,6 +5,7 @@ from models.engagement_phase import EngagementPhase
 from models.finding import Finding, Severity, FindingStatus, Tag
 from models.asset import Asset
 from models.asset_port import AssetPort, PortProtocol, PortState
+from models.scan_import import ScanImport
 from models.evidence import Evidence
 from models.testcase import TestCase
 from models.calendar import CalendarEvent

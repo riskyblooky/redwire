@@ -23,10 +23,33 @@ def parse(content: bytes) -> ParsedImportData:
         result.warnings.append(f"XML parse error: {e}")
         return result
 
-    # Metadata
+    # Metadata — the <nmaprun> root carries the exact command line + scanner id.
     result.raw_metadata["scanner"] = root.get("scanner", "nmap")
     result.raw_metadata["args"] = root.get("args", "")
+    result.raw_metadata["version"] = root.get("version", "")
     result.raw_metadata["start"] = root.get("startstr", "")
+
+    # <runstats><finished .../><hosts .../></runstats> — end time, elapsed, and
+    # the up/down/total host tallies for the whole scan.
+    runstats = root.find("runstats")
+    if runstats is not None:
+        finished = runstats.find("finished")
+        if finished is not None:
+            result.raw_metadata["finished"] = finished.get("timestr", "")
+            result.raw_metadata["summary"] = finished.get("summary", "")
+            try:
+                result.raw_metadata["elapsed"] = float(finished.get("elapsed", ""))
+            except (TypeError, ValueError):
+                pass
+        hosts = runstats.find("hosts")
+        if hosts is not None:
+            for k in ("up", "down", "total"):
+                v = hosts.get(k)
+                if v is not None:
+                    try:
+                        result.raw_metadata[f"hosts_{k}"] = int(v)
+                    except (TypeError, ValueError):
+                        pass
 
     for host in root.findall(".//host"):
         # Skip hosts that are down

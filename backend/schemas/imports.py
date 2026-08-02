@@ -4,6 +4,7 @@ schemas/imports.py — Pydantic models for the import preview/commit flow.
 
 from pydantic import BaseModel, Field
 from typing import Optional
+from datetime import datetime
 from schemas._field_limits import (
     CVSS_VECTOR,
     ENUM_STR,
@@ -72,3 +73,32 @@ class CommitResponse(BaseModel):
     ports_added: int = 0
     finding_asset_links: int = 0
     errors: list[str] = []
+    scan_import_id: Optional[str] = None
+
+
+class ScanImportResponse(BaseModel):
+    id: str
+    engagement_id: str
+    source_tool: str
+    source_format: Optional[str] = None
+    filename: Optional[str] = None
+    command: Optional[str] = None
+    scanner: Optional[str] = None
+    scanner_version: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    elapsed_seconds: Optional[float] = None
+    summary: Optional[str] = None
+    hosts_total: Optional[int] = None
+    hosts_up: Optional[int] = None
+    hosts_down: Optional[int] = None
+    assets_created: int = 0
+    assets_merged: int = 0
+    findings_created: int = 0
+    ports_added: int = 0
+    created_by: Optional[str] = None
+    created_by_username: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

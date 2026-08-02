@@ -6,7 +6,7 @@
  *  - `useCommitImport`  — creates assets + findings in DB
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 
 // ── Preview Types ───────────────────────────────────────────────
@@ -62,6 +62,34 @@ export interface CommitResponse {
     ports_added: number;
     finding_asset_links: number;
     errors: string[];
+    scan_import_id?: string | null;
+}
+
+// ── Scan history ────────────────────────────────────────────────
+
+export interface ScanImport {
+    id: string;
+    engagement_id: string;
+    source_tool: string;
+    source_format?: string | null;
+    filename?: string | null;
+    command?: string | null;
+    scanner?: string | null;
+    scanner_version?: string | null;
+    started_at?: string | null;
+    finished_at?: string | null;
+    elapsed_seconds?: number | null;
+    summary?: string | null;
+    hosts_total?: number | null;
+    hosts_up?: number | null;
+    hosts_down?: number | null;
+    assets_created: number;
+    assets_merged: number;
+    findings_created: number;
+    ports_added: number;
+    created_by?: string | null;
+    created_by_username?: string | null;
+    created_at?: string | null;
 }
 
 // ── Hooks ───────────────────────────────────────────────────────
@@ -117,10 +145,27 @@ export function useCommitImport() {
             });
             return data;
         },
-        onSuccess: () => {
+        onSuccess: (_data, vars) => {
             queryClient.invalidateQueries({ queryKey: ['assets'] });
             queryClient.invalidateQueries({ queryKey: ['findings'] });
             queryClient.invalidateQueries({ queryKey: ['analytics'] });
+            queryClient.invalidateQueries({ queryKey: ['scan-imports', vars.engagementId] });
+        },
+    });
+}
+
+/** Past scanner imports for an engagement (most recent first), each carrying the
+ *  command line + scan metadata captured at import time. */
+export function useScanImports(engagementId?: string) {
+    return useQuery({
+        queryKey: ['scan-imports', engagementId],
+        enabled: !!engagementId,
+        staleTime: 30_000,
+        queryFn: async () => {
+            const { data } = await api.get<ScanImport[]>('/imports/scans', {
+                params: { engagement_id: engagementId },
+            });
+            return data;
         },
     });
 }

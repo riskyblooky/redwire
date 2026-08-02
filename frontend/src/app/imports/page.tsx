@@ -24,10 +24,12 @@ import { useEngagements } from '@/lib/hooks/use-engagements';
 import {
     usePreviewImport,
     useCommitImport,
+    useScanImports,
     type PreviewResponse,
     type PreviewAsset,
     type PreviewFinding,
     type CommitResponse,
+    type ScanImport,
 } from '@/lib/hooks/use-imports';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,9 +39,9 @@ import {
     Upload, FileUp, AlertTriangle, CheckCircle2, XCircle,
     ArrowRight, ArrowLeft, Loader2, Server, Bug, Link2,
     Layers, RefreshCw, ExternalLink, ChevronDown, Info,
-    Shield, Search,
+    Shield, Search, Terminal, Copy, Clock, History,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
@@ -113,6 +115,175 @@ function StepIndicator({ current }: { current: number }) {
 }
 
 /* ═══════════════ Main Page ═══════════════ */
+
+/* ── Scan metadata (command + provenance) ───────────────────────── */
+
+interface ScanMetaFields {
+    command?: string | null;
+    scanner?: string | null;
+    version?: string | null;
+    started?: string | null;
+    finished?: string | null;
+    elapsed?: number | null;
+    summary?: string | null;
+    hostsUp?: number | null;
+    hostsDown?: number | null;
+    hostsTotal?: number | null;
+}
+
+function fmtElapsed(sec?: number | null): string | null {
+    if (sec == null) return null;
+    if (sec < 60) return `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
+    const m = Math.floor(sec / 60);
+    const s = Math.round(sec % 60);
+    return `${m}m ${s}s`;
+}
+
+function ScanMeta({ fields }: { fields: ScanMetaFields }) {
+    const hosts = fields.hostsTotal != null
+        ? `${fields.hostsUp ?? '?'} up / ${fields.hostsTotal} total`
+        : (fields.hostsUp != null ? `${fields.hostsUp} up` : null);
+    const scanner = [fields.scanner, fields.version].filter(Boolean).join(' ');
+    const rows: [string, string | null][] = [
+        ['Scanner', scanner || null],
+        ['Started', fields.started || null],
+        ['Finished', fields.finished || null],
+        ['Elapsed', fmtElapsed(fields.elapsed)],
+        ['Hosts', hosts],
+    ];
+    const hasAny = fields.command || rows.some(([, v]) => v) || fields.summary;
+    if (!hasAny) return null;
+
+    return (
+        <div className="space-y-2">
+            {fields.command && (
+                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
+                    <div className="mb-1 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                            <Terminal className="h-3 w-3" /> Command
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(fields.command || ''); toast.success('Command copied'); }}
+                            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                        >
+                            <Copy className="h-3 w-3" /> Copy
+                        </button>
+                    </div>
+                    <code className="block overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px] text-cyan-300">
+                        {fields.command}
+                    </code>
+                </div>
+            )}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
+                {rows.filter(([, v]) => v).map(([label, v]) => (
+                    <div key={label} className="flex flex-col">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">{label}</span>
+                        <span className="text-xs text-slate-300">{v}</span>
+                    </div>
+                ))}
+            </div>
+            {fields.summary && (
+                <p className="text-[11px] italic text-slate-500">{fields.summary}</p>
+            )}
+        </div>
+    );
+}
+
+function metaFromPreview(m: Record<string, unknown>): ScanMetaFields {
+    const num = (v: unknown) => (typeof v === 'number' ? v : (typeof v === 'string' && v !== '' ? Number(v) : null));
+    return {
+        command: (m.args as string) || null,
+        scanner: (m.scanner as string) || null,
+        version: (m.version as string) || null,
+        started: (m.start as string) || null,
+        finished: (m.finished as string) || null,
+        elapsed: num(m.elapsed),
+        summary: (m.summary as string) || null,
+        hostsUp: num(m.hosts_up),
+        hostsDown: num(m.hosts_down),
+        hostsTotal: num(m.hosts_total) ?? num(m.total_hosts),
+    };
+}
+
+function metaFromScan(s: ScanImport): ScanMetaFields {
+    return {
+        command: s.command,
+        scanner: s.scanner,
+        version: s.scanner_version,
+        started: s.started_at,
+        finished: s.finished_at,
+        elapsed: s.elapsed_seconds,
+        summary: s.summary,
+        hostsUp: s.hosts_up,
+        hostsDown: s.hosts_down,
+        hostsTotal: s.hosts_total,
+    };
+}
+
+/* ── Scan history (past imports for the engagement) ─────────────── */
+
+function ScanHistoryRow({ scan }: { scan: ScanImport }) {
+    const [open, setOpen] = useState(false);
+    const tool = TOOL_BADGES[scan.source_tool];
+    const counts = [
+        scan.assets_created ? `${scan.assets_created} assets` : null,
+        scan.assets_merged ? `${scan.assets_merged} merged` : null,
+        scan.findings_created ? `${scan.findings_created} findings` : null,
+        scan.ports_added ? `${scan.ports_added} ports` : null,
+    ].filter(Boolean).join(' · ') || 'no new records';
+
+    return (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/40">
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-800/30"
+            >
+                <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-500 transition-transform', open && 'rotate-180')} />
+                <Badge className={cn('text-[10px] font-bold border', tool?.color || 'bg-slate-700 text-slate-300')}>
+                    {tool?.label || scan.source_tool.toUpperCase()}
+                </Badge>
+                <span className="truncate text-xs text-slate-300" title={scan.filename || undefined}>{scan.filename || 'scan'}</span>
+                <span className="ml-auto shrink-0 text-[11px] text-slate-500">{counts}</span>
+                {scan.created_at && (
+                    <span className="hidden shrink-0 items-center gap-1 text-[11px] text-slate-600 sm:flex" title={parseUTCDate(scan.created_at).toLocaleString()}>
+                        <Clock className="h-3 w-3" />
+                        {parseUTCDate(scan.created_at).toLocaleDateString()}
+                    </span>
+                )}
+            </button>
+            {open && (
+                <div className="border-t border-slate-800/60 p-3">
+                    <ScanMeta fields={metaFromScan(scan)} />
+                    <div className="mt-2 text-[11px] text-slate-600">
+                        Imported by {scan.created_by_username || 'unknown'}
+                        {scan.created_at && ` · ${parseUTCDate(scan.created_at).toLocaleString()}`}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ScanHistory({ engagementId }: { engagementId: string }) {
+    const { data: scans = [], isLoading } = useScanImports(engagementId);
+    if (isLoading || scans.length === 0) return null;
+    return (
+        <Card className="border-slate-800 bg-slate-900/50">
+            <CardContent className="p-4">
+                <div className="mb-3 flex items-center gap-2">
+                    <History className="h-4 w-4 text-slate-400" />
+                    <h3 className="text-sm font-semibold text-white">Scan history</h3>
+                    <Badge variant="secondary" className="ml-1 h-4 border-none bg-slate-800 px-1.5 text-[10px] text-slate-400">{scans.length}</Badge>
+                </div>
+                <div className="space-y-1.5">
+                    {scans.map((s) => <ScanHistoryRow key={s.id} scan={s} />)}
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
 
 export default function ImportsPage() {
     const router = useRouter();
@@ -417,6 +588,9 @@ export default function ImportsPage() {
                                 </Badge>
                             ))}
                         </div>
+
+                        {/* Past scans for this engagement — command + metadata, revisitable */}
+                        {selectedEngagement && <ScanHistory engagementId={selectedEngagement} />}
                     </div>
                 )}
 
@@ -461,6 +635,15 @@ export default function ImportsPage() {
                                 )}
                             </CardContent>
                         </Card>
+
+                        {/* Scan command + metadata (nmap args, scanner, timing, hosts) */}
+                        {preview.metadata && Object.keys(preview.metadata).length > 0 && (
+                            <Card className="border-slate-800 bg-slate-900/50">
+                                <CardContent className="p-4">
+                                    <ScanMeta fields={metaFromPreview(preview.metadata)} />
+                                </CardContent>
+                            </Card>
+                        )}
 
                         {/* Summary strip */}
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

@@ -20,8 +20,9 @@ from models.finding import Finding, Severity, FindingStatus
 from auth.dependencies import get_current_user
 from schemas.imports import (
     PreviewResponse, PreviewAsset, PreviewFinding, PreviewPort,
-    CommitResponse,
+    CommitResponse, ScanImportResponse,
 )
+from models.scan_import import ScanImport
 from utils.parsers import detect_and_parse, ParsedImportData
 from utils.collaboration import create_activity_log
 from utils.uploads import read_upload_capped
@@ -426,4 +427,84 @@ async def commit_import(
     except Exception:
         pass  # Don't fail the import if activity logging fails
 
+    # Persist a scan-import record so the command + scan metadata survive the
+    # import and can be revisited in the scans menu. Best-effort — a failure
+    # here must not fail the import itself.
+    try:
+        meta = parsed.raw_metadata or {}
+
+        def _as_int(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+
+        def _as_float(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        hosts_total = meta.get("hosts_total")
+        if hosts_total is None:
+            hosts_total = meta.get("total_hosts")
+
+        scan = ScanImport(
+            engagement_id=engagement_id,
+            source_tool=parsed.source_tool,
+            source_format=meta.get("format") or None,
+            filename=filename,
+            command=(meta.get("args") or None),
+            scanner=(meta.get("scanner") or None),
+            scanner_version=(meta.get("version") or None),
+            started_at=(meta.get("start") or None),
+            finished_at=(meta.get("finished") or None),
+            elapsed_seconds=_as_float(meta.get("elapsed")),
+            summary=(meta.get("summary") or None),
+            hosts_total=_as_int(hosts_total),
+            hosts_up=_as_int(meta.get("hosts_up")),
+            hosts_down=_as_int(meta.get("hosts_down")),
+            assets_created=result.assets_created,
+            assets_merged=result.assets_skipped,
+            findings_created=result.findings_created,
+            ports_added=result.ports_added,
+            created_by=current_user.id,
+        )
+        db.add(scan)
+        await db.commit()
+        await db.refresh(scan)
+        result.scan_import_id = scan.id
+    except Exception:
+        pass
+
     return result
+
+
+@router.get("/scans", response_model=list[ScanImportResponse])
+async def list_scan_imports(
+    engagement_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List past scanner imports for an engagement (most recent first), with the
+    command line + scan metadata captured at import time."""
+    await _check_import_permission(current_user, engagement_id, db)
+
+    limit = max(1, min(limit, 200))
+    rows = (await db.execute(
+        select(ScanImport, User.username)
+        .outerjoin(User, ScanImport.created_by == User.id)
+        .where(ScanImport.engagement_id == engagement_id)
+        .order_by(ScanImport.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )).all()
+
+    out = []
+    for scan, username in rows:
+        d = ScanImportResponse.model_validate(scan).model_dump()
+        d["created_by_username"] = username
+        out.append(d)
+    return out
