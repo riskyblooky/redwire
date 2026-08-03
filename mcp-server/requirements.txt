@@ -1,5 +1,10 @@
-# MCP SDK with SSE transport
-mcp[cli]>=1.0.0
+# MCP SDK with SSE transport.
+# Pinned <2.0.0: server.py uses the 1.x low-level API (mcp.server.Server +
+# @list_tools()/@call_tool() decorators + SseServerTransport). mcp 2.0.0
+# removed/changed that API (Server.list_tools no longer exists), so an
+# unpinned fresh build pulls 2.0.0 and crash-loops. Bump deliberately with a
+# server.py migration, not implicitly.
+mcp[cli]>=1.0.0,<2.0.0
 
 # HTTP client for RedWire API
 httpx>=0.26.0
