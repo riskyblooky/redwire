@@ -66,8 +66,11 @@ import {
     Zap,
     BookOpen,
     Paperclip,
+    ShieldCheck,
+    ShieldOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Switch } from '@/components/ui/switch';
 import {
     useIntelItems,
     useCreateIntelItem,
@@ -75,6 +78,7 @@ import {
     useIntelItem,
     useIntelFeeds,
     useCreateIntelFeed,
+    useUpdateIntelFeed,
     useDeleteIntelFeed,
     useRefreshFeeds,
     useLinkIntel,
@@ -155,6 +159,7 @@ export default function IntelligencePage() {
     const createItem = useCreateIntelItem();
     const deleteItem = useDeleteIntelItem();
     const createFeed = useCreateIntelFeed();
+    const updateFeed = useUpdateIntelFeed();
     const deleteFeed = useDeleteIntelFeed();
     const uploadAttachment = useUploadIntelAttachment();
 
@@ -196,7 +201,7 @@ export default function IntelligencePage() {
     };
 
     // Feed form state
-    const [newFeed, setNewFeed] = useState({ name: '', url: '', feed_type: 'RSS' });
+    const [newFeed, setNewFeed] = useState({ name: '', url: '', feed_type: 'RSS', verify_tls: true });
 
     const handleCreateFeed = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -204,7 +209,7 @@ export default function IntelligencePage() {
             await createFeed.mutateAsync(newFeed);
             toast.success('Feed added');
             setAddFeedOpen(false);
-            setNewFeed({ name: '', url: '', feed_type: 'RSS' });
+            setNewFeed({ name: '', url: '', feed_type: 'RSS', verify_tls: true });
         } catch (err: any) {
             toast.error(apiErrorMessage(err, 'Failed to add feed'));
         }
@@ -442,6 +447,32 @@ export default function IntelligencePage() {
                                                 <Badge className="text-[10px] bg-slate-800 text-slate-400 border-slate-700">
                                                     {feed.feed_type}
                                                 </Badge>
+                                                {!feed.verify_tls && (
+                                                    <Badge className="text-[10px] bg-amber-500/15 text-amber-400 border-amber-500/30 flex items-center gap-1">
+                                                        <ShieldOff className="h-3 w-3" /> Insecure
+                                                    </Badge>
+                                                )}
+                                                {canManageFeeds && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className={`h-8 w-8 hover:bg-slate-800 ${feed.verify_tls ? 'text-slate-500 hover:text-amber-400' : 'text-amber-400 hover:text-emerald-400'}`}
+                                                    title={feed.verify_tls ? 'TLS verification on — click to disable (insecure)' : 'TLS verification off — click to re-enable'}
+                                                    disabled={updateFeed.isPending}
+                                                    onClick={async () => {
+                                                        await updateFeed.mutateAsync({
+                                                            id: feed.id,
+                                                            feed: {
+                                                                name: feed.name, url: feed.url, feed_type: feed.feed_type,
+                                                                enabled: feed.enabled, verify_tls: !feed.verify_tls,
+                                                            },
+                                                        });
+                                                        toast.success(feed.verify_tls ? 'TLS verification disabled for feed' : 'TLS verification enabled for feed');
+                                                    }}
+                                                >
+                                                    {feed.verify_tls ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
+                                                </Button>
+                                                )}
                                                 {canManageFeeds && (
                                                 <Button
                                                     variant="ghost"
@@ -626,6 +657,16 @@ export default function IntelligencePage() {
                                     <SelectItem value="JSON">JSON</SelectItem>
                                 </SelectContent>
                             </Select>
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2">
+                            <div>
+                                <Label className="text-slate-300 text-sm">Verify TLS certificate</Label>
+                                <p className="text-[11px] text-slate-500">Turn off only for an internal / self-signed feed.</p>
+                            </div>
+                            <Switch
+                                checked={newFeed.verify_tls}
+                                onCheckedChange={v => setNewFeed({ ...newFeed, verify_tls: v })}
+                            />
                         </div>
                         <div className="flex justify-end gap-2 pt-2">
                             <Button type="button" variant="outline" onClick={() => setAddFeedOpen(false)} className="border-slate-700 text-slate-300 hover:bg-slate-800">Cancel</Button>

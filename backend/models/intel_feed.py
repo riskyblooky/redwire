@@ -13,6 +13,10 @@ class IntelFeed(Base):
     url = Column(String(1000), nullable=False)
     feed_type = Column(String(20), default="RSS")  # RSS, ATOM, JSON
     enabled = Column(Boolean, default=True, nullable=False)
+    # Per-feed TLS cert verification. Default on; an admin can turn it off for a
+    # single internal / self-signed feed without weakening the rest (mirrors the
+    # LDAP/SMTP tls_verify escape hatch). SSRF validation still runs regardless.
+    verify_tls = Column(Boolean, default=True, nullable=False)
     last_fetched_at = Column(DateTime, nullable=True)
     created_by = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

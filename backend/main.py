@@ -138,7 +138,14 @@ async def _refresh_intel_feeds_background():
                             except OutboundURLError as exc:
                                 print(f"[Intel] Skipping feed {feed.url!r}: {exc}")
                                 continue
-                            resp = await client.get(feed.url, headers={"User-Agent": "RedWire/1.0"})
+                            # Per-feed TLS: the shared client verifies; a feed that
+                            # opted out gets a one-off non-verifying client.
+                            if getattr(feed, "verify_tls", True):
+                                resp = await client.get(feed.url, headers={"User-Agent": "RedWire/1.0"})
+                            else:
+                                print(f"[Intel] TLS verification DISABLED for feed {feed.name!r} ({feed.url})")
+                                async with httpx.AsyncClient(timeout=15.0, follow_redirects=False, verify=False) as insecure:
+                                    resp = await insecure.get(feed.url, headers={"User-Agent": "RedWire/1.0"})
                             if resp.status_code != 200:
                                 continue
 

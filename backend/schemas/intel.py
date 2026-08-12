@@ -21,6 +21,7 @@ class IntelFeedCreate(BaseModel):
     url: str = Field(..., min_length=1, max_length=URL)
     feed_type: str = Field("RSS", max_length=ENUM_STR)
     enabled: bool = True
+    verify_tls: bool = True
 
     @field_validator("url")
     @classmethod
@@ -39,6 +40,7 @@ class IntelFeedResponse(BaseModel):
     url: str
     feed_type: str
     enabled: bool
+    verify_tls: bool = True
     last_fetched_at: Optional[datetime] = None
     created_at: datetime
 

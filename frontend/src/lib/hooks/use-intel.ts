@@ -49,6 +49,7 @@ export interface IntelFeed {
     url: string;
     feed_type: string;
     enabled: boolean;
+    verify_tls: boolean;
     last_fetched_at?: string;
     created_at: string;
 }
@@ -227,11 +228,26 @@ export function useIntelFeeds() {
     });
 }
 
+type IntelFeedInput = { name: string; url: string; feed_type?: string; enabled?: boolean; verify_tls?: boolean };
+
 export function useCreateIntelFeed() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async (feed: { name: string; url: string; feed_type?: string; enabled?: boolean }) => {
+        mutationFn: async (feed: IntelFeedInput) => {
             const { data } = await api.post<IntelFeed>('/intel/feeds', feed);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['intel-feeds'] });
+        },
+    });
+}
+
+export function useUpdateIntelFeed() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, feed }: { id: string; feed: IntelFeedInput }) => {
+            const { data } = await api.put<IntelFeed>(`/intel/feeds/${id}`, feed);
             return data;
         },
         onSuccess: () => {
