@@ -4,75 +4,95 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.2.0] — 2026-08-12
+## [1.3.0] — 2026-08-12
+
+A large feature release.
 
 ### Added
+- **Custom fields** — admin-defined fields on assets, test cases, findings,
+  clients, and engagements; usable as sortable table columns, searchable, in
+  generated reports, and in the query builder.
+- **Dashboards & widgets** — a much bigger query builder (20+ tables, richer
+  operators, multi-source), a multi-query wizard for composite widget types,
+  per-user activity series, and **tabbed global stats pages** with shared layouts.
+- **Plugin system** — drop-in plugins with backend routers, frontend pages and
+  in-page **extension slots** baked into the app, per-plugin migrations,
+  lifecycle events, and RBAC.
 - **Activity Feed** — the engagement *Logs* tab is now **Activity**, with a new
-  **Feed** view: a chronological, single-pane-of-glass stream of everything
-  operators posted (comments, notes, findings, test cases, assets, evidence),
-  with **field-level diffs** for finding/test-case edits. Rich filters (search,
-  type, action, author, date range), sort, and paging.
+  **Feed**: a chronological, single-pane-of-glass stream of everything operators
+  posted (comments, notes, findings, test cases, assets, evidence), with
+  field-level **diffs** for finding/test-case edits. Search, type/action/author/
+  date filters, sort, and paging.
 - **Mermaid diagrams** — author ` ```mermaid ` blocks in any editor or markdown
-  field; they render as live diagrams (edit inline in a popover, rendered
-  everywhere they're viewed).
-- **Full notifications page** — reachable from the bell dropdown ("See all
-  notifications"): search, status/type filters, sort, paging, and per-item
-  controls (mark read/unread, delete) plus mark-all-read / clear-all.
-- **Email notifications** — opt-in per-user email toggles in Profile →
-  Notifications; notifications arrive as a styled HTML card instead of raw JSON,
-  and a security email is sent when your password is changed.
-- **Scan history** — importing an Nmap scan now captures the exact command line
-  and scan metadata (scanner, timing, host counts) and keeps a revisitable
-  **Scan history** per engagement.
-- **In-app changelog** — this page, plus a one-time **"What's New"** popup after
-  an update.
-- **Per-feed TLS toggle** — intel feeds can individually skip TLS verification
-  for internal / self-signed sources (shown with an "Insecure" badge).
-
-### Fixed
-- Engagement tab counts show true totals (Assets no longer capped at the page
-  size; Test Cases and Findings tabs load the full list).
-- Note editor toolbar stays pinned while scrolling long notes; list markers
-  render in the notes editor; note edits are logged again (debounced).
-- Faster engagements list for admins (dropped redundant per-row permission
-  fetches).
-- Corrected several broken activity-log links.
-- Pinned the MCP SDK so fresh builds don't pull a breaking 2.0 API.
-
-## [1.1.0] — 2026-07-06
-
-### Added
-- **Command palette + keyboard shortcuts** — Cmd/Ctrl+K to jump anywhere, plus
-  two-key sequences for create/navigate actions.
-- **Personal automations** — user-scoped automation rules ("My Rules") alongside
-  org rules.
-- **Calendar views** — Day / Week / Month / **Gantt** toggle, including a
-  personal rolling Gantt timeline.
-- **Version history + restore** — findings and test cases track versions and can
-  be restored to a prior version.
-- **Attack-graph chain links** — link findings/test cases/vault items into
-  cause→effect chains.
-- **HTML report format** — a self-contained interactive HTML report alongside
-  PDF and JSON.
-- **Engagement Specs** — phases and dates surfaced on the engagement overview.
-- **EXIF viewer** for image evidence, and **click-to-copy** on the
-  infrastructure page.
+  field; they render as live diagrams.
+- **Notifications** — a full **/notifications** page (search, filters, sort,
+  paging, per-item read/unread/delete), opt-in **per-user email notifications**
+  as a styled HTML card, and a **password-changed security email**.
+- **Scan history** — Nmap imports capture the exact command line and scan
+  metadata (scanner, timing, host counts), kept as a revisitable per-engagement
+  history.
+- **Command palette + keyboard shortcuts** — Cmd/Ctrl+K, plus vim-style hotkey
+  sequences.
+- **Personal automations** — user-scoped automation rules alongside org rules.
+- **Calendar views** — Day / Week / Month / **Gantt** toggle.
+- **Attack-graph causal chains** — link test cases, findings, and vault items
+  into cause→effect chains.
+- **Version history + restore** for findings and test cases.
+- **Tags on engagements**; **clipboard-paste uploads** + one shared dropzone
+  across attachment surfaces; uploads persist across rebuilds.
+- **AI & LDAP tooling** — custom headers / TLS-verify toggle / larger key field
+  for AI providers; LDAP test-login + connection debug tracing.
+- **In-app changelog** — a `/changelog` page and a one-time **"What's New"**
+  popup after each update.
+- **Per-feed TLS toggle** for internal / self-signed intel feeds.
+- Engagement **Specs** (phases + dates), edit client info from the overview, a
+  **"My Engagements"** filter, imports pre-scoped to an engagement, and `/health`
+  build metadata surfaced in an admin **About** tab.
 
 ### Improved
-- **Global search** now covers comments and notes.
-- **Query-builder filters** use searchable entity pickers instead of raw IDs.
-- **@mentions** show hover cards (avatar + name), and mention notifications jump
-  straight to the comment.
-- **Discussions** — edit comments in a thread; deep-link to a specific comment.
-- **Scheduling** — assign selected people to an engagement with a role; OoO
-  exclusion uses actual time-overlap; searchable engagement picker.
-- **Engagements** — a "My Engagements" filter for all-access users, edit client
-  info from the overview, and duplicate engagement names are blocked.
-- **Reports** — JSON export includes linked-finding relationships.
+- Global search now covers notes and comments.
+- Query-builder filters use searchable entity pickers instead of raw IDs.
+- @mentions show hover cards; mention notifications deep-link to the comment;
+  comments are editable in threads.
+- Scheduling: assign people to an engagement with a role; OoO exclusion uses a
+  configurable time-overlap threshold.
+- Clients: search + filter chips, sub-client actions, searchable parent picker.
+- JSON report export includes entity relationships.
 - Timestamps are localized consistently across the app.
 
-## [1.0.0] — 2026-06-01
+### Fixed
+- Engagement tab counts show true totals (Assets no longer capped; Test Cases &
+  Findings load the full list).
+- Notes editor toolbar stays pinned while scrolling; list markers render;
+  debounced note-edit logging restored.
+- Faster engagements list for admins (fewer redundant permission fetches).
+- Calendar weekend default + self Out-of-Office creation; widget tooltip
+  clipping/theming; client tree badge rollup; several broken activity-log links.
+- Pinned the MCP SDK so fresh builds don't pull a breaking 2.0 API.
 
-- Initial RedWire platform: engagements, findings (CVSS-scored), assets,
-  evidence, credential vault, cleanup artifacts, runbooks, reporting, scheduling,
-  discussions, and team collaboration.
+## [1.2.0] — 2026-06-11
+
+### Security
+- Coordinated-disclosure hardening release: vault field encryption at rest and
+  on import; auth/session hardening (HttpOnly refresh cookie, one-time TOTP,
+  token-revocation fixes, rate-limited password reset with off-request email);
+  plugin route authentication + runtime disable gate; automation template
+  escaping and field constraints; input size caps (uploads, imports,
+  comments/notes); server-side CSPRNG registration codes; profile-photo and
+  `/uploads` lockdown; and more.
+
+### Added
+- **Report classification & portion marking** plus deep report customization.
+
+## [1.1.0] — 2026-05-20
+
+### Security
+- Coordinated-disclosure security release (credited to the Lockheed Martin Red
+  Team) — hardening across authentication, uploads, and API input validation.
+
+## [1.0.0] — 2026-05-11
+
+- Initial public release of the RedWire red-team operations platform:
+  engagements, findings (CVSS-scored), assets, evidence, credential vault,
+  cleanup artifacts, runbooks, reporting, scheduling, discussions, and team
+  collaboration.
