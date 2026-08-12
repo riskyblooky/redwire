@@ -4,10 +4,10 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.1.0] — 2026-08-12
+## [1.2.0] — 2026-08-12
 
 ### Added
-- **Activity Feed** — the engagement Logs tab is now **Activity**, with a new
+- **Activity Feed** — the engagement *Logs* tab is now **Activity**, with a new
   **Feed** view: a chronological, single-pane-of-glass stream of everything
   operators posted (comments, notes, findings, test cases, assets, evidence),
   with **field-level diffs** for finding/test-case edits. Rich filters (search,
@@ -24,6 +24,24 @@ section becomes one release entry.
 - **Scan history** — importing an Nmap scan now captures the exact command line
   and scan metadata (scanner, timing, host counts) and keeps a revisitable
   **Scan history** per engagement.
+- **In-app changelog** — this page, plus a one-time **"What's New"** popup after
+  an update.
+- **Per-feed TLS toggle** — intel feeds can individually skip TLS verification
+  for internal / self-signed sources (shown with an "Insecure" badge).
+
+### Fixed
+- Engagement tab counts show true totals (Assets no longer capped at the page
+  size; Test Cases and Findings tabs load the full list).
+- Note editor toolbar stays pinned while scrolling long notes; list markers
+  render in the notes editor; note edits are logged again (debounced).
+- Faster engagements list for admins (dropped redundant per-row permission
+  fetches).
+- Corrected several broken activity-log links.
+- Pinned the MCP SDK so fresh builds don't pull a breaking 2.0 API.
+
+## [1.1.0] — 2026-07-06
+
+### Added
 - **Command palette + keyboard shortcuts** — Cmd/Ctrl+K to jump anywhere, plus
   two-key sequences for create/navigate actions.
 - **Personal automations** — user-scoped automation rules ("My Rules") alongside
@@ -37,10 +55,6 @@ section becomes one release entry.
 - **HTML report format** — a self-contained interactive HTML report alongside
   PDF and JSON.
 - **Engagement Specs** — phases and dates surfaced on the engagement overview.
-- **In-app changelog** — this page, plus a one-time "What's New" popup after an
-  update.
-- **Per-feed TLS toggle** — intel feeds can individually skip TLS verification
-  for internal / self-signed sources (shown with an "Insecure" badge).
 - **EXIF viewer** for image evidence, and **click-to-copy** on the
   infrastructure page.
 
@@ -56,15 +70,6 @@ section becomes one release entry.
   info from the overview, and duplicate engagement names are blocked.
 - **Reports** — JSON export includes linked-finding relationships.
 - Timestamps are localized consistently across the app.
-
-### Fixed
-- Engagement tab counts show true totals (Assets no longer capped at the page
-  size; Test Cases and Findings tabs load the full list).
-- Note editor toolbar stays pinned while scrolling long notes; list markers
-  render in the notes editor; note edits are logged again (debounced).
-- Faster engagements list for admins (dropped redundant per-row permission
-  fetches).
-- Corrected several broken activity-log links.
 
 ## [1.0.0] — 2026-06-01
 
