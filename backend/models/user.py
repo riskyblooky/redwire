@@ -30,6 +30,10 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     last_login = Column(DateTime)
     last_active = Column(DateTime, default=datetime.utcnow)
+    # Highest release whose "What's New" notes this user has seen. Null until the
+    # first check (then set to current, so existing users aren't shown historical
+    # notes on first rollout).
+    last_seen_version = Column(String(20), nullable=True)
     must_change_password = Column(Boolean, default=False, nullable=False, server_default="false")
     registration_code_id = Column(String, ForeignKey("registration_codes.id", ondelete="SET NULL"), nullable=True)
 

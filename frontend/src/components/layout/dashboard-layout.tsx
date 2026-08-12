@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
 import { CommandPalette } from '@/components/command-palette';
+import { WhatsNewModal } from '@/components/layout/whats-new-modal';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
 import {
@@ -330,6 +331,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 two-key hotkey sequences (N F, G E, etc.). Mounted here
                 so it exists on every authenticated route. */}
             <CommandPalette />
+            {/* One-time post-update "What's New" popup (once per user per release). */}
+            <WhatsNewModal />
             {/* Sidebar */}
             <aside
                 className={cn(

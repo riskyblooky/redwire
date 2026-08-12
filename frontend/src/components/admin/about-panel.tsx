@@ -13,9 +13,10 @@
  * mounted source; if THAT fails too the field is ``"unknown"``.
  */
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Info, GitCommit, Clock, Package, Copy, Check, Loader2 } from 'lucide-react';
+import { Info, GitCommit, Clock, Package, Copy, Check, Loader2, ScrollText, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -118,6 +119,17 @@ export function AboutPanel() {
                         </div>
                     );
                 })}
+
+                <Link
+                    href="/changelog"
+                    className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-slate-950/40 border border-slate-800/50 hover:border-blue-500/30 hover:bg-blue-500/5 transition-colors group"
+                >
+                    <div className="flex items-center gap-2.5">
+                        <ScrollText className="h-4 w-4 text-blue-400" />
+                        <span className="text-sm text-slate-300 font-medium">Release notes / changelog</span>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-blue-400 transition-colors" />
+                </Link>
 
                 <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500 space-y-1">
                     <p>
