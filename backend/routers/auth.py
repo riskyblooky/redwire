@@ -1461,6 +1461,18 @@ async def _dispatch_reset_email(to_email: str, reset_url: str, username: str) ->
         logger.error(f"Failed to send reset email to {to_email}: {e}")
 
 
+async def _dispatch_password_changed_email(to_email: str, username: str) -> None:
+    """Background helper for the post-reset security notice. Own session (the
+    request's is closed by the time background tasks run); failures are logged,
+    never raised."""
+    from utils.email_service import send_password_changed_email
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            await send_password_changed_email(bg_db, to_email, username)
+    except Exception as e:
+        logger.error(f"Failed to send password-changed email to {to_email}: {e}")
+
+
 @router.post(
     "/forgot-password",
     summary="Request password reset email",
@@ -1510,6 +1522,7 @@ async def forgot_password(
 async def reset_password(
     request: Request,
     req: ResetPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """Validate reset token and update the user's password."""
@@ -1569,4 +1582,10 @@ async def reset_password(
         )
 
     logger.info(f"Password reset completed for user {user.username}")
+
+    # Post-reset security notice (off the request path; best-effort). Tells the
+    # account owner the password changed so an unauthorized reset is noticed.
+    if user.email:
+        background_tasks.add_task(_dispatch_password_changed_email, user.email, user.username)
+
     return {"message": "Password has been reset successfully. You can now log in with your new password."}

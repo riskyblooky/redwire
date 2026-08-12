@@ -254,6 +254,48 @@ async def send_password_reset_email(
     return await send_email(db, to_email, "RedWire — Password Reset", html, text)
 
 
+async def send_password_changed_email(
+    db: AsyncSession,
+    to_email: str,
+    username: str,
+) -> bool:
+    """Security notice sent AFTER a password reset completes — so a victim whose
+    account was reset by an attacker finds out and can act."""
+    import html as _html
+    safe_user = _html.escape(username or "")
+    html = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0a0f1a; color: #e2e8f0; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #ef4444; font-size: 20px; margin: 0;">🔒 RedWire</h1>
+            <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">Password Changed</p>
+        </div>
+        <p style="font-size: 14px; line-height: 1.6;">Hi <strong>{safe_user}</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.6; color: #94a3b8;">
+            Your RedWire account password was just changed, and all active sessions were signed out.
+        </p>
+        <div style="margin: 24px 0; padding: 12px 16px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 8px;">
+            <p style="font-size: 13px; line-height: 1.5; color: #fca5a5; margin: 0;">
+                If you did <strong>not</strong> make this change, your account may be compromised —
+                contact your administrator immediately.
+            </p>
+        </div>
+        <p style="font-size: 12px; color: #64748b; line-height: 1.5;">
+            If this was you, no further action is needed.
+        </p>
+        <hr style="border: none; border-top: 1px solid #1e293b; margin: 24px 0;" />
+        <p style="font-size: 11px; color: #475569; text-align: center;">
+            RedWire Security Platform
+        </p>
+    </div>
+    """
+    text = (
+        f"Hi {username},\n\nYour RedWire account password was just changed and all active "
+        f"sessions were signed out.\n\nIf you did NOT make this change, your account may be "
+        f"compromised — contact your administrator immediately.\n\nIf this was you, no action is needed."
+    )
+    return await send_email(db, to_email, "RedWire — Your password was changed", html, text)
+
+
 async def send_test_email(db: AsyncSession, to_email: str) -> bool:
     """Send a test email to verify SMTP configuration."""
     html = """
