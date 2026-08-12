@@ -33,6 +33,53 @@ export function useNotifications(limit = 20) {
     });
 }
 
+export interface NotificationBrowseParams {
+    skip?: number;
+    limit?: number;
+    read_status?: 'read' | 'unread' | '';
+    event_type?: string;
+    search?: string;
+    sort_order?: 'asc' | 'desc';
+}
+
+export interface NotificationBrowseResult {
+    items: NotificationItem[];
+    total: number;
+}
+
+/** Paginated + filtered notifications for the full notifications page. Keyed
+ *  separately from the dropdown's plain ['notifications', limit] cache, but all
+ *  notification mutations invalidate the broad ['notifications'] key so this
+ *  refreshes too. */
+export function useNotificationsBrowse(params: NotificationBrowseParams) {
+    return useQuery<NotificationBrowseResult>({
+        queryKey: ['notifications', 'browse', params],
+        queryFn: async () => {
+            const sp = new URLSearchParams();
+            sp.set('skip', String(params.skip ?? 0));
+            sp.set('limit', String(params.limit ?? 25));
+            if (params.read_status) sp.set('read_status', params.read_status);
+            if (params.event_type) sp.set('event_type', params.event_type);
+            if (params.search) sp.set('search', params.search);
+            sp.set('sort_order', params.sort_order ?? 'desc');
+            const { data } = await api.get(`/notifications/browse?${sp.toString()}`);
+            return data;
+        },
+    });
+}
+
+export function useMarkUnread() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: string) => {
+            await api.patch(`/notifications/${id}/unread`);
+        },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['notifications'] });
+        },
+    });
+}
+
 export function useUnreadCount() {
     return useQuery<number>({
         queryKey: ['notifications', 'unread-count'],

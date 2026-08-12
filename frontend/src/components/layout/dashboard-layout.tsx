@@ -596,11 +596,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                         </div>
                                     )}
                                 </div>
-                                {notifications.length > 0 && (
-                                    <div className="border-t border-slate-800 px-4 py-2 flex items-center justify-between shrink-0">
-                                        <span className="text-[10px] text-slate-600">
-                                            Showing last {notifications.length}
-                                        </span>
+                                <div className="border-t border-slate-800 px-4 py-2 flex items-center justify-between shrink-0">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 h-6 px-2"
+                                        onClick={() => { router.push('/notifications'); setNotifOpen(false); }}
+                                    >
+                                        See all notifications
+                                    </Button>
+                                    {notifications.length > 0 && (
                                         <Button
                                             variant="ghost"
                                             size="sm"
@@ -609,8 +614,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                         >
                                             Clear all
                                         </Button>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </PopoverContent>
                         </Popover>
                     </div>

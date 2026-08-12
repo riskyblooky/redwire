@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update, delete
+from sqlalchemy import select, func, update, delete, or_
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -89,6 +89,59 @@ async def get_notifications(
     ]
 
 
+@router.get("/browse")
+async def browse_notifications(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+    read_status: Optional[str] = Query(None),   # "read" | "unread" | None (all)
+    event_type: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    sort_order: str = Query("desc"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Paginated + filtered notifications for the full notifications page.
+
+    The bare collection endpoint (``GET /notifications``) stays a plain list for
+    the dropdown; this sibling adds filters, sort, and a ``total`` for paging.
+    """
+    conds = [Notification.user_id == current_user.id]
+    if read_status == "unread":
+        conds.append(Notification.is_read == False)
+    elif read_status == "read":
+        conds.append(Notification.is_read == True)
+    if event_type:
+        conds.append(Notification.event_type == event_type)
+    if search:
+        term = f"%{search}%"
+        conds.append(or_(Notification.title.ilike(term), Notification.message.ilike(term)))
+
+    total = (await db.execute(
+        select(func.count(Notification.id)).where(*conds)
+    )).scalar() or 0
+
+    order = Notification.created_at.asc() if sort_order == "asc" else Notification.created_at.desc()
+    query = (
+        select(Notification, User.full_name.label("actor_name"))
+        .outerjoin(User, Notification.actor_id == User.id)
+        .where(*conds)
+        .order_by(order)
+        .offset(skip)
+        .limit(limit)
+    )
+    rows = (await db.execute(query)).all()
+
+    items = [
+        NotificationResponse(
+            id=n.id, user_id=n.user_id, event_type=n.event_type, title=n.title,
+            message=n.message, link=n.link, is_read=n.is_read, actor_id=n.actor_id,
+            actor_name=actor_name, engagement_id=n.engagement_id, created_at=n.created_at,
+        ).model_dump()
+        for n, actor_name in rows
+    ]
+    return {"items": items, "total": total}
+
+
 @router.get("/unread-count")
 async def get_unread_count(
     db: AsyncSession = Depends(get_db),
@@ -123,6 +176,28 @@ async def mark_read(
         raise HTTPException(status_code=404, detail="Notification not found")
 
     notification.is_read = True
+    await db.commit()
+    return {"ok": True}
+
+
+@router.patch("/{notification_id}/unread")
+async def mark_unread(
+    notification_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark a notification as unread (flip it back)."""
+    result = await db.execute(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == current_user.id,
+        )
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = False
     await db.commit()
     return {"ok": True}
 
