@@ -637,11 +637,9 @@ function SearchPageContent() {
                 {/* Header */}
                 <div className="flex items-start justify-between">
                     <div>
-                        <div className="flex items-center gap-2.5 mb-1">
-                            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-purple-500/20 to-violet-500/20 border border-primary/20 flex items-center justify-center">
-                                <Search className="h-4.5 w-4.5 text-primary" />
-                            </div>
-                            <h1 className="text-2xl font-bold text-white">Advanced Search</h1>
+                        <div className="flex items-center gap-3 mb-1">
+                            <Search className="h-8 w-8 text-primary" />
+                            <h1 className="text-3xl font-bold text-white">Advanced Search</h1>
                         </div>
                         <p className="text-sm text-slate-400 ml-11">
                             Boolean operators · Field dorks · Quoted phrases · Cross-resource search

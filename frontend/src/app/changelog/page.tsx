@@ -14,8 +14,8 @@ export default function ChangelogPage() {
         <DashboardLayout>
             <div className="mx-auto max-w-3xl space-y-4 p-6">
                 <div>
-                    <h1 className="flex items-center gap-2 text-xl font-bold text-white">
-                        <ScrollText className="h-5 w-5 text-blue-400" /> Changelog
+                    <h1 className="flex items-center gap-3 text-3xl font-bold text-white">
+                        <ScrollText className="h-8 w-8 text-primary" /> Changelog
                     </h1>
                     {data?.current_version && (
                         <p className="text-sm text-slate-500">Currently running v{data.current_version}</p>

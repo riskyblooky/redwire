@@ -353,7 +353,10 @@ export default function ProfilePage() {
                 {/* Page Header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-3xl font-bold text-white tracking-tight">User Profile</h1>
+                        <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                            <User className="h-8 w-8 text-primary" />
+                            User Profile
+                        </h1>
                     </div>
                 </div>
 

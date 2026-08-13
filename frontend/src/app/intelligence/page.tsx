@@ -235,11 +235,11 @@ export default function IntelligencePage() {
                 {/* Page Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20">
-                            <Radar className="h-6 w-6 text-primary" />
-                        </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-white">Intelligence</h1>
+                            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                                <Radar className="h-8 w-8 text-primary" />
+                                Intelligence
+                            </h1>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">

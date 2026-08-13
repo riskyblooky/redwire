@@ -308,12 +308,12 @@ export default function RemediationPage() {
             <div className="p-6 space-y-6 w-full">
                 {/* Header */}
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/20">
-                            <ClipboardCheck className="h-7 w-7 text-green-400" />
-                        </div>
+                    <div className="flex items-center gap-3">
                         <div>
-                            <h1 className="text-3xl font-bold text-white">Remediation</h1>
+                            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                                <ClipboardCheck className="h-8 w-8 text-primary" />
+                                Remediation
+                            </h1>
                         </div>
                     </div>
                 </div>

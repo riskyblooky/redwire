@@ -175,10 +175,8 @@ export default function TagsPage() {
                 {/* Page Header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                                <TagsIcon className="h-6 w-6 text-primary" />
-                            </div>
+                        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                            <TagsIcon className="h-8 w-8 text-primary" />
                             Tags
                         </h1>
                     </div>

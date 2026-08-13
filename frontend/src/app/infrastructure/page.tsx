@@ -1031,11 +1031,11 @@ export default function InfrastructurePage() {
                 {/* Page Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20">
-                            <Server className="h-6 w-6 text-primary" />
-                        </div>
                         <div>
-                            <h1 className="text-2xl font-black text-white tracking-tight">Infrastructure</h1>
+                            <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                                <Server className="h-8 w-8 text-primary" />
+                                Infrastructure
+                            </h1>
                         </div>
                     </div>
                     {canCreate && (

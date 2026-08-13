@@ -285,11 +285,11 @@ export default function CalendarPage() {
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-primary/10 rounded-lg">
-                            <CalendarIcon className="h-6 w-6 text-primary" />
-                        </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-white tracking-tight">Calendar</h1>
+                            <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                                <CalendarIcon className="h-8 w-8 text-primary" />
+                                Calendar
+                            </h1>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">

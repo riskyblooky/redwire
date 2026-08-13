@@ -186,13 +186,11 @@ export default function DashboardPage() {
                 {/* ── Header + Quick Actions ── */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
                     <div>
-                        <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-lg shadow-red-500/20">
-                                <Shield className="h-5 w-5 text-white" />
-                            </div>
+                        <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                            <Shield className="h-8 w-8 text-primary" />
                             Welcome back, {user?.full_name || user?.username}
                         </h1>
-                        <div className="flex items-center gap-3 ml-12 mt-1">
+                        <div className="flex items-center gap-3 ml-11 mt-1">
                             <p className="text-slate-500 text-sm flex items-center gap-2">
                                 <span className="relative flex h-2 w-2">
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />

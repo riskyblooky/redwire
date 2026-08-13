@@ -451,10 +451,8 @@ export default function ImportsPage() {
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-                                <Upload className="h-5 w-5 text-primary-foreground" />
-                            </div>
+                        <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                            <Upload className="h-8 w-8 text-primary" />
                             Import Scanner Output
                         </h1>
                     </div>

@@ -87,8 +87,8 @@ export default function NotificationsPage() {
                 {/* Header */}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h1 className="flex items-center gap-2 text-xl font-bold text-white">
-                            <Bell className="h-5 w-5 text-blue-400" /> Notifications
+                        <h1 className="flex items-center gap-3 text-3xl font-bold text-white">
+                            <Bell className="h-8 w-8 text-primary" /> Notifications
                         </h1>
                         <p className="text-sm text-slate-500">{total} total</p>
                     </div>

@@ -854,10 +854,8 @@ export default function TemplatesPage() {
                 {/* Page Header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-linear-to-br from-purple-500/20 to-pink-500/20">
-                                <BookOpen className="h-6 w-6 text-primary" />
-                            </div>
+                        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                            <BookOpen className="h-8 w-8 text-primary" />
                             Templates
                         </h1>
                     </div>

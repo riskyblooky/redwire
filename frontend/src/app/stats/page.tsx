@@ -134,10 +134,10 @@ export default function StatsPage() {
             <div className="p-6 space-y-5">
                 {/* Header */}
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-500/10 rounded-lg">
-                        <BarChart3 className="h-6 w-6 text-indigo-400" />
-                    </div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">Operations Analytics</h1>
+                    <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                        <BarChart3 className="h-8 w-8 text-primary" />
+                        Operations Analytics
+                    </h1>
                 </div>
 
                 {/* Top-level tab bar */}
