@@ -114,6 +114,12 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       NODE_ENV: development
+      # WSL2 + Windows-hosted source (/mnt/c) doesn't deliver inotify events
+      # into the container, so Next's dev watcher never sees edits and the
+      # persistent .next cache serves stale builds across restarts. Polling
+      # makes the webpack/Next watcher re-scan for changes so hot reload works.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
