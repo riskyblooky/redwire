@@ -32,40 +32,78 @@ function needsAuthFetch(src?: string | null): boolean {
     return AUTH_PREFIXES.some(p => src.startsWith(p));
 }
 
+// ── Session-wide blob cache ──────────────────────────────────────────────
+// The same profile photo is rendered once per table row / mention / presence
+// dot — often dozens of times for the same user. Without sharing, every
+// UserAvatar instance fired its own authed fetch and minted its own blob URL.
+// These module-level maps dedupe by image path so each distinct photo is
+// fetched exactly once per session and all consumers reuse one blob URL.
+//
+// Blob URLs here are intentionally never revoked: they're shared across an
+// unknown number of live consumers, and the set of distinct photos is bounded
+// by the user count (small, a few KB each). Revoking on any one unmount would
+// break every other avatar still pointing at the same URL.
+const blobCache = new Map<string, string>();          // cleanPath -> blob: URL
+const inflight = new Map<string, Promise<string>>();  // cleanPath -> pending fetch
+const failed = new Set<string>();                     // cleanPath -> 404/err (don't retry)
+
+function fetchAuthedBlob(cleanPath: string): Promise<string> {
+    const cached = blobCache.get(cleanPath);
+    if (cached) return Promise.resolve(cached);
+    const pending = inflight.get(cleanPath);
+    if (pending) return pending;
+
+    const p = api.get(`/${cleanPath}`, { responseType: 'blob' })
+        .then(res => {
+            const url = URL.createObjectURL(res.data);
+            blobCache.set(cleanPath, url);
+            inflight.delete(cleanPath);
+            return url;
+        })
+        .catch(err => {
+            inflight.delete(cleanPath);
+            failed.add(cleanPath);
+            throw err;
+        });
+    inflight.set(cleanPath, p);
+    return p;
+}
+
 /**
  * Given a profile-photo path from the backend (e.g. "uploads/profile_photos/<uuid>.png"),
  * returns a blob: URL that renders in <img src>, or null while loading /
  * on error. Non-authed paths return the original src unchanged.
+ *
+ * De-duplicated across all consumers via a session-wide cache: the first
+ * avatar for a given photo fetches it, every subsequent one reuses the same
+ * blob URL synchronously — no per-row requests.
  */
 export function useAuthedImageUrl(src?: string | null): string | null {
-    const [url, setUrl] = useState<string | null>(() =>
-        src && !needsAuthFetch(src) ? src : null,
-    );
+    // Normalize leading slash so axios's baseURL joins cleanly.
+    const cleanPath = src && needsAuthFetch(src) ? (src.startsWith('/') ? src.slice(1) : src) : null;
+
+    const [url, setUrl] = useState<string | null>(() => {
+        if (!src) return null;
+        if (!needsAuthFetch(src)) return src;                    // data:/http(s):/blob: pass-through
+        return (cleanPath && blobCache.get(cleanPath)) || null;  // synchronous cache hit
+    });
 
     useEffect(() => {
         if (!src) { setUrl(null); return; }
-        if (!needsAuthFetch(src)) { setUrl(src); return; }
+        if (!needsAuthFetch(src) || !cleanPath) { setUrl(src); return; }
+
+        const cached = blobCache.get(cleanPath);
+        if (cached) { setUrl(cached); return; }
+        if (failed.has(cleanPath)) { setUrl(null); return; }
 
         let cancelled = false;
-        let currentBlobUrl: string | null = null;
-        // Normalize leading slash so axios's baseURL joins cleanly.
-        const cleanPath = src.startsWith('/') ? src.slice(1) : src;
+        fetchAuthedBlob(cleanPath)
+            .then(u => { if (!cancelled) setUrl(u); })
+            .catch(() => { if (!cancelled) setUrl(null); });
 
-        api.get(`/${cleanPath}`, { responseType: 'blob' })
-            .then(res => {
-                if (cancelled) return;
-                currentBlobUrl = URL.createObjectURL(res.data);
-                setUrl(currentBlobUrl);
-            })
-            .catch(() => {
-                if (!cancelled) setUrl(null);
-            });
-
-        return () => {
-            cancelled = true;
-            if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-        };
-    }, [src]);
+        // No blob revocation here — the URL is shared and cached session-wide.
+        return () => { cancelled = true; };
+    }, [src, cleanPath]);
 
     return url;
 }

@@ -573,11 +573,19 @@ async def _serve_upload(path: str, _user=_h77m_Depends(_h77m_get_current_user)):
 
     ext = os.path.splitext(target)[1].lower()
     media_type = _UPLOADS_MIME_BY_EXT.get(ext, "application/octet-stream")
+    resp_headers = {"X-Content-Type-Options": "nosniff"}
+    if first_segment == "profile_photos":
+        # Avatars are rendered in bulk (one per table row / mention / presence
+        # dot) and their filename is a fresh UUID on every upload — a changed
+        # photo is a new URL — so the browser can cache them across reloads
+        # without going stale. `private`: the route is auth-gated, never a
+        # shared/CDN cache.
+        resp_headers["Cache-Control"] = "private, max-age=86400, immutable"
     return _h77m_FileResponse(
         target,
         media_type=media_type,
         filename=os.path.basename(target),
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers=resp_headers,
     )
 
 # Configure CORS
