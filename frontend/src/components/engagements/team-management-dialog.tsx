@@ -34,8 +34,11 @@ interface TeamManagementDialogProps {
 }
 
 export function TeamManagementDialog({ engagement, open, onOpenChange }: TeamManagementDialogProps) {
-    const { data: users = [], isLoading: isLoadingUsers } = useUsers();
-    const { data: roles = [], isLoading: isLoadingRoles } = useEngagementRoles();
+    // Only fetch the user list / roles once the dialog is actually opened —
+    // this component stays mounted on the engagement page for its open/close
+    // animation, so ungated hooks would pull all users on every page load.
+    const { data: users = [], isLoading: isLoadingUsers } = useUsers(open);
+    const { data: roles = [], isLoading: isLoadingRoles } = useEngagementRoles(open);
     const updateEngagement = useUpdateEngagement();
 
     const [assignments, setAssignments] = useState<{ user_id: string; role_id: string }[]>([]);

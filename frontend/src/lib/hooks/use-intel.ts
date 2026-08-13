@@ -150,6 +150,34 @@ export function useDeleteIntelItem() {
     });
 }
 
+/** Linked intel + infra items per finding / test case for the engagement,
+ * in one request. Every row shares this one query key (so it dedupes to a
+ * single fetch) instead of each row hitting /intel/by-entity + /infra/by-entity. */
+export interface EngagementIntelInfraLinks {
+    intel: {
+        finding: Record<string, { id: string; title: string }[]>;
+        testcase: Record<string, { id: string; title: string }[]>;
+    };
+    infra: {
+        finding: Record<string, { id: string; name: string }[]>;
+        testcase: Record<string, { id: string; name: string }[]>;
+    };
+}
+
+export function useEngagementIntelInfraLinks(engagementId: string, enabled: boolean = true) {
+    return useQuery<EngagementIntelInfraLinks>({
+        queryKey: ['engagements', engagementId, 'intel-infra-links'],
+        queryFn: async () => {
+            const { data } = await api.get<EngagementIntelInfraLinks>(
+                `/engagements/${engagementId}/intel-infra-links`
+            );
+            return data;
+        },
+        enabled: enabled && !!engagementId,
+        staleTime: 30_000,
+    });
+}
+
 // ── Linking ─────────────────────────────────────────────────────
 
 export function useLinkIntel() {
@@ -161,6 +189,7 @@ export function useLinkIntel() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['intel-items'] });
             queryClient.invalidateQueries({ queryKey: ['intel-by-entity'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }
@@ -174,6 +203,7 @@ export function useUnlinkIntel() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['intel-items'] });
             queryClient.invalidateQueries({ queryKey: ['intel-by-entity'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }

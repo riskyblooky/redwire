@@ -197,6 +197,37 @@ export function useEngagement(id: string) {
     });
 }
 
+export interface EngagementCounts {
+    assets: number;
+    testcases: number;
+    testcases_executed: number;
+    findings: number;
+    findings_critical: number;
+    notes: number;
+    vault: number;
+    attachments: number;
+    cleanup_pending: number;
+    attack_techniques: number;
+}
+
+/**
+ * Lightweight per-resource counts for the engagement detail tab badges.
+ * Keyed under ['engagements', id, ...] so the broad ['engagements'] and
+ * ['engagements', id] invalidations already fired by resource mutations
+ * refresh the badges without the detail page loading every list up front.
+ */
+export function useEngagementCounts(id: string) {
+    return useQuery<EngagementCounts>({
+        queryKey: ['engagements', id, 'counts'],
+        queryFn: async () => {
+            const { data } = await api.get<EngagementCounts>(`/engagements/${id}/counts`);
+            return data;
+        },
+        enabled: !!id,
+        staleTime: 30_000,
+    });
+}
+
 // Create engagement
 export function useCreateEngagement() {
     const queryClient = useQueryClient();

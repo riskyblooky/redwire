@@ -154,6 +154,7 @@ export function useLinkInfra() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['infra-items'] });
             queryClient.invalidateQueries({ queryKey: ['infra-by-entity'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }
@@ -167,6 +168,7 @@ export function useUnlinkInfra() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['infra-items'] });
             queryClient.invalidateQueries({ queryKey: ['infra-by-entity'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }

@@ -40,6 +40,7 @@ interface UseAssetsOptions {
     sortOrder?: string;
     skip?: number;
     limit?: number;
+    enabled?: boolean;
 }
 
 // Fetch assets with optional filters
@@ -49,9 +50,10 @@ export function useAssets(engagementIdOrOptions?: string | UseAssetsOptions) {
         ? { engagementId: engagementIdOrOptions }
         : (engagementIdOrOptions ?? {});
 
-    const { engagementId, search, port, service, portState, sortBy, sortOrder, skip, limit } = options;
+    const { engagementId, search, port, service, portState, sortBy, sortOrder, skip, limit, enabled } = options;
 
     const query = useQuery({
+        enabled: enabled ?? true,
         queryKey: ['assets', engagementId ?? 'all', search ?? '', port ?? '', service ?? '', portState ?? '', sortBy ?? '', sortOrder ?? '', skip ?? 0, limit ?? 100],
         queryFn: async () => {
             const params: Record<string, string> = {};
@@ -101,6 +103,7 @@ export function useCreateAsset() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['assets'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }
@@ -131,6 +134,7 @@ export function useDeleteAsset() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['assets'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }
@@ -158,6 +162,7 @@ export function useImportAssets() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['assets'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }

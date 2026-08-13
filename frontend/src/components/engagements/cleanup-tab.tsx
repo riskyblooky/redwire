@@ -57,7 +57,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCanEdit, useCanDelete, usePermission } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { StickyNote } from 'lucide-react';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -105,15 +105,15 @@ const defaultForm = {
 
 export function CleanupTab({ engagementId }: CleanupTabProps) {
     const { data: artifacts = [], isLoading, refetch } = useCleanupArtifacts(engagementId);
-    const { data: notes = [] } = useNotes(engagementId);
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
     const user = useAuthStore((s) => s.user);
 
-    // Compute note count per cleanup artifact
+    // Note count per cleanup artifact
     const noteCountByCleanup = useMemo(() => {
         const map: Record<string, number> = {};
-        notes.forEach(n => n.linked_cleanup_artifacts?.forEach(c => { map[c.id] = (map[c.id] || 0) + 1; }));
+        Object.entries(noteLinks?.cleanup || {}).forEach(([cid, arr]) => { map[cid] = arr.length; });
         return map;
-    }, [notes]);
+    }, [noteLinks]);
     const { data: findings = [] } = useFindings({ engagement_id: engagementId });
     const { data: testcases = [] } = useTestCases(engagementId);
     const { data: assets = [] } = useAssets(engagementId);

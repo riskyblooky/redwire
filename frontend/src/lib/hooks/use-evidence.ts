@@ -67,6 +67,7 @@ export function useUploadEvidence(ids: { findingId?: string; testcaseId?: string
             }
             if (data.engagement_id) {
                 queryClient.invalidateQueries({ queryKey: ['engagements', data.engagement_id, 'evidence'] });
+                queryClient.invalidateQueries({ queryKey: ['engagements', data.engagement_id, 'counts'] });
             }
         },
     });
@@ -121,6 +122,7 @@ export function useDeleteEvidence() {
             }
             if (evidence.engagement_id) {
                 queryClient.invalidateQueries({ queryKey: ['engagements', evidence.engagement_id, 'evidence'] });
+                queryClient.invalidateQueries({ queryKey: ['engagements', evidence.engagement_id, 'counts'] });
             }
         },
     });

@@ -59,7 +59,7 @@ export interface RunbookUpdate {
     items?: RunbookItemCreate[];
 }
 
-export function useRunbooks() {
+export function useRunbooks(enabled: boolean = true) {
     return useQuery({
         queryKey: ['runbooks'],
         queryFn: async () => {
@@ -71,6 +71,7 @@ export function useRunbooks() {
                 throw err;
             }
         },
+        enabled,
         retry: (count, err: any) => err?.response?.status !== 403 && count < 3,
     });
 }

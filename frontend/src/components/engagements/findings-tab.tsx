@@ -27,11 +27,10 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useFindings, useDeleteFinding } from '@/lib/hooks/use-findings';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { useIntelByEntity } from '@/lib/hooks/use-intel';
-import { useInfraByEntity } from '@/lib/hooks/use-infra';
+import { useEngagementIntelInfraLinks } from '@/lib/hooks/use-intel';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -117,8 +116,11 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
     const canDelete = useCanDelete(engagementId, 'finding', finding.created_by);
     const deleteFinding = useDeleteFinding();
     const { confirm, ConfirmDialog } = useConfirmDialog();
-    const { data: findingIntelItems = [] } = useIntelByEntity('finding', finding.id);
-    const { data: findingInfraItems = [] } = useInfraByEntity('finding', finding.id);
+    // Linked intel/infra come from the shared per-engagement batch (one request
+    // for the whole table) rather than a by-entity fetch per row.
+    const { data: eLinks } = useEngagementIntelInfraLinks(engagementId);
+    const findingIntelItems = eLinks?.intel?.finding?.[finding.id] || [];
+    const findingInfraItems = eLinks?.infra?.finding?.[finding.id] || [];
     const [intelDetailId, setIntelDetailId] = useState<string | null>(null);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
@@ -359,17 +361,10 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
     // Data
     const findingsParams = useMemo(() => ({ engagement_id: engagementId }), [engagementId]);
     const { data: findings = [], isLoading } = useFindings(findingsParams);
-    const { data: notes = [] } = useNotes(engagementId);
-
-    // Notes reverse-lookup
-    const notesByFinding = useMemo(() => {
-        const map: Record<string, { id: string; title: string }[]> = {};
-        notes.forEach((n: any) => n.linked_findings?.forEach((f: any) => {
-            if (!map[f.id]) map[f.id] = [];
-            map[f.id].push({ id: n.id, title: n.title });
-        }));
-        return map;
-    }, [notes]);
+    // Linked-notes tooltips come from the lightweight note-links endpoint —
+    // no need to download every note body just to show which notes link here.
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
+    const notesByFinding = noteLinks?.finding || {};
 
     // Detail sheet state
     const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);

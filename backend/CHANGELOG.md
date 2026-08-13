@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.3.0] — 2026-08-12
+## [1.3.0] — 2026-08-13
 
 A large feature release.
 
@@ -59,6 +59,15 @@ A large feature release.
 - Clients: search + filter chips, sub-client actions, searchable parent picker.
 - JSON report export includes entity relationships.
 - Timestamps are localized consistently across the app.
+- **Faster engagement pages** — detail tabs load their data only when opened
+  rather than all up front; tab badges and the overview read lightweight count
+  endpoints, and the findings / test-case tables batch their linked-note and
+  linked intel/infrastructure lookups into a single request each instead of one
+  per row.
+- **Consistent page-title icons** — every top-level page now uses the same
+  themed title-icon treatment.
+- Profile photos load once and are cached instead of being re-fetched for every
+  table row that shows the same author.
 
 ### Fixed
 - Engagement tab counts show true totals (Assets no longer capped; Test Cases &

@@ -32,13 +32,14 @@ export interface UserUpdate {
     group_ids?: string[];
 }
 
-export function useUsers() {
+export function useUsers(enabled: boolean = true) {
     return useQuery({
         queryKey: ['users'],
         queryFn: async () => {
             const { data } = await api.get<User[]>('/users');
             return data;
         },
+        enabled,
     });
 }
 

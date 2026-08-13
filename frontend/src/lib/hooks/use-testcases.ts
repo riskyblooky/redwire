@@ -128,7 +128,7 @@ export function flattenTree(
 const TESTCASES_FETCH_LIMIT = 500;
 
 // Fetch all test cases
-export function useTestCases(engagementId?: string) {
+export function useTestCases(engagementId?: string, enabled: boolean = true) {
     return useQuery({
         queryKey: engagementId ? ['testcases', 'engagement', engagementId] : ['testcases'],
         queryFn: async () => {
@@ -137,6 +137,7 @@ export function useTestCases(engagementId?: string) {
             const { data } = await api.get<TestCase[]>('/testcases', { params });
             return data;
         },
+        enabled,
         staleTime: 30_000,
     });
 }
@@ -166,6 +167,7 @@ export function useCreateTestCase() {
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['testcases'] });
             queryClient.invalidateQueries({ queryKey: ['testcases', 'engagement', data.engagement_id] });
+            queryClient.invalidateQueries({ queryKey: ['engagements', data.engagement_id, 'counts'] });
         },
     });
 }
@@ -198,6 +200,7 @@ export function useDeleteTestCase() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['testcases'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }

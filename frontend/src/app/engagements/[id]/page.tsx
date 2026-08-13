@@ -85,14 +85,13 @@ import {
 
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useEngagement, useDeleteEngagement, useUpdateEngagement } from '@/lib/hooks/use-engagements';
-import { useAssets, useUpdateAsset, useDeleteAsset, useAssetPortFilters } from '@/lib/hooks/use-assets';
+import { useEngagement, useDeleteEngagement, useUpdateEngagement, useEngagementCounts } from '@/lib/hooks/use-engagements';
+import { useAssets, useUpdateAsset, useDeleteAsset } from '@/lib/hooks/use-assets';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { useTestCases, useDeleteTestCase, useUpdateTestCase, buildTestCaseTree, flattenTree, TestCaseTreeNode, useLinkFinding, useUnlinkFinding, useLinkAsset, useUnlinkAsset } from '@/lib/hooks/use-testcases';
 import { MoveTestCaseDialog } from '@/components/ui/move-testcase-dialog';
 import { useFindings, useDeleteFinding, useUpdateFinding } from '@/lib/hooks/use-findings';
-import { useVaultItems, useLinkVaultToFinding, useLinkVaultToTestCase, useLinkVaultToAsset } from '@/lib/hooks/use-vault';
-import { useEngagementEvidence } from '@/lib/hooks/use-evidence';
+import { useLinkVaultToFinding, useLinkVaultToTestCase, useLinkVaultToAsset } from '@/lib/hooks/use-vault';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/hooks/use-auth';
 import { useFindingsTimeline } from '@/lib/hooks/use-stats';
@@ -126,12 +125,11 @@ import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { InfraLinkDialog } from '@/components/infra/infra-link-dialog';
 import { useInfraByEntity } from '@/lib/hooks/use-infra';
-import { useCleanupArtifacts, useCreateCleanupArtifact, useLinkCleanupToFinding, useLinkCleanupToTestCase, useLinkCleanupToAsset, CleanupArtifact } from '@/lib/hooks/use-cleanup-artifacts';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useCreateCleanupArtifact, useLinkCleanupToFinding, useLinkCleanupToTestCase, useLinkCleanupToAsset, CleanupArtifact } from '@/lib/hooks/use-cleanup-artifacts';
 import { useClients, useClientTypes } from '@/lib/hooks/use-clients';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { ClientDetailModal } from '@/components/clients/client-detail-modal';
-import { useRunbooks, useApplyRunbook, Runbook } from '@/lib/hooks/use-runbooks';
+import { useApplyRunbook } from '@/lib/hooks/use-runbooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -384,6 +382,10 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     };
 
     const { data: engagement, isLoading: isLoadingEngagement, error } = useEngagement(id as string);
+    // Cheap per-resource counts drive the tab badges so the detail page doesn't
+    // have to load every asset/finding/test case list up front. Each tab's own
+    // child component fetches its list lazily when the tab is opened.
+    const { data: counts } = useEngagementCounts(id as string);
 
     // ── Live updates via WebSocket ──────────────────────────────
     const queryClient = useQC();
@@ -399,6 +401,8 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                 if (rt === 'testcase')  queryClient.invalidateQueries({ queryKey: ['testcases'] });
                 if (rt === 'evidence')  queryClient.invalidateQueries({ queryKey: ['engagements', id, 'evidence'] });
                 if (rt === 'engagement') queryClient.invalidateQueries({ queryKey: ['engagements', id] });
+                // Any resource change can move a tab badge — refresh the counts.
+                queryClient.invalidateQueries({ queryKey: ['engagements', id, 'counts'] });
                 // Refresh activity log tab
                 queryClient.invalidateQueries({ queryKey: ['engagement-logs', id] });
                 queryClient.invalidateQueries({ queryKey: ['activity'] });
@@ -423,9 +427,6 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     // Parse smart search syntax
     const parsedSearch = useMemo(() => parseAssetSearch(debouncedAssetsSearch), [debouncedAssetsSearch]);
 
-    // Fetch port filter options for dropdowns
-    const { data: portFilterOptions } = useAssetPortFilters(id);
-
     // Reset asset page when search or sort changes
     useEffect(() => {
         setCurrentPageAssets(1);
@@ -440,68 +441,23 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
         sortOrder: sortOrderAssets,
         skip: (currentPageAssets - 1) * ASSET_PAGE_SIZE,
         limit: ASSET_PAGE_SIZE,
+        enabled: activeTab === 'assets',
     });
     const totalPagesAssets = Math.max(1, Math.ceil(totalAssets / ASSET_PAGE_SIZE));
-    const { data: testcases = [], isLoading: isLoadingTestCases } = useTestCases(id);
+    // Findings and test cases are only consumed by the link dialogs, which are
+    // reachable from the Findings / Test Cases tabs — load them lazily so the
+    // default (Overview) landing doesn't pull both full lists up front.
+    const needsFindingTestcaseLists = activeTab === 'findings' || activeTab === 'testcases';
+    const { data: testcases = [], isLoading: isLoadingTestCases } = useTestCases(id, needsFindingTestcaseLists);
     const findingsParams = useMemo(() => ({ engagement_id: id }), [id]);
-    const { data: findings = [], isLoading: isLoadingFindings } = useFindings(findingsParams);
-    const { data: vaultItems = [], refetch: refetchVault } = useVaultItems(id as string);
-    const { data: evidence = [] } = useEngagementEvidence(id as string);
-    const { data: notes = [] } = useNotes(id as string);
-    const { data: coverage } = useAttackCoverage(id as string);
-
-    // Build reverse-lookup maps: notes linked to each resource (with details for clickable links)
-    const notesByFinding = useMemo(() => {
-        const map: Record<string, { id: string; title: string }[]> = {};
-        notes.forEach(n => n.linked_findings?.forEach(f => {
-            if (!map[f.id]) map[f.id] = [];
-            map[f.id].push({ id: n.id, title: n.title });
-        }));
-        return map;
-    }, [notes]);
-    const notesByTestCase = useMemo(() => {
-        const map: Record<string, { id: string; title: string }[]> = {};
-        notes.forEach(n => n.linked_testcases?.forEach(t => {
-            if (!map[t.id]) map[t.id] = [];
-            map[t.id].push({ id: n.id, title: n.title });
-        }));
-        return map;
-    }, [notes]);
-    const notesByAsset = useMemo(() => {
-        const map: Record<string, { id: string; title: string }[]> = {};
-        notes.forEach(n => n.linked_assets?.forEach(a => {
-            if (!map[a.id]) map[a.id] = [];
-            map[a.id].push({ id: n.id, title: n.title });
-        }));
-        return map;
-    }, [notes]);
-    const findingsByAsset = useMemo(() => {
-        const map: Record<string, { count: number; items: { id: string; name: string }[] }> = {};
-        findings.forEach(f => {
-            const assetIds = f.asset_ids || (f.assets || []).map((a: any) => a.id);
-            assetIds.forEach((aid: string) => {
-                if (!map[aid]) map[aid] = { count: 0, items: [] };
-                map[aid].count++;
-                map[aid].items.push({ id: f.id, name: f.title });
-            });
-        });
-        return map;
-    }, [findings]);
-    const testcasesByAsset = useMemo(() => {
-        const map: Record<string, { count: number; items: { id: string; name: string }[] }> = {};
-        (testcases || []).forEach((tc: any) => {
-            (tc.assets || []).forEach((a: any) => {
-                if (!map[a.id]) map[a.id] = { count: 0, items: [] };
-                map[a.id].count++;
-                map[a.id].items.push({ id: tc.id, name: tc.title });
-            });
-        });
-        return map;
-    }, [testcases]);
-
-    const { data: cleanupArtifacts = [] } = useCleanupArtifacts(id as string);
-    const { data: engAllClients } = useClients();
-    const { data: engClientTypes } = useClientTypes();
+    const { data: findings = [], isLoading: isLoadingFindings } = useFindings(findingsParams, needsFindingTestcaseLists);
+    // ATT&CK coverage is heavy (loads all findings/test cases + their technique
+    // maps) — only fetch it when the ATT&CK tab is open. The always-visible tab
+    // badge uses the cheap counts.attack_techniques instead.
+    const { data: coverage } = useAttackCoverage(id as string, activeTab === 'attack');
+    // Clients + client types only feed the on-demand client-detail modal.
+    const { data: engAllClients } = useClients(viewClientDetail);
+    const { data: engClientTypes } = useClientTypes(viewClientDetail);
     const deleteEngagement = useDeleteEngagement();
     const updateEngagement = useUpdateEngagement();
     const updateAsset = useUpdateAsset();
@@ -574,10 +530,10 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     const { data: allAssets = [] } = useAssets({
         engagementId: id,
         limit: 500,
+        enabled: isAssetLinkDialogOpen,
     });
 
     // Runbook import state
-    const { data: runbooksList = [] } = useRunbooks();
     const applyRunbook = useApplyRunbook();
     const [isImportRunbookOpen, setIsImportRunbookOpen] = useState(false);
     const [importingRunbookId, setImportingRunbookId] = useState<string | null>(null);
@@ -625,7 +581,8 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
             const label = vaultLinkTarget.type === 'finding' ? 'finding' : vaultLinkTarget.type === 'testcase' ? 'test case' : 'asset';
             toast.success(`Vault item created and linked to ${label}`);
             setIsVaultCreateDialogOpen(false);
-            refetchVault();
+            queryClient.invalidateQueries({ queryKey: ['engagements', id, 'vault'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements', id, 'counts'] });
         } catch (error: any) {
             toast.error(getErrorMessage(error, 'Failed to create vault item'));
         } finally {
@@ -1330,9 +1287,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Server className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Assets</span>
-                            {totalAssets > 0 && (
+                            {(counts?.assets ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-blue-500/20 text-blue-400 border-none px-1.5 h-4 text-[10px]">
-                                    {totalAssets}
+                                    {counts?.assets}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -1342,9 +1299,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <CheckSquare className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Test Cases</span>
-                            {testCaseStats.total > 0 && (
+                            {(counts?.testcases ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-emerald-500/20 text-emerald-400 border-none px-1.5 h-4 text-[10px]">
-                                    {testCaseStats.total}
+                                    {counts?.testcases}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -1354,9 +1311,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Bug className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Findings</span>
-                            {findingStats.total > 0 && (
+                            {(counts?.findings ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-red-500/20 text-red-400 border-none px-1.5 h-4 text-[10px]">
-                                    {findingStats.total}
+                                    {counts?.findings}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -1366,9 +1323,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Shield className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">ATT&amp;CK</span>
-                            {coverage && coverage.mapped_techniques.length > 0 && (
+                            {(counts?.attack_techniques ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-violet-500/20 text-violet-400 border-none px-1.5 h-4 text-[10px]">
-                                    {coverage.mapped_techniques.length}
+                                    {counts?.attack_techniques}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -1378,9 +1335,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <StickyNote className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Notes</span>
-                            {notes.length > 0 && (
+                            {(counts?.notes ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-teal-500/20 text-teal-400 border-none px-1.5 h-4 text-[10px]">
-                                    {notes.length}
+                                    {counts?.notes}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -1390,9 +1347,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Lock className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Vault</span>
-                            {vaultItems.length > 0 && (
+                            {(counts?.vault ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-amber-500/20 text-amber-400 border-none px-1.5 h-4 text-[10px]">
-                                    {vaultItems.length}
+                                    {counts?.vault}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -1402,9 +1359,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Paperclip className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Attachments</span>
-                            {evidence.length > 0 && (
+                            {(counts?.attachments ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-pink-500/20 text-pink-400 border-none px-1.5 h-4 text-[10px]">
-                                    {evidence.length}
+                                    {counts?.attachments}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -1414,9 +1371,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Sparkles className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Cleanup</span>
-                            {cleanupArtifacts.filter((a: any) => a.status === 'PENDING').length > 0 && (
+                            {(counts?.cleanup_pending ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-lime-500/20 text-lime-400 border-none px-1.5 h-4 text-[10px]">
-                                    {cleanupArtifacts.filter((a: any) => a.status === 'PENDING').length}
+                                    {counts?.cleanup_pending}
                                 </Badge>
                             )}
                         </TabsTrigger>

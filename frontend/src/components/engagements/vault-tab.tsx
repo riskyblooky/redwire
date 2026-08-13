@@ -6,7 +6,7 @@ import { useCheckPassword, useLookupHash } from '@/lib/hooks/use-wordlist';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useTestCases } from '@/lib/hooks/use-testcases';
 import { useAssets } from '@/lib/hooks/use-assets';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -584,14 +584,14 @@ export function VaultTab({ engagementId }: VaultTabProps) {
     const { data: findings = [] } = useFindings({ engagement_id: engagementId });
     const { data: testcases = [] } = useTestCases(engagementId);
     const { data: assets = [] } = useAssets(engagementId);
-    const { data: notes = [] } = useNotes(engagementId);
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
 
-    // Compute note count per vault item
+    // Note count per vault item
     const noteCountByVaultItem = useMemo(() => {
         const map: Record<string, number> = {};
-        notes.forEach(n => n.linked_vault_items?.forEach(v => { map[v.id] = (map[v.id] || 0) + 1; }));
+        Object.entries(noteLinks?.vault || {}).forEach(([vid, arr]) => { map[vid] = arr.length; });
         return map;
-    }, [notes]);
+    }, [noteLinks]);
     const linkToFinding = useLinkVaultToFinding();
     const unlinkFromFinding = useUnlinkVaultFromFinding();
     const linkToTestCase = useLinkVaultToTestCase();

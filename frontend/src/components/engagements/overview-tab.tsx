@@ -24,9 +24,8 @@ import {
     Upload,
 } from 'lucide-react';
 import { cn, parseUTCDate } from '@/lib/utils';
-import { useFindings } from '@/lib/hooks/use-findings';
 import { useFindingsTimeline } from '@/lib/hooks/use-stats';
-import { useTestCases } from '@/lib/hooks/use-testcases';
+import { useEngagementCounts } from '@/lib/hooks/use-engagements';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { ClientEditDialog } from '@/components/clients/client-edit-dialog';
@@ -133,9 +132,9 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
     const [clientEditOpen, setClientEditOpen] = useState(false);
 
     // Data hooks
-    const findingsParams = useMemo(() => ({ engagement_id: engagementId }), [engagementId]);
-    const { data: findings = [] } = useFindings(findingsParams);
-    const { data: testcases = [] } = useTestCases(engagementId);
+    // Summary stats come from the lightweight counts endpoint — the overview
+    // never needs the full findings / test-case lists.
+    const { data: counts } = useEngagementCounts(engagementId);
     const { data: timelineData } = useFindingsTimeline({ engagementId, days: 30 });
     const { data: engagementTypes = [] } = useEngagementTypes();
 
@@ -160,13 +159,13 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
     };
 
     const findingStats = {
-        critical: findings.filter((f: any) => f.severity === 'CRITICAL').length,
-        total: findings.length,
+        critical: counts?.findings_critical ?? 0,
+        total: counts?.findings ?? 0,
     };
 
     const testCaseStats = {
-        total: testcases.length,
-        executed: testcases.filter((tc: any) => tc.is_executed).length,
+        total: counts?.testcases ?? 0,
+        executed: counts?.testcases_executed ?? 0,
     };
 
     return (

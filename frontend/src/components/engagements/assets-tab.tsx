@@ -35,7 +35,7 @@ import { toast } from 'sonner';
 import { useAssets, useUpdateAsset, useDeleteAsset, useAssetPortFilters } from '@/lib/hooks/use-assets';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useTestCases } from '@/lib/hooks/use-testcases';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -468,13 +468,8 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
     const findingsParams = useMemo(() => ({ engagement_id: engagementId }), [engagementId]);
     const { data: findings = [] } = useFindings(findingsParams);
     const { data: testcases = [] } = useTestCases(engagementId);
-    const { data: notes = [] } = useNotes(engagementId);
-
-    const notesByAsset = useMemo(() => {
-        const map: Record<string, { id: string; title: string }[]> = {};
-        notes.forEach((n: any) => n.linked_assets?.forEach((a: any) => { if (!map[a.id]) map[a.id] = []; map[a.id].push({ id: n.id, title: n.title }); }));
-        return map;
-    }, [notes]);
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
+    const notesByAsset = noteLinks?.asset || {};
     const findingsByAsset = useMemo(() => {
         const map: Record<string, { count: number; items: { id: string; name: string }[] }> = {};
         findings.forEach((f: any) => { const ids = f.asset_ids || (f.assets || []).map((a: any) => a.id); ids.forEach((aid: string) => { if (!map[aid]) map[aid] = { count: 0, items: [] }; map[aid].count++; map[aid].items.push({ id: f.id, name: f.title }); }); });

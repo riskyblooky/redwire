@@ -20,6 +20,17 @@ from sqlalchemy.orm import selectinload
 from models.associations import EngagementAssignment
 from models.engagement_role import EngagementRole
 from models.evidence import Evidence
+from models.asset import Asset
+from models.testcase import TestCase
+from models.finding import Finding, Severity
+from models.note import Note
+from models.vault import VaultItem
+from models.cleanup_artifact import CleanupArtifact, CleanupArtifactStatus
+from models.associations import FindingAttackTechnique, TestCaseAttackTechnique
+from models.associations import NoteFinding, NoteTestCase, NoteAsset, NoteVaultItem, NoteCleanupArtifact
+from models.associations import IntelItemFinding, IntelItemTestCase, InfraItemFinding, InfraItemTestCase
+from models.intel_item import IntelItem
+from models.infra_item import InfraItem
 from models.discussion import Thread
 from schemas.evidence import EvidenceResponse
 from fastapi import UploadFile, File, Form
@@ -350,6 +361,170 @@ async def get_engagement(
             )
     
     return engagement
+
+
+@router.get("/{engagement_id}/counts")
+async def get_engagement_counts(
+    engagement_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lightweight per-resource counts for the engagement detail tab badges.
+
+    Returns a plain ``COUNT(*)`` per resource so the detail page can render its
+    tab badges without eagerly loading every asset / finding / test case up
+    front. The actual lists are fetched lazily by each tab when it is opened.
+    """
+    # Existence + access check (mirrors get_engagement).
+    exists = await db.execute(select(Engagement.id).where(Engagement.id == engagement_id))
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'engagement_view' permission to view this engagement.",
+            )
+
+    async def _count(model, *extra) -> int:
+        stmt = select(func.count()).select_from(model).where(model.engagement_id == engagement_id, *extra)
+        return int((await db.execute(stmt)).scalar_one() or 0)
+
+    # Distinct ATT&CK techniques mapped to this engagement's findings or test
+    # cases — drives the always-visible ATT&CK tab badge. Cheap association-table
+    # count; the full coverage breakdown loads lazily when the tab is opened.
+    techniques_union = (
+        select(FindingAttackTechnique.technique_id)
+        .join(Finding, Finding.id == FindingAttackTechnique.finding_id)
+        .where(Finding.engagement_id == engagement_id)
+        .union(
+            select(TestCaseAttackTechnique.technique_id)
+            .join(TestCase, TestCase.id == TestCaseAttackTechnique.testcase_id)
+            .where(TestCase.engagement_id == engagement_id)
+        )
+    )
+    attack_techniques = int(
+        (await db.execute(select(func.count()).select_from(techniques_union.subquery()))).scalar_one() or 0
+    )
+
+    return {
+        "assets": await _count(Asset),
+        "testcases": await _count(TestCase),
+        "testcases_executed": await _count(TestCase, TestCase.is_executed.is_(True)),
+        "findings": await _count(Finding),
+        "findings_critical": await _count(Finding, Finding.severity == Severity.CRITICAL),
+        "notes": await _count(Note),
+        "vault": await _count(VaultItem),
+        "attachments": await _count(Evidence),
+        "cleanup_pending": await _count(CleanupArtifact, CleanupArtifact.status == CleanupArtifactStatus.PENDING),
+        "attack_techniques": attack_techniques,
+    }
+
+
+@router.get("/{engagement_id}/note-links")
+async def get_engagement_note_links(
+    engagement_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reverse map of note links per resource, for the "linked notes" tooltips
+    on the findings / test-case / asset / vault / cleanup tables.
+
+    Returns only ``{id, title}`` per linked note, keyed by resource id, so the
+    tables can render their tooltips without downloading every note body.
+    """
+    # Existence + access check (mirrors get_engagement / counts).
+    exists = await db.execute(select(Engagement.id).where(Engagement.id == engagement_id))
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'engagement_view' permission to view this engagement.",
+            )
+
+    async def _links(resource_col, assoc_model) -> dict:
+        rows = await db.execute(
+            select(resource_col, Note.id, Note.title)
+            .join(Note, Note.id == assoc_model.note_id)
+            .where(Note.engagement_id == engagement_id)
+        )
+        out: dict[str, list[dict]] = {}
+        for resource_id, note_id, title in rows.all():
+            out.setdefault(resource_id, []).append({"id": note_id, "title": title})
+        return out
+
+    return {
+        "finding": await _links(NoteFinding.finding_id, NoteFinding),
+        "testcase": await _links(NoteTestCase.testcase_id, NoteTestCase),
+        "asset": await _links(NoteAsset.asset_id, NoteAsset),
+        "vault": await _links(NoteVaultItem.vault_item_id, NoteVaultItem),
+        "cleanup": await _links(NoteCleanupArtifact.cleanup_artifact_id, NoteCleanupArtifact),
+    }
+
+
+@router.get("/{engagement_id}/intel-infra-links")
+async def get_engagement_intel_infra_links(
+    engagement_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Linked intel + infrastructure items per finding / test case, in one call.
+
+    Replaces the per-row ``/intel/by-entity`` and ``/infra/by-entity`` fetches
+    the findings/test-case tables were making (one pair per row). Returns just
+    ``{id, title}`` (intel) / ``{id, name}`` (infra) keyed by resource id.
+    """
+    # Existence + access check (mirrors get_engagement / counts).
+    exists = await db.execute(select(Engagement.id).where(Engagement.id == engagement_id))
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(
+            current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions. You need the 'engagement_view' permission to view this engagement.",
+            )
+
+    async def _map(resource_fk_col, item_link_col, item_model, label_col, label_key, resource_model) -> dict:
+        rows = await db.execute(
+            select(resource_fk_col, item_model.id, label_col)
+            .join(item_model, item_model.id == item_link_col)
+            .join(resource_model, resource_model.id == resource_fk_col)
+            .where(resource_model.engagement_id == engagement_id)
+        )
+        out: dict[str, list[dict]] = {}
+        for resource_id, item_id, label in rows.all():
+            out.setdefault(resource_id, []).append({"id": item_id, label_key: label})
+        return out
+
+    return {
+        "intel": {
+            "finding": await _map(IntelItemFinding.finding_id, IntelItemFinding.intel_item_id, IntelItem, IntelItem.title, "title", Finding),
+            "testcase": await _map(IntelItemTestCase.testcase_id, IntelItemTestCase.intel_item_id, IntelItem, IntelItem.title, "title", TestCase),
+        },
+        "infra": {
+            "finding": await _map(InfraItemFinding.finding_id, InfraItemFinding.infra_item_id, InfraItem, InfraItem.name, "name", Finding),
+            "testcase": await _map(InfraItemTestCase.testcase_id, InfraItemTestCase.infra_item_id, InfraItem, InfraItem.name, "name", TestCase),
+        },
+    }
+
 
 @router.post("", response_model=EngagementResponse, status_code=status.HTTP_201_CREATED)
 async def create_engagement(

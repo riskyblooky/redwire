@@ -81,7 +81,7 @@ export function useDeleteGroup() {
 
 // --- Engagement Role Hooks ---
 
-export function useEngagementRoles() {
+export function useEngagementRoles(enabled: boolean = true) {
     return useQuery({
         queryKey: ['admin', 'engagement-roles'],
         queryFn: async () => {
@@ -93,6 +93,7 @@ export function useEngagementRoles() {
                 throw err;
             }
         },
+        enabled,
         retry: (count, err: any) => err?.response?.status !== 403 && count < 3,
     });
 }

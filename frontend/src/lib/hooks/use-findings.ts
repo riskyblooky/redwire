@@ -95,7 +95,7 @@ export interface FindingTemplate {
 // list doesn't silently truncate at 100 with no paging control to reveal the rest.
 const FINDINGS_FETCH_LIMIT = 500;
 
-export function useFindings(params?: { engagement_id?: string; severity?: string; status?: string }) {
+export function useFindings(params?: { engagement_id?: string; severity?: string; status?: string }, enabled: boolean = true) {
     return useQuery({
         queryKey: ['findings', params],
         queryFn: async () => {
@@ -104,6 +104,7 @@ export function useFindings(params?: { engagement_id?: string; severity?: string
             });
             return data;
         },
+        enabled,
         staleTime: 30_000,
     });
 }
@@ -161,6 +162,7 @@ export function useDeleteFinding() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['findings'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements'] });
         },
     });
 }

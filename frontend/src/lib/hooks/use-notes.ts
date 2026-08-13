@@ -51,6 +51,38 @@ export function useNotes(engagementId: string) {
     });
 }
 
+export interface NoteLinkRef {
+    id: string;
+    title: string;
+}
+
+/** Reverse map of note links per resource id, per resource type. */
+export interface EngagementNoteLinks {
+    finding: Record<string, NoteLinkRef[]>;
+    testcase: Record<string, NoteLinkRef[]>;
+    asset: Record<string, NoteLinkRef[]>;
+    vault: Record<string, NoteLinkRef[]>;
+    cleanup: Record<string, NoteLinkRef[]>;
+}
+
+/**
+ * Lightweight linked-notes map for the engagement tables (findings, test
+ * cases, assets, vault, cleanup). Returns only {id, title} per linked note so
+ * a tab can render its "linked notes" tooltips without downloading every note
+ * body. Keyed under ['notes', id, ...] so note mutations invalidate it too.
+ */
+export function useEngagementNoteLinks(engagementId: string, enabled: boolean = true) {
+    return useQuery<EngagementNoteLinks>({
+        queryKey: ['notes', engagementId, 'links'],
+        queryFn: async () => {
+            const { data } = await api.get<EngagementNoteLinks>(`/engagements/${engagementId}/note-links`);
+            return data;
+        },
+        enabled: enabled && !!engagementId,
+        staleTime: 30_000,
+    });
+}
+
 export function useNote(noteId: string) {
     return useQuery({
         queryKey: ['note', noteId],
@@ -71,6 +103,7 @@ export function useCreateNote() {
         },
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['notes', data.engagement_id] });
+            queryClient.invalidateQueries({ queryKey: ['engagements', data.engagement_id, 'counts'] });
         },
     });
 }
@@ -98,6 +131,7 @@ export function useDeleteNote() {
         },
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['notes', data.engagementId] });
+            queryClient.invalidateQueries({ queryKey: ['engagements', data.engagementId, 'counts'] });
         },
     });
 }

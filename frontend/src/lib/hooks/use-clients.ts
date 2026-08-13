@@ -4,13 +4,14 @@ import { Client, ClientType } from '../types';
 
 // ============ Client Types ============
 
-export function useClientTypes() {
+export function useClientTypes(enabled: boolean = true) {
     return useQuery({
         queryKey: ['client-types'],
         queryFn: async () => {
             const { data } = await api.get<ClientType[]>('/client-types');
             return data;
         },
+        enabled,
     });
 }
 
@@ -54,13 +55,14 @@ export function useDeleteClientType() {
 
 // ============ Clients ============
 
-export function useClients() {
+export function useClients(enabled: boolean = true) {
     return useQuery({
         queryKey: ['clients'],
         queryFn: async () => {
             const { data } = await api.get<Client[]>('/clients');
             return data;
         },
+        enabled,
     });
 }
 

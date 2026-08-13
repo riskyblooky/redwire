@@ -63,7 +63,7 @@ export interface SuggestResponse {
 /**
  * Fetch ATT&CK technique coverage for an engagement.
  */
-export function useAttackCoverage(engagementId: string) {
+export function useAttackCoverage(engagementId: string, enabled: boolean = true) {
     return useQuery({
         queryKey: ['attack', 'coverage', engagementId],
         queryFn: async () => {
@@ -72,7 +72,7 @@ export function useAttackCoverage(engagementId: string) {
             );
             return data;
         },
-        enabled: !!engagementId,
+        enabled: enabled && !!engagementId,
         staleTime: 30_000,
     });
 }

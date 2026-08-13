@@ -44,11 +44,10 @@ import {
 } from '@/lib/hooks/use-entity-links';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import { AttachmentQuickAddDialog } from '@/components/ui/attachment-quick-add-dialog';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { useIntelByEntity } from '@/lib/hooks/use-intel';
-import { useInfraByEntity } from '@/lib/hooks/use-infra';
+import { useEngagementIntelInfraLinks } from '@/lib/hooks/use-intel';
 import { useRunbooks, useApplyRunbook, Runbook, RunbookItem } from '@/lib/hooks/use-runbooks';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
@@ -144,8 +143,11 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
     const canDelete = useCanDelete(engagementId, 'testcase', testcase.created_by);
     const deleteTestCase = useDeleteTestCase();
     const { confirm, ConfirmDialog } = useConfirmDialog();
-    const { data: testcaseIntelItems = [] } = useIntelByEntity('testcase', testcase.id);
-    const { data: testcaseInfraItems = [] } = useInfraByEntity('testcase', testcase.id);
+    // Linked intel/infra come from the shared per-engagement batch (one request
+    // for the whole table) rather than a by-entity fetch per row.
+    const { data: eLinks } = useEngagementIntelInfraLinks(engagementId);
+    const testcaseIntelItems = eLinks?.intel?.testcase?.[testcase.id] || [];
+    const testcaseInfraItems = eLinks?.infra?.testcase?.[testcase.id] || [];
     const [intelDetailId, setIntelDetailId] = useState<string | null>(null);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
@@ -404,13 +406,8 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
 
     // Data
     const { data: testcases = [], isLoading } = useTestCases(engagementId);
-    const { data: notes = [] } = useNotes(engagementId);
-
-    const notesByTestCase = useMemo(() => {
-        const map: Record<string, { id: string; title: string }[]> = {};
-        notes.forEach((n: any) => n.linked_testcases?.forEach((t: any) => { if (!map[t.id]) map[t.id] = []; map[t.id].push({ id: n.id, title: n.title }); }));
-        return map;
-    }, [notes]);
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
+    const notesByTestCase = noteLinks?.testcase || {};
 
     // Detail sheet state
     const [selectedTestcaseId, setSelectedTestcaseId] = useState<string | null>(null);
@@ -559,9 +556,10 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
     };
 
     // Runbook import
-    const { data: runbooksList = [] } = useRunbooks();
     const applyRunbook = useApplyRunbook();
     const [isImportRunbookOpen, setIsImportRunbookOpen] = useState(false);
+    // Only load the runbook catalogue when the import dialog is actually opened.
+    const { data: runbooksList = [] } = useRunbooks(isImportRunbookOpen);
     const [importingRunbookId, setImportingRunbookId] = useState<string | null>(null);
     const [rbImportSearch, setRbImportSearch] = useState('');
     const [rbImportTypeFilter, setRbImportTypeFilter] = useState('');
