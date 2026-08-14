@@ -27,6 +27,7 @@ import {
     EyeOff,
     Loader2,
     Bell,
+    ScrollText,
     Check,
     CheckCheck,
     ExternalLink,
@@ -477,6 +478,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                             <DropdownMenuItem onClick={() => setNotifSettingsOpen(true)}>
                                 <Bell className="mr-2 h-4 w-4" />
                                 Notification Settings
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <Link href="/changelog" className="flex w-full items-center">
+                                    <ScrollText className="mr-2 h-4 w-4" />
+                                    What&apos;s New
+                                </Link>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={logout} className="text-red-400">
