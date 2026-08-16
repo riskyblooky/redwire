@@ -506,7 +506,7 @@ export function SchedulingAssistant({
                                             variant="outline"
                                             role="combobox"
                                             aria-expanded={engagementPickerOpen}
-                                            className="h-8 bg-slate-800 border-slate-700 text-xs text-white w-[240px] justify-between font-normal hover:bg-slate-800/80"
+                                            className="h-8 bg-slate-800 border-slate-700 text-[11px] text-white w-[380px] justify-between font-normal hover:bg-slate-800/80"
                                         >
                                             {selectedEng ? (
                                                 <span className="flex items-center gap-1.5 truncate">
@@ -520,7 +520,7 @@ export function SchedulingAssistant({
                                             <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50 ml-1" />
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-[300px] p-0 bg-slate-900 border-slate-700">
+                                    <PopoverContent className="w-[480px] p-0 bg-slate-900 border-slate-700">
                                         <Command className="bg-slate-900">
                                             <CommandInput placeholder="Search engagements..." className="text-white" />
                                             <CommandList>
@@ -534,12 +534,12 @@ export function SchedulingAssistant({
                                                                 setSelectedEngagementId(eng.id);
                                                                 setEngagementPickerOpen(false);
                                                             }}
-                                                            className="text-slate-300"
+                                                            className="text-slate-300 text-[11px]"
                                                         >
                                                             <Check className={cn('mr-2 h-3.5 w-3.5', selectedEngagementId === eng.id ? 'opacity-100' : 'opacity-0')} />
-                                                            <Target className="h-3 w-3 text-primary mr-1.5" />
+                                                            <Target className="h-3 w-3 text-primary mr-1.5 shrink-0" />
                                                             <span className="truncate">{eng.name}</span>
-                                                            <span className="text-slate-500 ml-1.5">({eng.client_name})</span>
+                                                            <span className="text-slate-500 ml-1.5 shrink-0">({eng.client_name})</span>
                                                         </CommandItem>
                                                     ))}
                                                 </CommandGroup>

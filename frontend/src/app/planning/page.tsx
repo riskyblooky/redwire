@@ -26,7 +26,7 @@
  */
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent } from '@/components/ui/card';
@@ -55,11 +55,25 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/components/ui/command';
+import {
     ChevronLeft, ChevronRight, Plus, Loader2, Target,
     Clock, GanttChart, Users, CalendarDays,
     Sparkles, MoreHorizontal,
     Edit, Trash2, Play, AlertTriangle, CheckCircle2,
-    Mail, Check,
+    Mail, Check, ChevronsUpDown,
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -86,7 +100,8 @@ import {
     format, startOfMonth, endOfMonth, addMonths, subMonths,
     parseISO, differenceInDays, eachWeekOfInterval,
     max as dateMax, min as dateMin,
-    isAfter,
+    isAfter, startOfDay, endOfDay, startOfWeek, endOfWeek,
+    eachDayOfInterval, isSameMonth, isSameDay, isToday,
 } from 'date-fns';
 
 import { SchedulingAssistant } from '@/components/calendar/scheduling-assistant';
@@ -171,6 +186,23 @@ export default function PlanningPage() {
     const [growthFitOnly, setGrowthFitOnly] = useState(false);
     const [editingPhases, setEditingPhases] = useState<Record<string, { start: string; end: string }>>({});
     const [inspectorEmailsCopied, setInspectorEmailsCopied] = useState(false);
+    const [timelineView, setTimelineView] = useState<'gantt' | 'calendar'>('gantt');
+    const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null);
+    // Which calendar day's "+N more" popover is open (one at a time), keyed by
+    // "<monthIndex>-<dayIndex>" so spillover days shared between two grids don't collide.
+    const [popoverDayKey, setPopoverDayKey] = useState<string | null>(null);
+    const [engPickerOpen, setEngPickerOpen] = useState(false);
+
+    // Jump the timeline/calendar to an engagement and select it: clear any
+    // custom range and center the default window on the engagement's start month.
+    const snapToEngagement = (e: any) => {
+        setSelectedEngagement(e);
+        if (e.start_date) {
+            setCustomRange(null);
+            setCurrentMonth(startOfMonth(parseISO(e.start_date)));
+        }
+        setEngPickerOpen(false);
+    };
 
     const handleCopyInspectorEmails = async () => {
         const users = selectedEngagement?.assigned_users ?? [];
@@ -229,9 +261,31 @@ export default function PlanningPage() {
     const updatePhases = useUpdateEngagementPhases();
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
-    // Date range for the Gantt view (3-month window centered on current month)
-    const viewStart = startOfMonth(subMonths(currentMonth, 1));
-    const viewEnd = endOfMonth(addMonths(currentMonth, 1));
+    // View window: a custom From→To range when set, otherwise a per-view
+    // default centered on the current month — Calendar shows one month, Gantt
+    // shows a 3-month sliding window. Everything downstream (bar positions,
+    // month/week markers, the engagement filter) derives from this window.
+    const { viewStart, viewEnd } = useMemo(() => {
+        // Calendar always shows a single month (navigated with the stepper); a
+        // custom range there acts as an engagement filter, not as extra grids.
+        if (timelineView === 'calendar') {
+            return { viewStart: startOfMonth(currentMonth), viewEnd: endOfMonth(currentMonth) };
+        }
+        if (customRange?.start && customRange?.end) {
+            const s = parseISO(customRange.start);
+            const e = parseISO(customRange.end);
+            return { viewStart: startOfDay(s), viewEnd: endOfDay(isAfter(s, e) ? s : e) };
+        }
+        return { viewStart: startOfMonth(subMonths(currentMonth, 1)), viewEnd: endOfMonth(addMonths(currentMonth, 1)) };
+    }, [customRange, timelineView, currentMonth]);
+
+    // In Calendar view, snap the visible month to the start of a chosen range
+    // so the single grid lands on the relevant content instead of multiplying.
+    useEffect(() => {
+        if (timelineView === 'calendar' && customRange?.start) {
+            setCurrentMonth(startOfMonth(parseISO(customRange.start)));
+        }
+    }, [timelineView, customRange?.start]);
     const totalDays = Math.max(differenceInDays(viewEnd, viewStart), 1);
 
     // Week markers for the timeline header
@@ -305,8 +359,20 @@ export default function PlanningPage() {
                 rows = rows.filter(e => myFocusEngagementIds.has(e.id));
             }
         }
+        // Custom range narrows the set to engagements overlapping it (applies in
+        // both views; in Gantt the range is also the window, so it's a no-op there).
+        if (customRange?.start && customRange?.end) {
+            const rs = +startOfDay(parseISO(customRange.start));
+            const re = +startOfDay(parseISO(customRange.end));
+            rows = rows.filter(e => {
+                if (!e.start_date) return false;
+                const s = +startOfDay(parseISO(e.start_date));
+                const en = +startOfDay(parseISO(e.end_date || e.start_date));
+                return s <= re && en >= rs;
+            });
+        }
         return rows;
-    }, [sortedEngagements, filterTypes, growthFitOnly, isManageRole, focusFitByEngagement, myFocusEngagementIds]);
+    }, [sortedEngagements, filterTypes, growthFitOnly, isManageRole, focusFitByEngagement, myFocusEngagementIds, customRange]);
 
     const toggleTypeFilter = (type: string) => {
         setFilterTypes(prev =>
@@ -445,6 +511,128 @@ export default function PlanningPage() {
         setEditingPhases(edits);
     };
 
+    // ── Calendar month-grid view ───────────────────────────────
+    // One 7-column month grid per month in the current window (capped at 12),
+    // with engagements rendered as chips on the days they span.
+    const calendarMonths = useMemo(() => {
+        const months: Date[] = [];
+        let cursor = startOfMonth(viewStart);
+        const last = startOfMonth(viewEnd);
+        while (cursor <= last && months.length < 12) {
+            months.push(cursor);
+            cursor = addMonths(cursor, 1);
+        }
+        return months;
+    }, [viewStart, viewEnd]);
+
+    const engagementsOnDay = (day: Date) => {
+        const d = +startOfDay(day);
+        return filteredEngagements.filter(e => {
+            if (!e.start_date) return false;
+            const s = +startOfDay(parseISO(e.start_date));
+            const en = +startOfDay(parseISO(e.end_date || e.start_date));
+            return d >= s && d <= en;
+        });
+    };
+
+    const renderCalendar = () => (
+        <div className="space-y-6">
+            {calendarMonths.map((month, mi) => {
+                const gridStart = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
+                const gridEnd = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
+                const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
+                return (
+                    <Card key={mi} className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
+                        <CardContent className="p-0">
+                            <div className="px-4 py-2 border-b border-slate-800 bg-slate-800/30 text-xs font-bold text-white/70 uppercase tracking-wider">
+                                {format(month, 'MMMM yyyy')}
+                            </div>
+                            <div className="grid grid-cols-7 border-b border-slate-800/60">
+                                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                                    <div key={d} className="px-2 py-1.5 text-[10px] font-semibold text-slate-500 uppercase text-center">{d}</div>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-7">
+                                {days.map((day, di) => {
+                                    const inMonth = isSameMonth(day, month);
+                                    const today = isToday(day);
+                                    const dayEngs = engagementsOnDay(day);
+                                    return (
+                                        <div key={di} className={cn(
+                                            'min-h-[96px] border-r border-b border-slate-800/40 p-1.5 space-y-1',
+                                            !inMonth && 'bg-slate-950/40',
+                                        )}>
+                                            <div className={cn('text-[11px] font-medium mb-0.5',
+                                                today ? 'text-primary font-bold' : inMonth ? 'text-slate-400' : 'text-slate-700')}>
+                                                {today
+                                                    ? <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary/20 text-primary">{format(day, 'd')}</span>
+                                                    : format(day, 'd')}
+                                            </div>
+                                            {dayEngs.slice(0, 3).map(eng => {
+                                                const color = typeMap[eng.engagement_type]?.color || '#6366f1';
+                                                const isStart = eng.start_date && isSameDay(parseISO(eng.start_date), day);
+                                                return (
+                                                    <button
+                                                        key={eng.id}
+                                                        onClick={() => setSelectedEngagement(eng)}
+                                                        title={`${eng.name}${eng.client_name ? ' · ' + eng.client_name : ''}`}
+                                                        className={cn(
+                                                            'block w-full text-left truncate rounded px-1 py-0.5 text-[10px] font-medium transition-all hover:brightness-125',
+                                                            selectedEngagement?.id === eng.id && 'ring-1 ring-primary',
+                                                        )}
+                                                        style={{ backgroundColor: color + '22', color }}
+                                                    >
+                                                        {isStart && '▸ '}{eng.name}
+                                                    </button>
+                                                );
+                                            })}
+                                            {dayEngs.length > 3 && (
+                                                <Popover open={popoverDayKey === `${mi}-${di}`} onOpenChange={o => setPopoverDayKey(o ? `${mi}-${di}` : null)}>
+                                                    <PopoverTrigger asChild>
+                                                        <button className="w-full text-left text-[9px] font-medium text-slate-400 hover:text-white px-1 py-0.5 rounded hover:bg-slate-800/60 transition-colors">
+                                                            +{dayEngs.length - 3} more
+                                                        </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent align="start" className="w-64 p-2 bg-slate-900 border-slate-800">
+                                                        <div className="text-[11px] font-semibold text-slate-300 mb-1.5 px-1">{format(day, 'EEEE, MMM d')}</div>
+                                                        <div className="space-y-1 max-h-64 overflow-y-auto">
+                                                            {dayEngs.map(eng => {
+                                                                const color = typeMap[eng.engagement_type]?.color || '#6366f1';
+                                                                return (
+                                                                    <button
+                                                                        key={eng.id}
+                                                                        onClick={() => { setSelectedEngagement(eng); setPopoverDayKey(null); }}
+                                                                        className={cn('flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-slate-800/60',
+                                                                            selectedEngagement?.id === eng.id && 'bg-primary/10 ring-1 ring-primary/40')}
+                                                                    >
+                                                                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                                                                        <span className="min-w-0">
+                                                                            <span className="block text-xs font-medium text-white truncate">{eng.name}</span>
+                                                                            {eng.client_name && <span className="block text-[10px] text-slate-500 truncate">{eng.client_name}</span>}
+                                                                        </span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </CardContent>
+                    </Card>
+                );
+            })}
+            {calendarMonths.length === 0 && (
+                <Card className="border-slate-800 bg-slate-900/50">
+                    <CardContent className="py-16 text-center text-slate-500 text-sm">No engagements in this range.</CardContent>
+                </Card>
+            )}
+        </div>
+    );
+
     return (
         <DashboardLayout>
             <div className="p-6 space-y-6">
@@ -460,13 +648,15 @@ export default function PlanningPage() {
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="flex bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
-                            <Button variant="ghost" size="icon" onClick={prevMonth} className="text-slate-400 hover:text-white border-r border-slate-800 rounded-none h-9 w-9">
+                            <Button variant="ghost" size="icon" onClick={prevMonth} disabled={timelineView === 'gantt' && !!(customRange?.start && customRange?.end)} className="text-slate-400 hover:text-white border-r border-slate-800 rounded-none h-9 w-9 disabled:opacity-30">
                                 <ChevronLeft className="h-4 w-4" />
                             </Button>
                             <div className="px-4 flex items-center justify-center font-medium text-white min-w-[150px] text-sm">
-                                {format(currentMonth, 'MMMM yyyy')}
+                                {timelineView === 'gantt' && customRange?.start && customRange?.end
+                                    ? `${format(parseISO(customRange.start), 'MMM d')} – ${format(parseISO(customRange.end), 'MMM d, yyyy')}`
+                                    : format(currentMonth, 'MMMM yyyy')}
                             </div>
-                            <Button variant="ghost" size="icon" onClick={nextMonth} className="text-slate-400 hover:text-white border-l border-slate-800 rounded-none h-9 w-9">
+                            <Button variant="ghost" size="icon" onClick={nextMonth} disabled={timelineView === 'gantt' && !!(customRange?.start && customRange?.end)} className="text-slate-400 hover:text-white border-l border-slate-800 rounded-none h-9 w-9 disabled:opacity-30">
                                 <ChevronRight className="h-4 w-4" />
                             </Button>
                         </div>
@@ -548,8 +738,91 @@ export default function PlanningPage() {
                 {/* ═══════ TIMELINE TAB ═══════ */}
                 {activeTab === 'timeline' && (
                     <div className="grid lg:grid-cols-4 gap-6">
-                        {/* Gantt Chart */}
+                        {/* View toggle + date-range picker */}
+                        <div className="lg:col-span-4 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+                                {([{ id: 'gantt' as const, label: 'Gantt', icon: GanttChart }, { id: 'calendar' as const, label: 'Calendar', icon: CalendarDays }]).map(v => (
+                                    <button
+                                        key={v.id}
+                                        onClick={() => setTimelineView(v.id)}
+                                        className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+                                            timelineView === v.id ? 'bg-primary/15 text-primary' : 'text-slate-400 hover:text-white hover:bg-slate-800/50')}
+                                    >
+                                        <v.icon className="h-3.5 w-3.5" />
+                                        {v.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">Custom range</span>
+                                <Input
+                                    type="date"
+                                    aria-label="Range start"
+                                    value={customRange?.start || ''}
+                                    onChange={e => setCustomRange(r => ({ start: e.target.value, end: r?.end || e.target.value }))}
+                                    className="h-8 w-[150px] bg-slate-900 border-slate-800 text-xs"
+                                />
+                                <span className="text-slate-600 text-xs">→</span>
+                                <Input
+                                    type="date"
+                                    aria-label="Range end"
+                                    value={customRange?.end || ''}
+                                    onChange={e => setCustomRange(r => ({ start: r?.start || e.target.value, end: e.target.value }))}
+                                    className="h-8 w-[150px] bg-slate-900 border-slate-800 text-xs"
+                                />
+                                {(customRange?.start || customRange?.end) && (
+                                    <Button variant="ghost" size="sm" onClick={() => setCustomRange(null)} className="h-8 text-xs text-slate-400 hover:text-white">
+                                        Clear
+                                    </Button>
+                                )}
+                                {/* Snap-to-engagement picker */}
+                                <Popover open={engPickerOpen} onOpenChange={setEngPickerOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            role="combobox"
+                                            className="h-8 w-[380px] justify-between gap-2 border-slate-800 bg-slate-900 text-[11px] text-slate-300 hover:bg-slate-800/60"
+                                        >
+                                            <span className="flex items-center gap-1.5 truncate">
+                                                <Target className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                                <span className="truncate">{selectedEngagement ? selectedEngagement.name : 'Jump to engagement…'}</span>
+                                            </span>
+                                            <ChevronsUpDown className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent align="end" className="w-[480px] p-0 bg-slate-900 border-slate-800">
+                                        <Command className="bg-slate-900">
+                                            <CommandInput placeholder="Search engagements…" className="text-xs" />
+                                            <CommandList>
+                                                <CommandEmpty className="py-4 text-center text-xs text-slate-500">No engagements found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {allEngagements.filter(e => e.start_date).map(e => (
+                                                        <CommandItem
+                                                            key={e.id}
+                                                            value={`${e.name} ${e.client_name || ''}`}
+                                                            onSelect={() => snapToEngagement(e)}
+                                                            className="gap-2 text-[11px]"
+                                                        >
+                                                            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: typeMap[e.engagement_type]?.color || '#6366f1' }} />
+                                                            <span className="min-w-0 flex-1">
+                                                                <span className="block truncate text-white">{e.name}</span>
+                                                                {e.client_name && <span className="block truncate text-[10px] text-slate-500">{e.client_name}</span>}
+                                                            </span>
+                                                            {selectedEngagement?.id === e.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        </div>
+
+                        {/* Timeline / Calendar */}
                         <div className="lg:col-span-3">
+                            {timelineView === 'calendar' ? renderCalendar() : (<>
                             <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
                                 {isLoading && (
                                     <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-xs z-10 flex items-center justify-center">
@@ -681,9 +954,13 @@ export default function PlanningPage() {
                                                                                     <div className="space-y-1.5">
                                                                                         <div className="font-medium text-fuchsia-300">Growth fit for {matches.length} team member{matches.length !== 1 ? 's' : ''}</div>
                                                                                         {matches.slice(0, 5).map(m => (
-                                                                                            <div key={m.user_id} className="text-slate-300">
-                                                                                                <span className="text-white">{m.full_name || m.username}</span>
-                                                                                                <span className="text-slate-500"> — {m.matching_skills.map(s => s.name).join(', ')}</span>
+                                                                                            <div key={m.user_id} className="flex items-center gap-1.5 text-slate-300">
+                                                                                                <UserAvatar
+                                                                                                    user={{ id: m.user_id, username: m.username, full_name: m.full_name ?? undefined, profile_photo: m.profile_photo ?? undefined }}
+                                                                                                    className="h-4 w-4 ring-0 shadow-none shrink-0"
+                                                                                                />
+                                                                                                <span><span className="text-white">{m.full_name || m.username}</span>
+                                                                                                <span className="text-slate-500"> — {m.matching_skills.map(s => s.name).join(', ')}</span></span>
                                                                                             </div>
                                                                                         ))}
                                                                                         {matches.length > 5 && <div className="text-slate-500 italic">+{matches.length - 5} more</div>}
@@ -817,6 +1094,7 @@ export default function PlanningPage() {
                                     <span>Late</span>
                                 </div>
                             </div>
+                            </>)}
                         </div>
 
                         {/* Inspector Panel */}
@@ -870,9 +1148,10 @@ export default function PlanningPage() {
                                                         </div>
                                                         <div className="flex flex-wrap gap-1.5">
                                                             {selectedEngagement.assigned_users.map((u: any) => (
-                                                                <Badge key={u.id} variant="outline" className="border-slate-800 text-[10px] py-0.5 bg-slate-900/50">
-                                                                    {u.full_name || u.username}
-                                                                </Badge>
+                                                                <div key={u.id} className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/50 py-0.5 pl-0.5 pr-2">
+                                                                    <UserAvatar user={u} className="h-5 w-5 ring-0 shadow-none" />
+                                                                    <span className="text-[10px] text-slate-300">{u.full_name || u.username}</span>
+                                                                </div>
                                                             ))}
                                                         </div>
                                                     </div>
