@@ -21,6 +21,7 @@ import httpx
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
+import mcp.types as types
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.requests import Request
@@ -219,7 +220,7 @@ async def _apply_taxonomy_enums(tools: list[Tool]) -> None:
     """Overlay live taxonomy values onto the taxonomy-backed enum fields."""
     cache: dict[str, list[str] | None] = {}
     for tool in tools:
-        props = (tool.inputSchema or {}).get("properties") or {}
+        props = (tool.input_schema or {}).get("properties") or {}
         for field, spec in props.items():
             category = _TAXONOMY_FIELDS.get((tool.name, field))
             if not category:
@@ -235,7 +236,6 @@ async def _apply_taxonomy_enums(tools: list[Tool]) -> None:
                 spec.pop("enum", None)
 
 
-@mcp.list_tools()
 async def list_tools() -> list[Tool]:
     """Return all available RedWire tools. Write tools are filtered out when
     the admin toggle ai_write_tools_enabled is off (the default)."""
@@ -948,7 +948,6 @@ def _wrap_untrusted(payload: str) -> str:
     return f"{_TOOL_DATA_BEGIN}\n{safe}\n{_TOOL_DATA_END}"
 
 
-@mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Dispatch tool calls to the appropriate handler."""
     # GHSA-q4x9-5gmc-fxh5 (a2): refuse write tools when the admin toggle is
@@ -1255,6 +1254,25 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
 
     else:
         raise ValueError(f"Unknown tool: {name}")
+
+
+# ── MCP 2.x handler registration ─────────────────────────────────────────────
+# mcp 2.0 replaced the @mcp.list_tools()/@mcp.call_tool() decorators with
+# (context, params) request handlers that return Result wrappers. These thin
+# adapters keep list_tools()/call_tool() — and the dispatch, write-tool
+# filtering, and live-taxonomy overlay underneath them — completely unchanged.
+
+async def _on_list_tools(context, params):
+    return types.ListToolsResult(tools=await list_tools())
+
+
+async def _on_call_tool(context, params):
+    content = await call_tool(params.name, params.arguments or {})
+    return types.CallToolResult(content=content)
+
+
+mcp.add_request_handler("tools/list", types.PaginatedRequestParams, _on_list_tools)
+mcp.add_request_handler("tools/call", types.CallToolRequestParams, _on_call_tool)
 
 
 # ── SSE Transport & ASGI App ─────────────────────────────────────────────────

@@ -1,12 +1,15 @@
 # MCP SDK with SSE transport.
-# Pinned <2.0.0: server.py uses the 1.x low-level API (mcp.server.Server +
-# @list_tools()/@call_tool() decorators + SseServerTransport). mcp 2.0.0
-# removed/changed that API (Server.list_tools no longer exists), so an
-# unpinned fresh build pulls 2.0.0 and crash-loops. Bump deliberately with a
-# server.py migration, not implicitly.
-mcp[cli]>=1.0.0,<2.0.0
+# server.py targets the 2.x low-level API: the @list_tools()/@call_tool()
+# decorators were replaced by mcp.add_request_handler("tools/list"|"tools/call",
+# params_type, handler) returning ListToolsResult/CallToolResult (see the
+# adapters in server.py). SseServerTransport, mcp.run(), and the Tool/TextContent
+# types are unchanged from 1.x. Pinned <3.0.0 against the next breaking bump.
+mcp[cli]>=2.0.0,<3.0.0
 
-# HTTP client for RedWire API
+# HTTP client for RedWire API.
+# Keep this explicit: mcp 2.0's internal client moved to the separate `httpx2`
+# package, so `mcp[cli]` no longer pulls httpx transitively — and server.py
+# does `import httpx` for every backend call.
 httpx>=0.26.0
 
 # Data validation
