@@ -22,7 +22,7 @@ import { useRouter } from 'next/navigation';
 import {
     Search, Plus, Bug, Loader2, ArrowUpDown, ArrowUp, ArrowDown,
     Lock, Sparkles, Server, MoreVertical, Trash2, Edit, MessageSquare,
-    StickyNote, Radar, Settings, Filter, X, Link as LinkIcon, Paperclip, GitBranch,
+    StickyNote, Radar, Settings, Filter, X, Link as LinkIcon, Paperclip, GitBranch, CheckSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -228,6 +228,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                 {col('links') && <TableCell>
                     <div className="flex items-center gap-3">
                         <LinkTooltip icon={<Server className="h-3.5 w-3.5" />} count={(finding.assets || []).length} items={(finding.assets || []).map((a: any) => ({ name: a.name, href: `/assets/${a.id}?engagementId=${engagementId}` }))} label="Assets" colorClass="text-cyan-400" />
+                        <LinkTooltip icon={<CheckSquare className="h-3.5 w-3.5" />} count={(finding.testcases || []).length} items={(finding.testcases || []).map((tc: any) => ({ name: tc.title, href: `/testcases/${tc.id}?engagementId=${engagementId}` }))} label="Test Cases" colorClass="text-emerald-400" />
                         <LinkTooltip icon={<Lock className="h-3.5 w-3.5" />} count={(finding.vault_items || []).length} items={(finding.vault_items || []).map((v: any) => ({ name: v.name }))} label="Vault Items" colorClass="text-amber-400" />
                         <LinkTooltip icon={<Sparkles className="h-3.5 w-3.5" />} count={(finding.cleanup_artifacts || []).length} items={(finding.cleanup_artifacts || []).map((c: any) => ({ name: c.title || c.name || 'Cleanup artifact' }))} label="Cleanup Artifacts" colorClass="text-lime-400" />
                         <LinkTooltip icon={<Paperclip className="h-3.5 w-3.5" />} count={(finding.evidence || []).length} items={(finding.evidence || []).map((e: any) => ({ name: e.original_filename }))} label="Evidence" colorClass="text-pink-400" />
