@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
 import { CommandPalette } from '@/components/command-palette';
 import { WhatsNewModal } from '@/components/layout/whats-new-modal';
+import { PageHelpButton } from '@/components/layout/page-help-button';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
 import {
@@ -485,6 +486,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                     What&apos;s New
                                 </Link>
                             </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <Link href="/help" className="flex w-full items-center">
+                                    <BookOpen className="mr-2 h-4 w-4" />
+                                    Help &amp; Guides
+                                </Link>
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={logout} className="text-red-400">
                                 <LogOut className="mr-2 h-4 w-4" />
@@ -515,6 +522,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                 />
                             </div>
                         </form>
+
+                        {/* Page help */}
+                        <PageHelpButton />
 
                         {/* Notification Bell */}
                         <Popover open={notifOpen} onOpenChange={setNotifOpen}>
