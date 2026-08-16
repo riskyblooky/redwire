@@ -8,6 +8,34 @@ import { MermaidDiagram } from './mermaid-diagram';
 import { useUsers } from '@/lib/hooks/use-users';
 import { UserAvatar } from './user-avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
+import {
+    LayoutDashboard, Bug, CheckSquare, Server, Paperclip, Lock, Sparkles,
+    StickyNote, Shield, Activity, FileText, Radar, Network, Upload, CalendarDays,
+    BarChart3, Bell, Bot, Search, UserCircle, Link2, Globe, Braces, Lightbulb,
+    GanttChart, Tags, ClipboardCheck, BookOpen, GitBranch, Share2,
+} from 'lucide-react';
+
+// Inline app icons in Markdown. Author `<span class="rw-icon rw-icon-Bug text-red-400"></span>`
+// and it renders the real lucide icon inline (any extra classes — e.g. Tailwind
+// text-* colors — carry through). Only these named icons are allowed; unknown
+// names render nothing. No sanitizer change needed: span + className is already
+// permitted by SANITIZE_SCHEMA.
+const RW_ICONS: Record<string, React.ComponentType<any>> = {
+    LayoutDashboard, Bug, CheckSquare, Server, Paperclip, Lock, Sparkles,
+    StickyNote, Shield, Activity, FileText, Radar, Network, Upload, CalendarDays,
+    BarChart3, Bell, Bot, Search, UserCircle, Link2, Globe, Braces, Lightbulb,
+    GanttChart, Tags, ClipboardCheck, BookOpen, GitBranch, Share2,
+};
+
+function InlineIcon({ className = '' }: { className?: string }) {
+    const tokens = className.split(/\s+/).filter(Boolean);
+    const nameTok = tokens.find((t) => t.startsWith('rw-icon-'));
+    const Icon = nameTok ? RW_ICONS[nameTok.slice('rw-icon-'.length)] : undefined;
+    if (!Icon) return null;
+    // Pass through non-marker classes (colors, sizing) authored on the span.
+    const extra = tokens.filter((t) => t !== 'rw-icon' && !t.startsWith('rw-icon-')).join(' ');
+    return <Icon className={`inline-block h-4 w-4 align-[-0.15em] ${extra}`} />;
+}
 
 // Reconstruct the raw text of a fenced code block from react-markdown's
 // (possibly syntax-highlighted) children. Highlighters wrap each source line
@@ -93,6 +121,9 @@ const COMPONENTS = {
     span: ({ node, className, children, ...rest }: any) => {
         if (typeof className === 'string' && className.split(' ').includes('mention-tag')) {
             return <MentionChip className={className}>{children}</MentionChip>;
+        }
+        if (typeof className === 'string' && className.split(' ').includes('rw-icon')) {
+            return <InlineIcon className={className} />;
         }
         return <span className={className} {...rest}>{children}</span>;
     },

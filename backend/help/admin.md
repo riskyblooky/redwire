@@ -24,26 +24,17 @@ documented inline there.
 Seven services on one Compose network. Only nginx exposes ports to the
 host in prod — everything else is internal to the Docker network.
 
-```
-                          ┌────────────────────────┐
-     browser ──443/HTTPS──▶│         nginx          │◀── certbot (renewals)
-                          │  (server_name = DOMAIN)│
-                          └───┬────────────────┬───┘
-                              │                │
-                    static/HMR│                │/api/*
-                              ▼                ▼
-                       ┌────────────┐    ┌────────────┐
-                       │  frontend  │    │  backend   │
-                       │ Next.js 15 │    │  FastAPI   │
-                       │   :3000    │    │   :8000    │
-                       └────────────┘    └─────┬──────┘
-                                                │
-       ┌────────────────┬──────────────┬────────┴───┬─────────────┐
-       ▼                ▼              ▼            ▼             ▼
-  ┌─────────┐    ┌────────────┐   ┌────────┐  ┌───────────┐  ┌─────────┐
-  │ postgres│    │   redis    │   │ minio  │  │  mcp-svr  │  │ plugins │
-  │  :5432  │    │   :6379    │   │ :9000  │  │  :3001    │  │ (in-svc)│
-  └─────────┘    └────────────┘   └────────┘  └───────────┘  └─────────┘
+```mermaid
+flowchart TD
+    browser["browser"] -->|"443 / HTTPS"| nginx["nginx (server_name = DOMAIN)"]
+    certbot["certbot (cert renewals)"] -.-> nginx
+    nginx -->|"static / HMR"| frontend["frontend: Next.js 15 :3000"]
+    nginx -->|"/api/*"| backend["backend: FastAPI :8000"]
+    backend --> postgres["postgres :5432"]
+    backend --> redis["redis :6379"]
+    backend --> minio["minio :9000"]
+    backend --> mcp["mcp-server :3001"]
+    backend --> plugins["plugins (in-service)"]
 ```
 
 **Ports exposed to the host (prod, `docker-compose.yml`):**
