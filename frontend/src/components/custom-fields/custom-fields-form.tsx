@@ -10,11 +10,11 @@
 
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import { cn } from '@/lib/utils';
 import {
     useCustomFieldDefs, type CustomFieldEntity, type CustomFieldDef, type CustomFieldValues,
@@ -28,10 +28,12 @@ interface CustomFieldsFormProps {
     /** Hide the "Custom Fields" heading (e.g. when embedded in a titled card). */
     hideHeading?: boolean;
     className?: string;
+    /** Threaded to the rich-text editor on text/textarea fields (AI-assist + image context). */
+    engagementId?: string;
 }
 
 export function CustomFieldsForm({
-    entity, value, onChange, disabled, hideHeading, className,
+    entity, value, onChange, disabled, hideHeading, className, engagementId,
 }: CustomFieldsFormProps) {
     const { data: defs = [] } = useCustomFieldDefs(entity);
     const values = value || {};
@@ -55,6 +57,8 @@ export function CustomFieldsForm({
                         value={values[def.field_key]}
                         onChange={(v) => setField(def.field_key, v)}
                         disabled={disabled}
+                        entity={entity}
+                        engagementId={engagementId}
                     />
                 ))}
             </div>
@@ -62,8 +66,9 @@ export function CustomFieldsForm({
     );
 }
 
-function FieldInput({ def, value, onChange, disabled }: {
+function FieldInput({ def, value, onChange, disabled, entity, engagementId }: {
     def: CustomFieldDef; value: unknown; onChange: (v: unknown) => void; disabled?: boolean;
+    entity: CustomFieldEntity; engagementId?: string;
 }) {
     const labelEl = (
         <Label className="text-slate-300 text-sm flex items-center gap-1">
@@ -92,12 +97,14 @@ function FieldInput({ def, value, onChange, disabled }: {
     switch (def.field_type) {
         case 'textarea':
             control = (
-                <Textarea
+                <MarkdownEditor
                     value={(value as string) ?? ''}
-                    onChange={(e) => onChange(e.target.value)}
+                    onChange={(v) => onChange(v)}
                     placeholder={def.placeholder ?? ''}
                     disabled={disabled}
-                    className="bg-slate-950 border-slate-700 text-white min-h-[80px]"
+                    minHeight="160px"
+                    fieldContext={{ resourceType: entity, fieldName: def.label }}
+                    engagementId={engagementId}
                 />
             );
             break;
@@ -185,14 +192,16 @@ function FieldInput({ def, value, onChange, disabled }: {
             );
             break;
         }
-        default: // text
+        default: // text — rich editor so operators can format like Description / Steps
             control = (
-                <Input
+                <MarkdownEditor
                     value={(value as string) ?? ''}
-                    onChange={(e) => onChange(e.target.value)}
+                    onChange={(v) => onChange(v)}
                     placeholder={def.placeholder ?? ''}
                     disabled={disabled}
-                    className="bg-slate-950 border-slate-700 text-white"
+                    minHeight="110px"
+                    fieldContext={{ resourceType: entity, fieldName: def.label }}
+                    engagementId={engagementId}
                 />
             );
     }

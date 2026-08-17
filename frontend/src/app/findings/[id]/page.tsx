@@ -501,6 +501,8 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                         entity="finding"
                                         value={finding.custom_fields}
                                         className="pt-2"
+                                        collapsible
+                                        defaultCollapsed
                                     />
                                 </div>
                             </CardContent>

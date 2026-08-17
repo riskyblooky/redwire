@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { useEngagement } from './use-engagements';
 
 export type MarkingScheme = 'TLP_2_0' | 'IC_DOD' | 'CUSTOM';
 export type MarkingEnforcement = 'OFF' | 'WARN' | 'BLOCK';
@@ -68,6 +69,20 @@ export function useMarkingProfiles() {
         },
         staleTime: 30_000,
     });
+}
+
+/**
+ * The marking profile that actually applies to an engagement — its OWN selected
+ * profile, and only when that profile has real levels. Returns undefined when no
+ * marking applies (no profile selected, or an empty one), so callers can hide
+ * the whole classification-marking UI (card included), not just the picker.
+ */
+export function useEngagementMarkingProfile(engagementId: string | null | undefined) {
+    const { data: engagement } = useEngagement(engagementId || '');
+    const { data: profiles = [] } = useMarkingProfiles();
+    if (!engagement?.marking_profile_id) return undefined;
+    const profile = profiles.find((p) => p.id === engagement.marking_profile_id);
+    return profile && profile.levels.length > 0 ? profile : undefined;
 }
 
 export function useMarkingProfile(id: string | null) {

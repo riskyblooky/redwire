@@ -22,6 +22,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { useCustomFieldDefs } from '@/lib/hooks/use-custom-fields';
 import {
     Select,
     SelectContent,
@@ -32,7 +35,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { TemplatePickerDialog } from '@/components/ui/template-picker-dialog';
-import { ArrowLeft, Save, Loader2, Plus, ChevronsUpDown, BookOpen, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Plus, ChevronsUpDown, BookOpen, CheckCircle2, XCircle, FileText, ListChecks, ListPlus } from 'lucide-react';
 import { useTestCase, useUpdateTestCase, useTestCases } from '@/lib/hooks/use-testcases';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { toast } from 'sonner';
@@ -45,6 +48,7 @@ import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
+import { useEngagementMarkingProfile } from '@/lib/hooks/use-marking-profiles';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { EditLockBanner } from '@/components/collaboration/edit-lock-banner';
@@ -111,6 +115,9 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
         description: '',
         steps: '',
         expected_result: '',
+        actual_result: '',
+        is_executed: false,
+        is_successful: null as boolean | null,
         notes: '',
         classification_level: '' as string,
         classification_suffix: '' as string,
@@ -118,6 +125,9 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
         attack_technique_ids: [] as string[],
         custom_fields: {} as Record<string, unknown>,
     });
+    const markingProfile = useEngagementMarkingProfile(formData.engagement_id);
+    const { data: cfDefs = [] } = useCustomFieldDefs('testcase');
+    const hasCustomFields = cfDefs.length > 0;
 
     useEffect(() => {
         if (testcase) {
@@ -129,6 +139,9 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                 description: testcase.description || '',
                 steps: testcase.steps || '',
                 expected_result: testcase.expected_result || '',
+                actual_result: testcase.actual_result || '',
+                is_executed: !!testcase.is_executed,
+                is_successful: testcase.is_successful ?? null,
                 notes: testcase.notes || '',
                 classification_level: (testcase as any).classification_level || '',
                 classification_suffix: (testcase as any).classification_suffix || '',
@@ -259,77 +272,162 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
             <div className="p-6 pb-24 flex-1">
                 <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-4">
                     <div className="lg:col-span-3">
-                        <Card className="border-slate-800 bg-slate-900/50">
-                            <CardHeader><CardTitle className="text-white">Update Definition</CardTitle></CardHeader>
-                            <CardContent className="space-y-6">
-                                <div className="space-y-2">
-                                    <Label className="text-slate-200">Engagement *</Label>
-                                    {isLoadingTC || isLoadingEngagements ? (
-                                        <div className="h-10 bg-slate-800/50 border border-slate-700 rounded-md flex items-center px-3">
-                                            <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-1">
-                                            <Input
-                                                value={engagements.find(e => e.id === formData.engagement_id)?.name || 'Unknown Engagement'}
-                                                disabled
-                                                className="bg-slate-800/50 border-slate-700 text-slate-400 cursor-not-allowed"
-                                            />
-                                            <p className="text-[10px] text-slate-500 italic">Engagement cannot be changed after creation.</p>
-                                        </div>
-                                    )}
-                                </div>
+                        <Tabs defaultValue="result" className="w-full">
+                            <TabsList className="bg-slate-950/40 border border-slate-800/60 p-1 w-full flex justify-start gap-1 rounded-xl h-12">
+                                <TabsTrigger value="definition" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-400 font-semibold">
+                                    <FileText className="h-4 w-4" /> Definition
+                                </TabsTrigger>
+                                <TabsTrigger value="result" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400 font-semibold">
+                                    <ListChecks className="h-4 w-4" /> Steps &amp; Result
+                                </TabsTrigger>
+                                {hasCustomFields && (
+                                    <TabsTrigger value="custom" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-amber-500/10 data-[state=active]:text-amber-400 font-semibold">
+                                        <ListPlus className="h-4 w-4" /> Custom Fields
+                                    </TabsTrigger>
+                                )}
+                            </TabsList>
 
-                                <div className="space-y-2">
-                                    <Label className="text-slate-200">Parent Test Case</Label>
-                                    <Select
-                                        value={formData.parent_id || '__none__'}
-                                        onValueChange={(val) => handleChange('parent_id', val === '__none__' ? null : val)}
-                                    >
-                                        <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
-                                            <SelectValue placeholder="None (root level)" />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                            <SelectItem value="__none__">None (root level)</SelectItem>
-                                            {availableParents.map((tc) => (
-                                                <SelectItem key={tc.id} value={tc.id}>{tc.title}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <p className="text-[10px] text-slate-500 italic">Nest this test case under another test case.</p>
-                                </div>
+                            <div className="mt-6">
+                                {/* ── Definition ── */}
+                                <TabsContent value="definition">
+                                    <Card className="border-slate-800 bg-slate-900/50">
+                                        <CardContent className="space-y-6 pt-6">
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-200">Engagement *</Label>
+                                                {isLoadingTC || isLoadingEngagements ? (
+                                                    <div className="h-10 bg-slate-800/50 border border-slate-700 rounded-md flex items-center px-3">
+                                                        <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1">
+                                                        <Input
+                                                            value={engagements.find(e => e.id === formData.engagement_id)?.name || 'Unknown Engagement'}
+                                                            disabled
+                                                            className="bg-slate-800/50 border-slate-700 text-slate-400 cursor-not-allowed"
+                                                        />
+                                                        <p className="text-[10px] text-slate-500 italic">Engagement cannot be changed after creation.</p>
+                                                    </div>
+                                                )}
+                                            </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-slate-200">Title *</Label>
-                                    <Input value={formData.title} onChange={(e) => handleChange('title', e.target.value)} required className="bg-slate-800 border-slate-700 text-white" />
-                                </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-200">Parent Test Case</Label>
+                                                <Select
+                                                    value={formData.parent_id || '__none__'}
+                                                    onValueChange={(val) => handleChange('parent_id', val === '__none__' ? null : val)}
+                                                >
+                                                    <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
+                                                        <SelectValue placeholder="None (root level)" />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                                        <SelectItem value="__none__">None (root level)</SelectItem>
+                                                        {availableParents.map((tc) => (
+                                                            <SelectItem key={tc.id} value={tc.id}>{tc.title}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <p className="text-[10px] text-slate-500 italic">Nest this test case under another test case.</p>
+                                            </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-slate-200">Category *</Label>
-                                    <Select
-                                        key={`${testcase?.id}-${formData.category}`}
-                                        value={formData.category}
-                                        onValueChange={(val) => handleChange('category', val)}
-                                    >
-                                        <SelectTrigger className="bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
-                                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                            {categories.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-200">Title *</Label>
+                                                <Input value={formData.title} onChange={(e) => handleChange('title', e.target.value)} required className="bg-slate-800 border-slate-700 text-white" />
+                                            </div>
 
-                                <div className="space-y-4">
-                                    <Label className="text-slate-200">Description *</Label>
-                                    <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description' }} engagementId={formData.engagement_id} />
-                                </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-200">Category *</Label>
+                                                <Select
+                                                    key={`${testcase?.id}-${formData.category}`}
+                                                    value={formData.category}
+                                                    onValueChange={(val) => handleChange('category', val)}
+                                                >
+                                                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
+                                                    <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                                        {categories.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
 
-                                <div className="space-y-4">
-                                    <Label className="text-slate-200">Steps</Label>
-                                    <MarkdownEditor value={formData.steps} onChange={(val) => handleChange('steps', val)} minHeight="350px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps' }} engagementId={formData.engagement_id} />
-                                </div>
+                                            <div className="space-y-4">
+                                                <Label className="text-slate-200">Description *</Label>
+                                                <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description' }} engagementId={formData.engagement_id} />
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                </TabsContent>
 
-                            </CardContent>
-                        </Card>
+                                {/* ── Steps & Execution Result ── */}
+                                <TabsContent value="result">
+                                    <Card className="border-slate-800 bg-slate-900/50">
+                                        <CardContent className="space-y-6 pt-6">
+                                            <div className="space-y-4">
+                                                <Label className="text-slate-200">Steps</Label>
+                                                <MarkdownEditor value={formData.steps} onChange={(val) => handleChange('steps', val)} minHeight="300px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps' }} engagementId={formData.engagement_id} />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <Label className="text-slate-200">Expected Result</Label>
+                                                <MarkdownEditor value={formData.expected_result} onChange={(val) => handleChange('expected_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result' }} engagementId={formData.engagement_id} />
+                                            </div>
+
+                                            <div className="space-y-3 border-t border-slate-800 pt-5">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <Label className="text-slate-200">Executed</Label>
+                                                        <p className="text-[10px] text-slate-500 italic mt-0.5">Has this test case been run?</p>
+                                                    </div>
+                                                    <Switch
+                                                        checked={formData.is_executed}
+                                                        onCheckedChange={(v) => { handleChange('is_executed', v); if (!v) handleChange('is_successful', null); }}
+                                                    />
+                                                </div>
+                                                {formData.is_executed && (
+                                                    <div className="flex items-center gap-2">
+                                                        <button type="button" onClick={() => handleChange('is_successful', true)}
+                                                            className={cn('flex-1 h-10 rounded-md border text-sm font-semibold flex items-center justify-center gap-2 transition-colors',
+                                                                formData.is_successful === true ? 'bg-green-600/20 border-green-500/40 text-green-300' : 'bg-slate-950/40 border-slate-700 text-slate-400 hover:border-green-500/30')}>
+                                                            <CheckCircle2 className="h-4 w-4" /> Pass
+                                                        </button>
+                                                        <button type="button" onClick={() => handleChange('is_successful', false)}
+                                                            className={cn('flex-1 h-10 rounded-md border text-sm font-semibold flex items-center justify-center gap-2 transition-colors',
+                                                                formData.is_successful === false ? 'bg-red-600/20 border-red-500/40 text-red-300' : 'bg-slate-950/40 border-slate-700 text-slate-400 hover:border-red-500/30')}>
+                                                            <XCircle className="h-4 w-4" /> Fail
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <Label className="text-slate-200">Actual Result</Label>
+                                                <MarkdownEditor value={formData.actual_result} onChange={(val) => handleChange('actual_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Actual Result' }} engagementId={formData.engagement_id} />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <Label className="text-slate-200">Notes</Label>
+                                                <MarkdownEditor value={formData.notes} onChange={(val) => handleChange('notes', val)} minHeight="120px" fieldContext={{ resourceType: 'testcase', fieldName: 'Notes' }} engagementId={formData.engagement_id} />
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                </TabsContent>
+
+                                {/* ── Custom Fields ── */}
+                                {hasCustomFields && (
+                                    <TabsContent value="custom">
+                                        <Card className="border-slate-800 bg-slate-900/50">
+                                            <CardContent className="pt-6">
+                                                <CustomFieldsForm
+                                                    entity="testcase"
+                                                    value={formData.custom_fields}
+                                                    onChange={(cf) => { setFormData(prev => ({ ...prev, custom_fields: cf })); setIsDirty(true); }}
+                                                    engagementId={formData.engagement_id}
+                                                    hideHeading
+                                                />
+                                            </CardContent>
+                                        </Card>
+                                    </TabsContent>
+                                )}
+                            </div>
+                        </Tabs>
                     </div>
 
                     {/* Sidebar with Tags */}
@@ -394,6 +492,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                             </CardContent>
                         </Card>
 
+                        {markingProfile && (
                         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
                             <div className="h-1.5 bg-linear-to-r from-red-500 via-rose-500 to-orange-500" />
                             <CardHeader className="pb-4">
@@ -413,12 +512,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                 />
                             </CardContent>
                         </Card>
-
-                        <CustomFieldsForm
-                            entity="testcase"
-                            value={formData.custom_fields}
-                            onChange={(cf) => { setFormData(prev => ({ ...prev, custom_fields: cf })); setIsDirty(true); }}
-                        />
+                        )}
                     </div>
                 </form>
             </div>

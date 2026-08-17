@@ -39,7 +39,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { TemplatePickerDialog } from '@/components/ui/template-picker-dialog';
 import {
-    ArrowLeft, Save, Loader2, Bug, Target, FileText,
+    ArrowLeft, Save, Loader2, Bug, Target, FileText, ListPlus,
     Terminal, Shield, Layers, Plus, BookOpen, CheckCircle2, Edit, ChevronsUpDown,
     Calculator, Search
 } from 'lucide-react';
@@ -62,6 +62,7 @@ import { severityRating } from '@/lib/cvss31';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
+import { useCustomFieldDefs } from '@/lib/hooks/use-custom-fields';
 import { apiErrorMessage } from '@/lib/api';
 
 const severities = [
@@ -93,6 +94,8 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     const { data: tags = [], isLoading: isLoadingTags } = useTags();
     const updateFinding = useUpdateFinding();
     const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { data: cfDefs = [] } = useCustomFieldDefs('finding');
+    const hasCustomFields = cfDefs.length > 0;
 
     // Live presence — same channel as the view page, so both audiences
     // appear together. mode:'edit' tags this connection as actively
@@ -449,6 +452,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                 <TabsTrigger value="assets" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary font-semibold">
                                     <Target className="h-4 w-4" /> Assets
                                 </TabsTrigger>
+                                {hasCustomFields && (
+                                    <TabsTrigger value="custom" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-amber-500/10 data-[state=active]:text-amber-400 font-semibold">
+                                        <ListPlus className="h-4 w-4" /> Custom Fields
+                                    </TabsTrigger>
+                                )}
                             </TabsList>
 
                             <div className="mt-6">
@@ -633,6 +641,22 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                         </CardContent>
                                     </Card>
                                 </TabsContent>
+
+                                {hasCustomFields && (
+                                    <TabsContent value="custom">
+                                        <Card className="border-slate-800 bg-slate-900/50">
+                                            <CardContent className="pt-6">
+                                                <CustomFieldsForm
+                                                    entity="finding"
+                                                    value={formData.custom_fields}
+                                                    onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                                                    engagementId={formData.engagement_id}
+                                                    hideHeading
+                                                />
+                                            </CardContent>
+                                        </Card>
+                                    </TabsContent>
+                                )}
                             </div>
                         </Tabs>
                     </div>
@@ -767,12 +791,6 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                 </div>
                             </CardContent>
                         </Card>
-
-                        <CustomFieldsForm
-                            entity="finding"
-                            value={formData.custom_fields}
-                            onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
-                        />
                     </div>
                 </form>
             </div>

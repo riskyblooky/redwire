@@ -47,7 +47,8 @@ import {
     ClipboardCheck,
     Link2,
     ImageOff,
-    Camera
+    Camera,
+    ChevronRight,
 } from 'lucide-react';
 import { useEvidence, getEvidenceUrl, useDeleteEvidence, useUpdateEvidence, useReplaceEvidenceFile, useEvidenceExif, useStripExif } from '@/lib/hooks/use-evidence';
 import { getEvidenceDownloadUrl } from '@/lib/evidence-download';
@@ -103,6 +104,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
 
     const [fileUrl, setFileUrl] = useState<string | null>(null);
     const [isEditingDescription, setIsEditingDescription] = useState(false);
+    const [exifOpen, setExifOpen] = useState(false);
     const [description, setDescription] = useState('');
 
     useEffect(() => {
@@ -485,7 +487,14 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                 {isImage && (
                                     <div className="pt-4 border-t border-slate-800 space-y-3">
                                         <div className="flex items-center justify-between">
-                                            <Label className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">EXIF Data</Label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setExifOpen(o => !o)}
+                                                className="flex items-center gap-1.5 text-slate-400 text-[10px] uppercase font-bold tracking-wider hover:text-slate-200 transition-colors"
+                                            >
+                                                <ChevronRight className={cn('h-3 w-3 transition-transform', exifOpen && 'rotate-90')} />
+                                                EXIF Data
+                                            </button>
                                             {exifData?.has_exif && (
                                                 <Button
                                                     variant="outline"
@@ -510,7 +519,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                             )}
                                         </div>
 
-                                        {isLoadingExif ? (
+                                        {exifOpen && (isLoadingExif ? (
                                             <div className="flex items-center gap-2 text-slate-500 text-sm">
                                                 <Loader2 className="h-3 w-3 animate-spin" />
                                                 Loading EXIF...
@@ -556,7 +565,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                             <div className="text-xs text-slate-500 italic p-3 bg-slate-900/30 rounded-lg border border-slate-800/50">
                                                 No EXIF data found.
                                             </div>
-                                        )}
+                                        ))}
                                     </div>
                                 )}
 

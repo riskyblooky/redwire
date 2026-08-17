@@ -341,7 +341,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             <MarkdownPreview value={testcase.expected_result || 'None'} theme="dark" />
                                         </div>
                                     </section>
-                                    <CustomFieldsDisplay entity="testcase" value={testcase.custom_fields} className="pt-2" />
+                                    <CustomFieldsDisplay entity="testcase" value={testcase.custom_fields} className="pt-2" collapsible defaultCollapsed />
                                 </div>
                             </CardContent>
                         </Card>

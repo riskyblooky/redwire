@@ -2,8 +2,7 @@
 
 import { Label } from '@/components/ui/label';
 import { ShieldAlert } from 'lucide-react';
-import { useEngagement } from '@/lib/hooks/use-engagements';
-import { useMarkingProfiles } from '@/lib/hooks/use-marking-profiles';
+import { useEngagementMarkingProfile } from '@/lib/hooks/use-marking-profiles';
 import { ClassificationPicker } from './classification-picker';
 
 interface Props {
@@ -30,16 +29,10 @@ export function EntityClassificationField({
     inheritLabel = 'Inherit',
     label = 'Classification',
 }: Props) {
-    const { data: engagement } = useEngagement(engagementId || '');
-    const { data: profiles = [] } = useMarkingProfiles();
-
-    // Only show when the engagement has its OWN marking profile selected —
-    // no fallback to the default profile. No profile = no marking controls.
-    const profile = engagement?.marking_profile_id
-        ? profiles.find((p) => p.id === engagement.marking_profile_id)
-        : undefined;
-
-    if (!profile || profile.levels.length === 0) return null;
+    // Only show when the engagement has its OWN marking profile selected (with
+    // levels). No profile = no marking controls.
+    const profile = useEngagementMarkingProfile(engagementId);
+    if (!profile) return null;
 
     return (
         <div className="space-y-1.5">
