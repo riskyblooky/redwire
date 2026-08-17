@@ -27,6 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useFindings, useDeleteFinding } from '@/lib/hooks/use-findings';
+import { useInfiniteScroll } from '@/lib/hooks/use-infinite-scroll';
 import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -455,6 +456,8 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
             }
         ));
 
+    const { visible: visibleFindings, sentinelRef, hasMore } = useInfiniteScroll(sortedFindings);
+
     return (
         <>
         <Card className="border-slate-800 bg-slate-900/50">
@@ -616,7 +619,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {sortedFindings.map((finding) => (
+                            {visibleFindings.map((finding) => (
                                 <FindingRow
                                     key={finding.id}
                                     finding={finding}
@@ -633,6 +636,11 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                             ))}
                         </TableBody>
                     </Table>
+                )}
+                {hasMore && (
+                    <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-4 text-xs text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Loading more… ({visibleFindings.length} of {sortedFindings.length})
+                    </div>
                 )}
             </CardContent>
         </Card>

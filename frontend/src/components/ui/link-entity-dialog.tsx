@@ -120,7 +120,11 @@ export function LinkEntityDialog({
     const intelInfraCompat = (entityType === 'finding' || entityType === 'testcase')
         ? entityType
         : 'finding';
-    const intelInfraId = (entityType === 'finding' || entityType === 'testcase') ? entityId : '';
+    // Gate on `open` too: this dialog is mounted once per row (closed), so an
+    // ungated entityId would fire /intel/by-entity + /infra/by-entity for every
+    // row on the tab (the N+1 "by-entity spam"). Empty id → hooks stay disabled
+    // until the dialog is actually opened for one entity.
+    const intelInfraId = (open && (entityType === 'finding' || entityType === 'testcase')) ? entityId : '';
     const { data: linkedIntelItems = [] } = useIntelByEntity(intelInfraCompat as any, intelInfraId);
     const linkIntel = useLinkIntel();
     const unlinkIntel = useUnlinkIntel();

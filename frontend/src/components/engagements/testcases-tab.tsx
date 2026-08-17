@@ -102,6 +102,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { TestCaseDetailSheet } from '@/components/engagements/testcase-detail-sheet';
 import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
+import { useInfiniteScroll } from '@/lib/hooks/use-infinite-scroll';
 import {
     DndContext,
     closestCenter,
@@ -525,6 +526,11 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
     const collapseAllTc = () => { setTcExpandedIds(new Set()); };
 
     const isTreeView = !search && !hasActiveFilters && sortField === 'title' && sortOrder === 'asc';
+    // Window the (already tree-flattened, collapsed-children-excluded) list.
+    // Reset on search/sort/view — NOT on expand/collapse (which also changes length).
+    const { visible: visibleTestCases, sentinelRef, hasMore } = useInfiniteScroll(displayTestCases, {
+        resetKey: `${search}|${sortField}|${sortOrder}|${isTreeView}`,
+    });
 
     // DnD
     const tcDndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -752,7 +758,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                     <div className="text-center py-8 text-slate-400"><CheckSquare className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>No test cases defined</p></div>
                 ) : (
                     <DndContext sensors={tcDndSensors} collisionDetection={closestCenter} onDragStart={handleTcDragStart} onDragEnd={handleTcDragEnd}>
-                        <SortableContext items={displayTestCases.map(tc => tc.id)} strategy={verticalListSortingStrategy}>
+                        <SortableContext items={visibleTestCases.map(tc => tc.id)} strategy={verticalListSortingStrategy}>
                             <Table>
                                 <TableHeader>
                                     <TableRow className="border-slate-800">
@@ -769,12 +775,17 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {displayTestCases.map(tc => (
+                                    {visibleTestCases.map(tc => (
                                         <TestCaseRow key={tc.id} testcase={tc} engagementId={engagementId} depth={isTreeView ? tc.depth : 0} hasChildren={isTreeView && tc.children.length > 0} isExpanded={tcExpandedIds.has(tc.id)} onToggleExpand={toggleTcExpand} onAddVaultItem={onAddVaultItem} onAddCleanup={onAddCleanup} onAddFinding={onAddFinding} onLinkAsset={onLinkAsset} onLinkIntel={onLinkIntel} onLinkInfra={onLinkInfra} onMove={handleOpenMove} noteItems={notesByTestCase[tc.id] || []} isDraggable={isTreeView} col={col} onViewDetail={handleTestcaseClick} />
                                     ))}
                                 </TableBody>
                             </Table>
                         </SortableContext>
+                        {hasMore && (
+                            <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-4 text-xs text-slate-500">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Loading more… ({visibleTestCases.length} of {displayTestCases.length})
+                            </div>
+                        )}
                         <DragOverlay>
                             {activeDragId ? (<div className="bg-slate-800 border border-primary/50 rounded-lg px-4 py-2 shadow-xl shadow-primary/20 text-sm text-white font-medium">{testcases.find(tc => tc.id === activeDragId)?.title || 'Test Case'}</div>) : null}
                         </DragOverlay>
