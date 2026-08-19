@@ -266,4 +266,6 @@ Contributions are welcome.
 
 ## License
 
-See [LICENSE](LICENSE) for the full license text.
+RedWire is licensed under the [Apache License, Version 2.0](LICENSE). See
+[LICENSE](LICENSE) for the full license text and [NOTICE](NOTICE) for
+attribution notices.
