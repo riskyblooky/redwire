@@ -4,6 +4,41 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.4.0] — 2026-08-19
+
+### License
+- **RedWire is now licensed under Apache 2.0** (previously SSPL v1), and ships a
+  NOTICE file. RedWire may now be used, modified, and redistributed — including
+  in closed-source and commercial deployments — under Apache-2.0's permissive
+  terms.
+
+### Added
+- **In-app help** — a `/help` guide hub with **User**, **Admin**, and **Plugins**
+  guides (deep-linkable sections, live Mermaid diagrams, real in-app icons), plus
+  a page-aware **?** button in the header that explains the current page and links
+  into the relevant guide.
+- **What's New** — the changelog is now reachable from the user menu.
+- **Calendar timeline** — the planning timeline gains a **Calendar / Gantt toggle**
+  and a custom **date-range filter**, with month navigation and per-day
+  engagement chips.
+
+### Improved
+- **Custom-field editing** — text fields now edit with the rich Markdown editor
+  and render as Markdown; findings and test-case edit pages moved custom fields
+  into their own tab; custom-field sections (and evidence EXIF) collapse by
+  default on detail views.
+- **Faster large lists** — the Findings and Test Cases tabs use infinite scroll
+  (the first page renders immediately, more stream in as you scroll) and no
+  longer fire redundant per-row requests.
+- **Faster engagement pages** — detail tabs load lazily via count/link endpoints,
+  and profile-photo fetches are deduped and cached.
+- **MCP server** migrated to the MCP 2.0 SDK.
+
+### Fixed
+- Findings tab now shows linked **test cases** in the links column.
+- The Classification Marking card no longer renders empty on the edit-test-case
+  page when no marking profile applies.
+
 ## [1.3.0] — 2026-08-13
 
 A large feature release.
