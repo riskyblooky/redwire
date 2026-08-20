@@ -22,6 +22,10 @@ section becomes one release entry.
   title and message in a tooltip, instead of the truncated preview.
 
 ### Fixed
+- **Template preview** — the finding/test-case preview modal now shows all
+  content fields: findings gained the missing **References** and **Attack
+  Techniques** sections, test cases gained **Attack Techniques**. All text
+  fields render through the Markdown viewer.
 - **Automations** — a "finding status changed" rule (e.g. "when a critical
   finding is marked Verified") no longer fires when a finding is first
   **created**, or when a finding is edited without changing its status. The

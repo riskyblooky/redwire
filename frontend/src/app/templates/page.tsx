@@ -80,6 +80,7 @@ import { relevanceComparator } from '@/lib/search-relevance';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
+import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -121,6 +122,7 @@ import {
     FileText,
     ClipboardList,
     ShieldAlert,
+    Shield,
     GitBranch,
     ChevronRight,
     ChevronLeft,
@@ -1770,6 +1772,30 @@ export default function TemplatesPage() {
                                         </div>
                                     </div>
                                 )}
+                                {viewingFT.references && (
+                                    <div>
+                                        <Label className="text-slate-400 text-xs uppercase tracking-wide">References</Label>
+                                        <div className="mt-1 rounded-lg bg-slate-800/30 p-4 border border-slate-800">
+                                            <MarkdownPreview value={viewingFT.references} />
+                                        </div>
+                                    </div>
+                                )}
+                                {(viewingFT.attack_technique_ids?.length ?? 0) > 0 && (
+                                    <div>
+                                        <Label className="text-slate-400 text-xs uppercase tracking-wide">Attack Techniques</Label>
+                                        <div className="mt-1 flex flex-wrap gap-1.5">
+                                            {viewingFT.attack_technique_ids.map(id => {
+                                                const tech = TECHNIQUE_MAP.get(id);
+                                                return (
+                                                    <Badge key={id} variant="secondary" className="bg-purple-500/15 text-purple-400 border-purple-500/30 gap-1 text-xs">
+                                                        <Shield className="h-3 w-3 shrink-0" />
+                                                        {tech ? `${tech.id} ${tech.name}` : id}
+                                                    </Badge>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                         <DialogFooter>
@@ -1890,6 +1916,22 @@ export default function TemplatesPage() {
                                         <Label className="text-slate-400 text-xs uppercase tracking-wide">Expected Result</Label>
                                         <div className="mt-1 rounded-lg bg-slate-800/30 p-4 border border-slate-800">
                                             <MarkdownPreview value={viewingTC.expected_result} />
+                                        </div>
+                                    </div>
+                                )}
+                                {(viewingTC.attack_technique_ids?.length ?? 0) > 0 && (
+                                    <div>
+                                        <Label className="text-slate-400 text-xs uppercase tracking-wide">Attack Techniques</Label>
+                                        <div className="mt-1 flex flex-wrap gap-1.5">
+                                            {viewingTC.attack_technique_ids.map(id => {
+                                                const tech = TECHNIQUE_MAP.get(id);
+                                                return (
+                                                    <Badge key={id} variant="secondary" className="bg-purple-500/15 text-purple-400 border-purple-500/30 gap-1 text-xs">
+                                                        <Shield className="h-3 w-3 shrink-0" />
+                                                        {tech ? `${tech.id} ${tech.name}` : id}
+                                                    </Badge>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
