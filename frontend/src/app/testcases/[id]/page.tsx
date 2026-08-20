@@ -41,6 +41,7 @@ import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { UserName } from '@/components/ui/user-name';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -787,9 +788,13 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                     username={testcase.created_by_username || testcase.created_by}
                                                     className="h-5 w-5"
                                                 />
-                                                <span className="text-slate-300 font-mono">
-                                                    {engagement?.assigned_users?.find((u: any) => u.id === testcase.created_by)?.username || testcase.created_by_username || testcase.created_by?.slice(0, 8)}
-                                                </span>
+                                                <UserName
+                                                    className="text-slate-300"
+                                                    user={engagement?.assigned_users?.find((u: any) => u.id === testcase.created_by)}
+                                                    name={testcase.created_by_full_name}
+                                                    username={testcase.created_by_username}
+                                                    fallback={testcase.created_by?.slice(0, 8)}
+                                                />
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between text-[10px]">

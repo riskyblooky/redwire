@@ -40,6 +40,7 @@ async def get_testcases(
     query = select(
         TestCase,
         User.username.label("creator_username"),
+        User.full_name.label("creator_full_name"),
         User.profile_photo.label("creator_profile_photo"),
         func.count(Thread.id).filter(Thread.is_resolved == False).label("unresolved_count")
     ).outerjoin(
@@ -48,7 +49,7 @@ async def get_testcases(
     ).outerjoin(
         User,
         TestCase.created_by == User.id
-    ).group_by(TestCase.id, User.username, User.profile_photo)
+    ).group_by(TestCase.id, User.username, User.full_name, User.profile_photo)
     
     if engagement_id:
         query = query.where(TestCase.engagement_id == engagement_id)
@@ -79,10 +80,11 @@ async def get_testcases(
                 port_ids_by_testcase.setdefault(tca.testcase_id, {})[tca.asset_id] = pids
 
     testcases_with_counts = []
-    for testcase, creator_username, creator_profile_photo, unresolved_count in rows:
+    for testcase, creator_username, creator_full_name, creator_profile_photo, unresolved_count in rows:
         testcase_dict = TestCaseResponse.model_validate(testcase).model_dump()
         testcase_dict["unresolved_thread_count"] = unresolved_count or 0
         testcase_dict["created_by_username"] = creator_username
+        testcase_dict["created_by_full_name"] = creator_full_name
         testcase_dict["created_by_profile_photo"] = creator_profile_photo
         testcase_dict["attack_technique_ids"] = [
             at.technique_id for at in (testcase.attack_techniques or [])
@@ -103,7 +105,7 @@ async def get_testcase(
 ):
     """Get a specific test case by ID"""
     result = await db.execute(
-        select(TestCase, User.username, User.profile_photo)
+        select(TestCase, User.username, User.full_name, User.profile_photo)
         .outerjoin(User, TestCase.created_by == User.id)
         .where(TestCase.id == testcase_id)
         .options(selectinload(TestCase.findings), selectinload(TestCase.tags))
@@ -116,7 +118,7 @@ async def get_testcase(
             detail="Test case not found"
         )
     
-    testcase, creator_username, creator_profile_photo = row
+    testcase, creator_username, creator_full_name, creator_profile_photo = row
     
     # Authorization Check using RBAC
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
@@ -131,6 +133,7 @@ async def get_testcase(
     
     testcase_dict = TestCaseResponse.model_validate(testcase).model_dump()
     testcase_dict["created_by_username"] = creator_username
+    testcase_dict["created_by_full_name"] = creator_full_name
     testcase_dict["created_by_profile_photo"] = creator_profile_photo
     testcase_dict["attack_technique_ids"] = [
         at.technique_id for at in (testcase.attack_techniques or [])

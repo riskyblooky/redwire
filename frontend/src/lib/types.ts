@@ -172,6 +172,7 @@ export interface Finding {
     created_by: string;
     updated_by?: string;
     created_by_username?: string;
+    created_by_full_name?: string;
     created_by_profile_photo?: string;
     created_at: string;
     updated_at: string;
@@ -211,6 +212,7 @@ export interface Asset {
     created_by: string;
     updated_by?: string;
     created_by_username?: string;
+    created_by_full_name?: string;
     created_by_profile_photo?: string;
     unresolved_thread_count?: number;
     cleanup_artifacts?: any[];
@@ -237,6 +239,7 @@ export interface Evidence {
     updated_at: string;
     created_by: string;
     created_by_username?: string;
+    created_by_full_name?: string;
     created_by_profile_photo?: string;
     updated_by?: string;
     unresolved_thread_count?: number;
@@ -264,6 +267,7 @@ export interface TestCase {
     created_by: string;
     updated_by?: string;
     created_by_username?: string;
+    created_by_full_name?: string;
     created_by_profile_photo?: string;
     unresolved_thread_count?: number;
     evidence?: Evidence[];

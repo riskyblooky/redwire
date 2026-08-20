@@ -36,6 +36,7 @@ import {
 } from '@/lib/hooks/use-entity-links';
 import { toast } from 'sonner';
 import { cn, parseUTCDate } from '@/lib/utils';
+import { UserName } from '@/components/ui/user-name';
 import Link from 'next/link';
 
 // ── colour maps ──────────────────────────────────────────────────────
@@ -605,7 +606,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <User className="h-3 w-3" /> Created By
                                         </span>
-                                        <span className="text-slate-300 font-mono">{testcase.created_by_username || testcase.created_by?.slice(0, 8)}</span>
+                                        <UserName className="text-slate-300" name={testcase.created_by_full_name} username={testcase.created_by_username} fallback={testcase.created_by?.slice(0, 8)} />
                                     </div>
                                     <div className="flex items-center justify-between text-[10px]">
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">

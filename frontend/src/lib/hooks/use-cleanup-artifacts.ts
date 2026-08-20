@@ -19,6 +19,7 @@ export interface CleanupArtifact {
     updated_at: string;
     created_by: string;
     created_by_username?: string;
+    created_by_full_name?: string;
     created_by_profile_photo?: string;
     updated_by?: string;
     findings?: { id: string; title: string; severity: string }[];

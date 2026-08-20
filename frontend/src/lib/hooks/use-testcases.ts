@@ -22,6 +22,7 @@ export interface TestCase {
     created_by: string;
     unresolved_thread_count?: number;
     created_by_username?: string;
+    created_by_full_name?: string;
     created_by_profile_photo?: string;
     findings?: { id: string; title: string; severity: string }[];
     vault_items?: { id: string; name: string; item_type: string }[];

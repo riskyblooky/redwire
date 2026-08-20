@@ -43,6 +43,7 @@ import DiscussionSection from '@/components/discussions/discussion-section';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { UserName } from '@/components/ui/user-name';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-modal';
@@ -701,9 +702,13 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                                 username={asset.created_by_username || asset.created_by}
                                                 className="h-5 w-5"
                                             />
-                                            <span className="text-slate-300 font-mono">
-                                                {engagement?.assigned_users?.find((u: any) => u.id === asset.created_by)?.username || asset.created_by_username || asset.created_by?.slice(0, 8)}
-                                            </span>
+                                            <UserName
+                                                className="text-slate-300"
+                                                user={engagement?.assigned_users?.find((u: any) => u.id === asset.created_by)}
+                                                name={asset.created_by_full_name}
+                                                username={asset.created_by_username}
+                                                fallback={asset.created_by?.slice(0, 8)}
+                                            />
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-between text-[10px]">

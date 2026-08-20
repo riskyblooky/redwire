@@ -61,6 +61,7 @@ import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { StickyNote } from 'lucide-react';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { displayNameFrom } from '@/lib/display-name';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { useAuthStore } from '@/stores/auth-store';
@@ -771,6 +772,7 @@ function ArtifactRow({
                                 <UserAvatar
                                     user={{
                                         id: artifact.created_by,
+                                        full_name: artifact.created_by_full_name,
                                         username: artifact.created_by_username || 'System',
                                         profile_photo: artifact.created_by_profile_photo,
                                     }}
@@ -779,7 +781,7 @@ function ArtifactRow({
                             </div>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                            <span className="text-xs">{artifact.created_by_username || 'System'}</span>
+                            <span className="text-xs">{displayNameFrom(artifact.created_by_full_name, artifact.created_by_username, 'System')}</span>
                         </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>

@@ -15,6 +15,7 @@ import {
     Bug, CheckSquare, Server, Calendar, User, Loader2,
 } from 'lucide-react';
 import { cn, parseUTCDate } from '@/lib/utils';
+import { UserName } from '@/components/ui/user-name';
 
 const ARTIFACT_TYPES: Record<string, { label: string; icon: any; color: string; bg: string; border: string }> = {
     SSH_KEY: { label: 'SSH Key', icon: Key, color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
@@ -173,7 +174,7 @@ export function CleanupDetailModal({ artifact: partialArtifact, open, onOpenChan
                                 <h4 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Created</h4>
                                 <div className="flex items-center gap-1.5 text-slate-400">
                                     <User className="h-3 w-3" />
-                                    <span>{artifact?.created_by_username || 'Unknown'}</span>
+                                    <UserName name={artifact?.created_by_full_name} username={artifact?.created_by_username} fallback="Unknown" />
                                 </div>
                                 <div className="flex items-center gap-1.5 text-slate-500">
                                     <Calendar className="h-3 w-3" />

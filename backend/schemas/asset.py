@@ -110,6 +110,7 @@ class AssetResponse(AssetBase):
     created_by: str
     updated_by: Optional[str] = None
     created_by_username: Optional[str] = None
+    created_by_full_name: Optional[str] = None
     created_by_profile_photo: Optional[str] = None
     unresolved_thread_count: int = 0
     cleanup_artifacts: List[LinkedCleanupArtifactResponse] = []

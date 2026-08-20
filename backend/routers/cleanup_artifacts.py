@@ -81,7 +81,7 @@ async def get_cleanup_artifacts(
             )
 
     result = await db.execute(
-        select(CleanupArtifact, User.username.label("creator_username"), User.profile_photo.label("creator_profile_photo"))
+        select(CleanupArtifact, User.username.label("creator_username"), User.full_name.label("creator_full_name"), User.profile_photo.label("creator_profile_photo"))
         .outerjoin(User, CleanupArtifact.created_by == User.id)
         .options(
             selectinload(CleanupArtifact.findings),
@@ -94,9 +94,10 @@ async def get_cleanup_artifacts(
     )
 
     items = []
-    for artifact, creator_username, creator_profile_photo in result.all():
+    for artifact, creator_username, creator_full_name, creator_profile_photo in result.all():
         item_dict = CleanupArtifactResponse.model_validate(artifact).model_dump()
         item_dict["created_by_username"] = creator_username
+        item_dict["created_by_full_name"] = creator_full_name
         item_dict["created_by_profile_photo"] = creator_profile_photo
         if artifact.cleaned_by_user:
             item_dict["cleaned_by_username"] = artifact.cleaned_by_user.username
@@ -113,7 +114,7 @@ async def get_cleanup_artifact(
 ):
     """Get a single cleanup artifact by ID."""
     result = await db.execute(
-        select(CleanupArtifact, User.username.label("creator_username"), User.profile_photo.label("creator_profile_photo"))
+        select(CleanupArtifact, User.username.label("creator_username"), User.full_name.label("creator_full_name"), User.profile_photo.label("creator_profile_photo"))
         .outerjoin(User, CleanupArtifact.created_by == User.id)
         .options(
             selectinload(CleanupArtifact.findings),
@@ -128,10 +129,11 @@ async def get_cleanup_artifact(
     if not row:
         raise HTTPException(status_code=404, detail="Cleanup artifact not found")
 
-    artifact, creator_username, creator_profile_photo = row
+    artifact, creator_username, creator_full_name, creator_profile_photo = row
     await _require_artifact_view(artifact, current_user, db)
     item_dict = CleanupArtifactResponse.model_validate(artifact).model_dump()
     item_dict["created_by_username"] = creator_username
+    item_dict["created_by_full_name"] = creator_full_name
     item_dict["created_by_profile_photo"] = creator_profile_photo
     if artifact.cleaned_by_user:
         item_dict["cleaned_by_username"] = artifact.cleaned_by_user.username

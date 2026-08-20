@@ -54,6 +54,7 @@ import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { MoveTestCaseDialog } from '@/components/ui/move-testcase-dialog';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { displayNameFrom } from '@/lib/display-name';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -276,7 +277,7 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                     ) : <span className="text-slate-600 text-sm">—</span>}
                 </TableCell>}
                 {col('createdBy') && <TableCell className="text-slate-300 text-sm">
-                    <RadixTooltipProvider delayDuration={200}><RadixTooltip><RadixTooltipTrigger asChild><div className="w-fit"><UserAvatar user={{ id: testcase.created_by, username: testcase.created_by_username || 'System', profile_photo: testcase.created_by_profile_photo }} className="h-7 w-7" /></div></RadixTooltipTrigger><RadixTooltipContent side="top"><span className="text-xs">{testcase.created_by_username || 'System'}</span></RadixTooltipContent></RadixTooltip></RadixTooltipProvider>
+                    <RadixTooltipProvider delayDuration={200}><RadixTooltip><RadixTooltipTrigger asChild><div className="w-fit"><UserAvatar user={{ id: testcase.created_by, full_name: testcase.created_by_full_name, username: testcase.created_by_username || 'System', profile_photo: testcase.created_by_profile_photo }} className="h-7 w-7" /></div></RadixTooltipTrigger><RadixTooltipContent side="top"><span className="text-xs">{displayNameFrom(testcase.created_by_full_name, testcase.created_by_username, 'System')}</span></RadixTooltipContent></RadixTooltip></RadixTooltipProvider>
                 </TableCell>}
                 {col('created') && <TableCell className="text-slate-400">
                     <RadixTooltipProvider delayDuration={200}>

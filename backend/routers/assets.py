@@ -718,6 +718,7 @@ async def get_assets(
     query = select(
         Asset,
         User.username.label("creator_username"),
+        User.full_name.label("creator_full_name"),
         User.profile_photo.label("creator_profile_photo"),
         func.count(Thread.id).filter(Thread.is_resolved == False).label("unresolved_count")
     ).outerjoin(
@@ -726,7 +727,7 @@ async def get_assets(
     ).outerjoin(
         User,
         Asset.created_by == User.id
-    ).group_by(Asset.id, User.username, User.profile_photo)
+    ).group_by(Asset.id, User.username, User.full_name, User.profile_photo)
     
     if engagement_id:
         query = query.where(Asset.engagement_id == engagement_id)
@@ -800,10 +801,11 @@ async def get_assets(
     
     result = await db.execute(query)
     assets_with_counts = []
-    for asset, creator_username, creator_profile_photo, unresolved_count in result.all():
+    for asset, creator_username, creator_full_name, creator_profile_photo, unresolved_count in result.all():
         asset_dict = AssetResponse.model_validate(asset).model_dump()
         asset_dict["unresolved_thread_count"] = unresolved_count or 0
         asset_dict["created_by_username"] = creator_username
+        asset_dict["created_by_full_name"] = creator_full_name
         asset_dict["created_by_profile_photo"] = creator_profile_photo
         assets_with_counts.append(asset_dict)
     
@@ -817,7 +819,7 @@ async def get_asset(
 ):
     """Get a specific asset by ID"""
     result = await db.execute(
-        select(Asset, User.username, User.profile_photo)
+        select(Asset, User.username, User.full_name, User.profile_photo)
         .options(
             selectinload(Asset.findings),
             selectinload(Asset.testcases),
@@ -836,7 +838,7 @@ async def get_asset(
             detail="Asset not found"
         )
     
-    asset, creator_username, creator_profile_photo = row
+    asset, creator_username, creator_full_name, creator_profile_photo = row
     
     # Authorization Check using RBAC
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
@@ -850,6 +852,7 @@ async def get_asset(
     
     asset_dict = AssetResponse.model_validate(asset).model_dump()
     asset_dict["created_by_username"] = creator_username
+    asset_dict["created_by_full_name"] = creator_full_name
     asset_dict["created_by_profile_photo"] = creator_profile_photo
     return AssetResponse(**asset_dict)
 

@@ -73,6 +73,7 @@ class CleanupArtifactResponse(CleanupArtifactBase):
     created_by: str
     updated_by: Optional[str] = None
     created_by_username: Optional[str] = None
+    created_by_full_name: Optional[str] = None
     created_by_profile_photo: Optional[str] = None
     cleaned_by_username: Optional[str] = None
     findings: List[LinkedFindingSummary] = []

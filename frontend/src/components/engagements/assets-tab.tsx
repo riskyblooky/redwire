@@ -41,6 +41,7 @@ import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permiss
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { displayNameFrom } from '@/lib/display-name';
 import { AssetImportDialog } from '@/components/engagements/asset-import-dialog';
 import { AssetDetailSheet } from '@/components/engagements/asset-detail-sheet';
 import { formatDistanceToNow } from 'date-fns';
@@ -287,10 +288,10 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
                         <RadixTooltip>
                             <RadixTooltipTrigger asChild>
                                 <div className="w-fit">
-                                    <UserAvatar user={{ id: asset.created_by, username: asset.created_by_username || 'System', profile_photo: asset.created_by_profile_photo }} className="h-7 w-7" />
+                                    <UserAvatar user={{ id: asset.created_by, full_name: asset.created_by_full_name, username: asset.created_by_username || 'System', profile_photo: asset.created_by_profile_photo }} className="h-7 w-7" />
                                 </div>
                             </RadixTooltipTrigger>
-                            <RadixTooltipContent side="top"><span className="text-xs">{asset.created_by_username || 'System'}</span></RadixTooltipContent>
+                            <RadixTooltipContent side="top"><span className="text-xs">{displayNameFrom(asset.created_by_full_name, asset.created_by_username, 'System')}</span></RadixTooltipContent>
                         </RadixTooltip>
                     </RadixTooltipProvider>
                 </TableCell>}
