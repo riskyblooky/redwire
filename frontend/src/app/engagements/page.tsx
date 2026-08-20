@@ -41,6 +41,7 @@ import {
 import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
 import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X, KeyRound } from 'lucide-react';
 import { useEngagementsPage, useDeleteEngagement } from '@/lib/hooks/use-engagements';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
@@ -291,16 +292,19 @@ export default function EngagementsPage() {
     // All-access users (admins / team leads) can narrow the list to just the
     // engagements they're assigned to.
     const [showMine, setShowMine] = useState<boolean>(false);
+    // Debounce the search so typing fires one request after a pause, not one
+    // per keystroke. The input stays bound to searchTerm for instant feedback.
+    const debouncedSearch = useDebounce(searchTerm, 300);
     useEffect(() => {
         setPage(1);
-    }, [showProposed, showMine, pageSize, searchTerm, statusFilter, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
+    }, [showProposed, showMine, pageSize, debouncedSearch, statusFilter, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
 
     const engagementsQuery = useEngagementsPage({
         includeProposed: canSeeProposed && showProposed,
         mine: canSeeProposed && showMine,
         page,
         pageSize,
-        q: searchTerm,
+        q: debouncedSearch,
         status: statusFilter,
         type: typeFilter,
         startDateFrom: dateFrom,

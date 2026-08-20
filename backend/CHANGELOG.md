@@ -7,6 +7,8 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Engagements search** is now debounced (300ms), firing one request after you
+  pause instead of one per keystroke — matching the Template Library search.
 - **Template Library** — finding, test-case, and runbook lists are now
   **server-paged** with page controls, and search / status / category /
   "mine only" filters query the **full** library on the server (live search)
