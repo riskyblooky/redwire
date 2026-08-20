@@ -7,6 +7,11 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Friendly names everywhere** — the UI now shows a user's full name (falling
+  back to their username) instead of the raw username, with the `@username`
+  shown on hover. Applied across creator labels (findings, test cases, assets,
+  cleanup, evidence, scan imports), the activity feed & logs, comments,
+  notifications, and user pickers; avatar initials now use the full name too.
 - **Planning inspector** — the selected engagement's team is now grouped by
   **engagement role** (Leads first, then other roles, unassigned last) instead
   of one flat list.
