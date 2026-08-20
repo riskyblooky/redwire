@@ -21,12 +21,14 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
     Search, BookOpen, Loader2, FileText, ChevronLeft, ChevronRight,
-    Filter, Check, ChevronsUpDown, X,
+    Filter, Check, ChevronsUpDown, X, Eye, Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
+import { MarkdownPreview } from '@/components/ui/markdown-editor';
+import { TECHNIQUE_MAP } from '@/lib/attack-data';
 
 const PAGE_SIZE = 25;
 
@@ -74,6 +76,7 @@ export function TemplatePickerDialog({
     const [includeNonPublished, setIncludeNonPublished] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [catOpen, setCatOpen] = useState(false);
+    const [previewing, setPreviewing] = useState<PickerTemplate | null>(null);
 
     const endpoint = resource === 'finding' ? '/templates' : '/testcase-templates';
 
@@ -161,6 +164,7 @@ export function TemplatePickerDialog({
             : `${categories.length} categories`;
 
     return (
+        <>
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-[820px] p-0 gap-0 overflow-hidden max-h-[85vh] flex flex-col top-[7vh] translate-y-0 data-[state=open]:slide-in-from-top-[7%] data-[state=closed]:slide-out-to-top-[7%]">
                 <div className="p-6 pb-4 space-y-3 shrink-0">
@@ -299,26 +303,37 @@ export function TemplatePickerDialog({
                                                     <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed group-hover:text-slate-400">{stripHtml(t.description)}</p>
                                                 )}
                                             </div>
-                                            {t.category && (
+                                            <div className="flex flex-col items-end gap-1.5 shrink-0">
                                                 <span
                                                     role="button"
                                                     tabIndex={0}
-                                                    onClick={(e) => { e.stopPropagation(); const c = t.category!; setCategories(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]); setShowFilters(true); }}
-                                                    title={`Filter by ${t.category.replace(/_/g, ' ')}`}
-                                                    className="shrink-0 mt-0.5 cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); setPreviewing(t); }}
+                                                    title="Preview template"
+                                                    className="text-slate-500 hover:text-white cursor-pointer"
                                                 >
-                                                    <Badge
-                                                        variant="outline"
-                                                        className={cn(
-                                                            'text-[9px] px-1.5 py-0 h-5 transition-opacity hover:opacity-80',
-                                                            categories.includes(t.category) && 'ring-1 ring-inset ring-current',
-                                                        )}
-                                                        style={{ backgroundColor: `${catColor}15`, color: catColor, borderColor: `${catColor}40` }}
-                                                    >
-                                                        {t.category.replace(/_/g, ' ')}
-                                                    </Badge>
+                                                    <Eye className="h-3.5 w-3.5" />
                                                 </span>
-                                            )}
+                                                {t.category && (
+                                                    <span
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onClick={(e) => { e.stopPropagation(); const c = t.category!; setCategories(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]); setShowFilters(true); }}
+                                                        title={`Filter by ${t.category.replace(/_/g, ' ')}`}
+                                                        className="cursor-pointer"
+                                                    >
+                                                        <Badge
+                                                            variant="outline"
+                                                            className={cn(
+                                                                'text-[9px] px-1.5 py-0 h-5 transition-opacity hover:opacity-80',
+                                                                categories.includes(t.category) && 'ring-1 ring-inset ring-current',
+                                                            )}
+                                                            style={{ backgroundColor: `${catColor}15`, color: catColor, borderColor: `${catColor}40` }}
+                                                        >
+                                                            {t.category.replace(/_/g, ' ')}
+                                                        </Badge>
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </button>
                                 );
@@ -345,5 +360,68 @@ export function TemplatePickerDialog({
                 )}
             </DialogContent>
         </Dialog>
+
+        {/* Template preview modal */}
+        <Dialog open={!!previewing} onOpenChange={(o) => !o && setPreviewing(null)}>
+            <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-[640px] max-h-[85vh] overflow-y-auto top-[7vh] translate-y-0">
+                {previewing && (
+                    <>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-base">
+                                <FileText className="h-5 w-5 text-indigo-400 shrink-0" />
+                                <span className="min-w-0 truncate">{previewing.title}</span>
+                                {previewing.status && previewing.status !== 'PUBLISHED' && (
+                                    <Badge variant="outline" className={cn('text-[9px] h-4 px-1.5 uppercase tracking-wider shrink-0', STATUS_PILL[previewing.status].cls)}>
+                                        {STATUS_PILL[previewing.status].label}
+                                    </Badge>
+                                )}
+                            </DialogTitle>
+                            {previewing.category && (() => {
+                                const c = categoryColors[previewing.category] || '#6366f1';
+                                return (
+                                    <Badge variant="outline" className="w-fit text-[10px] px-1.5 h-5 mt-1" style={{ backgroundColor: `${c}15`, color: c, borderColor: `${c}40` }}>
+                                        {previewing.category.replace(/_/g, ' ')}
+                                    </Badge>
+                                );
+                            })()}
+                        </DialogHeader>
+                        <div className="space-y-4">
+                            {([
+                                ['Description', previewing.description],
+                                ['Impact', previewing.impact],
+                                ['Steps', previewing.steps],
+                                ['Expected Result', previewing.expected_result],
+                                ['Mitigations', previewing.mitigations],
+                                ['References', previewing.references],
+                            ] as [string, string | null | undefined][]).map(([label, value]) => value ? (
+                                <div key={label}>
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">{label}</p>
+                                    <div className="rounded-lg bg-slate-800/30 p-3 border border-slate-800">
+                                        <MarkdownPreview value={value} />
+                                    </div>
+                                </div>
+                            ) : null)}
+                            {(previewing.attack_technique_ids?.length ?? 0) > 0 && (
+                                <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Attack Techniques</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {previewing.attack_technique_ids.map((id: string) => {
+                                            const tech = TECHNIQUE_MAP.get(id);
+                                            return (
+                                                <Badge key={id} variant="outline" className="bg-purple-500/15 text-purple-400 border-purple-500/30 gap-1 text-xs">
+                                                    <Shield className="h-3 w-3 shrink-0" />
+                                                    {tech ? `${tech.id} ${tech.name}` : id}
+                                                </Badge>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </>
+                )}
+            </DialogContent>
+        </Dialog>
+        </>
     );
 }
