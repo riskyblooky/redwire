@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.5.0] — Unreleased
+## [1.5.0] — 2026-08-20
 
 ### Improved
 - **Notification emails redesigned** — per-user notification and automation
