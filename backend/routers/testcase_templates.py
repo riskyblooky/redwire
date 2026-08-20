@@ -30,7 +30,7 @@ async def get_testcase_templates(
     response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    category: Optional[str] = Query(None),
+    category: Optional[List[str]] = Query(None),
     status_filter: Optional[TemplateStatus] = Query(None, alias="status"),
     q: Optional[str] = Query(None),
     mine_only: bool = Query(False),
@@ -65,7 +65,7 @@ async def get_testcase_templates(
 
     base = select(TestCaseTemplate).where(or_(*visibility))
     if category:
-        base = base.where(TestCaseTemplate.category == category)
+        base = base.where(TestCaseTemplate.category.in_(category))
     if status_filter:
         base = base.where(TestCaseTemplate.status == status_filter)
     if mine_only:

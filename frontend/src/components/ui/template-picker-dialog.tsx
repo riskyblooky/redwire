@@ -71,7 +71,7 @@ export function TemplatePickerDialog({
     const [search, setSearch] = useState('');
     const debouncedSearch = useDebounce(search, 300);
     const [page, setPage] = useState(0);
-    const [category, setCategory] = useState('');            // '' = all
+    const [categories, setCategories] = useState<string[]>([]);   // [] = all
     const [includeNonPublished, setIncludeNonPublished] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [catOpen, setCatOpen] = useState(false);
@@ -86,21 +86,22 @@ export function TemplatePickerDialog({
         return m;
     }, [categoryTypes]);
 
-    const activeFilterCount = (category ? 1 : 0) + (includeNonPublished ? 1 : 0);
+    const activeFilterCount = categories.length + (includeNonPublished ? 1 : 0);
 
     // Server-side search + paging (live). Only runs while the dialog is open.
     const query = useQuery({
-        queryKey: ['template-picker', resource, { q: debouncedSearch, category, includeNonPublished, page }],
+        queryKey: ['template-picker', resource, { q: debouncedSearch, categories, includeNonPublished, page }],
         queryFn: async () => {
-            const res = await api.get(endpoint, {
-                params: {
-                    q: debouncedSearch.trim() || undefined,
-                    category: category || undefined,
-                    status: includeNonPublished ? undefined : 'PUBLISHED',
-                    sort_by: 'title', sort_dir: 'asc',
-                    skip: page * PAGE_SIZE, limit: PAGE_SIZE,
-                },
-            });
+            // URLSearchParams so multi-category serializes as repeated ?category=A&category=B
+            const params = new URLSearchParams();
+            if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim());
+            categories.forEach(c => params.append('category', c));
+            if (!includeNonPublished) params.set('status', 'PUBLISHED');
+            params.set('sort_by', 'title');
+            params.set('sort_dir', 'asc');
+            params.set('skip', String(page * PAGE_SIZE));
+            params.set('limit', String(PAGE_SIZE));
+            const res = await api.get(`${endpoint}?${params.toString()}`);
             const total = Number(res.headers['x-total-count'] ?? res.data.length);
             return { items: res.data as PickerTemplate[], total };
         },
@@ -115,11 +116,11 @@ export function TemplatePickerDialog({
     const isLoading = query.isLoading;
 
     // Reset to page 0 when the query narrows/widens.
-    useEffect(() => { setPage(0); }, [debouncedSearch, category, includeNonPublished]);
+    useEffect(() => { setPage(0); }, [debouncedSearch, categories, includeNonPublished]);
 
     const handleOpenChange = (isOpen: boolean) => {
         if (!isOpen) {
-            setSearch(''); setPage(0); setCategory(''); setIncludeNonPublished(false); setShowFilters(false);
+            setSearch(''); setPage(0); setCategories([]); setIncludeNonPublished(false); setShowFilters(false);
         }
         onOpenChange(isOpen);
     };
@@ -130,7 +131,11 @@ export function TemplatePickerDialog({
     };
 
     const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
-    const categoryLabel = category ? category.replace(/_/g, ' ') : 'All categories';
+    const categoryLabel = categories.length === 0
+        ? 'All categories'
+        : categories.length === 1
+            ? categories[0].replace(/_/g, ' ')
+            : `${categories.length} categories`;
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -150,7 +155,7 @@ export function TemplatePickerDialog({
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                             <Input
                                 placeholder="Search by title, category, or description..."
-                                className="pl-10 h-10 bg-slate-950/50 border-slate-800 text-white rounded-lg focus:ring-primary/30 placeholder:text-slate-600"
+                                className="pl-11 h-12 text-base bg-slate-950/50 border-slate-800 text-white rounded-lg focus:ring-primary/30 placeholder:text-slate-600"
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                                 autoFocus
@@ -162,7 +167,7 @@ export function TemplatePickerDialog({
                             onClick={() => setShowFilters(o => !o)}
                             title={activeFilterCount > 0 ? `Filters — ${activeFilterCount} applied` : 'Filters'}
                             className={cn(
-                                'h-10 w-10 shrink-0',
+                                'h-12 w-12 shrink-0',
                                 activeFilterCount > 0
                                     ? 'text-primary bg-primary/10 hover:bg-primary/15'
                                     : 'text-slate-400 hover:text-white',
@@ -179,12 +184,12 @@ export function TemplatePickerDialog({
                                 <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Category</span>
                                 <Popover open={catOpen} onOpenChange={setCatOpen}>
                                     <PopoverTrigger asChild>
-                                        <Button variant="outline" role="combobox" className="h-8 w-56 justify-between bg-slate-800/50 border-slate-700 text-white font-normal hover:bg-slate-800 hover:text-white">
+                                        <Button variant="outline" role="combobox" className="h-10 w-72 justify-between bg-slate-800/50 border-slate-700 text-white font-normal hover:bg-slate-800 hover:text-white">
                                             <span className="flex items-center gap-2 min-w-0">
-                                                {category && (
-                                                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: categoryColors[category] || '#6366f1' }} />
+                                                {categories.length === 1 && (
+                                                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: categoryColors[categories[0]] || '#6366f1' }} />
                                                 )}
-                                                <span className={cn('truncate', !category && 'text-slate-500')}>{categoryLabel}</span>
+                                                <span className={cn('truncate', categories.length === 0 && 'text-slate-500')}>{categoryLabel}</span>
                                             </span>
                                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                         </Button>
@@ -192,27 +197,31 @@ export function TemplatePickerDialog({
                                     <PopoverContent className="p-0 bg-slate-900 border-slate-700" style={{ width: 'var(--radix-popover-trigger-width)' }} align="start">
                                         <Command className="bg-slate-900">
                                             <CommandInput placeholder="Search categories…" className="text-white" />
-                                            <CommandList className="max-h-64">
+                                            <CommandList className="max-h-80">
                                                 <CommandEmpty>No categories.</CommandEmpty>
                                                 <CommandGroup>
-                                                    <CommandItem value="__all__ All categories" onSelect={() => { setCategory(''); setCatOpen(false); }} className="text-slate-200">
-                                                        <Check className={cn('mr-2 h-3.5 w-3.5', !category ? 'opacity-100' : 'opacity-0')} />
-                                                        All categories
-                                                    </CommandItem>
-                                                    {categoryTypes.map((t: any) => (
-                                                        <CommandItem key={t.id ?? t.name} value={t.name} onSelect={() => { setCategory(t.name); setCatOpen(false); }} className="text-slate-200">
-                                                            <Check className={cn('mr-2 h-3.5 w-3.5', category === t.name ? 'opacity-100' : 'opacity-0')} />
-                                                            <span className="h-2 w-2 rounded-full mr-2 shrink-0" style={{ backgroundColor: t.color || '#6366f1' }} />
-                                                            <span className="truncate">{t.name.replace(/_/g, ' ')}</span>
-                                                        </CommandItem>
-                                                    ))}
+                                                    {categoryTypes.map((t: any) => {
+                                                        const selected = categories.includes(t.name);
+                                                        return (
+                                                            <CommandItem
+                                                                key={t.id ?? t.name}
+                                                                value={t.name}
+                                                                onSelect={() => setCategories(prev => prev.includes(t.name) ? prev.filter(c => c !== t.name) : [...prev, t.name])}
+                                                                className="text-slate-200"
+                                                            >
+                                                                <Check className={cn('mr-2 h-3.5 w-3.5', selected ? 'opacity-100' : 'opacity-0')} />
+                                                                <span className="h-2 w-2 rounded-full mr-2 shrink-0" style={{ backgroundColor: t.color || '#6366f1' }} />
+                                                                <span className="truncate">{t.name.replace(/_/g, ' ')}</span>
+                                                            </CommandItem>
+                                                        );
+                                                    })}
                                                 </CommandGroup>
                                             </CommandList>
                                         </Command>
                                     </PopoverContent>
                                 </Popover>
-                                {category && (
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-white" onClick={() => setCategory('')} title="Clear category">
+                                {categories.length > 0 && (
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-white" onClick={() => setCategories([])} title="Clear categories">
                                         <X className="h-3.5 w-3.5" />
                                     </Button>
                                 )}
@@ -236,7 +245,7 @@ export function TemplatePickerDialog({
                         <div className="flex flex-col items-center justify-center py-16">
                             <FileText className="h-10 w-10 text-slate-700 mb-3" />
                             <p className="text-slate-400 font-medium">No templates match your filters</p>
-                            {(search || category) && <p className="text-slate-600 text-xs mt-1">Try a different search or category</p>}
+                            {(search || categories.length > 0) && <p className="text-slate-600 text-xs mt-1">Try a different search or category</p>}
                         </div>
                     ) : (
                         <div className="space-y-1.5 pb-2">
@@ -271,7 +280,7 @@ export function TemplatePickerDialog({
                                                 <span
                                                     role="button"
                                                     tabIndex={0}
-                                                    onClick={(e) => { e.stopPropagation(); setCategory(t.category!); setShowFilters(true); }}
+                                                    onClick={(e) => { e.stopPropagation(); const c = t.category!; setCategories(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]); setShowFilters(true); }}
                                                     title={`Filter by ${t.category.replace(/_/g, ' ')}`}
                                                     className="shrink-0 mt-0.5 cursor-pointer"
                                                 >
@@ -279,7 +288,7 @@ export function TemplatePickerDialog({
                                                         variant="outline"
                                                         className={cn(
                                                             'text-[9px] px-1.5 py-0 h-5 transition-opacity hover:opacity-80',
-                                                            category === t.category && 'ring-1 ring-inset ring-current',
+                                                            categories.includes(t.category) && 'ring-1 ring-inset ring-current',
                                                         )}
                                                         style={{ backgroundColor: `${catColor}15`, color: catColor, borderColor: `${catColor}40` }}
                                                     >
@@ -299,7 +308,7 @@ export function TemplatePickerDialog({
                 {!isLoading && total > 0 && (
                     <div className="px-6 py-3 border-t border-slate-800/60 shrink-0 flex items-center justify-between">
                         <p className="text-[11px] text-slate-500 flex items-center gap-2">
-                            {total} template{total !== 1 ? 's' : ''}{(search || category) ? ' matching' : ' total'}
+                            {total} template{total !== 1 ? 's' : ''}{(search || categories.length > 0) ? ' matching' : ' total'}
                             {query.isFetching && <Loader2 className="h-3 w-3 animate-spin" />}
                         </p>
                         {totalPages > 1 && (

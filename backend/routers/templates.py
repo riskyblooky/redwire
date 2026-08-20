@@ -31,7 +31,7 @@ async def get_templates(
     response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    category: Optional[str] = Query(None),
+    category: Optional[List[str]] = Query(None),
     status_filter: Optional[TemplateStatus] = Query(None, alias="status"),
     q: Optional[str] = Query(None),
     mine_only: bool = Query(False),
@@ -66,7 +66,7 @@ async def get_templates(
 
     base = select(FindingTemplate).where(or_(*visibility))
     if category:
-        base = base.where(FindingTemplate.category == category)
+        base = base.where(FindingTemplate.category.in_(category))
     if status_filter:
         base = base.where(FindingTemplate.status == status_filter)
     if mine_only:
