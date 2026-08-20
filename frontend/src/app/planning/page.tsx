@@ -214,6 +214,30 @@ export default function PlanningPage() {
         setTimeout(() => setInspectorEmailsCopied(false), 1500);
     };
 
+    // Group the selected engagement's team by their engagement role (from
+    // assignment_details), so the inspector shows Leads / Operators / etc.
+    // rather than one flat list. Leads sort first, "Unassigned" last.
+    const teamByRole = useMemo(() => {
+        const users = selectedEngagement?.assigned_users ?? [];
+        if (users.length === 0) return [] as { role: string; members: any[] }[];
+        const roleByUser: Record<string, string> = {};
+        (selectedEngagement?.assignment_details ?? []).forEach((a: any) => {
+            if (a?.role?.name) roleByUser[a.user_id] = a.role.name;
+        });
+        const groups: Record<string, any[]> = {};
+        users.forEach((u: any) => {
+            const role = roleByUser[u.id] || 'Unassigned role';
+            (groups[role] ??= []).push(u);
+        });
+        return Object.entries(groups)
+            .map(([role, members]) => ({ role, members }))
+            .sort((a, b) => {
+                const rank = (r: string) =>
+                    r === 'Unassigned role' ? 2 : /lead/i.test(r) ? 0 : 1;
+                return rank(a.role) - rank(b.role) || a.role.localeCompare(b.role);
+            });
+    }, [selectedEngagement]);
+
     // Data hooks
     const { data: allEngagements = [], isLoading } = useAllEngagementsIncludingProposed();
     const { data: proposedEngagements = [] } = useProposedEngagements();
@@ -1146,11 +1170,22 @@ export default function PlanningPage() {
                                                                     : <><Mail className="h-3 w-3" />Copy Emails</>}
                                                             </button>
                                                         </div>
-                                                        <div className="flex flex-wrap gap-1.5">
-                                                            {selectedEngagement.assigned_users.map((u: any) => (
-                                                                <div key={u.id} className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/50 py-0.5 pl-0.5 pr-2">
-                                                                    <UserAvatar user={u} className="h-5 w-5 ring-0 shadow-none" />
-                                                                    <span className="text-[10px] text-slate-300">{u.full_name || u.username}</span>
+                                                        <div className="space-y-2">
+                                                            {teamByRole.map(({ role, members }) => (
+                                                                <div key={role}>
+                                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                                        <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{role}</span>
+                                                                        <span className="text-[9px] text-slate-600">{members.length}</span>
+                                                                        <div className="flex-1 h-px bg-slate-800/60" />
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {members.map((u: any) => (
+                                                                            <div key={u.id} className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/50 py-0.5 pl-0.5 pr-2">
+                                                                                <UserAvatar user={u} className="h-5 w-5 ring-0 shadow-none" />
+                                                                                <span className="text-[10px] text-slate-300">{u.full_name || u.username}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                         </div>

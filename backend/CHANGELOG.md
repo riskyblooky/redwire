@@ -7,6 +7,9 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Planning inspector** — the selected engagement's team is now grouped by
+  **engagement role** (Leads first, then other roles, unassigned last) instead
+  of one flat list.
 - **Command palette discoverability** — the global search dropped the misleading
   "Ctrl+K" hint (that shortcut opens the command palette, not the search). A VS
   Code-style **">" button** to the right of the search now opens the palette;
