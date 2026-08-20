@@ -160,11 +160,11 @@ export function TemplatePickerDialog({
                             size="icon"
                             variant="ghost"
                             onClick={() => setShowFilters(o => !o)}
-                            title="Filters"
+                            title={activeFilterCount > 0 ? `Filters — ${activeFilterCount} applied` : 'Filters'}
                             className={cn(
                                 'h-10 w-10 shrink-0',
-                                showFilters || activeFilterCount > 0
-                                    ? 'text-primary bg-primary/10'
+                                activeFilterCount > 0
+                                    ? 'text-primary bg-primary/10 hover:bg-primary/15'
                                     : 'text-slate-400 hover:text-white',
                             )}
                         >
