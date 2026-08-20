@@ -35,6 +35,7 @@ import { useEngagementIntelInfraLinks } from '@/lib/hooks/use-intel';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { displayNameFrom } from '@/lib/display-name';
 import { relevanceComparator } from '@/lib/search-relevance';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
@@ -203,6 +204,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                                     <UserAvatar
                                         user={{
                                             id: finding.created_by,
+                                            full_name: finding.created_by_full_name,
                                             username: finding.created_by_username || 'System',
                                             profile_photo: finding.created_by_profile_photo,
                                         }}
@@ -211,7 +213,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                                 </div>
                             </RadixTooltipTrigger>
                             <RadixTooltipContent side="top">
-                                <span className="text-xs">{finding.created_by_username || 'System'}</span>
+                                <span className="text-xs">{displayNameFrom(finding.created_by_full_name, finding.created_by_username, 'System')}</span>
                             </RadixTooltipContent>
                         </RadixTooltip>
                     </RadixTooltipProvider>

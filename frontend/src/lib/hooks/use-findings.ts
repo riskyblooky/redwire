@@ -28,6 +28,7 @@ export interface Finding {
     assets?: Asset[];
     unresolved_thread_count?: number;
     created_by_username?: string;
+    created_by_full_name?: string;
     created_by_profile_photo?: string;
     tags?: Tag[];
     testcases?: { id: string; title: string }[];

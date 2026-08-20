@@ -70,6 +70,7 @@ import DiscussionSection from '@/components/discussions/discussion-section';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { UserName } from '@/components/ui/user-name';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
@@ -906,9 +907,13 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                             username={finding.created_by_username || finding.created_by}
                                             className="h-5 w-5"
                                         />
-                                        <span className="text-slate-300 font-mono">
-                                            {engagement?.assigned_users?.find((u: any) => u.id === finding.created_by)?.username || finding.created_by_username || finding.created_by.slice(0, 8)}
-                                        </span>
+                                        <UserName
+                                            className="text-slate-300"
+                                            user={engagement?.assigned_users?.find((u: any) => u.id === finding.created_by)}
+                                            name={finding.created_by_full_name}
+                                            username={finding.created_by_username}
+                                            fallback={finding.created_by?.slice(0, 8)}
+                                        />
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between text-[10px]">

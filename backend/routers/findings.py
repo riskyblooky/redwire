@@ -56,6 +56,7 @@ async def get_findings(
     query = select(
         Finding,
         User.username.label("creator_username"),
+        User.full_name.label("creator_full_name"),
         User.profile_photo.label("creator_profile_photo"),
         func.count(Thread.id).filter(Thread.is_resolved == False).label("unresolved_count")
     ).outerjoin(
@@ -67,7 +68,7 @@ async def get_findings(
     ).options(
         selectinload(Finding.evidence),
         selectinload(Finding.assets),
-    ).group_by(Finding.id, User.username, User.profile_photo)
+    ).group_by(Finding.id, User.username, User.full_name, User.profile_photo)
 
     if engagement_id:
         query = query.where(Finding.engagement_id == engagement_id)
@@ -102,10 +103,11 @@ async def get_findings(
                 asset_entry["port_ids"] = fa.parsed_port_ids
 
     findings_with_counts = []
-    for finding, creator_username, creator_profile_photo, unresolved_count in rows:
+    for finding, creator_username, creator_full_name, creator_profile_photo, unresolved_count in rows:
         finding_dict = FindingResponse.model_validate(finding).model_dump()
         finding_dict["unresolved_thread_count"] = unresolved_count or 0
         finding_dict["created_by_username"] = creator_username
+        finding_dict["created_by_full_name"] = creator_full_name
         finding_dict["created_by_profile_photo"] = creator_profile_photo
         # Inject ATT&CK technique IDs
         finding_dict["attack_technique_ids"] = [at.technique_id for at in (finding.attack_techniques or [])]
@@ -293,7 +295,7 @@ async def get_finding(
 ):
     """Get a specific finding by ID."""
     result = await db.execute(
-        select(Finding, User.username, User.profile_photo)
+        select(Finding, User.username, User.full_name, User.profile_photo)
         .outerjoin(User, Finding.created_by == User.id)
         .where(Finding.id == finding_id)
         .options(
@@ -310,7 +312,7 @@ async def get_finding(
             detail="Finding not found"
         )
     
-    finding, creator_username, creator_profile_photo = row
+    finding, creator_username, creator_full_name, creator_profile_photo = row
 
     
     if not finding:
@@ -345,6 +347,7 @@ async def get_finding(
     finding_dict = FindingResponse.model_validate(finding).model_dump()
     finding_dict["unresolved_thread_count"] = unresolved_count
     finding_dict["created_by_username"] = creator_username
+    finding_dict["created_by_full_name"] = creator_full_name
     finding_dict["created_by_profile_photo"] = creator_profile_photo
     # Inject ATT&CK technique IDs
     finding_dict["attack_technique_ids"] = [at.technique_id for at in (finding.attack_techniques or [])]

@@ -115,6 +115,7 @@ class FindingResponse(FindingBase):
     updated_at: datetime
     updated_by: Optional[str] = None
     created_by_username: Optional[str] = None
+    created_by_full_name: Optional[str] = None
     created_by_profile_photo: Optional[str] = None
     evidence: list[EvidenceResponse] = []
     assets: list[LinkedAssetResponse] = []
