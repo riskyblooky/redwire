@@ -7,6 +7,10 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Command palette discoverability** — the global search dropped the misleading
+  "Ctrl+K" hint (that shortcut opens the command palette, not the search). A VS
+  Code-style **">" button** to the right of the search now opens the palette;
+  Ctrl/⌘ K still opens it too.
 - **Apply-template picker** — the "Select a template" modal now searches and
   pages the **whole** library on the server (debounced live search), replaces
   the crowded category chips with a funnel filter icon that reveals a

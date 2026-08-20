@@ -132,8 +132,17 @@ function useKeySequences(onSequence: (combo: string) => boolean) {
     }, [onSequence, clear]);
 }
 
-export function CommandPalette() {
-    const [open, setOpen] = useState(false);
+export function CommandPalette({ open: openProp, onOpenChange }: { open?: boolean; onOpenChange?: (o: boolean) => void } = {}) {
+    const [internalOpen, setInternalOpen] = useState(false);
+    const isControlled = openProp !== undefined;
+    const open = isControlled ? (openProp as boolean) : internalOpen;
+    const setOpen = useCallback((next: boolean) => {
+        onOpenChange?.(next);
+        if (!isControlled) setInternalOpen(next);
+    }, [onOpenChange, isControlled]);
+    const openRef = useRef(open);
+    openRef.current = open;
+
     const router = useRouter();
     const engagementId = useCurrentEngagementId();
     const { data: engagements = [] } = useEngagements();
@@ -143,12 +152,12 @@ export function CommandPalette() {
         const onKey = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
                 e.preventDefault();
-                setOpen((v) => !v);
+                setOpen(!openRef.current);
             }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, []);
+    }, [setOpen]);
 
     // Navigation helpers. When engagementId is set (current route is inside
     // an engagement), create-shortcuts pre-scope to it.

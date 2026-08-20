@@ -308,17 +308,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         return user.username.slice(0, 2).toUpperCase();
     };
 
-    // Ctrl+K / Cmd+K to focus search
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                searchInputRef.current?.focus();
-            }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, []);
+    // The command palette owns Cmd/Ctrl+K. This state also lets the ">" button
+    // next to the search open it on click.
+    const [paletteOpen, setPaletteOpen] = useState(false);
 
     const handleHeaderSearch = useCallback((e: React.FormEvent) => {
         e.preventDefault();
@@ -334,7 +326,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 components/command-palette.tsx for the action list and
                 two-key hotkey sequences (N F, G E, etc.). Mounted here
                 so it exists on every authenticated route. */}
-            <CommandPalette />
+            <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
             {/* One-time post-update "What's New" popup (once per user per release). */}
             <WhatsNewModal />
             {/* Sidebar */}
@@ -519,9 +511,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                     ref={searchInputRef}
                                     value={headerSearch}
                                     onChange={(e) => setHeaderSearch(e.target.value)}
-                                    placeholder="Search... (Ctrl+K)"
-                                    className="w-64 pl-8 h-9 bg-slate-900/50 border-slate-800 text-sm text-white placeholder:text-slate-500 focus:border-primary/50 focus:ring-primary/20"
+                                    placeholder="Search..."
+                                    className="w-64 pl-8 pr-9 h-9 bg-slate-900/50 border-slate-800 text-sm text-white placeholder:text-slate-500 focus:border-primary/50 focus:ring-primary/20"
                                 />
+                                {/* Command-palette affordance (VS Code-style). Opens ⌘/Ctrl+K palette. */}
+                                <button
+                                    type="button"
+                                    onClick={() => setPaletteOpen(true)}
+                                    title="Command palette (Ctrl / ⌘ K)"
+                                    aria-label="Open command palette"
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded border border-slate-700 bg-slate-800/70 font-mono text-sm leading-none text-slate-400 transition-colors hover:border-slate-600 hover:text-white"
+                                >
+                                    {'>'}
+                                </button>
                             </div>
                         </form>
 
