@@ -115,10 +115,12 @@ const formatTimeAgo = (dateStr: string) => {
 
 // ── Infra Card ──────────────────────────────────────────────────
 
-function InfraCard({ item, onView, onDelete, canDelete }: {
+function InfraCard({ item, onView, onEdit, onDelete, canEdit, canDelete }: {
     item: InfraItem;
     onView: () => void;
+    onEdit: () => void;
     onDelete: () => void;
+    canEdit: boolean;
     canDelete: boolean;
 }) {
     const typeColor = getTypeColor(item.infra_type);
@@ -168,16 +170,30 @@ function InfraCard({ item, onView, onDelete, canDelete }: {
                             </div>
                         </div>
                     </div>
-                    {canDelete && (
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                            onClick={e => { e.stopPropagation(); onDelete(); }}
-                        >
-                            <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                    )}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                        {canEdit && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-slate-700 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={e => { e.stopPropagation(); onEdit(); }}
+                                title="Edit"
+                            >
+                                <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                        )}
+                        {canDelete && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-slate-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={e => { e.stopPropagation(); onDelete(); }}
+                                title="Delete"
+                            >
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </CardContent>
         </Card>
@@ -993,35 +1009,64 @@ export default function InfrastructurePage() {
     const totalPages = Math.ceil(totalItems / limit);
 
     const createItem = useCreateInfraItem();
+    const updateItem = useUpdateInfraItem();
     const deleteItem = useDeleteInfraItem();
 
     const canCreate = useGlobalPermission('infra_create');
+    const canEdit = useGlobalPermission('infra_edit');
     const canDelete = useGlobalPermission('infra_delete');
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
     const [createOpen, setCreateOpen] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [detailItem, setDetailItem] = useState<string | null>(null);
     const [form, setForm] = useState(emptyForm);
 
-    const handleCreate = async (e: React.FormEvent) => {
+    const payloadFrom = (f: typeof emptyForm) => ({
+        ...f,
+        ip_address: f.ip_address || undefined,
+        internal_ip: f.internal_ip || undefined,
+        hostname: f.hostname || undefined,
+        provider: f.provider || undefined,
+        region: f.region || undefined,
+        os: f.os || undefined,
+        point_of_presence: f.point_of_presence || undefined,
+        notes: f.notes || undefined,
+    });
+
+    const openCreate = () => { setEditingId(null); setForm(emptyForm); setCreateOpen(true); };
+    const openEdit = (item: InfraItem) => {
+        setEditingId(item.id);
+        setForm({
+            name: item.name,
+            infra_type: item.infra_type,
+            status: item.status,
+            ip_address: item.ip_address || '',
+            internal_ip: item.internal_ip || '',
+            hostname: item.hostname || '',
+            provider: item.provider || '',
+            region: item.region || '',
+            os: item.os || '',
+            point_of_presence: item.point_of_presence || '',
+            notes: item.notes || '',
+        });
+        setCreateOpen(true);
+    };
+    const closeDialog = () => { setCreateOpen(false); setEditingId(null); setForm(emptyForm); };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await createItem.mutateAsync({
-                ...form,
-                ip_address: form.ip_address || undefined,
-                internal_ip: form.internal_ip || undefined,
-                hostname: form.hostname || undefined,
-                provider: form.provider || undefined,
-                region: form.region || undefined,
-                os: form.os || undefined,
-                point_of_presence: form.point_of_presence || undefined,
-                notes: form.notes || undefined,
-            });
-            toast.success('Infrastructure item created');
-            setCreateOpen(false);
-            setForm(emptyForm);
+            if (editingId) {
+                await updateItem.mutateAsync({ id: editingId, ...payloadFrom(form) });
+                toast.success('Infrastructure item updated');
+            } else {
+                await createItem.mutateAsync(payloadFrom(form));
+                toast.success('Infrastructure item created');
+            }
+            closeDialog();
         } catch (err: any) {
-            toast.error(apiErrorMessage(err, 'Failed to create'));
+            toast.error(apiErrorMessage(err, editingId ? 'Failed to update' : 'Failed to create'));
         }
     };
 
@@ -1039,7 +1084,7 @@ export default function InfrastructurePage() {
                         </div>
                     </div>
                     {canCreate && (
-                        <Button onClick={() => setCreateOpen(true)} className="bg-primary hover:bg-primary/90 text-white gap-2">
+                        <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-white gap-2">
                             <Plus className="h-4 w-4" />
                             Add Infrastructure
                         </Button>
@@ -1104,6 +1149,8 @@ export default function InfrastructurePage() {
                                 key={item.id}
                                 item={item}
                                 onView={() => setDetailItem(item.id)}
+                                onEdit={() => openEdit(item)}
+                                canEdit={canEdit}
                                 onDelete={async () => {
                                     const ok = await confirm({
                                         title: 'Delete Infrastructure Item',
@@ -1118,6 +1165,7 @@ export default function InfrastructurePage() {
                                 canDelete={canDelete}
                             />
                         ))}
+                        {/* end infra cards */}
                     </div>
                 )}
 
@@ -1136,16 +1184,16 @@ export default function InfrastructurePage() {
             </div>
 
             {/* ── Create Dialog ─────────────────────────────────── */}
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <Dialog open={createOpen} onOpenChange={(o) => { if (!o) closeDialog(); }}>
                 <DialogContent className="bg-slate-900 border-slate-700 text-white sm:max-w-lg max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Server className="h-5 w-5 text-primary" />
-                            Add Infrastructure
+                            {editingId ? 'Edit Infrastructure' : 'Add Infrastructure'}
                         </DialogTitle>
-                        <DialogDescription>Register a new red team asset</DialogDescription>
+                        <DialogDescription>{editingId ? 'Update this red team asset' : 'Register a new red team asset'}</DialogDescription>
                     </DialogHeader>
-                    <form onSubmit={handleCreate} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
                             <Label className="text-slate-300 text-sm">Name *</Label>
                             <Input
@@ -1263,9 +1311,9 @@ export default function InfrastructurePage() {
                             />
                         </div>
                         <div className="flex justify-end gap-2 pt-2">
-                            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} className="border-slate-700 text-slate-300 hover:bg-slate-800">Cancel</Button>
-                            <Button type="submit" disabled={createItem.isPending} className="bg-primary hover:bg-primary/90 text-white">
-                                {createItem.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</> : 'Create'}
+                            <Button type="button" variant="outline" onClick={closeDialog} className="border-slate-700 text-slate-300 hover:bg-slate-800">Cancel</Button>
+                            <Button type="submit" disabled={createItem.isPending || updateItem.isPending} className="bg-primary hover:bg-primary/90 text-white">
+                                {(createItem.isPending || updateItem.isPending) ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {editingId ? 'Saving...' : 'Creating...'}</> : (editingId ? 'Save Changes' : 'Create')}
                             </Button>
                         </div>
                     </form>

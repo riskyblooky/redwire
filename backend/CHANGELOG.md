@@ -35,6 +35,9 @@ section becomes one release entry.
   title and message in a tooltip, instead of the truncated preview.
 
 ### Fixed
+- **Infrastructure** — infrastructure items can now be **edited** from the
+  Infrastructure page (an Edit button on each card opens the create/edit dialog
+  pre-filled). The update API existed but had no UI.
 - **Template preview** — the finding/test-case preview modal now shows all
   content fields: findings gained the missing **References** and **Attack
   Techniques** sections, test cases gained **Attack Techniques**. All text
