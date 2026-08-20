@@ -21,7 +21,7 @@ import {
     Edit, Trash2, Users, Calendar, Flag, AlertCircle,
     TrendingUp, Building2, Eye, Clock, Mail, User,
     Activity as ActivityIcon, History as HistoryIcon,
-    Upload,
+    Upload, Replace,
 } from 'lucide-react';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { useFindingsTimeline } from '@/lib/hooks/use-stats';
@@ -29,6 +29,7 @@ import { useEngagementCounts } from '@/lib/hooks/use-engagements';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { ClientEditDialog } from '@/components/clients/client-edit-dialog';
+import { EngagementClientDialog } from '@/components/engagements/engagement-client-dialog';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { useDeleteEngagement } from '@/lib/hooks/use-engagements';
@@ -130,6 +131,7 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
     const router = useRouter();
 
     const [clientEditOpen, setClientEditOpen] = useState(false);
+    const [clientPickerOpen, setClientPickerOpen] = useState(false);
 
     // Data hooks
     // Summary stats come from the lightweight counts endpoint — the overview
@@ -321,26 +323,42 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                     </Card>
 
                     {/* Client Information */}
-                    {engagement.client_name && (
-                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
                             <CardHeader className="pb-3 border-b border-slate-800/50">
                                 <CardTitle className="text-sm font-medium text-slate-400 flex items-center justify-between">
                                     <div className="flex items-center gap-2"><Building2 className="h-4 w-4" />Client Information</div>
-                                    {(engagement as any).client && (
-                                        <div className="flex items-center gap-1">
-                                            {canEditEngagement && (
-                                                <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-white" onClick={() => setClientEditOpen(true)} title="Edit client">
-                                                    <Edit className="h-3.5 w-3.5" />
-                                                </Button>
-                                            )}
+                                    <div className="flex items-center gap-1">
+                                        {canEditEngagement && (
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-white" onClick={() => setClientPickerOpen(true)} title={engagement.client_name ? 'Change client' : 'Assign client'}>
+                                                <Replace className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
+                                        {canEditEngagement && (engagement as any).client && (
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-white" onClick={() => setClientEditOpen(true)} title="Edit client details">
+                                                <Edit className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
+                                        {(engagement as any).client && (
                                             <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-primary" onClick={() => onViewClientDetail?.()} title="View client">
                                                 <Eye className="h-3.5 w-3.5" />
                                             </Button>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="pt-4 space-y-4">
+                                {!engagement.client_name ? (
+                                    <div className="flex flex-col items-center justify-center py-4 text-center">
+                                        <Building2 className="h-7 w-7 text-slate-600 mb-2" />
+                                        <p className="text-sm text-slate-500">No client assigned</p>
+                                        {canEditEngagement && (
+                                            <Button variant="outline" size="sm" className="mt-3 border-slate-700 text-slate-300 hover:text-white" onClick={() => setClientPickerOpen(true)}>
+                                                <Replace className="h-3.5 w-3.5 mr-1.5" /> Assign a client
+                                            </Button>
+                                        )}
+                                    </div>
+                                ) : (
+                                <>
                                 <div className={`flex items-center gap-3 ${(engagement as any).client ? 'cursor-pointer group' : ''}`} onClick={() => (engagement as any).client && onViewClientDetail?.()}>
                                     <div className="p-1.5 rounded-md bg-indigo-500/10"><Building2 className="h-3.5 w-3.5 text-indigo-400" /></div>
                                     <div><p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Client</p><p className="text-sm text-white font-medium group-hover:text-primary transition-colors">{engagement.client_name}</p></div>
@@ -373,9 +391,10 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                                         <div><p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Email</p><a href={`mailto:${(engagement as any).client.contact_email}`} className="text-sm text-teal-400 hover:text-teal-300 transition-colors">{(engagement as any).client.contact_email}</a></div>
                                     </div>
                                 )}
+                                </>
+                                )}
                             </CardContent>
                         </Card>
-                    )}
 
                     {/* Team Assignments */}
                     <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
@@ -532,6 +551,13 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
             open={clientEditOpen}
             onOpenChange={setClientEditOpen}
             clientId={(engagement as any).client?.id ?? null}
+        />
+        <EngagementClientDialog
+            open={clientPickerOpen}
+            onOpenChange={setClientPickerOpen}
+            engagementId={engagementId}
+            currentClientId={(engagement as any).client_id ?? (engagement as any).client?.id ?? null}
+            currentClientName={engagement.client_name ?? null}
         />
         </>
     );

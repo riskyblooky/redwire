@@ -7,6 +7,10 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Engagement overview** — the Client card now assigns or changes the
+  engagement's client via a **searchable list of existing clients** (instead of
+  free-form text), and the control is available even when the engagement has no
+  client yet (previously the card, and its edit button, were hidden entirely).
 - **Notifications popup** — hover a notification (bell icon) to read its full
   title and message in a tooltip, instead of the truncated preview.
 
