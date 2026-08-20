@@ -772,17 +772,17 @@ export default function TemplatesPage() {
                         <TabsTrigger value="findings" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <FileText className="h-4 w-4" />
                             Finding Templates
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{findingTemplates.length}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{ftTotal}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="testcases" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <ClipboardList className="h-4 w-4" />
                             Test Case Templates
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tcTemplates.length}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tcTotal}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="runbooks" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <GitBranch className="h-4 w-4" />
                             Runbooks
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{runbooks.length}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{rbTotal}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="report-layouts" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <LayoutTemplate className="h-4 w-4" />
