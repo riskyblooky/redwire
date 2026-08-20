@@ -1178,8 +1178,8 @@ async def _resolve_user_labels(
     if not ids:
         return result
 
-    rows = (await db.execute(select(User.id, User.username).where(User.id.in_(ids)))).all()
-    name_map = {str(r.id): r.username for r in rows}
+    rows = (await db.execute(select(User.id, User.username, User.full_name).where(User.id.in_(ids)))).all()
+    name_map = {str(r.id): (r.full_name or r.username) for r in rows}
     resolve = lambda v: name_map.get(str(v), str(v))  # noqa: E731
 
     if mode == "standard" and gb_idx:
