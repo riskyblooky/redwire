@@ -7,10 +7,11 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
-- **Engagement overview** — the Client card now assigns or changes the
-  engagement's client via a **searchable list of existing clients** (instead of
-  free-form text), and the control is available even when the engagement has no
-  client yet (previously the card, and its edit button, were hidden entirely).
+- **Client picker** — assigning an engagement's client now uses a **searchable
+  list of existing clients** everywhere: the engagement overview Client card
+  (available even when no client is set yet — previously the card and its edit
+  button were hidden), and the new-/edit-engagement forms (replacing the plain
+  dropdown).
 - **Notifications popup** — hover a notification (bell icon) to read its full
   title and message in a tooltip, instead of the truncated preview.
 

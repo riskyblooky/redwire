@@ -35,6 +35,7 @@ import type { EngagementPhase } from '@/lib/hooks/use-engagements';
 import { useMarkingProfiles } from '@/lib/hooks/use-marking-profiles';
 import { ClassificationPicker } from '@/components/marking/classification-picker';
 import { useClients } from '@/lib/hooks/use-clients';
+import { ClientCombobox } from '@/components/engagements/client-combobox';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { TeamManagementDialog } from '@/components/engagements/team-management-dialog';
 import { TagPickerField } from '@/components/engagements/tag-picker-field';
@@ -372,21 +373,12 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                         <div className="space-y-2">
                                             <Label htmlFor="client" className="text-slate-200 text-sm">Client <span className="text-red-400">*</span></Label>
                                             {clients.length > 0 ? (
-                                                <Select
+                                                <ClientCombobox
+                                                    id="client"
+                                                    clients={clients}
                                                     value={formData.client_id}
-                                                    onValueChange={value => {
-                                                        const selected = clients.find(c => c.id === value);
-                                                        handleChange('client_id', value);
-                                                        if (selected) handleChange('client_name', selected.name);
-                                                    }}
-                                                >
-                                                    <SelectTrigger id="client" className="bg-slate-800/50 border-slate-700 text-white">
-                                                        <SelectValue placeholder="Select a client" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
+                                                    onSelect={c => { handleChange('client_id', c.id); handleChange('client_name', c.name); }}
+                                                />
                                             ) : (
                                                 <Input
                                                     id="client_name" value={formData.client_name}

@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useCreateEngagement } from '@/lib/hooks/use-engagements';
 import { useClients } from '@/lib/hooks/use-clients';
+import { ClientCombobox } from '@/components/engagements/client-combobox';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -193,21 +194,12 @@ export default function NewEngagementPage() {
                                         Client <span className="text-red-400">*</span>
                                     </Label>
                                     {clients.length > 0 ? (
-                                        <Select
+                                        <ClientCombobox
+                                            id="client"
+                                            clients={clients}
                                             value={formData.client_id}
-                                            onValueChange={value => {
-                                                const selected = clients.find(c => c.id === value);
-                                                handleChange('client_id', value);
-                                                if (selected) handleChange('client_name', selected.name);
-                                            }}
-                                        >
-                                            <SelectTrigger id="client" className="bg-slate-800/50 border-slate-700 text-white">
-                                                <SelectValue placeholder="Select a client" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                                            </SelectContent>
-                                        </Select>
+                                            onSelect={c => { handleChange('client_id', c.id); handleChange('client_name', c.name); }}
+                                        />
                                     ) : (
                                         <Input
                                             id="client_name" value={formData.client_name}
