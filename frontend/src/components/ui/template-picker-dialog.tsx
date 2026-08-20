@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
     Search, BookOpen, Loader2, FileText, ChevronLeft, ChevronRight,
-    SlidersHorizontal, Check, ChevronsUpDown, X,
+    Filter, Check, ChevronsUpDown, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -157,20 +157,18 @@ export function TemplatePickerDialog({
                             />
                         </div>
                         <Button
-                            variant="outline"
+                            size="icon"
+                            variant="ghost"
                             onClick={() => setShowFilters(o => !o)}
+                            title="Filters"
                             className={cn(
-                                'h-10 gap-2 border-slate-800 bg-slate-950/50 text-slate-300 hover:bg-slate-800 hover:text-white relative',
-                                showFilters && 'border-indigo-500/40 text-indigo-300',
+                                'h-10 w-10 shrink-0',
+                                showFilters || activeFilterCount > 0
+                                    ? 'text-primary bg-primary/10'
+                                    : 'text-slate-400 hover:text-white',
                             )}
                         >
-                            <SlidersHorizontal className="h-4 w-4" />
-                            Filters
-                            {activeFilterCount > 0 && (
-                                <Badge variant="secondary" className="h-5 px-1.5 text-[10px] bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
-                                    {activeFilterCount}
-                                </Badge>
-                            )}
+                            <Filter className="h-4 w-4" />
                         </Button>
                     </div>
 
@@ -270,13 +268,24 @@ export function TemplatePickerDialog({
                                                 )}
                                             </div>
                                             {t.category && (
-                                                <Badge
-                                                    variant="outline"
-                                                    className="text-[9px] px-1.5 py-0 h-5 shrink-0 mt-0.5"
-                                                    style={{ backgroundColor: `${catColor}15`, color: catColor, borderColor: `${catColor}40` }}
+                                                <span
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onClick={(e) => { e.stopPropagation(); setCategory(t.category!); setShowFilters(true); }}
+                                                    title={`Filter by ${t.category.replace(/_/g, ' ')}`}
+                                                    className="shrink-0 mt-0.5 cursor-pointer"
                                                 >
-                                                    {t.category.replace(/_/g, ' ')}
-                                                </Badge>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={cn(
+                                                            'text-[9px] px-1.5 py-0 h-5 transition-opacity hover:opacity-80',
+                                                            category === t.category && 'ring-1 ring-inset ring-current',
+                                                        )}
+                                                        style={{ backgroundColor: `${catColor}15`, color: catColor, borderColor: `${catColor}40` }}
+                                                    >
+                                                        {t.category.replace(/_/g, ' ')}
+                                                    </Badge>
+                                                </span>
                                             )}
                                         </div>
                                     </button>
