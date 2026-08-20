@@ -574,7 +574,6 @@ export function AiChatbot() {
                     className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary/70 text-white shadow-lg shadow-primary/40 hover:shadow-primary/60 hover:scale-105 transition-all duration-200 flex items-center justify-center group"
                 >
                     <MessageCircle className="h-6 w-6 group-hover:scale-110 transition-transform" />
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-slate-950 animate-pulse" />
                 </button>
             )}
 
