@@ -764,9 +764,9 @@ export default function AnalyticsOverview() {
                             <CardContent>
                                 {activityLoading ? <LoadingPlaceholder /> : (
                                     <ResponsiveContainer width="100%" height={280}>
-                                        <BarChart data={topN(activity?.top_contributors, 'activity_count')}>
+                                        <BarChart data={topN(activity?.top_contributors, 'activity_count').map((r: any) => ({ ...r, display: r.full_name || r.username || '—' }))}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                                            <XAxis dataKey="username" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                                            <XAxis dataKey="display" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                                             <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
                                             <Tooltip {...TOOLTIP_STYLE} />
                                             <Bar dataKey="activity_count" fill="#10b981" radius={[6, 6, 0, 0]} name="Activity" />
@@ -870,9 +870,9 @@ export default function AnalyticsOverview() {
                             <CardContent>
                                 {opsLoading ? <LoadingPlaceholder /> : (
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={topN((operators?.operators || []).filter(o => o.total_findings > 0), 'total_findings')}>
+                                        <BarChart data={topN((operators?.operators || []).filter(o => o.total_findings > 0), 'total_findings').map((r: any) => ({ ...r, display: r.full_name || r.username || '—' }))}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                                            <XAxis dataKey="username" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                                            <XAxis dataKey="display" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                                             <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
                                             <Tooltip {...TOOLTIP_STYLE} />
                                             <Bar dataKey="critical" stackId="sev" fill={SEVERITY_COLORS.CRITICAL} name="Critical" />

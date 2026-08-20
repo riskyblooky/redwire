@@ -666,7 +666,7 @@ function useWidgetChartData(dataSource: string): any[] | null {
         case 'findings_timeline': return timeline?.timeline || null;
         case 'engagement_types': return engTypes?.types || null;
         case 'cleanup_status': return cleanup?.distribution || null;
-        case 'top_contributors': return activity?.top_contributors || null;
+        case 'top_contributors': return (activity?.top_contributors || null)?.map((r: any) => ({ ...r, display: r.full_name || r.username || '—' })) ?? null;
         case 'testcase_coverage': return tcStats?.by_category || null;
         case 'findings_by_category': return catStats?.categories || null;
         default: return null;
@@ -683,7 +683,7 @@ function getDataKey(widget: DashboardWidgetDef): string {
         case 'findings_by_status': return 'status';
         case 'engagement_types': return 'type';
         case 'cleanup_status': return 'status';
-        case 'top_contributors': return 'username';
+        case 'top_contributors': return 'display';
         case 'testcase_coverage': return 'category';
         case 'findings_by_category': return 'category';
         default: return 'name';

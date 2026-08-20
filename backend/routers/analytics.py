@@ -258,7 +258,7 @@ async def get_dashboard_stats(
             # happening on other teams' engagements.
             "title": log.action if strip_identifiers else (log.details or log.action),
             "user": None if strip_identifiers else (
-                log.user.username if log.user else "System"
+                (log.user.full_name or log.user.username) if log.user else "System"
             ),
             "time": log.created_at.isoformat(),
             "severity": None,
