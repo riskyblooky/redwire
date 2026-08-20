@@ -363,6 +363,12 @@ export default function TemplatesPage() {
     const rbTotal = rbPaged.data?.total ?? 0;
     const rbLoading = rbPaged.isLoading;
 
+    // Grand totals for the tab badges — unfiltered, so the badge is the size of
+    // the whole library and doesn't shift as the user searches/filters.
+    const ftGrandTotal = useFindingTemplatesPaged({ pageSize: 1 }).data?.total ?? 0;
+    const tcGrandTotal = useTestCaseTemplatesPaged({ pageSize: 1 }).data?.total ?? 0;
+    const rbGrandTotal = useRunbooksPaged({ pageSize: 1 }).data?.total ?? 0;
+
     // Snap back to the first page whenever the query / filters / sort change.
     useEffect(() => { setFtPage(0); }, [ftQ, ftCategoryFilter, ftStatusFilter, ftMineOnly, ftSortBy, ftSortDir]);
     useEffect(() => { setTcPage(0); }, [tcQ, tcCategoryFilter, tcStatusFilter, tcMineOnly, tcSortBy, tcSortDir]);
@@ -772,17 +778,17 @@ export default function TemplatesPage() {
                         <TabsTrigger value="findings" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <FileText className="h-4 w-4" />
                             Finding Templates
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{ftTotal}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{ftGrandTotal}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="testcases" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <ClipboardList className="h-4 w-4" />
                             Test Case Templates
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tcTotal}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tcGrandTotal}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="runbooks" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <GitBranch className="h-4 w-4" />
                             Runbooks
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{rbTotal}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{rbGrandTotal}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="report-layouts" className="data-[state=active]:bg-primary data-[state=active]:text-white gap-2">
                             <LayoutTemplate className="h-4 w-4" />
