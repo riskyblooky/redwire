@@ -43,6 +43,42 @@ export function useTestCaseTemplate(id?: string) {
     });
 }
 
+export interface TestCaseTemplatePageParams {
+    q?: string;
+    category?: string;
+    status?: string;
+    mine_only?: boolean;
+    sort_by?: string;
+    sort_dir?: 'asc' | 'desc';
+    page?: number;
+    pageSize?: number;
+}
+
+/** Server-paged + server-searched test-case templates. Returns { items, total }. */
+export function useTestCaseTemplatesPaged(params: TestCaseTemplatePageParams = {}) {
+    const { q, category, status, mine_only, sort_by = 'title', sort_dir = 'asc', page = 0, pageSize = 20 } = params;
+    return useQuery({
+        queryKey: ['testcase-templates-paged', { q, category, status, mine_only, sort_by, sort_dir, page, pageSize }],
+        queryFn: async () => {
+            const res = await api.get<TestCaseTemplate[]>('/testcase-templates', {
+                params: {
+                    q: q?.trim() || undefined,
+                    category: category && category !== 'all' ? category : undefined,
+                    status: status && status !== 'ALL' ? status : undefined,
+                    mine_only: mine_only || undefined,
+                    sort_by, sort_dir,
+                    skip: page * pageSize,
+                    limit: pageSize,
+                },
+            });
+            const total = Number(res.headers['x-total-count'] ?? res.data.length);
+            return { items: res.data, total };
+        },
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
+    });
+}
+
 export function useTestCaseTemplates(category?: string) {
     return useQuery({
         queryKey: ['testcase-templates', category],

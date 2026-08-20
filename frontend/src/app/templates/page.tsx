@@ -28,13 +28,14 @@
  */
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
 import { cn, parseUTCDate } from '@/lib/utils';
 import {
     useFindingTemplates,
+    useFindingTemplatesPaged,
     useDeleteFindingTemplate,
     useSubmitFindingTemplate,
     useWithdrawFindingTemplate,
@@ -46,6 +47,7 @@ import {
 } from '@/lib/hooks/use-findings';
 import {
     useTestCaseTemplates,
+    useTestCaseTemplatesPaged,
     useDeleteTestCaseTemplate,
     useSubmitTestCaseTemplate,
     useWithdrawTestCaseTemplate,
@@ -56,6 +58,7 @@ import {
 } from '@/lib/hooks/use-testcase-templates';
 import {
     useRunbooks,
+    useRunbooksPaged,
     useDeleteRunbook,
     useSubmitRunbook,
     useWithdrawRunbook,
@@ -74,6 +77,7 @@ import { ReportLayoutTemplate, SectionType } from '@/lib/types';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { relevanceComparator } from '@/lib/search-relevance';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -119,6 +123,7 @@ import {
     ShieldAlert,
     GitBranch,
     ChevronRight,
+    ChevronLeft,
     LayoutTemplate,
     Type,
     Palette,
@@ -206,6 +211,35 @@ function RunbookTreePreview({ items, depth = 0, categoryColors }: { items: (Runb
 // ═══════════════════════════════════════════════════════════════════
 // Main Templates Page
 // ═══════════════════════════════════════════════════════════════════
+// ─── Server-side paging controls ───
+function PaginationBar({ page, pageSize, total, count, onPrev, onNext, isFetching }: {
+    page: number; pageSize: number; total: number; count: number;
+    onPrev: () => void; onNext: () => void; isFetching?: boolean;
+}) {
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    // Only one page of results — nothing to page through.
+    if (total <= pageSize && page === 0) return null;
+    const start = total === 0 ? 0 : page * pageSize + 1;
+    const end = page * pageSize + count;
+    return (
+        <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-800">
+            <span className="text-xs text-slate-500 flex items-center gap-2">
+                {start}–{end} of {total}
+                {isFetching && <Loader2 className="h-3 w-3 animate-spin text-slate-500" />}
+            </span>
+            <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Page {page + 1} of {totalPages}</span>
+                <Button variant="outline" size="sm" className="h-8 border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40" onClick={onPrev} disabled={page === 0}>
+                    <ChevronLeft className="h-4 w-4" /> Prev
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40" onClick={onNext} disabled={page + 1 >= totalPages}>
+                    Next <ChevronRight className="h-4 w-4" />
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 export default function TemplatesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -213,7 +247,6 @@ export default function TemplatesPage() {
     const canManage = canManageTemplates(user?.role as UserRole | undefined);
 
     // ── Finding templates ──
-    const { data: findingTemplates = [], isLoading: ftLoading } = useFindingTemplates();
     const deleteFT = useDeleteFindingTemplate();
     const submitFT = useSubmitFindingTemplate();
     const withdrawFT = useWithdrawFindingTemplate();
@@ -222,7 +255,6 @@ export default function TemplatesPage() {
     const unpublishFT = useUnpublishFindingTemplate();
 
     // ── Test case templates ──
-    const { data: tcTemplates = [], isLoading: tcLoading } = useTestCaseTemplates();
     const deleteTC = useDeleteTestCaseTemplate();
     const submitTC = useSubmitTestCaseTemplate();
     const withdrawTC = useWithdrawTestCaseTemplate();
@@ -247,7 +279,6 @@ export default function TemplatesPage() {
     }, [testcaseCategoryTypes]);
 
     // ── Runbooks ──
-    const { data: runbooks = [], isLoading: rbLoading } = useRunbooks();
     const deleteRB = useDeleteRunbook();
     const submitRB = useSubmitRunbook();
     const withdrawRB = useWithdrawRunbook();
@@ -308,73 +339,48 @@ export default function TemplatesPage() {
 
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
-    // ── Filtered lists ──
-    const ftStatusCounts = useMemo(() => {
-        const visible = ftMineOnly ? findingTemplates.filter(t => t.created_by === user?.id) : findingTemplates;
-        return {
-            ALL: visible.length,
-            DRAFT: visible.filter(t => t.status === 'DRAFT').length,
-            SUBMITTED: visible.filter(t => t.status === 'SUBMITTED').length,
-            PUBLISHED: visible.filter(t => t.status === 'PUBLISHED').length,
-        };
-    }, [findingTemplates, ftMineOnly, user?.id]);
+    // ── Server-side paging + debounced search ──
+    const PAGE_SIZE = 20;
+    const [ftPage, setFtPage] = useState(0);
+    const [tcPage, setTcPage] = useState(0);
+    const [rbPage, setRbPage] = useState(0);
+    const ftQ = useDebounce(ftSearch, 300);
+    const tcQ = useDebounce(tcSearch, 300);
+    const rbQ = useDebounce(rbSearch, 300);
 
-    const ftCategoryOptions = useMemo(() => {
-        const set = new Set<string>();
-        for (const t of findingTemplates) {
-            if (t.category) set.add(t.category);
-        }
-        return Array.from(set).sort();
-    }, [findingTemplates]);
+    const ftPaged = useFindingTemplatesPaged({ q: ftQ, category: ftCategoryFilter, status: ftStatusFilter, mine_only: ftMineOnly, sort_by: ftSortBy, sort_dir: ftSortDir, page: ftPage, pageSize: PAGE_SIZE });
+    const findingTemplates = ftPaged.data?.items ?? [];
+    const ftTotal = ftPaged.data?.total ?? 0;
+    const ftLoading = ftPaged.isLoading;
+
+    const tcPaged = useTestCaseTemplatesPaged({ q: tcQ, category: tcCategoryFilter, status: tcStatusFilter, mine_only: tcMineOnly, sort_by: tcSortBy, sort_dir: tcSortDir, page: tcPage, pageSize: PAGE_SIZE });
+    const tcTemplates = tcPaged.data?.items ?? [];
+    const tcTotal = tcPaged.data?.total ?? 0;
+    const tcLoading = tcPaged.isLoading;
+
+    const rbPaged = useRunbooksPaged({ q: rbQ, runbook_type: rbTypeFilter, status: rbStatusFilter, mine_only: rbMineOnly, sort_by: rbSortBy, sort_dir: rbSortDir, page: rbPage, pageSize: PAGE_SIZE });
+    const runbooks = rbPaged.data?.items ?? [];
+    const rbTotal = rbPaged.data?.total ?? 0;
+    const rbLoading = rbPaged.isLoading;
+
+    // Snap back to the first page whenever the query / filters / sort change.
+    useEffect(() => { setFtPage(0); }, [ftQ, ftCategoryFilter, ftStatusFilter, ftMineOnly, ftSortBy, ftSortDir]);
+    useEffect(() => { setTcPage(0); }, [tcQ, tcCategoryFilter, tcStatusFilter, tcMineOnly, tcSortBy, tcSortDir]);
+    useEffect(() => { setRbPage(0); }, [rbQ, rbTypeFilter, rbStatusFilter, rbMineOnly, rbSortBy, rbSortDir]);
+
+    // ── Filtered lists ──
+    // Category options come from the configurable types (full set), not the
+    // current page of results, so the dropdown stays complete under paging.
+    const ftCategoryOptions = useMemo(
+        () => findingCategoryTypes.map(t => t.name).sort(),
+        [findingCategoryTypes],
+    );
 
     const ftActiveFilterCount =
         (ftStatusFilter !== 'ALL' ? 1 : 0) + (ftCategoryFilter !== 'all' ? 1 : 0);
 
-    const filteredFT = useMemo(() => {
-        const search = ftSearch.toLowerCase().trim();
-        let rows = findingTemplates.filter(t => {
-            if (ftMineOnly && t.created_by !== user?.id) return false;
-            if (ftStatusFilter !== 'ALL' && t.status !== ftStatusFilter) return false;
-            if (ftCategoryFilter !== 'all' && (t.category || '') !== ftCategoryFilter) return false;
-            if (!search) return true;
-            return (
-                t.title.toLowerCase().includes(search) ||
-                (t.category || '').toLowerCase().includes(search) ||
-                t.description.toLowerCase().includes(search)
-            );
-        });
-
-        if (ftSortBy === 'title') {
-            // When the user is searching and hasn't picked a non-default sort, fall back to relevance.
-            if (search && ftSortDir === 'asc') {
-                rows = rows.sort(
-                    relevanceComparator(
-                        search,
-                        [t => t.title, t => t.category || '', t => t.description],
-                        (a, b) => a.title.localeCompare(b.title),
-                    ),
-                );
-            } else {
-                rows = rows.sort((a, b) => a.title.localeCompare(b.title));
-                if (ftSortDir === 'desc') rows.reverse();
-            }
-        } else {
-            const STATUS_ORDER: Record<TemplateStatus, number> = { DRAFT: 0, SUBMITTED: 1, PUBLISHED: 2 };
-            const cmp = (a: FindingTemplate, b: FindingTemplate) => {
-                if (ftSortBy === 'status') return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-                if (ftSortBy === 'category') return (a.category || '').localeCompare(b.category || '');
-                // updated_at
-                return (a.updated_at || '').localeCompare(b.updated_at || '');
-            };
-            rows = rows.sort((a, b) => {
-                const r = cmp(a, b);
-                if (r !== 0) return r;
-                return a.title.localeCompare(b.title);
-            });
-            if (ftSortDir === 'desc') rows.reverse();
-        }
-        return rows;
-    }, [findingTemplates, ftSearch, ftMineOnly, ftStatusFilter, ftCategoryFilter, ftSortBy, ftSortDir, user?.id]);
+    // Server already filtered/sorted/paged this set (see useFindingTemplatesPaged).
+    const filteredFT = findingTemplates;
 
     const toggleFtSort = (col: 'title' | 'status' | 'category' | 'updated_at') => {
         if (ftSortBy === col) {
@@ -390,70 +396,15 @@ export default function TemplatesPage() {
         setFtCategoryFilter('all');
     };
     // ── Test case template filtering / sorting ──
-    const tcStatusCounts = useMemo(() => {
-        const visible = tcMineOnly ? tcTemplates.filter(t => t.created_by === user?.id) : tcTemplates;
-        return {
-            ALL: visible.length,
-            DRAFT: visible.filter(t => t.status === 'DRAFT').length,
-            SUBMITTED: visible.filter(t => t.status === 'SUBMITTED').length,
-            PUBLISHED: visible.filter(t => t.status === 'PUBLISHED').length,
-        };
-    }, [tcTemplates, tcMineOnly, user?.id]);
-
-    const tcCategoryOptions = useMemo(() => {
-        const set = new Set<string>();
-        for (const t of tcTemplates) {
-            if (t.category) set.add(t.category);
-        }
-        return Array.from(set).sort();
-    }, [tcTemplates]);
+    const tcCategoryOptions = useMemo(
+        () => testcaseCategoryTypes.map(t => t.name).sort(),
+        [testcaseCategoryTypes],
+    );
 
     const tcActiveFilterCount =
         (tcStatusFilter !== 'ALL' ? 1 : 0) + (tcCategoryFilter !== 'all' ? 1 : 0);
 
-    const filteredTC = useMemo(() => {
-        const search = tcSearch.toLowerCase().trim();
-        let rows = tcTemplates.filter(t => {
-            if (tcMineOnly && t.created_by !== user?.id) return false;
-            if (tcStatusFilter !== 'ALL' && t.status !== tcStatusFilter) return false;
-            if (tcCategoryFilter !== 'all' && t.category !== tcCategoryFilter) return false;
-            if (!search) return true;
-            return (
-                t.title.toLowerCase().includes(search) ||
-                t.category.toLowerCase().includes(search) ||
-                t.description.toLowerCase().includes(search)
-            );
-        });
-
-        if (tcSortBy === 'title') {
-            if (search && tcSortDir === 'asc') {
-                rows = rows.sort(
-                    relevanceComparator(
-                        search,
-                        [t => t.title, t => t.category, t => t.description],
-                        (a, b) => a.title.localeCompare(b.title),
-                    ),
-                );
-            } else {
-                rows = rows.sort((a, b) => a.title.localeCompare(b.title));
-                if (tcSortDir === 'desc') rows.reverse();
-            }
-        } else {
-            const STATUS_ORDER: Record<TemplateStatus, number> = { DRAFT: 0, SUBMITTED: 1, PUBLISHED: 2 };
-            const cmp = (a: TestCaseTemplate, b: TestCaseTemplate) => {
-                if (tcSortBy === 'status') return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-                if (tcSortBy === 'category') return a.category.localeCompare(b.category);
-                return (a.updated_at || '').localeCompare(b.updated_at || '');
-            };
-            rows = rows.sort((a, b) => {
-                const r = cmp(a, b);
-                if (r !== 0) return r;
-                return a.title.localeCompare(b.title);
-            });
-            if (tcSortDir === 'desc') rows.reverse();
-        }
-        return rows;
-    }, [tcTemplates, tcSearch, tcMineOnly, tcStatusFilter, tcCategoryFilter, tcSortBy, tcSortDir, user?.id]);
+    const filteredTC = tcTemplates;
 
     const toggleTcSort = (col: 'title' | 'status' | 'category' | 'updated_at') => {
         if (tcSortBy === col) {
@@ -470,62 +421,10 @@ export default function TemplatesPage() {
     };
 
     // ── Runbook filtering / sorting ──
-    const rbStatusCounts = useMemo(() => {
-        const visible = rbMineOnly ? runbooks.filter(r => r.created_by === user?.id) : runbooks;
-        return {
-            ALL: visible.length,
-            DRAFT: visible.filter(r => r.status === 'DRAFT').length,
-            SUBMITTED: visible.filter(r => r.status === 'SUBMITTED').length,
-            PUBLISHED: visible.filter(r => r.status === 'PUBLISHED').length,
-        };
-    }, [runbooks, rbMineOnly, user?.id]);
-
     const rbActiveFilterCount =
         (rbStatusFilter !== 'ALL' ? 1 : 0) + (rbTypeFilter ? 1 : 0);
 
-    const filteredRB = useMemo(() => {
-        const search = rbSearch.toLowerCase().trim();
-        let rows = runbooks.filter(r => {
-            if (rbMineOnly && r.created_by !== user?.id) return false;
-            if (rbStatusFilter !== 'ALL' && r.status !== rbStatusFilter) return false;
-            if (rbTypeFilter && r.runbook_type !== rbTypeFilter) return false;
-            if (!search) return true;
-            return (
-                r.name.toLowerCase().includes(search) ||
-                (r.description || '').toLowerCase().includes(search) ||
-                (r.runbook_type || '').toLowerCase().includes(search)
-            );
-        });
-
-        if (rbSortBy === 'name') {
-            if (search && rbSortDir === 'asc') {
-                rows = rows.sort(
-                    relevanceComparator(
-                        search,
-                        [r => r.name, r => r.description || '', r => r.runbook_type || ''],
-                        (a, b) => a.name.localeCompare(b.name),
-                    ),
-                );
-            } else {
-                rows = rows.sort((a, b) => a.name.localeCompare(b.name));
-                if (rbSortDir === 'desc') rows.reverse();
-            }
-        } else {
-            const STATUS_ORDER: Record<TemplateStatus, number> = { DRAFT: 0, SUBMITTED: 1, PUBLISHED: 2 };
-            const cmp = (a: Runbook, b: Runbook) => {
-                if (rbSortBy === 'status') return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-                if (rbSortBy === 'runbook_type') return (a.runbook_type || '').localeCompare(b.runbook_type || '');
-                return (a.updated_at || '').localeCompare(b.updated_at || '');
-            };
-            rows = rows.sort((a, b) => {
-                const r = cmp(a, b);
-                if (r !== 0) return r;
-                return a.name.localeCompare(b.name);
-            });
-            if (rbSortDir === 'desc') rows.reverse();
-        }
-        return rows;
-    }, [runbooks, rbSearch, rbMineOnly, rbStatusFilter, rbTypeFilter, rbSortBy, rbSortDir, user?.id]);
+    const filteredRB = runbooks;
 
     const toggleRbSort = (col: 'name' | 'status' | 'runbook_type' | 'updated_at') => {
         if (rbSortBy === col) {
@@ -953,7 +852,7 @@ export default function TemplatesPage() {
                                             <div className="flex items-center gap-1">
                                                 {(['ALL', 'DRAFT', 'SUBMITTED', 'PUBLISHED'] as const).map(s => {
                                                     const active = ftStatusFilter === s;
-                                                    const count = ftStatusCounts[s];
+                                                    const count: number | null = null;
                                                     const label = s === 'ALL' ? 'All' : TEMPLATE_STATUS_STYLES[s].label;
                                                     return (
                                                         <button
@@ -1130,6 +1029,7 @@ export default function TemplatesPage() {
                                         </Table>
                                     </div>
                                 )}
+                                <PaginationBar page={ftPage} pageSize={PAGE_SIZE} total={ftTotal} count={filteredFT.length} onPrev={() => setFtPage(p => Math.max(0, p - 1))} onNext={() => setFtPage(p => p + 1)} isFetching={ftPaged.isFetching} />
                             </CardContent>
                         </Card>
                     </TabsContent>
@@ -1185,7 +1085,7 @@ export default function TemplatesPage() {
                                             <div className="flex items-center gap-1">
                                                 {(['ALL', 'DRAFT', 'SUBMITTED', 'PUBLISHED'] as const).map(s => {
                                                     const active = tcStatusFilter === s;
-                                                    const count = tcStatusCounts[s];
+                                                    const count: number | null = null;
                                                     const label = s === 'ALL' ? 'All' : TEMPLATE_STATUS_STYLES[s].label;
                                                     return (
                                                         <button
@@ -1360,6 +1260,7 @@ export default function TemplatesPage() {
                                         </Table>
                                     </div>
                                 )}
+                                <PaginationBar page={tcPage} pageSize={PAGE_SIZE} total={tcTotal} count={filteredTC.length} onPrev={() => setTcPage(p => Math.max(0, p - 1))} onNext={() => setTcPage(p => p + 1)} isFetching={tcPaged.isFetching} />
                             </CardContent>
                         </Card>
                     </TabsContent>
@@ -1415,7 +1316,7 @@ export default function TemplatesPage() {
                                             <div className="flex items-center gap-1">
                                                 {(['ALL', 'DRAFT', 'SUBMITTED', 'PUBLISHED'] as const).map(s => {
                                                     const active = rbStatusFilter === s;
-                                                    const count = rbStatusCounts[s];
+                                                    const count: number | null = null;
                                                     const label = s === 'ALL' ? 'All' : TEMPLATE_STATUS_STYLES[s].label;
                                                     return (
                                                         <button
@@ -1599,6 +1500,7 @@ export default function TemplatesPage() {
                                         </Table>
                                     </div>
                                 )}
+                                <PaginationBar page={rbPage} pageSize={PAGE_SIZE} total={rbTotal} count={filteredRB.length} onPrev={() => setRbPage(p => Math.max(0, p - 1))} onNext={() => setRbPage(p => p + 1)} isFetching={rbPaged.isFetching} />
                             </CardContent>
                         </Card>
                     </TabsContent>

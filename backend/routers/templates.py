@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, func
 from typing import List, Optional
 from datetime import datetime
 from database import get_db
@@ -28,10 +28,15 @@ def _can_manage(user: User) -> bool:
 
 @router.get("", response_model=List[FindingTemplateResponse])
 async def get_templates(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     category: Optional[str] = Query(None),
     status_filter: Optional[TemplateStatus] = Query(None, alias="status"),
+    q: Optional[str] = Query(None),
+    mine_only: bool = Query(False),
+    sort_by: str = Query("title"),
+    sort_dir: str = Query("asc"),
     skip: int = 0,
     limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
 ):
@@ -59,14 +64,36 @@ async def get_templates(
             )
         )
 
-    query = select(FindingTemplate).where(or_(*visibility))
+    base = select(FindingTemplate).where(or_(*visibility))
     if category:
-        query = query.where(FindingTemplate.category == category)
+        base = base.where(FindingTemplate.category == category)
     if status_filter:
-        query = query.where(FindingTemplate.status == status_filter)
+        base = base.where(FindingTemplate.status == status_filter)
+    if mine_only:
+        base = base.where(FindingTemplate.created_by == current_user.id)
+    if q and q.strip():
+        needle = f"%{q.strip().lower()}%"
+        base = base.where(or_(
+            func.lower(FindingTemplate.title).like(needle),
+            func.lower(func.coalesce(FindingTemplate.category, "")).like(needle),
+            func.lower(FindingTemplate.description).like(needle),
+        ))
 
-    query = query.offset(skip).limit(limit).order_by(FindingTemplate.title.asc())
-    result = await db.execute(query)
+    # Total (pre-pagination) so the UI can render paging controls. Read by the
+    # frontend via the X-Total-Count response header (CORS-exposed in main.py).
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+
+    sort_map = {
+        "title": FindingTemplate.title,
+        "status": FindingTemplate.status,
+        "category": FindingTemplate.category,
+        "updated_at": FindingTemplate.updated_at,
+    }
+    sort_col = sort_map.get(sort_by, FindingTemplate.title)
+    order = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
+
+    result = await db.execute(base.order_by(order).offset(skip).limit(limit))
     return result.scalars().all()
 
 

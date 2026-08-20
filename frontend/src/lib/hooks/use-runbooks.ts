@@ -59,6 +59,42 @@ export interface RunbookUpdate {
     items?: RunbookItemCreate[];
 }
 
+export interface RunbookPageParams {
+    q?: string;
+    runbook_type?: string;
+    status?: string;
+    mine_only?: boolean;
+    sort_by?: string;
+    sort_dir?: 'asc' | 'desc';
+    page?: number;
+    pageSize?: number;
+}
+
+/** Server-paged + server-searched runbooks. Returns { items, total }. */
+export function useRunbooksPaged(params: RunbookPageParams = {}) {
+    const { q, runbook_type, status, mine_only, sort_by = 'name', sort_dir = 'asc', page = 0, pageSize = 20 } = params;
+    return useQuery({
+        queryKey: ['runbooks-paged', { q, runbook_type, status, mine_only, sort_by, sort_dir, page, pageSize }],
+        queryFn: async () => {
+            const res = await api.get<Runbook[]>('/runbooks', {
+                params: {
+                    q: q?.trim() || undefined,
+                    runbook_type: runbook_type || undefined,
+                    status: status && status !== 'ALL' ? status : undefined,
+                    mine_only: mine_only || undefined,
+                    sort_by, sort_dir,
+                    skip: page * pageSize,
+                    limit: pageSize,
+                },
+            });
+            const total = Number(res.headers['x-total-count'] ?? res.data.length);
+            return { items: res.data, total };
+        },
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
+    });
+}
+
 export function useRunbooks(enabled: boolean = true) {
     return useQuery({
         queryKey: ['runbooks'],

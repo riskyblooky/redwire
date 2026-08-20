@@ -180,6 +180,43 @@ export function useFindingTemplate(id?: string) {
     });
 }
 
+export interface TemplatePageParams {
+    q?: string;
+    category?: string;   // 'all' or '' => omitted
+    status?: string;     // 'ALL' or '' => omitted
+    mine_only?: boolean;
+    sort_by?: string;
+    sort_dir?: 'asc' | 'desc';
+    page?: number;       // 0-based
+    pageSize?: number;
+}
+
+/** Server-paged + server-searched finding templates. Returns { items, total };
+ *  total comes from the X-Total-Count header so the UI can page the full set. */
+export function useFindingTemplatesPaged(params: TemplatePageParams = {}) {
+    const { q, category, status, mine_only, sort_by = 'title', sort_dir = 'asc', page = 0, pageSize = 20 } = params;
+    return useQuery({
+        queryKey: ['finding-templates-paged', { q, category, status, mine_only, sort_by, sort_dir, page, pageSize }],
+        queryFn: async () => {
+            const res = await api.get<FindingTemplate[]>('/templates', {
+                params: {
+                    q: q?.trim() || undefined,
+                    category: category && category !== 'all' ? category : undefined,
+                    status: status && status !== 'ALL' ? status : undefined,
+                    mine_only: mine_only || undefined,
+                    sort_by, sort_dir,
+                    skip: page * pageSize,
+                    limit: pageSize,
+                },
+            });
+            const total = Number(res.headers['x-total-count'] ?? res.data.length);
+            return { items: res.data, total };
+        },
+        placeholderData: (prev) => prev, // keep current page visible while the next loads
+        staleTime: 30_000,
+    });
+}
+
 export function useFindingTemplates(category?: string) {
     return useQuery({
         queryKey: ['finding-templates', category],

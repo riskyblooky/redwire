@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime
@@ -134,15 +135,51 @@ async def _ensure_template_visible(
 
 @router.get("", response_model=List[RunbookResponse])
 async def get_runbooks(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    runbook_type: Optional[str] = Query(None),
+    status_filter: Optional[TemplateStatus] = Query(None, alias="status"),
+    q: Optional[str] = Query(None),
+    mine_only: bool = Query(False),
+    sort_by: str = Query("name"),
+    sort_dir: str = Query("asc"),
+    skip: int = 0,
+    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
 ):
     """List runbooks visible to the user (PUBLISHED to all; DRAFT/SUBMITTED scoped per workflow rules)."""
+    base = select(Runbook).where(_visibility_clause(current_user))
+    if runbook_type:
+        base = base.where(Runbook.runbook_type == runbook_type)
+    if status_filter:
+        base = base.where(Runbook.status == status_filter)
+    if mine_only:
+        base = base.where(Runbook.created_by == current_user.id)
+    if q and q.strip():
+        needle = f"%{q.strip().lower()}%"
+        base = base.where(or_(
+            func.lower(Runbook.name).like(needle),
+            func.lower(func.coalesce(Runbook.runbook_type, "")).like(needle),
+            func.lower(func.coalesce(Runbook.description, "")).like(needle),
+        ))
+
+    # Total (pre-pagination) so the UI can render paging controls. Read by the
+    # frontend via the X-Total-Count response header (CORS-exposed in main.py).
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+
+    sort_map = {
+        "name": Runbook.name,
+        "status": Runbook.status,
+        "runbook_type": Runbook.runbook_type,
+        "updated_at": Runbook.updated_at,
+    }
+    sort_col = sort_map.get(sort_by, Runbook.name)
+    order = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
+
     result = await db.execute(
-        select(Runbook)
-        .where(_visibility_clause(current_user))
-        .options(selectinload(Runbook.items).selectinload(RunbookItem.template))
-        .order_by(Runbook.name.asc())
+        base.options(selectinload(Runbook.items).selectinload(RunbookItem.template))
+            .order_by(order).offset(skip).limit(limit)
     )
     return result.scalars().all()
 
