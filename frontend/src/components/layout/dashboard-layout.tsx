@@ -54,7 +54,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import { useAuthedImageUrl } from '@/lib/hooks/use-authed-image';
 import EngagementSelector from '@/components/engagement-selector';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
@@ -240,7 +240,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     });
 
     const formatTimeAgo = (dateStr: string) => {
-        const date = new Date(dateStr);
+        // Backend timestamps are UTC but may lack a Z suffix; parseUTCDate forces
+        // UTC so the diff isn't skewed by the viewer's offset (was always "just now").
+        const date = parseUTCDate(dateStr);
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffMins = Math.floor(diffMs / 60000);
@@ -576,10 +578,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                             <p className="text-sm">No notifications yet</p>
                                         </div>
                                     ) : (
+                                        <TooltipProvider delayDuration={300}>
                                         <div className="divide-y divide-slate-800/50">
                                             {notifications.map((notif) => (
+                                                <Tooltip key={notif.id}>
+                                                <TooltipTrigger asChild>
                                                 <button
-                                                    key={notif.id}
                                                     onClick={() => handleNotificationClick(notif)}
                                                     className={cn(
                                                         "w-full text-left px-4 py-3 hover:bg-slate-800/50 transition-colors flex gap-3 items-start",
@@ -612,8 +616,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                                         <ExternalLink className="h-3.5 w-3.5 text-slate-600 shrink-0 mt-1" />
                                                     )}
                                                 </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="left" align="start" className="max-w-xs">
+                                                    <p className="text-sm font-medium text-white">{notif.title}</p>
+                                                    {notif.message && (
+                                                        <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{notif.message}</p>
+                                                    )}
+                                                </TooltipContent>
+                                                </Tooltip>
                                             ))}
                                         </div>
+                                        </TooltipProvider>
                                     )}
                                 </div>
                                 <div className="border-t border-slate-800 px-4 py-2 flex items-center justify-between shrink-0">

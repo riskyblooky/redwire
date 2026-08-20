@@ -6,7 +6,13 @@ section becomes one release entry.
 
 ## [1.5.0] — Unreleased
 
+### Improved
+- **Notifications popup** — hover a notification (bell icon) to read its full
+  title and message in a tooltip, instead of the truncated preview.
+
 ### Fixed
+- **Notifications popup** — relative timestamps no longer always render "just
+  now"; the created-at time is now parsed as UTC.
 - **What's New modal** no longer reopens on every page navigation. It now only
   surfaces released entries (newer than last-seen, up to the running version), so
   a version skew between the changelog file and the running build can't leave an
