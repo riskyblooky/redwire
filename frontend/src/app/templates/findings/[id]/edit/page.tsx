@@ -43,6 +43,9 @@ import {
 } from 'lucide-react';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { apiErrorMessage } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 
 const FINDING_CATEGORIES = [
     { value: 'Web Application', label: 'Web Application' },
@@ -95,6 +98,10 @@ export default function FindingTemplateEditPage() {
     const [mitigations, setMitigations] = useState('');
     const [references, setReferences] = useState('');
     const [attackTechniqueIds, setAttackTechniqueIds] = useState<string[]>([]);
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const [initialSnapshot, setInitialSnapshot] = useState(() => JSON.stringify({
+        title: '', category: '', description: '', impact: '', mitigations: '', references: '', attackTechniqueIds: [] as string[],
+    }));
 
     useEffect(() => {
         if (template) {
@@ -105,8 +112,22 @@ export default function FindingTemplateEditPage() {
             setMitigations(template.mitigations || '');
             setReferences(template.references || '');
             setAttackTechniqueIds(template.attack_technique_ids || []);
+            setInitialSnapshot(JSON.stringify({
+                title: template.title,
+                category: template.category || '',
+                description: template.description || '',
+                impact: template.impact || '',
+                mitigations: template.mitigations || '',
+                references: template.references || '',
+                attackTechniqueIds: template.attack_technique_ids || [],
+            }));
         }
     }, [template]);
+
+    const currentSnapshot = JSON.stringify({ title, category, description, impact, mitigations, references, attackTechniqueIds });
+    const isDirty = allowedToEdit && currentSnapshot !== initialSnapshot;
+    const backPath = '/templates?tab=findings';
+    const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);
 
     const handleSave = async () => {
         if (!title.trim()) {
@@ -176,7 +197,7 @@ export default function FindingTemplateEditPage() {
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => router.push('/templates?tab=findings')}
+                            onClick={() => navigateWithGuard(backPath)}
                             className="text-slate-400 hover:text-white"
                         >
                             <ArrowLeft className="h-5 w-5" />
@@ -191,14 +212,6 @@ export default function FindingTemplateEditPage() {
                             )}
                         </div>
                     </div>
-                    <Button
-                        onClick={handleSave}
-                        disabled={isPending}
-                        className="bg-primary hover:bg-primary/90 text-white px-6"
-                    >
-                        {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                        {isNew ? 'Create Template' : 'Save Changes'}
-                    </Button>
                 </div>
 
                 {/* Form */}
@@ -302,6 +315,30 @@ export default function FindingTemplateEditPage() {
                     </Card>
                 </div>
             </div>
+            {/* ── Save bar — only when dirty, pinned to the bottom (like edit-finding) ── */}
+            <div className={cn(
+                'sticky bottom-0 z-30 border-t transition-all duration-200',
+                isDirty
+                    ? 'border-blue-500/30 bg-slate-950/95 backdrop-blur-md'
+                    : 'h-0 overflow-hidden border-transparent opacity-0 pointer-events-none'
+            )}>
+                <div className="px-6 py-3 flex items-center justify-between gap-4 w-full max-w-5xl mx-auto">
+                    <div className="flex items-center gap-2 text-sm text-amber-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        <span>Unsaved changes</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => navigateWithGuard(backPath)} className="text-slate-400 hover:text-white">
+                            Discard
+                        </Button>
+                        <Button onClick={handleSave} disabled={isPending} size="sm" className="gap-2 bg-blue-600 hover:bg-blue-500 text-white">
+                            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                            {isNew ? 'Create Template' : 'Save Changes'}
+                        </Button>
+                    </div>
+                </div>
+            </div>
+            <ConfirmDialog />
         </DashboardLayout>
     );
 }

@@ -7,6 +7,10 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Template editing** — the finding- and test-case-template edit pages now use
+  the sticky bottom **"Unsaved changes"** save bar (Discard / Save) that appears
+  only when there are edits, matching the finding editor, plus a navigation
+  guard that warns before you leave with unsaved changes.
 - **Engagements search** is now debounced (300ms), firing one request after you
   pause instead of one per keystroke — matching the Template Library search.
 - **Template Library** — finding, test-case, and runbook lists are now
