@@ -75,7 +75,16 @@ async def get_unseen_changelog(
         await db.commit()
         return {"has_unseen": False, "current_version": VERSION, "entries": []}
 
-    entries = [e for e in _parse_changelog() if _newer(e["version"], user.last_seen_version)]
+    # Only surface RELEASED entries: newer than what the user last saw, but not
+    # newer than the version actually running. Without the upper bound, a
+    # CHANGELOG entry for a version ahead of the running VERSION (e.g. the file
+    # was bumped but the process hasn't reloaded it) can never be dismissed —
+    # "seen" only advances last_seen to VERSION, so the ahead-of-VERSION entry
+    # stays unseen forever and the modal reopens on every navigation.
+    entries = [
+        e for e in _parse_changelog()
+        if _newer(e["version"], user.last_seen_version) and not _newer(e["version"], VERSION)
+    ]
     return {"has_unseen": bool(entries), "current_version": VERSION, "entries": entries}
 
 

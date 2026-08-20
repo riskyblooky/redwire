@@ -4,6 +4,14 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.5.0] — Unreleased
+
+### Fixed
+- **What's New modal** no longer reopens on every page navigation. It now only
+  surfaces released entries (newer than last-seen, up to the running version), so
+  a version skew between the changelog file and the running build can't leave an
+  entry permanently un-dismissable.
+
 ## [1.4.0] — 2026-08-19
 
 ### License
