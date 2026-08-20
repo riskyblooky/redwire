@@ -79,7 +79,6 @@ export default function NewFindingPage() {
 
     const createFinding = useCreateFinding();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
-    const { data: templates = [], isLoading: isLoadingTemplates } = useFindingTemplates();
     const { data: tags = [], isLoading: isLoadingTags } = useTags();
     const { data: findingCategories = [] } = useConfigurableTypes('finding');
     const { data: assetTypes = [] } = useConfigurableTypes('asset');
@@ -195,8 +194,7 @@ export default function NewFindingPage() {
         });
     };
 
-    const applyTemplate = (templateId: string) => {
-        const template = templates.find(t => t.id === templateId);
+    const applyTemplate = (template: any) => {
         if (template) {
             setFormData(prev => ({
                 ...prev,
@@ -298,8 +296,7 @@ export default function NewFindingPage() {
                         <TemplatePickerDialog
                             open={templateOpen}
                             onOpenChange={setTemplateOpen}
-                            templates={templates}
-                            isLoading={isLoadingTemplates}
+                            resource="finding"
                             onSelect={applyTemplate}
                             title="Select Finding Template"
                             description="Search and select a template to populate finding fields."

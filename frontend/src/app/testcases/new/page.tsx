@@ -67,7 +67,6 @@ export default function NewTestCasePage() {
 
     const createTestCase = useCreateTestCase();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
-    const { data: templates = [], isLoading: isLoadingTemplates } = useTestCaseTemplates();
     const { data: tags = [], isLoading: isLoadingTags } = useTags();
     const { data: allTestCases = [] } = useTestCases(engagementIdParam || undefined);
     const [templateOpen, setTemplateOpen] = useState(false);
@@ -93,8 +92,7 @@ export default function NewTestCasePage() {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
-    const applyTemplate = (templateId: string) => {
-        const template = templates.find(t => t.id === templateId);
+    const applyTemplate = (template: any) => {
         if (template) {
             setFormData(prev => ({
                 ...prev,
@@ -187,8 +185,7 @@ export default function NewTestCasePage() {
                     <TemplatePickerDialog
                         open={templateOpen}
                         onOpenChange={setTemplateOpen}
-                        templates={templates}
-                        isLoading={isLoadingTemplates}
+                        resource="testcase"
                         onSelect={applyTemplate}
                         title="Select Test Case Template"
                         description="Search and select a template to populate test case fields."

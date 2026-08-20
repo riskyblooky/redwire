@@ -7,6 +7,11 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Apply-template picker** — the "Select a template" modal now searches and
+  pages the **whole** library on the server (debounced live search), replaces
+  the crowded category chips with a filter button that reveals a **searchable
+  category dropdown**, colors each result's category badge by its type, and is
+  wider.
 - **Template editing** — the finding- and test-case-template edit pages now use
   the sticky bottom **"Unsaved changes"** save bar (Discard / Save) that appears
   only when there are edits, matching the finding editor, plus a navigation

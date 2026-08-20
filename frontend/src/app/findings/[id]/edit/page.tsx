@@ -90,7 +90,6 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
 
     const { data: finding, isLoading: isLoadingFinding } = useFinding(id);
     const { data: engagements = [] } = useEngagements();
-    const { data: templates = [], isLoading: isLoadingTemplates } = useFindingTemplates();
     const { data: tags = [], isLoading: isLoadingTags } = useTags();
     const updateFinding = useUpdateFinding();
     const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -276,7 +275,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
         setIsDirty(true);
     };
 
-    const applyTemplate = async (templateId: string) => {
+    const applyTemplate = async (template: any) => {
         const confirmed = await confirm({
             title: 'Apply Template',
             description: 'This will overwrite current fields with the selected template. Continue?',
@@ -285,7 +284,6 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
         });
         if (!confirmed) return;
 
-        const template = templates.find(t => t.id === templateId);
         if (template) {
             setFormData(prev => ({
                 ...prev,
@@ -425,8 +423,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
             <TemplatePickerDialog
                 open={templateOpen}
                 onOpenChange={setTemplateOpen}
-                templates={templates}
-                isLoading={isLoadingTemplates}
+                resource="finding"
                 onSelect={applyTemplate}
                 title="Select Finding Template"
                 description="This will overwrite current fields with the selected template."

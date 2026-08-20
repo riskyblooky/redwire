@@ -79,7 +79,6 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
     const { data: testcase, isLoading: isLoadingTC } = useTestCase(id);
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
-    const { data: templates = [], isLoading: isLoadingTemplates } = useTestCaseTemplates();
     const { data: tags = [], isLoading: isLoadingTags } = useTags();
     const updateTestCase = useUpdateTestCase();
     const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -158,8 +157,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
         setIsDirty(true);
     };
 
-    const applyTemplate = (templateId: string) => {
-        const template = templates.find(t => t.id === templateId);
+    const applyTemplate = (template: any) => {
         if (template) {
             setFormData(prev => ({
                 ...prev,
@@ -259,8 +257,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
             <TemplatePickerDialog
                 open={templateOpen}
                 onOpenChange={setTemplateOpen}
-                templates={templates}
-                isLoading={isLoadingTemplates}
+                resource="testcase"
                 onSelect={applyTemplate}
                 title="Select Test Case Template"
                 description="This will overwrite current fields with the selected template."
