@@ -58,7 +58,8 @@ export function ClientCombobox({
                 </Button>
             </PopoverTrigger>
             <PopoverContent
-                className="w-[--radix-popover-trigger-width] p-0 bg-slate-900 border-slate-700"
+                className="p-0 bg-slate-900 border-slate-700"
+                style={{ width: 'var(--radix-popover-trigger-width)' }}
                 align="start"
             >
                 <Command className="bg-slate-900">

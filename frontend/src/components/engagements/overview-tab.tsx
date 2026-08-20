@@ -21,14 +21,13 @@ import {
     Edit, Trash2, Users, Calendar, Flag, AlertCircle,
     TrendingUp, Building2, Eye, Clock, Mail, User,
     Activity as ActivityIcon, History as HistoryIcon,
-    Upload, Replace,
+    Upload, Plus,
 } from 'lucide-react';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { useFindingsTimeline } from '@/lib/hooks/use-stats';
 import { useEngagementCounts } from '@/lib/hooks/use-engagements';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
-import { ClientEditDialog } from '@/components/clients/client-edit-dialog';
 import { EngagementClientDialog } from '@/components/engagements/engagement-client-dialog';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -130,7 +129,6 @@ const PHASE_LABELS: Record<string, string> = {
 export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onDelete, canEditEngagement, canDeleteEngagement, onViewClientDetail }: OverviewTabProps) {
     const router = useRouter();
 
-    const [clientEditOpen, setClientEditOpen] = useState(false);
     const [clientPickerOpen, setClientPickerOpen] = useState(false);
 
     // Data hooks
@@ -329,12 +327,7 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                                     <div className="flex items-center gap-2"><Building2 className="h-4 w-4" />Client Information</div>
                                     <div className="flex items-center gap-1">
                                         {canEditEngagement && (
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-white" onClick={() => setClientPickerOpen(true)} title={engagement.client_name ? 'Change client' : 'Assign client'}>
-                                                <Replace className="h-3.5 w-3.5" />
-                                            </Button>
-                                        )}
-                                        {canEditEngagement && (engagement as any).client && (
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-white" onClick={() => setClientEditOpen(true)} title="Edit client details">
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-white" onClick={() => setClientPickerOpen(true)} title={engagement.client_name ? 'Edit client' : 'Assign client'}>
                                                 <Edit className="h-3.5 w-3.5" />
                                             </Button>
                                         )}
@@ -353,7 +346,7 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                                         <p className="text-sm text-slate-500">No client assigned</p>
                                         {canEditEngagement && (
                                             <Button variant="outline" size="sm" className="mt-3 border-slate-700 text-slate-300 hover:text-white" onClick={() => setClientPickerOpen(true)}>
-                                                <Replace className="h-3.5 w-3.5 mr-1.5" /> Assign a client
+                                                <Plus className="h-3.5 w-3.5 mr-1.5" /> Assign a client
                                             </Button>
                                         )}
                                     </div>
@@ -547,11 +540,6 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                 </div>
             </div>
         </div>
-        <ClientEditDialog
-            open={clientEditOpen}
-            onOpenChange={setClientEditOpen}
-            clientId={(engagement as any).client?.id ?? null}
-        />
         <EngagementClientDialog
             open={clientPickerOpen}
             onOpenChange={setClientPickerOpen}
