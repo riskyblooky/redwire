@@ -8,6 +8,13 @@ import tempfile
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
+from pathlib import Path
+
+# Bundled logo, embedded inline (CID) in branded emails so it renders without
+# depending on a reachable image URL. Referenced as <img src="cid:redwire-logo">.
+LOGO_CID = "redwire-logo"
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "redwire.png"
 from typing import Optional, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -128,14 +135,33 @@ def _send_smtp(
     tls_context: Optional[ssl.SSLContext] = None,
 ) -> bool:
     """Low-level SMTP send.  Returns True on success."""
-    msg = MIMEMultipart("alternative")
+    # If the HTML references the inline logo, wrap the alternative part in a
+    # multipart/related so the CID image resolves; otherwise keep it simple.
+    embed_logo = (f"cid:{LOGO_CID}" in (html_body or "")) and _LOGO_PATH.exists()
+
+    alt = MIMEMultipart("alternative")
+    if text_body:
+        alt.attach(MIMEText(text_body, "plain"))
+    alt.attach(MIMEText(html_body, "html"))
+
+    if embed_logo:
+        msg = MIMEMultipart("related")
+        msg.attach(alt)
+        try:
+            with open(_LOGO_PATH, "rb") as fh:
+                img = MIMEImage(fh.read(), _subtype="png")
+            img.add_header("Content-ID", f"<{LOGO_CID}>")
+            img.add_header("Content-Disposition", "inline", filename="redwire.png")
+            msg.attach(img)
+        except Exception as e:
+            logger.warning(f"Could not embed email logo: {e}")
+            msg = alt  # fall back to the alternative part; alt text covers it
+    else:
+        msg = alt
+
     msg["From"] = f"{from_name} <{from_email}>" if from_name else from_email
     msg["To"] = to_email
     msg["Subject"] = subject
-
-    if text_body:
-        msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
 
     # GHSA-6j38-7gfm-ch45: fall back to a verifying default context if the
     # caller didn't supply one — treat "no context passed" as "verify
@@ -340,6 +366,16 @@ def render_notification_email(
     def esc(s):
         return _html.escape(str(s)) if s is not None else ""
 
+    # Brand palette (mirrors the app's dark theme + indigo-purple accent).
+    BG = "#060608"          # page background
+    CARD = "#0c0c12"        # card surface
+    BORDER = "#1e1e2a"      # hairlines
+    ACCENT = "#7c3aed"      # --primary (indigo-purple)
+    ACCENT_SOFT = "rgba(124,58,237,0.12)"
+    TEXT = "#e2e8f0"
+    MUTED = "#94a3b8"
+    FAINT = "#64748b"
+
     meta_html = ""
     meta_text_lines = []
     if meta:
@@ -349,42 +385,100 @@ def render_notification_email(
                 continue
             rows += (
                 "<tr>"
-                f"<td style='padding:4px 12px 4px 0;color:#64748b;font-size:12px;white-space:nowrap;vertical-align:top;'>{esc(label)}</td>"
-                f"<td style='padding:4px 0;color:#cbd5e1;font-size:12px;'>{esc(value)}</td>"
+                f"<td style='padding:6px 14px 6px 0;color:{FAINT};font-size:12px;white-space:nowrap;vertical-align:top;'>{esc(label)}</td>"
+                f"<td style='padding:6px 0;color:#cbd5e1;font-size:12px;line-height:1.5;'>{esc(value)}</td>"
                 "</tr>"
             )
             meta_text_lines.append(f"{label}: {value}")
         if rows:
-            meta_html = f"<table style='margin:12px 0;border-collapse:collapse;'>{rows}</table>"
+            meta_html = (
+                f"<table role='presentation' cellpadding='0' cellspacing='0' border='0' "
+                f"style='width:100%;margin:16px 0 4px;border-collapse:collapse;background:{BG};"
+                f"border:1px solid {BORDER};border-radius:10px;padding:6px 14px;'>"
+                f"<tr><td style='padding:8px 14px;'><table role='presentation' cellpadding='0' cellspacing='0' border='0'>{rows}</table></td></tr>"
+                f"</table>"
+            )
 
     message_html = (
-        f"<p style='font-size:14px;line-height:1.6;color:#cbd5e1;margin:12px 0;white-space:pre-wrap;'>{esc(message)}</p>"
+        f"<p style='font-size:14px;line-height:1.65;color:#cbd5e1;margin:14px 0 0;white-space:pre-wrap;'>{esc(message)}</p>"
         if message else ""
     )
 
+    # Bulletproof-ish centered button (works without full CSS support).
     button_html = ""
     if link:
         button_html = (
-            "<div style='text-align:center;margin:28px 0 8px;'>"
-            f"<a href='{esc(link)}' style='display:inline-block;padding:11px 28px;background:#4f46e5;color:#ffffff;"
-            f"text-decoration:none;font-weight:600;font-size:13px;border-radius:8px;'>{esc(link_label)}</a>"
-            "</div>"
+            f"<table role='presentation' cellpadding='0' cellspacing='0' border='0' style='margin:26px 0 6px;'>"
+            f"<tr><td style='border-radius:8px;background:{ACCENT};'>"
+            f"<a href='{esc(link)}' target='_blank' style='display:inline-block;padding:12px 30px;font-family:inherit;"
+            f"font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;'>{esc(link_label)} &rarr;</a>"
+            f"</td></tr></table>"
         )
 
-    html = f"""
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; background: #0a0f1a; color: #e2e8f0; border-radius: 12px;">
-        <div style="margin-bottom: 20px;">
-            <span style="color:#ef4444;font-size:18px;font-weight:700;">RedWire</span>
-            <span style="color:#475569;font-size:12px;margin-left:8px;">{esc(heading)}</span>
-        </div>
-        <h1 style="font-size:16px;font-weight:600;color:#f1f5f9;margin:0 0 4px;line-height:1.4;">{esc(title)}</h1>
-        {message_html}
-        {meta_html}
-        {button_html}
-        <hr style="border:none;border-top:1px solid #1e293b;margin:24px 0 12px;" />
-        <p style="font-size:11px;color:#475569;">You're receiving this because email notifications are enabled for this event in your RedWire profile. Manage them under Profile → Notifications.</p>
-    </div>
-    """
+    # Logo embedded inline (CID). The wordmark sits alongside as bulletproof
+    # alt text so the brand still reads if a client suppresses images.
+    brand_mark = (
+        f"<img src='cid:{LOGO_CID}' width='120' alt='RedWire' "
+        f"style='display:block;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;' />"
+    )
+
+    preheader = esc(title)
+
+    html = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark" />
+<title>RedWire</title>
+</head>
+<body style="margin:0;padding:0;background:{BG};">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:{BG};font-size:1px;line-height:1px;">{preheader}</div>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:{BG};padding:32px 16px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="width:560px;max-width:100%;background:{CARD};border:1px solid {BORDER};border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+        <!-- Header -->
+        <tr>
+          <td style="padding:24px 32px 20px;border-bottom:1px solid {BORDER};">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td align="left" style="vertical-align:middle;">{brand_mark}</td>
+                <td align="right" style="vertical-align:middle;">
+                  <span style="display:inline-block;padding:5px 12px;background:{ACCENT_SOFT};color:#c4b5fd;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-radius:999px;">{esc(heading)}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Accent rule -->
+        <tr><td style="height:3px;background:{ACCENT};line-height:3px;font-size:0;">&nbsp;</td></tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:28px 32px 8px;">
+            <h1 style="margin:0;font-size:18px;font-weight:700;color:{TEXT};line-height:1.4;">{esc(title)}</h1>
+            {message_html}
+            {meta_html}
+            {button_html}
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 32px 26px;border-top:1px solid {BORDER};">
+            <p style="margin:0;font-size:11px;line-height:1.6;color:{FAINT};">
+              You're receiving this because email notifications are enabled for this event in your RedWire profile.
+              Manage them under <span style="color:{MUTED};">Profile &rarr; Notifications</span>.
+            </p>
+            <p style="margin:10px 0 0;font-size:11px;color:#3f3f52;">RedWire &middot; Red Team Operations Platform</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>"""
 
     text_parts = [f"RedWire — {heading}", "", title]
     if message:

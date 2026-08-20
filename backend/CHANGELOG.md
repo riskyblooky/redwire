@@ -7,6 +7,10 @@ section becomes one release entry.
 ## [1.5.0] — Unreleased
 
 ### Improved
+- **Notification emails redesigned** — per-user notification and automation
+  emails now use a professional, branded template: the RedWire logo (embedded
+  inline so it renders in every client), the dark theme with the indigo accent,
+  a category badge, a details table, and a clear call-to-action button.
 - **Friendly names everywhere** — the UI now shows a user's full name (falling
   back to their username) instead of the raw username, with the `@username`
   shown on hover. Applied across creator labels (findings, test cases, assets,
