@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import {
     Dialog,
     DialogContent,
@@ -70,7 +70,6 @@ export function TemplatePickerDialog({
 }: TemplatePickerDialogProps) {
     const [search, setSearch] = useState('');
     const debouncedSearch = useDebounce(search, 300);
-    const [page, setPage] = useState(0);
     const [categories, setCategories] = useState<string[]>([]);   // [] = all
     const [includeNonPublished, setIncludeNonPublished] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
@@ -88,10 +87,13 @@ export function TemplatePickerDialog({
 
     const activeFilterCount = categories.length + (includeNonPublished ? 1 : 0);
 
-    // Server-side search + paging (live). Only runs while the dialog is open.
-    const query = useQuery({
-        queryKey: ['template-picker', resource, { q: debouncedSearch, categories, includeNonPublished, page }],
-        queryFn: async () => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const sentinelRef = useRef<HTMLDivElement>(null);
+
+    // Server-side search + infinite scroll (live). Only runs while the dialog is open.
+    const query = useInfiniteQuery({
+        queryKey: ['template-picker', resource, { q: debouncedSearch, categories, includeNonPublished }],
+        queryFn: async ({ pageParam }) => {
             // URLSearchParams so multi-category serializes as repeated ?category=A&category=B
             const params = new URLSearchParams();
             if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim());
@@ -99,28 +101,49 @@ export function TemplatePickerDialog({
             if (!includeNonPublished) params.set('status', 'PUBLISHED');
             params.set('sort_by', 'title');
             params.set('sort_dir', 'asc');
-            params.set('skip', String(page * PAGE_SIZE));
+            params.set('skip', String(pageParam * PAGE_SIZE));
             params.set('limit', String(PAGE_SIZE));
             const res = await api.get(`${endpoint}?${params.toString()}`);
             const total = Number(res.headers['x-total-count'] ?? res.data.length);
-            return { items: res.data as PickerTemplate[], total };
+            return { items: res.data as PickerTemplate[], total, page: pageParam };
+        },
+        initialPageParam: 0,
+        getNextPageParam: (lastPage, allPages) => {
+            const loaded = allPages.reduce((n, p) => n + p.items.length, 0);
+            return loaded < lastPage.total ? allPages.length : undefined;
         },
         enabled: open,
-        placeholderData: (prev) => prev,
         staleTime: 30_000,
     });
 
-    const items = query.data?.items ?? [];
-    const total = query.data?.total ?? 0;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const items = query.data?.pages.flatMap(p => p.items) ?? [];
+    const total = query.data?.pages[0]?.total ?? 0;
     const isLoading = query.isLoading;
 
-    // Reset to page 0 when the query narrows/widens.
-    useEffect(() => { setPage(0); }, [debouncedSearch, categories, includeNonPublished]);
+    // Fetch the next page as the sentinel scrolls near the bottom of the list.
+    useEffect(() => {
+        const el = sentinelRef.current;
+        if (!el || !query.hasNextPage) return;
+        const obs = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && query.hasNextPage && !query.isFetchingNextPage) {
+                    query.fetchNextPage();
+                }
+            },
+            { root: scrollRef.current, rootMargin: '200px' },
+        );
+        obs.observe(el);
+        return () => obs.disconnect();
+    }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage, items.length]);
+
+    // Jump back to the top when the result set changes.
+    useEffect(() => {
+        scrollRef.current?.scrollTo({ top: 0 });
+    }, [debouncedSearch, categories, includeNonPublished]);
 
     const handleOpenChange = (isOpen: boolean) => {
         if (!isOpen) {
-            setSearch(''); setPage(0); setCategories([]); setIncludeNonPublished(false); setShowFilters(false);
+            setSearch(''); setCategories([]); setIncludeNonPublished(false); setShowFilters(false);
         }
         onOpenChange(isOpen);
     };
@@ -234,8 +257,8 @@ export function TemplatePickerDialog({
                     )}
                 </div>
 
-                {/* Results — server page */}
-                <div className="flex-1 overflow-y-auto min-h-0 px-6">
+                {/* Results — server-side infinite scroll */}
+                <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 px-6">
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center py-16">
                             <Loader2 className="h-6 w-6 animate-spin text-indigo-400 mb-2" />
@@ -300,30 +323,24 @@ export function TemplatePickerDialog({
                                     </button>
                                 );
                             })}
+                            {/* Infinite-scroll sentinel + "loading more" indicator */}
+                            <div ref={sentinelRef} />
+                            {query.isFetchingNextPage && (
+                                <div className="flex items-center justify-center gap-2 py-3 text-xs text-slate-500">
+                                    <Loader2 className="h-4 w-4 animate-spin" /> Loading more…
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
 
-                {/* Footer — server paging + count */}
+                {/* Footer — count */}
                 {!isLoading && total > 0 && (
                     <div className="px-6 py-3 border-t border-slate-800/60 shrink-0 flex items-center justify-between">
                         <p className="text-[11px] text-slate-500 flex items-center gap-2">
-                            {total} template{total !== 1 ? 's' : ''}{(search || categories.length > 0) ? ' matching' : ' total'}
-                            {query.isFetching && <Loader2 className="h-3 w-3 animate-spin" />}
+                            {items.length} of {total} shown{(search || categories.length > 0) ? ' · filtered' : ''}
+                            {query.isFetching && !query.isFetchingNextPage && <Loader2 className="h-3 w-3 animate-spin" />}
                         </p>
-                        {totalPages > 1 && (
-                            <div className="flex items-center gap-2">
-                                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                                    className="h-7 px-2 bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white disabled:opacity-30">
-                                    <ChevronLeft className="h-3.5 w-3.5" />
-                                </Button>
-                                <span className="text-[11px] text-slate-400 tabular-nums min-w-[60px] text-center">{page + 1} of {totalPages}</span>
-                                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-                                    className="h-7 px-2 bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white disabled:opacity-30">
-                                    <ChevronRight className="h-3.5 w-3.5" />
-                                </Button>
-                            </div>
-                        )}
                     </div>
                 )}
             </DialogContent>
