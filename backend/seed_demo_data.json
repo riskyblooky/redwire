@@ -1,0 +1,522 @@
+{
+  "engagement": {
+    "name": "Meridian Financial — Red Team Operation",
+    "client_name": "Meridian Financial Group",
+    "engagement_type": "red_team",
+    "status": "IN_PROGRESS",
+    "description": "Adversary-emulation red team operation against Meridian Financial's external perimeter and internal Active Directory environment, emulating a financially-motivated threat actor (FIN-style TTPs).",
+    "scope": "In scope: *.meridianfin.com external web estate, corporate VPN, and the internal AD domain MERIDIAN.CORP (10.10.0.0/16). Physical and social engineering out of scope except approved phishing pretext.",
+    "objectives": "Demonstrate a realistic path from external unauthenticated access to Active Directory Domain Admin, capturing evidence at each stage and documenting a cleanup/rollback plan.",
+    "start_date": "2026-07-01T17:20:56.400705",
+    "end_date": "2026-07-31T17:20:56.400705"
+  },
+  "phases": [
+    {
+      "phase_name": "SCOPING",
+      "sort_order": 0,
+      "planned_start": "2026-07-01T17:20:56.400705",
+      "planned_end": "2026-07-08T17:20:56.400705"
+    },
+    {
+      "phase_name": "PLANNING",
+      "sort_order": 1,
+      "planned_start": "2026-07-08T17:20:56.400705",
+      "planned_end": "2026-07-16T17:20:56.400705"
+    },
+    {
+      "phase_name": "IN_PROGRESS",
+      "sort_order": 2,
+      "planned_start": "2026-07-16T17:20:56.400705",
+      "planned_end": "2026-07-23T17:20:56.400705"
+    },
+    {
+      "phase_name": "REPORTING",
+      "sort_order": 3,
+      "planned_start": "2026-07-23T17:20:56.400705",
+      "planned_end": "2026-07-31T17:20:56.400705"
+    }
+  ],
+  "assets": [
+    {
+      "name": "Customer Portal",
+      "asset_type": "web_application",
+      "identifier": "https://portal.meridianfin.com",
+      "description": "Public customer banking portal (Meridian CMS).",
+      "notes": null,
+      "in_scope": true,
+      "is_scanned": true,
+      "is_pwned": true,
+      "ports": []
+    },
+    {
+      "name": "Reporting Service",
+      "asset_type": "web_application",
+      "identifier": "https://reporting.meridianfin.com",
+      "description": "Internal reporting/export microservice, reachable from portal tier.",
+      "notes": null,
+      "in_scope": true,
+      "is_scanned": true,
+      "is_pwned": true,
+      "ports": []
+    },
+    {
+      "name": "Jenkins CI",
+      "asset_type": "web_application",
+      "identifier": "https://jenkins.meridianfin.com",
+      "description": "Build server exposed on a forgotten subdomain.",
+      "notes": null,
+      "in_scope": true,
+      "is_scanned": true,
+      "is_pwned": false,
+      "ports": []
+    },
+    {
+      "name": "Corporate VPN Gateway",
+      "asset_type": "network_device",
+      "identifier": "vpn.meridianfin.com",
+      "description": "Ivanti/Pulse-style SSL VPN concentrator.",
+      "notes": null,
+      "in_scope": true,
+      "is_scanned": true,
+      "is_pwned": false,
+      "ports": []
+    },
+    {
+      "name": "DC01",
+      "asset_type": "server",
+      "identifier": "10.10.20.10",
+      "description": "Primary Active Directory Domain Controller (MERIDIAN.CORP).",
+      "notes": null,
+      "in_scope": true,
+      "is_scanned": true,
+      "is_pwned": true,
+      "ports": []
+    },
+    {
+      "name": "WKSTN-4412",
+      "asset_type": "workstation",
+      "identifier": "10.10.30.44",
+      "description": "Finance department workstation (jhalvorsen).",
+      "notes": null,
+      "in_scope": true,
+      "is_scanned": true,
+      "is_pwned": true,
+      "ports": []
+    }
+  ],
+  "findings": [
+    {
+      "title": "SQL Injection in Customer Portal Login",
+      "category": "Injection",
+      "description": "The `uid` parameter of POST /login is concatenated into a raw SQL query. Error-based and UNION extraction confirmed.",
+      "severity": "CRITICAL",
+      "status": "VERIFIED",
+      "cvss_score": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "impact": "Full read/write access to the portal database, including credential material.",
+      "technical_details": "The `uid` parameter of POST /login is concatenated into a raw SQL query. Error-based and UNION extraction confirmed.",
+      "steps_to_reproduce": null,
+      "mitigations": null,
+      "references": null,
+      "asset_names": [
+        "Customer Portal"
+      ]
+    },
+    {
+      "title": "Server-Side Request Forgery in Reporting Export",
+      "category": "SSRF",
+      "description": "The `url` parameter of /export accepts arbitrary schemes/hosts and returns the response body.",
+      "severity": "HIGH",
+      "status": "VERIFIED",
+      "cvss_score": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:L/A:N",
+      "impact": "Attacker can coerce the reporting service to make arbitrary internal requests.",
+      "technical_details": "The `url` parameter of /export accepts arbitrary schemes/hosts and returns the response body.",
+      "steps_to_reproduce": null,
+      "mitigations": null,
+      "references": null,
+      "asset_names": [
+        "Reporting Service"
+      ]
+    },
+    {
+      "title": "Cloud Metadata Credential Exposure via SSRF",
+      "category": "Cloud",
+      "description": "SSRF reaches 169.254.169.254 IMDSv1 and returns temporary IAM role credentials.",
+      "severity": "CRITICAL",
+      "status": "VERIFIED",
+      "cvss_score": 9.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:N",
+      "impact": "IMDS-exposed IAM role credentials grant cloud-side access.",
+      "technical_details": "SSRF reaches 169.254.169.254 IMDSv1 and returns temporary IAM role credentials.",
+      "steps_to_reproduce": null,
+      "mitigations": null,
+      "references": null,
+      "asset_names": [
+        "Reporting Service"
+      ]
+    },
+    {
+      "title": "Kerberoastable Service Account with Weak Password (svc_sql)",
+      "category": "AD",
+      "description": "svc_sql has an SPN and a weak password; its TGS was requested and cracked offline in minutes.",
+      "severity": "HIGH",
+      "status": "VERIFIED",
+      "cvss_score": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+      "impact": "Offline cracking of svc_sql yields a privileged service credential.",
+      "technical_details": "svc_sql has an SPN and a weak password; its TGS was requested and cracked offline in minutes.",
+      "steps_to_reproduce": null,
+      "mitigations": null,
+      "references": null,
+      "asset_names": [
+        "DC01"
+      ]
+    },
+    {
+      "title": "Lateral Movement via NTLM Pass-the-Hash",
+      "category": "AD",
+      "description": "svc_sql NTLM hash accepted for SMB/WMI authentication to DC01 (no SMB signing enforcement).",
+      "severity": "HIGH",
+      "status": "VERIFIED",
+      "cvss_score": 8.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+      "impact": "NTLM hash reuse permits authentication to high-value hosts without cracking.",
+      "technical_details": "svc_sql NTLM hash accepted for SMB/WMI authentication to DC01 (no SMB signing enforcement).",
+      "steps_to_reproduce": null,
+      "mitigations": null,
+      "references": null,
+      "asset_names": [
+        "DC01",
+        "WKSTN-4412"
+      ]
+    },
+    {
+      "title": "Full Active Directory Domain Compromise",
+      "category": "AD",
+      "description": "DCSync of the Administrator and krbtgt accounts achieved; domain dominance established.",
+      "severity": "CRITICAL",
+      "status": "VERIFIED",
+      "cvss_score": 10,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+      "impact": "Complete control of the MERIDIAN.CORP domain, including all identities and data.",
+      "technical_details": "DCSync of the Administrator and krbtgt accounts achieved; domain dominance established.",
+      "steps_to_reproduce": null,
+      "mitigations": null,
+      "references": null,
+      "asset_names": [
+        "DC01"
+      ]
+    },
+    {
+      "title": "Unauthenticated Jenkins Instance Exposed",
+      "category": "Misconfig",
+      "description": "jenkins.meridianfin.com allows anonymous read of jobs and build logs.",
+      "severity": "MEDIUM",
+      "status": "OPEN",
+      "cvss_score": 6.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+      "impact": "Anonymous access to CI could expose build secrets and enable RCE.",
+      "technical_details": "jenkins.meridianfin.com allows anonymous read of jobs and build logs.",
+      "steps_to_reproduce": null,
+      "mitigations": null,
+      "references": null,
+      "asset_names": [
+        "Jenkins CI"
+      ]
+    },
+    {
+      "title": "VPN Allows Password Authentication Without MFA",
+      "category": "Auth",
+      "description": "## Summary\n\nThe corporate **VPN** (`vpn.meridian.example`) accepts *password-only* authentication and does **not** enforce multi-factor authentication (MFA). Anyone with a valid credential — from phishing or a breach dump — can log straight in.\n\n- Endpoint: `https://vpn.meridian.example`\n- Auth realm: `corp` (LDAP password)\n- MFA: **not enforced**\n\nExample authentication request:\n\n```http\nPOST /remote/logincheck HTTP/1.1\nHost: vpn.meridian.example\nContent-Type: application/x-www-form-urlencoded\n\nusername=jdoe&credential=Summer2026!&realm=corp\n```\n\n> No second factor is requested at any point in the flow.",
+      "severity": "MEDIUM",
+      "status": "OPEN",
+      "cvss_score": 5.9,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "impact": "## Impact\n\nA single set of leaked credentials grants **full internal network access**. On Meridian's flat internal network this is effectively an initial-access foothold.\n\n1. No MFA → credential stuffing / password spray is viable\n2. The tunnel lands on the internal `10.0.0.0/8` range\n3. Reused corporate passwords appear in prior breach corpora\n\n```python\n# Illustrative spray success against the VPN\nattempts, successful = 5000, 12\nprint(f\"success rate: {successful / attempts:.2%}\")  # success rate: 0.24%\n```",
+      "technical_details": "## Technical Details\n\nThe FortiGate SSL-VPN portal binds `VPN-Users` to a local password realm with **no FortiToken / RADIUS-MFA** policy attached.\n\n```bash\n# Observed config (sanitized)\nconfig vpn ssl settings\n    set servercert \"Fortinet_Factory\"\n    set source-interface \"wan1\"\nend\nconfig user group\n    edit \"VPN-Users\"\n        set member \"corp-ldap\"      # <-- password realm, no MFA member\n    next\nend\n```\n\nNote the absence of any `two-factor` / `fortitoken` binding on `VPN-Users`.",
+      "steps_to_reproduce": "## Steps to Reproduce\n\n1. Obtain a valid corporate credential (phish, breach dump, or spray).\n2. Browse to the SSL-VPN portal at `https://vpn.meridian.example/remote/login`.\n3. Submit username + password and observe that **no MFA prompt** appears.\n4. Confirm the tunnel and internal reachability:\n\n```bash\n# From the established tunnel\nping -c1 10.0.0.10\nnmap -sn 10.0.10.0/24\n```\n\nYou now have routed access to the internal network.",
+      "mitigations": "## Remediation\n\n**Enforce MFA on all remote-access authentication.**\n\n- [ ] Bind a FortiToken / RADIUS-MFA policy to `VPN-Users`\n- [ ] Disable password-only realms for remote access\n- [ ] Alert on any VPN login lacking a second factor\n\n```bash\nconfig user group\n    edit \"VPN-Users\"\n        set member \"corp-ldap\" \"fortitoken-mfa\"\n    next\nend\n```",
+      "references": "## References\n\n- [NIST SP 800-63B — Authentication Assurance](https://pages.nist.gov/800-63-3/sp800-63b.html)\n- [MITRE ATT&CK T1133 — External Remote Services](https://attack.mitre.org/techniques/T1133/)\n- CIS Control 6.5 — *Require MFA for Remote Network Access*\n\n```text\nCWE-308: Use of Single-factor Authentication\n```",
+      "asset_names": [
+        "Corporate VPN Gateway"
+      ]
+    }
+  ],
+  "testcases": [
+    {
+      "id": "5651734c-e4d5-4f5f-b475-ecdbc7c168fa",
+      "parent_id": null,
+      "title": "External Attack Surface Assessment",
+      "category": "Recon",
+      "description": "Enumerate and probe the external perimeter.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": false,
+      "is_successful": null,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.565292",
+      "asset_names": []
+    },
+    {
+      "id": "c121484e-33fb-4674-9fae-08da80a68c6c",
+      "parent_id": "5651734c-e4d5-4f5f-b475-ecdbc7c168fa",
+      "title": "Subdomain & service enumeration",
+      "category": "Recon",
+      "description": "Passive + active enumeration of *.meridianfin.com.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.567611",
+      "asset_names": [
+        "Jenkins CI"
+      ]
+    },
+    {
+      "id": "052b0304-c36b-42d3-bfdc-602e81a87960",
+      "parent_id": "5651734c-e4d5-4f5f-b475-ecdbc7c168fa",
+      "title": "Customer portal authentication testing",
+      "category": "Web",
+      "description": "Test the portal login for injection and auth flaws.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.567612",
+      "asset_names": [
+        "Customer Portal"
+      ]
+    },
+    {
+      "id": "02ad2a4b-6f12-4b04-8962-99bf8cf41b98",
+      "parent_id": "5651734c-e4d5-4f5f-b475-ecdbc7c168fa",
+      "title": "Reporting module input validation",
+      "category": "Web",
+      "description": "Fuzz the reporting export parameters (SSRF/injection).",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.567613",
+      "asset_names": [
+        "Reporting Service"
+      ]
+    },
+    {
+      "id": "f5409f2a-e6b7-4b3f-ba1b-3ed3ca74079e",
+      "parent_id": null,
+      "title": "Initial Access & Foothold",
+      "category": "Exploitation",
+      "description": "Convert web findings into a foothold.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": false,
+      "is_successful": null,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.569281",
+      "asset_names": []
+    },
+    {
+      "id": "e8d5f21a-ed6a-4489-a1c6-4922d0d031cd",
+      "parent_id": "f5409f2a-e6b7-4b3f-ba1b-3ed3ca74079e",
+      "title": "Exploit SQL injection in portal login",
+      "category": "Exploitation",
+      "description": "Weaponize the login SQLi to extract credentials.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.570308",
+      "asset_names": [
+        "Customer Portal"
+      ]
+    },
+    {
+      "id": "c01ee0e9-e7fb-43f9-ad02-0c895b4e4a2c",
+      "parent_id": "f5409f2a-e6b7-4b3f-ba1b-3ed3ca74079e",
+      "title": "Access internal admin panel with recovered DB creds",
+      "category": "Exploitation",
+      "description": "Reuse dumped service creds against the internal admin panel.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.57031",
+      "asset_names": [
+        "Customer Portal"
+      ]
+    },
+    {
+      "id": "b50910ad-490f-4c8e-b3ee-9fd6fe661605",
+      "parent_id": null,
+      "title": "Internal Privilege Escalation",
+      "category": "Priv-Esc",
+      "description": "Move from foothold toward domain privilege.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": false,
+      "is_successful": null,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.571321",
+      "asset_names": []
+    },
+    {
+      "id": "76424016-8698-419d-8288-e8bcfd3546ee",
+      "parent_id": "b50910ad-490f-4c8e-b3ee-9fd6fe661605",
+      "title": "Credential reuse against VPN gateway",
+      "category": "Lateral",
+      "description": "Authenticate to the VPN with recovered domain creds.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.572236",
+      "asset_names": [
+        "Corporate VPN Gateway"
+      ]
+    },
+    {
+      "id": "5affe2d9-3b80-4cf6-bb8b-57e720743567",
+      "parent_id": "b50910ad-490f-4c8e-b3ee-9fd6fe661605",
+      "title": "Kerberoast domain service accounts",
+      "category": "Priv-Esc",
+      "description": "## Objective\n\nRequest Kerberos **service tickets (TGS)** for accounts with an SPN and crack them offline to recover service-account passwords.\n\n- Technique: **Kerberoasting** (`MITRE ATT&CK T1558.003`)\n- Target: domain service accounts in `MERIDIAN.LOCAL`\n- Prereq: *any* authenticated domain user\n\n```text\nSPN accounts are encrypted with the service account's NTLM hash,\nwhich is crackable offline without touching the DC again.\n```",
+      "steps": "## Steps\n\n1. Enumerate SPNs and request TGS tickets with Rubeus:\n\n```powershell\n.\\Rubeus.exe kerberoast /outfile:hashes.txt /nowrap\n```\n\n2. Or from Linux with Impacket:\n\n```bash\nGetUserSPNs.py -request -dc-ip 10.0.0.10 \\\n  MERIDIAN.LOCAL/jdoe:'Summer2026!' -outputfile hashes.txt\n```\n\n3. Crack the tickets offline:\n\n```bash\nhashcat -m 13100 hashes.txt rockyou.txt -O\n```",
+      "expected_result": "## Expected Result\n\nAt least one `$krb5tgs$` hash is recovered and cracked, yielding a **plaintext service-account password**.\n\n```text\n$krb5tgs$23$*svc_sql$MERIDIAN.LOCAL$MSSQLSvc/db01...  ->  P@ssw0rd-SQL-2026\n```\n\nThe recovered account should carry elevated rights (DB admin, backup operator, etc.).",
+      "actual_result": "## Actual Result\n\n**3 SPNs** enumerated, **1 cracked** within ~4 minutes:\n\n```text\nsvc_sql   MSSQLSvc/db01.meridian.local   ->  CRACKED: P@ssw0rd-SQL-2026\nsvc_web   HTTP/intranet.meridian.local   ->  not cracked\nsvc_bkp   CIFS/backup01.meridian.local   ->  CRACKED: Backup!ng2026\n```\n\n> `svc_bkp` is a member of **Backup Operators** — a viable path to DC.",
+      "is_executed": true,
+      "is_successful": true,
+      "notes": "## Notes\n\n- Use `-O` (optimized kernel) in hashcat for a big speedup on `-m 13100`.\n- `svc_web` is AES-only (`etype 17/18`), so an RC4 downgrade wasn't available:\n\n```bash\n# Confirm supported etypes\nGetUserSPNs.py -dc-ip 10.0.0.10 MERIDIAN.LOCAL/jdoe:'Summer2026!'\n```\n\nRemediation: rotate + set 25+ char passwords on all `svc_*` accounts, or move to **gMSA**.",
+      "created_at": "2026-07-19T17:20:56.572238",
+      "asset_names": [
+        "DC01"
+      ]
+    },
+    {
+      "id": "307484f9-388b-4175-a4a9-e27be9f26de1",
+      "parent_id": "b50910ad-490f-4c8e-b3ee-9fd6fe661605",
+      "title": "Pass-the-hash to Domain Controller (DC01)",
+      "category": "Lateral",
+      "description": "Use cracked svc_sql material for PtH to DC01.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.572239",
+      "asset_names": [
+        "DC01",
+        "WKSTN-4412"
+      ]
+    },
+    {
+      "id": "45dfcd3f-dc12-4afc-af54-57323bec70f2",
+      "parent_id": null,
+      "title": "Domain Dominance & Persistence",
+      "category": "IMPACT",
+      "description": "Establish domain dominance and persistence.",
+      "steps": "",
+      "expected_result": "",
+      "actual_result": null,
+      "is_executed": false,
+      "is_successful": null,
+      "notes": "",
+      "created_at": "2026-07-19T17:20:56.573188",
+      "asset_names": []
+    },
+    {
+      "id": "69c7bc9d-f294-4b69-9432-c7930aae5c38",
+      "parent_id": "45dfcd3f-dc12-4afc-af54-57323bec70f2",
+      "title": "DCSync & golden-ticket preparation",
+      "category": "Impact",
+      "description": "DCSync krbtgt and prepare golden-ticket persistence.",
+      "steps": null,
+      "expected_result": null,
+      "actual_result": null,
+      "is_executed": true,
+      "is_successful": true,
+      "notes": null,
+      "created_at": "2026-07-19T17:20:56.573882",
+      "asset_names": [
+        "DC01"
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "title": "Rules of Engagement & Testing Windows",
+      "content": "Approved window: 08:00–20:00 local, Mon–Fri. No DoS, no data destruction. krbtgt reset coordination required before close-out. Emergency contact: SOC lead. Deconfliction phrase agreed with blue team."
+    },
+    {
+      "title": "SQLi payload & extraction log",
+      "content": "Confirmed error-based + UNION on POST /login `uid`. Payload: `uid=1' UNION SELECT username,password_hash,3 FROM users-- -`Extracted 1,842 rows; svc_portal service account present with reused password."
+    },
+    {
+      "title": "Credential reuse matrix",
+      "content": "svc_portal → internal admin panel (valid) jhalvorsen → VPN (valid, no MFA) and domain auth (valid) svc_sql → local admin on 3 SQL hosts. Track which creds work where here."
+    },
+    {
+      "title": "Kerberoast crack results (hashcat)",
+      "content": "Mode 13100, wordlist rockyou + rules d3ad0ne. svc_sql:$krb5tgs$... cracked in 4m ('Summer2019$sql'). Two other SPNs uncrackable within window."
+    },
+    {
+      "title": "DC01 post-exploitation checklist",
+      "content": "\\[x\\] PtH to DC01 \\[x\\] secretsdump (DA + krbtgt) \\[x\\] DCSync \\[ \\] Evaluate persistence footprint for cleanup Golden ticket NOT deployed to prod — lab only."
+    },
+    {
+      "title": "Cleanup / rollback tracker",
+      "content": "OUTSTANDING: remove svc_backup2 from Domain Admins; coordinate krbtgt double-reset. DONE: web shell removed, DC01 log-clear documented for blue team."
+    }
+  ],
+  "cleanup": [
+    {
+      "title": "Web shell on portal upload dir",
+      "artifact_type": "web_shell",
+      "status": "CLEANED",
+      "location": "portal.meridianfin.com:/var/www/uploads/x.php",
+      "description": "Minimal PHP web shell staged during exploitation.",
+      "cleanup_notes": null
+    },
+    {
+      "title": "Backdoor domain account (svc_backup2)",
+      "artifact_type": "domain_account",
+      "status": "PENDING",
+      "location": "MERIDIAN.CORP",
+      "description": "Persistence account created in Domain Admins — pending removal.",
+      "cleanup_notes": null
+    },
+    {
+      "title": "Cleared Windows event logs on DC01",
+      "artifact_type": "log_manipulation",
+      "status": "NOT_APPLICABLE",
+      "location": "DC01",
+      "description": "Security event log cleared during operation (documented, not restorable).",
+      "cleanup_notes": null
+    },
+    {
+      "title": "Golden ticket material in memory",
+      "artifact_type": "kerberos_ticket",
+      "status": "PENDING",
+      "location": "MERIDIAN.CORP",
+      "description": "krbtgt compromised — requires domain-wide krbtgt double-reset.",
+      "cleanup_notes": null
+    }
+  ]
+}
