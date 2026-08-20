@@ -89,6 +89,7 @@ export interface ScanImport {
     ports_added: number;
     created_by?: string | null;
     created_by_username?: string | null;
+    created_by_full_name?: string | null;
     created_at?: string | null;
 }
 

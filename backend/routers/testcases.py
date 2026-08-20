@@ -947,6 +947,7 @@ async def upload_testcase_evidence(
     )
 
     new_evidence.created_by_username = current_user.username
+    new_evidence.created_by_full_name = current_user.full_name
     return new_evidence
 
 

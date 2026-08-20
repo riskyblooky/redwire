@@ -86,7 +86,7 @@ async def get_evidence(
     from models.testcase import TestCase
     
     result = await db.execute(
-        select(Evidence, User.username, Finding.title.label("finding_title"), TestCase.title.label("testcase_title"))
+        select(Evidence, User.username, User.full_name, Finding.title.label("finding_title"), TestCase.title.label("testcase_title"))
         .outerjoin(User, Evidence.created_by == User.id)
         .outerjoin(Finding, Evidence.finding_id == Finding.id)
         .outerjoin(TestCase, Evidence.testcase_id == TestCase.id)
@@ -100,7 +100,7 @@ async def get_evidence(
             detail="Evidence not found"
         )
     
-    evidence, username, finding_title, testcase_title = row
+    evidence, username, full_name, finding_title, testcase_title = row
     
     # Authorization Check using RBAC
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
@@ -122,6 +122,7 @@ async def get_evidence(
             )
     
     evidence.created_by_username = username
+    evidence.created_by_full_name = full_name
     evidence.finding_title = finding_title
     evidence.testcase_title = testcase_title
     
@@ -206,14 +207,15 @@ async def update_evidence(
     
     # Reload with username
     result = await db.execute(
-        select(Evidence, User.username)
+        select(Evidence, User.username, User.full_name)
         .outerjoin(User, Evidence.created_by == User.id)
         .where(Evidence.id == evidence.id)
     )
     row = result.first()
     if row:
-        evidence, username = row
+        evidence, username, full_name = row
         evidence.created_by_username = username
+        evidence.created_by_full_name = full_name
     else:
         await db.refresh(evidence)
 
@@ -368,14 +370,15 @@ async def replace_evidence_file(
 
     # Reload with username
     result = await db.execute(
-        select(Evidence, User.username)
+        select(Evidence, User.username, User.full_name)
         .outerjoin(User, Evidence.created_by == User.id)
         .where(Evidence.id == evidence.id)
     )
     row = result.first()
     if row:
-        evidence, username = row
+        evidence, username, full_name = row
         evidence.created_by_username = username
+        evidence.created_by_full_name = full_name
     else:
         await db.refresh(evidence)
 

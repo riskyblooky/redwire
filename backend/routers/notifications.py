@@ -59,7 +59,7 @@ async def get_notifications(
     query = (
         select(
             Notification,
-            User.full_name.label("actor_name"),
+            func.coalesce(User.full_name, User.username).label("actor_name"),
         )
         .outerjoin(User, Notification.actor_id == User.id)
         .where(Notification.user_id == current_user.id)
@@ -122,7 +122,7 @@ async def browse_notifications(
 
     order = Notification.created_at.asc() if sort_order == "asc" else Notification.created_at.desc()
     query = (
-        select(Notification, User.full_name.label("actor_name"))
+        select(Notification, func.coalesce(User.full_name, User.username).label("actor_name"))
         .outerjoin(User, Notification.actor_id == User.id)
         .where(*conds)
         .order_by(order)

@@ -28,6 +28,7 @@ class EvidenceResponse(EvidenceBase):
     updated_at: datetime
     created_by: str
     created_by_username: Optional[str] = None
+    created_by_full_name: Optional[str] = None
     created_by_profile_photo: Optional[str] = None
     updated_by: Optional[str] = None
     unresolved_thread_count: Optional[int] = 0

@@ -98,6 +98,7 @@ class ScanImportResponse(BaseModel):
     ports_added: int = 0
     created_by: Optional[str] = None
     created_by_username: Optional[str] = None
+    created_by_full_name: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:

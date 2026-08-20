@@ -18,6 +18,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { UserName } from '@/components/ui/user-name';
 import { useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { useEngagements } from '@/lib/hooks/use-engagements';
@@ -257,7 +258,7 @@ function ScanHistoryRow({ scan }: { scan: ScanImport }) {
                 <div className="border-t border-slate-800/60 p-3">
                     <ScanMeta fields={metaFromScan(scan)} />
                     <div className="mt-2 text-[11px] text-slate-600">
-                        Imported by {scan.created_by_username || 'unknown'}
+                        Imported by <UserName name={scan.created_by_full_name} username={scan.created_by_username} fallback="unknown" />
                         {scan.created_at && ` · ${parseUTCDate(scan.created_at).toLocaleString()}`}
                     </div>
                 </div>

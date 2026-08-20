@@ -411,9 +411,9 @@ async def get_comments(
     response_comments = []
     for comment in comments:
         comment_dict = CommentResponse.model_validate(comment).model_dump()
-        comment_dict["author_name"] = comment.author.username if comment.author else None
+        comment_dict["author_name"] = (comment.author.full_name or comment.author.username) if comment.author else None
         comment_dict["author_profile_photo"] = comment.author.profile_photo if comment.author else None
-        comment_dict["resolver_name"] = comment.resolver.username if comment.resolver else None
+        comment_dict["resolver_name"] = (comment.resolver.full_name or comment.resolver.username) if comment.resolver else None
         response_comments.append(CommentResponse(**comment_dict))
     
     return response_comments
@@ -481,7 +481,7 @@ async def create_comment(
     comment = result.scalar_one()
     
     comment_dict = CommentResponse.model_validate(comment).model_dump()
-    comment_dict["author_name"] = comment.author.username if comment.author else None
+    comment_dict["author_name"] = (comment.author.full_name or comment.author.username) if comment.author else None
     comment_dict["author_profile_photo"] = comment.author.profile_photo if comment.author else None
     response = CommentResponse(**comment_dict)
 
@@ -574,9 +574,9 @@ async def update_comment(
     )
     comment = result.scalar_one()
     comment_dict = CommentResponse.model_validate(comment).model_dump()
-    comment_dict["author_name"] = comment.author.username if comment.author else None
+    comment_dict["author_name"] = (comment.author.full_name or comment.author.username) if comment.author else None
     comment_dict["author_profile_photo"] = comment.author.profile_photo if comment.author else None
-    comment_dict["resolver_name"] = comment.resolver.username if comment.resolver else None
+    comment_dict["resolver_name"] = (comment.resolver.full_name or comment.resolver.username) if comment.resolver else None
     return CommentResponse(**comment_dict)
 
 
@@ -617,9 +617,9 @@ async def resolve_comment(
     comment = result.scalar_one()
     
     comment_dict = CommentResponse.model_validate(comment).model_dump()
-    comment_dict["author_name"] = comment.author.username if comment.author else None
+    comment_dict["author_name"] = (comment.author.full_name or comment.author.username) if comment.author else None
     comment_dict["author_profile_photo"] = comment.author.profile_photo if comment.author else None
-    comment_dict["resolver_name"] = comment.resolver.username if comment.resolver else None
+    comment_dict["resolver_name"] = (comment.resolver.full_name or comment.resolver.username) if comment.resolver else None
     response = CommentResponse(**comment_dict)
 
     # Get thread for engagement_id
@@ -752,7 +752,7 @@ async def get_activity_log(
     response_logs = []
     for log in logs:
         log_dict = ActivityLogResponse.model_validate(log).model_dump()
-        log_dict["user_name"] = log.user.username if log.user else "System"
+        log_dict["user_name"] = (log.user.full_name or log.user.username) if log.user else "System"
         log_dict["user_profile_photo"] = log.user.profile_photo if log.user else None
         response_logs.append(log_dict)
     
@@ -1090,7 +1090,7 @@ async def get_activity_feed(
     items = []
     for log in logs:
         d = ActivityLogResponse.model_validate(log).model_dump()
-        d["user_name"] = log.user.username if log.user else "System"
+        d["user_name"] = (log.user.full_name or log.user.username) if log.user else "System"
         d["user_profile_photo"] = log.user.profile_photo if log.user else None
         d["action_category"] = _feed_action_category(log.action or "")
         d["content_kind"] = "none"

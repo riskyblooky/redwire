@@ -14,6 +14,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { UserName } from '@/components/ui/user-name';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
 import DashboardLayout from '@/components/layout/dashboard-layout';
@@ -444,7 +445,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                         />
                                         <div>
                                             <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Uploaded By</p>
-                                            <p className="text-sm text-slate-200">{evidence.created_by_username || evidence.created_by}</p>
+                                            <UserName className="text-sm text-slate-200" name={(evidence as any).created_by_full_name} username={evidence.created_by_username} fallback={evidence.created_by} />
                                         </div>
                                     </div>
 

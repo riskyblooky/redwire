@@ -984,6 +984,7 @@ async def get_engagement_evidence(
             Evidence,
             func.coalesce(unresolved_subquery.c.count, 0).label("unresolved_count"),
             User.username,
+            User.full_name,
             User.profile_photo,
             Finding.title.label("finding_title"),
             TestCase.title.label("testcase_title")
@@ -1005,9 +1006,10 @@ async def get_engagement_evidence(
     
     # Combine evidence with count, username, and linked item titles
     results = []
-    for evidence, count, username, profile_photo, finding_title, testcase_title in rows:
+    for evidence, count, username, full_name, profile_photo, finding_title, testcase_title in rows:
         evidence.unresolved_thread_count = count
         evidence.created_by_username = username
+        evidence.created_by_full_name = full_name
         evidence.created_by_profile_photo = profile_photo
         evidence.finding_title = finding_title
         evidence.testcase_title = testcase_title
