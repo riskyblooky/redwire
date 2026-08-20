@@ -57,6 +57,7 @@ import { ActivityLog } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
+import { displayName } from '@/lib/display-name';
 import { cn } from '@/lib/utils';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
@@ -241,7 +242,7 @@ export function LogsTab({ engagementId }: LogsTabProps) {
                             <SelectContent className="bg-slate-900 border-slate-800">
                                 <SelectItem value="all">All Users</SelectItem>
                                 {(engagement?.assigned_users || []).map((user: any) => (
-                                    <SelectItem key={user.id} value={user.id}>{user.username}</SelectItem>
+                                    <SelectItem key={user.id} value={user.id} title={`@${user.username}`}>{displayName(user)}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>

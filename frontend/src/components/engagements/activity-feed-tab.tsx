@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn, parseUTCDate } from '@/lib/utils';
+import { displayName } from '@/lib/display-name';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -330,7 +331,7 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
                         <SelectContent className="border-slate-800 bg-slate-900">
                             <SelectItem value="all">All users</SelectItem>
                             {(engagement?.assigned_users || []).map((u: any) => (
-                                <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>
+                                <SelectItem key={u.id} value={u.id} title={`@${u.username}`}>{displayName(u)}</SelectItem>
                             ))}
                         </SelectContent>
                     </Select>

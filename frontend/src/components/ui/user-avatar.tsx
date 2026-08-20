@@ -16,7 +16,8 @@ export interface UserAvatarProps {
 export function UserAvatar({ user, userId, username, className }: UserAvatarProps) {
     // If we have a full user object, prefer that
     const id = user?.id || userId || 'unknown';
-    const name = user?.username || user?.full_name || username || '??';
+    // Prefer full_name so initials are a person's initials (JD), not username chars.
+    const name = user?.full_name || user?.username || username || '??';
     const profilePhoto = user?.profile_photo;
     // Post-GHSA-h77m /uploads/* is auth-only; use the shared blob-fetch hook
     // so Radix's <AvatarImage> gets a src it can actually load.

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { parseUTCDate } from '@/lib/utils';
+import { displayName } from '@/lib/display-name';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -187,8 +188,8 @@ export function ApiTokenManagement() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     {users.map((u) => (
-                                        <SelectItem key={u.id} value={u.id}>
-                                            {u.username} {u.full_name ? `(${u.full_name})` : ''}
+                                        <SelectItem key={u.id} value={u.id} title={`@${u.username}`}>
+                                            {displayName(u)}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

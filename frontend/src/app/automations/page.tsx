@@ -25,6 +25,7 @@
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
+import { displayName } from '@/lib/display-name';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import {
     Zap, Plus, Trash2, Search, ArrowRight, Bell, Globe, Mail, Users, Shield,
@@ -696,7 +697,7 @@ function RuleEditor({
                                                                         ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                                                                         : 'bg-slate-700/30 text-slate-400 border border-slate-700/50 hover:text-white'
                                                                     }`}>
-                                                                {u.username}
+                                                                <span title={`@${u.username}`}>{displayName(u)}</span>
                                                             </button>
                                                         );
                                                     })}
