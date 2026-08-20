@@ -139,7 +139,7 @@ export function TemplatePickerDialog({
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-[820px] p-0 gap-0 overflow-hidden max-h-[85vh] flex flex-col">
+            <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-[820px] p-0 gap-0 overflow-hidden max-h-[85vh] flex flex-col top-[7vh] translate-y-0 data-[state=open]:slide-in-from-top-[7%] data-[state=closed]:slide-out-to-top-[7%]">
                 <div className="p-6 pb-4 space-y-3 shrink-0">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-lg">
