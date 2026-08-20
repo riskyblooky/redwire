@@ -11,6 +11,12 @@ section becomes one release entry.
   title and message in a tooltip, instead of the truncated preview.
 
 ### Fixed
+- **Automations** — a "finding status changed" rule (e.g. "when a critical
+  finding is marked Verified") no longer fires when a finding is first
+  **created**, or when a finding is edited without changing its status. The
+  status-change triggers now fire only on a real status transition. (This also
+  enables the engagement/cleanup status-change triggers, which previously never
+  fired.)
 - **Notifications popup** — relative timestamps no longer always render "just
   now"; the created-at time is now parsed as UTC.
 - **What's New modal** no longer reopens on every page navigation. It now only

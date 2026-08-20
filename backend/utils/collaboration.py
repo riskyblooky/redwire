@@ -449,8 +449,17 @@ async def create_activity_log(
 
         await evaluate_rules(db, action, context)
 
-        # Fire specialized status-change triggers
-        if "status" in (extra_context or {}):
+        # Fire specialized status-change triggers ONLY on an actual status
+        # transition. create_activity_log receives the current status in
+        # extra_context for creates and non-status edits alike, so keying on
+        # the mere presence of a "status" key mis-fired *_status_changed on
+        # finding CREATE (a brand-new open/medium finding matched a "when
+        # marked Verified" rule) and on every finding edit that never touched
+        # status. compute_changes_dict records real transitions under
+        # extra_context["changes"]["status"] = {"old", "new"} and omits
+        # unchanged fields — gate on that instead.
+        changes = (extra_context or {}).get("changes") or {}
+        if isinstance(changes.get("status"), dict):
             status_trigger = None
             if resource_type == "finding":
                 status_trigger = "finding_status_changed"
