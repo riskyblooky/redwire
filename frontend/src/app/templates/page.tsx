@@ -311,14 +311,14 @@ export default function TemplatesPage() {
     const [ftFiltersOpen, setFtFiltersOpen] = useState(false);
     const [ftStatusFilter, setFtStatusFilter] = useState<'ALL' | TemplateStatus>('ALL');
     const [ftCategoryFilter, setFtCategoryFilter] = useState<string>('all');
-    const [ftSortBy, setFtSortBy] = useState<'title' | 'status' | 'category' | 'updated_at'>('title');
+    const [ftSortBy, setFtSortBy] = useState<'title' | 'status' | 'category' | 'updated_at' | 'usage_count'>('title');
     const [ftSortDir, setFtSortDir] = useState<'asc' | 'desc'>('asc');
     const [tcSearch, setTcSearch] = useState('');
     const [tcMineOnly, setTcMineOnly] = useState(false);
     const [tcFiltersOpen, setTcFiltersOpen] = useState(false);
     const [tcStatusFilter, setTcStatusFilter] = useState<'ALL' | TemplateStatus>('ALL');
     const [tcCategoryFilter, setTcCategoryFilter] = useState<string>('all');
-    const [tcSortBy, setTcSortBy] = useState<'title' | 'status' | 'category' | 'updated_at'>('title');
+    const [tcSortBy, setTcSortBy] = useState<'title' | 'status' | 'category' | 'updated_at' | 'usage_count'>('title');
     const [tcSortDir, setTcSortDir] = useState<'asc' | 'desc'>('asc');
 
     const [rbSearch, setRbSearch] = useState('');
@@ -390,7 +390,7 @@ export default function TemplatesPage() {
     // Server already filtered/sorted/paged this set (see useFindingTemplatesPaged).
     const filteredFT = findingTemplates;
 
-    const toggleFtSort = (col: 'title' | 'status' | 'category' | 'updated_at') => {
+    const toggleFtSort = (col: 'title' | 'status' | 'category' | 'updated_at' | 'usage_count') => {
         if (ftSortBy === col) {
             setFtSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
         } else {
@@ -414,7 +414,7 @@ export default function TemplatesPage() {
 
     const filteredTC = tcTemplates;
 
-    const toggleTcSort = (col: 'title' | 'status' | 'category' | 'updated_at') => {
+    const toggleTcSort = (col: 'title' | 'status' | 'category' | 'updated_at' | 'usage_count') => {
         if (tcSortBy === col) {
             setTcSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
         } else {
@@ -930,6 +930,7 @@ export default function TemplatesPage() {
                                                         { key: 'title', label: 'Title', className: '' },
                                                         { key: 'status', label: 'Status', className: 'w-28' },
                                                         { key: 'category', label: 'Category', className: '' },
+                                                        { key: 'usage_count', label: 'Used', className: 'w-20' },
                                                         { key: 'updated_at', label: 'Updated', className: 'hidden lg:table-cell w-32' },
                                                     ] as const).map(col => {
                                                         const isActive = ftSortBy === col.key;
@@ -986,6 +987,7 @@ export default function TemplatesPage() {
                                                                     <span className="text-slate-600">—</span>
                                                                 )}
                                                             </TableCell>
+                                                            <TableCell className="text-slate-400 text-xs tabular-nums">{template.usage_count ?? 0}</TableCell>
                                                             <TableCell className="hidden lg:table-cell text-slate-400 text-xs whitespace-nowrap">
                                                                 {template.updated_at
                                                                     ? parseUTCDate(template.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -1163,6 +1165,7 @@ export default function TemplatesPage() {
                                                         { key: 'title', label: 'Title', className: '' },
                                                         { key: 'status', label: 'Status', className: 'w-28' },
                                                         { key: 'category', label: 'Category', className: '' },
+                                                        { key: 'usage_count', label: 'Used', className: 'w-20' },
                                                         { key: 'updated_at', label: 'Updated', className: 'hidden lg:table-cell w-32' },
                                                     ] as const).map(col => {
                                                         const isActive = tcSortBy === col.key;
@@ -1217,6 +1220,7 @@ export default function TemplatesPage() {
                                                                     );
                                                                 })()}
                                                             </TableCell>
+                                                            <TableCell className="text-slate-400 text-xs tabular-nums">{template.usage_count ?? 0}</TableCell>
                                                             <TableCell className="hidden lg:table-cell text-slate-400 text-xs whitespace-nowrap">
                                                                 {template.updated_at
                                                                     ? parseUTCDate(template.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })

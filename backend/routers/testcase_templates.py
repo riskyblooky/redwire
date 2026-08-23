@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_, func
+from sqlalchemy import select, or_, and_, func, text
 from typing import List, Optional
 from datetime import datetime
 from database import get_db
@@ -88,6 +88,7 @@ async def get_testcase_templates(
         "status": TestCaseTemplate.status,
         "category": TestCaseTemplate.category,
         "updated_at": TestCaseTemplate.updated_at,
+        "usage_count": TestCaseTemplate.usage_count,
     }
     sort_col = sort_map.get(sort_by, TestCaseTemplate.title)
     order = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
@@ -342,3 +343,22 @@ async def unpublish_testcase_template(
     await db.commit()
     await db.refresh(template)
     return template
+
+
+@router.post("/{template_id}/use")
+async def mark_template_used(
+    template_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Increment a test-case template's usage counter — called when the template
+    is applied via the picker. Bound-param SQL so the atomic increment doesn't
+    bump updated_at (usage isn't an edit)."""
+    row = (await db.execute(
+        text("UPDATE testcase_templates SET usage_count = usage_count + 1 "
+             "WHERE id = :id RETURNING usage_count").bindparams(id=template_id)
+    )).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    await db.commit()
+    return {"id": template_id, "usage_count": row[0]}

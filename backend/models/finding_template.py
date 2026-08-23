@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Enum as SQLEnum, JSON
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Enum as SQLEnum, JSON, Integer
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
 from models.template_status import TemplateStatus
@@ -19,6 +19,10 @@ class FindingTemplate(Base, AuditMixin):
     # rather than a join table — templates aren't engagement-scoped and we
     # don't query "which template uses technique X", so simpler wins.
     attack_technique_ids = Column(JSON, nullable=False, default=list, server_default='[]')
+
+    # How many times this template has been applied (via the picker). Drives
+    # "popular" sorting and template-usage analytics.
+    usage_count = Column(Integer, nullable=False, default=0, server_default='0')
 
     status = Column(
         SQLEnum(TemplateStatus, name="templatestatus"),

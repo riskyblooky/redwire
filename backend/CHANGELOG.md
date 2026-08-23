@@ -4,6 +4,16 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.6.0] — Unreleased
+
+### Added
+- **Template usage analytics** — finding and test-case templates now track how
+  many times they've been applied. Each apply from the "Select a template"
+  picker increments a usage counter; the picker and the Template Library both
+  show the count and can **sort by most used** (a "Popular" toggle in the
+  picker, a sortable **Used** column on the Templates page) — so you can see
+  which templates actually get used.
+
 ## [1.5.0] — 2026-08-20
 
 ### Improved

@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
     Search, BookOpen, Loader2, FileText, ChevronLeft, ChevronRight,
-    Filter, Check, ChevronsUpDown, X, Eye, Shield,
+    Filter, Check, ChevronsUpDown, X, Eye, Shield, TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -77,6 +77,7 @@ export function TemplatePickerDialog({
     const [showFilters, setShowFilters] = useState(false);
     const [catOpen, setCatOpen] = useState(false);
     const [previewing, setPreviewing] = useState<PickerTemplate | null>(null);
+    const [sortPopular, setSortPopular] = useState(false);   // false = A–Z, true = most-used
 
     const endpoint = resource === 'finding' ? '/templates' : '/testcase-templates';
 
@@ -95,15 +96,15 @@ export function TemplatePickerDialog({
 
     // Server-side search + infinite scroll (live). Only runs while the dialog is open.
     const query = useInfiniteQuery({
-        queryKey: ['template-picker', resource, { q: debouncedSearch, categories, includeNonPublished }],
+        queryKey: ['template-picker', resource, { q: debouncedSearch, categories, includeNonPublished, sortPopular }],
         queryFn: async ({ pageParam }) => {
             // URLSearchParams so multi-category serializes as repeated ?category=A&category=B
             const params = new URLSearchParams();
             if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim());
             categories.forEach(c => params.append('category', c));
             if (!includeNonPublished) params.set('status', 'PUBLISHED');
-            params.set('sort_by', 'title');
-            params.set('sort_dir', 'asc');
+            params.set('sort_by', sortPopular ? 'usage_count' : 'title');
+            params.set('sort_dir', sortPopular ? 'desc' : 'asc');
             params.set('skip', String(pageParam * PAGE_SIZE));
             params.set('limit', String(PAGE_SIZE));
             const res = await api.get(`${endpoint}?${params.toString()}`);
@@ -142,7 +143,7 @@ export function TemplatePickerDialog({
     // Jump back to the top when the result set changes.
     useEffect(() => {
         scrollRef.current?.scrollTo({ top: 0 });
-    }, [debouncedSearch, categories, includeNonPublished]);
+    }, [debouncedSearch, categories, includeNonPublished, sortPopular]);
 
     const handleOpenChange = (isOpen: boolean) => {
         if (!isOpen) {
@@ -152,6 +153,9 @@ export function TemplatePickerDialog({
     };
 
     const handleSelect = (t: PickerTemplate) => {
+        // Count this application for usage analytics (fire-and-forget; never
+        // block or fail the apply on a counter hiccup).
+        api.post(`${endpoint}/${t.id}/use`).catch(() => {});
         onSelect(t);
         handleOpenChange(false);
     };
@@ -201,6 +205,20 @@ export function TemplatePickerDialog({
                             )}
                         >
                             <Filter className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setSortPopular(v => !v)}
+                            title={sortPopular ? 'Sorted by most used — click for A–Z' : 'Sort by most used'}
+                            className={cn(
+                                'h-12 w-12 shrink-0',
+                                sortPopular
+                                    ? 'text-primary bg-primary/10 hover:bg-primary/15'
+                                    : 'text-slate-400 hover:text-white',
+                            )}
+                        >
+                            <TrendingUp className="h-4 w-4" />
                         </Button>
                     </div>
 
@@ -297,6 +315,11 @@ export function TemplatePickerDialog({
                                                         <Badge variant="outline" className={cn('text-[9px] h-4 px-1.5 uppercase tracking-wider shrink-0', STATUS_PILL[t.status].cls)}>
                                                             {STATUS_PILL[t.status].label}
                                                         </Badge>
+                                                    )}
+                                                    {(t.usage_count ?? 0) > 0 && (
+                                                        <span className="flex items-center gap-0.5 text-[10px] text-slate-500 shrink-0" title={`Applied ${t.usage_count} time${t.usage_count === 1 ? '' : 's'}`}>
+                                                            <TrendingUp className="h-3 w-3" />{t.usage_count}
+                                                        </span>
                                                     )}
                                                 </div>
                                                 {t.description && (

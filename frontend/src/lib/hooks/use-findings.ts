@@ -77,6 +77,7 @@ export interface FindingTemplate {
     mitigations: string | null;
     references: string | null;
     attack_technique_ids: string[];
+    usage_count: number;
     created_at: string;
     updated_at: string;
     created_by: string;

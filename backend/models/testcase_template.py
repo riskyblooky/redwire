@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Enum as SQLEnum, JSON
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Enum as SQLEnum, JSON, Integer
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
 from models.template_status import TemplateStatus
@@ -17,6 +17,10 @@ class TestCaseTemplate(Base, AuditMixin):
     # MITRE ATT&CK technique IDs (e.g. ["T1059.001"]). JSON array — see
     # rationale on FindingTemplate.attack_technique_ids.
     attack_technique_ids = Column(JSON, nullable=False, default=list, server_default='[]')
+
+    # How many times this template has been applied (via the picker). Drives
+    # "popular" sorting and template-usage analytics.
+    usage_count = Column(Integer, nullable=False, default=0, server_default='0')
 
     status = Column(
         SQLEnum(TemplateStatus, name="templatestatus", create_type=False),
