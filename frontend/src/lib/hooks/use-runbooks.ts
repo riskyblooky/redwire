@@ -26,6 +26,7 @@ export interface Runbook {
     name: string;
     description: string | null;
     runbook_type: string | null;
+    usage_count: number;
     items: RunbookItem[];
     created_at: string;
     updated_at: string;

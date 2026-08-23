@@ -25,6 +25,10 @@ class Runbook(Base, AuditMixin):
     published_by = Column(String, ForeignKey("users.id"), nullable=True)
     review_note = Column(Text, nullable=True)
 
+    # How many times this runbook has been applied to an engagement. Drives
+    # "popular" sorting and runbook-usage analytics.
+    usage_count = Column(Integer, nullable=False, default=0, server_default='0')
+
     # Relationships
     items = relationship("RunbookItem", back_populates="runbook", cascade="all, delete-orphan", order_by="RunbookItem.sort_order")
     created_by_user = relationship("User", foreign_keys="Runbook.created_by")

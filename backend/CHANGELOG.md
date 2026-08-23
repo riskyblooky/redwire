@@ -13,6 +13,10 @@ section becomes one release entry.
   show the count and can **sort by most used** (a "Popular" toggle in the
   picker, a sortable **Used** column on the Templates page) — so you can see
   which templates actually get used.
+- **Runbook usage analytics** — runbooks now track how many times they've been
+  **applied to an engagement**, shown as a sortable **Used** column on the
+  Templates page. Applying a runbook also counts a use for each test-case
+  template it materializes, so template popularity reflects runbook applies too.
 
 ## [1.5.0] — 2026-08-20
 

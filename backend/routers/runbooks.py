@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_, func
+from sqlalchemy import select, or_, and_, func, text
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime
@@ -173,6 +173,7 @@ async def get_runbooks(
         "status": Runbook.status,
         "runbook_type": Runbook.runbook_type,
         "updated_at": Runbook.updated_at,
+        "usage_count": Runbook.usage_count,
     }
     sort_col = sort_map.get(sort_by, Runbook.name)
     order = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
@@ -530,6 +531,7 @@ async def apply_runbook_to_engagement(
     # Build test cases from runbook items, preserving tree structure
     runbook_item_id_to_testcase_id = {}
     created_testcases = []
+    used_template_ids = []   # one entry per materialized test case (for usage counters)
 
     items_by_parent = {}
     for item in runbook.items:
@@ -573,6 +575,7 @@ async def apply_runbook_to_engagement(
         db.add(testcase)
         runbook_item_id_to_testcase_id[item.id] = testcase_id
         created_testcases.append(testcase)
+        used_template_ids.append(template.id)
 
     # GHSA-7x2f-ff7r-h388 #14 (CWE-696): commit the applied test cases
     # BEFORE the activity-log call. Previously the only commit here was
@@ -583,6 +586,22 @@ async def apply_runbook_to_engagement(
     # test-case creation the primary transactional unit and reduces the
     # audit-log call to what it should be: a fire-and-forget side
     # effect that can fail without dropping the operator's data.
+
+    # Usage analytics: applying a runbook counts as one runbook use, and each
+    # materialized test case counts as a use of its source template. Bound-param
+    # SQL so the atomic increments don't bump updated_at (usage isn't an edit).
+    if created_testcases:
+        await db.execute(
+            text("UPDATE runbooks SET usage_count = usage_count + 1 WHERE id = :id")
+            .bindparams(id=runbook.id)
+        )
+        from collections import Counter
+        for tid, n in Counter(used_template_ids).items():
+            await db.execute(
+                text("UPDATE testcase_templates SET usage_count = usage_count + :n WHERE id = :id")
+                .bindparams(n=n, id=tid)
+            )
+
     await db.commit()
 
     try:

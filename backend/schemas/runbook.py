@@ -65,6 +65,7 @@ class RunbookResponse(BaseModel):
     name: str
     description: Optional[str] = None
     runbook_type: Optional[str] = None
+    usage_count: int = 0
     items: List[RunbookItemResponse] = []
     created_at: datetime
     updated_at: datetime

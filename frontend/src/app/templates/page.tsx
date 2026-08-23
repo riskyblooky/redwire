@@ -326,7 +326,7 @@ export default function TemplatesPage() {
     const [rbFiltersOpen, setRbFiltersOpen] = useState(false);
     const [rbStatusFilter, setRbStatusFilter] = useState<'ALL' | TemplateStatus>('ALL');
     const [rbTypeFilter, setRbTypeFilter] = useState('');
-    const [rbSortBy, setRbSortBy] = useState<'name' | 'status' | 'runbook_type' | 'updated_at'>('name');
+    const [rbSortBy, setRbSortBy] = useState<'name' | 'status' | 'runbook_type' | 'updated_at' | 'usage_count'>('name');
     const [rbSortDir, setRbSortDir] = useState<'asc' | 'desc'>('asc');
     const [rltSearch, setRltSearch] = useState('');
     const [rtSearch, setRtSearch] = useState('');
@@ -434,7 +434,7 @@ export default function TemplatesPage() {
 
     const filteredRB = runbooks;
 
-    const toggleRbSort = (col: 'name' | 'status' | 'runbook_type' | 'updated_at') => {
+    const toggleRbSort = (col: 'name' | 'status' | 'runbook_type' | 'updated_at' | 'usage_count') => {
         if (rbSortBy === col) {
             setRbSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
         } else {
@@ -1400,6 +1400,7 @@ export default function TemplatesPage() {
                                                         { key: 'name', label: 'Name', className: '' },
                                                         { key: 'status', label: 'Status', className: 'w-28' },
                                                         { key: 'runbook_type', label: 'Type', className: '' },
+                                                        { key: 'usage_count', label: 'Used', className: 'w-20' },
                                                         { key: 'updated_at', label: 'Updated', className: 'hidden lg:table-cell w-32' },
                                                     ] as const).map(col => {
                                                         const isActive = rbSortBy === col.key;
@@ -1458,6 +1459,7 @@ export default function TemplatesPage() {
                                                                     <span className="text-slate-600">—</span>
                                                                 )}
                                                             </TableCell>
+                                                            <TableCell className="text-slate-400 text-xs tabular-nums">{rb.usage_count ?? 0}</TableCell>
                                                             <TableCell className="hidden lg:table-cell text-slate-400 text-xs whitespace-nowrap">
                                                                 {rb.updated_at
                                                                     ? parseUTCDate(rb.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
