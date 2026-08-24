@@ -781,7 +781,7 @@ _FEED_ACTION_PREFIXES = {
 }
 
 _FEED_FIELD_LABELS = {
-    "title": "Title", "category": "Category", "description": "Description",
+    "title": "Title", "content": "Content", "category": "Category", "description": "Description",
     "severity": "Severity", "status": "Status", "cvss_score": "CVSS Score",
     "cvss_vector": "CVSS Vector", "impact": "Impact",
     "technical_details": "Technical Details", "steps_to_reproduce": "Steps to Reproduce",
@@ -933,13 +933,33 @@ async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
                 it["content_kind"] = "text"
                 it["content"] = _feed_cap(getattr(ent, "description", None))
 
-    # Notes — current content (no version history).
+    # Notes — full content on create; field diff (title/content) on update.
     group = by_type.get("note", [])
     if group:
+        from utils.versioning import NOTE_VERSIONED_FIELDS
         emap = await load_map(Note, {it.get("resource_id") for it in group})
+        clean_ids = [i for i in {it.get("resource_id") for it in group} if i]
+        vrows = (await db.execute(
+            select(VersionHistory)
+            .where(VersionHistory.entity_type == "note")
+            .where(VersionHistory.entity_id.in_(clean_ids))
+            .order_by(VersionHistory.entity_id, VersionHistory.version.asc())
+        )).scalars().all() if clean_ids else []
+        vmap: dict = {}
+        for v in vrows:
+            vmap.setdefault(v.entity_id, []).append(v)
+
         for it in group:
             ent = emap.get(it.get("resource_id"))
-            if ent is not None and it.get("action_category") in ("created", "updated"):
+            cat = it.get("action_category")
+            if cat == "updated":
+                changes = _feed_diff_for_update(it, vmap.get(it.get("resource_id"), []), ent, NOTE_VERSIONED_FIELDS)
+                if changes:
+                    it["content_kind"] = "diff"
+                    it["changes"] = changes
+                # else: no computable diff (pre-history edit, or non-versioned
+                # change) → leave as a plain log line, not the whole note.
+            elif cat == "created" and ent is not None:
                 it["content_kind"] = "text"
                 it["content"] = _feed_cap(ent.content)
 

@@ -6,6 +6,12 @@ section becomes one release entry.
 
 ## [1.6.0] — Unreleased
 
+### Fixed
+- **Activity feed — note edits** now show a **field-level diff** (what changed
+  in the title/content) instead of dumping the entire note on every update,
+  matching how finding and test-case edits already render. New notes still show
+  their full content.
+
 ### Added
 - **Template usage analytics** — finding and test-case templates now track how
   many times they've been applied. Each apply from the "Select a template"

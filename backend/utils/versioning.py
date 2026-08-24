@@ -29,6 +29,14 @@ TESTCASE_VERSIONED_FIELDS = [
     "actual_result", "is_executed", "is_successful", "notes",
 ]
 
+NOTE_VERSIONED_FIELDS = ["title", "content"]
+
+_VERSIONED_FIELDS_BY_TYPE = {
+    "finding": FINDING_VERSIONED_FIELDS,
+    "testcase": TESTCASE_VERSIONED_FIELDS,
+    "note": NOTE_VERSIONED_FIELDS,
+}
+
 
 def _snapshot_entity(entity, fields: list[str]) -> dict:
     """Build a JSON-serialisable dict of the entity's current field values."""
@@ -76,10 +84,7 @@ async def create_version_snapshot(
     """
     from models.version_history import VersionHistory
 
-    fields = (
-        FINDING_VERSIONED_FIELDS if entity_type == "finding"
-        else TESTCASE_VERSIONED_FIELDS
-    )
+    fields = _VERSIONED_FIELDS_BY_TYPE.get(entity_type, TESTCASE_VERSIONED_FIELDS)
 
     snapshot = _snapshot_entity(entity, fields)
     changed = _detect_changed_fields(snapshot, update_data)

@@ -308,6 +308,17 @@ async def update_note(
                 detail="Insufficient permissions."
             )
 
+    # Snapshot the pre-edit state so the activity feed can show a field diff
+    # (title/content) instead of the whole note. Must run before we mutate.
+    from utils.versioning import create_version_snapshot
+    snap_update = {}
+    if note_data.title is not None:
+        snap_update["title"] = note_data.title
+    if note_data.content is not None:
+        snap_update["content"] = note_data.content
+    if snap_update:
+        await create_version_snapshot(db, note, "note", snap_update, current_user.id)
+
     if note_data.title is not None:
         note.title = note_data.title
     if note_data.content is not None:
