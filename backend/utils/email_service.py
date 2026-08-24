@@ -323,23 +323,24 @@ async def send_password_changed_email(
 
 
 async def send_test_email(db: AsyncSession, to_email: str) -> bool:
-    """Send a test email to verify SMTP configuration."""
-    html = """
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0a0f1a; color: #e2e8f0; border-radius: 12px;">
-        <div style="text-align: center; margin-bottom: 24px;">
-            <h1 style="color: #ef4444; font-size: 20px; margin: 0;">✅ RedWire</h1>
-            <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">Email Configuration Test</p>
-        </div>
-        <p style="font-size: 14px; line-height: 1.6; text-align: center;">
-            Your SMTP email configuration is working correctly!
-        </p>
-        <hr style="border: none; border-top: 1px solid #1e293b; margin: 24px 0;" />
-        <p style="font-size: 11px; color: #475569; text-align: center;">
-            RedWire Security Platform
-        </p>
-    </div>
+    """Send a test email to verify SMTP configuration.
+
+    Routed through the shared branded notification template so this doubles as a
+    live preview of exactly what notification / automation emails look like
+    (logo, dark theme, button, dark-mode behaviour) in the admin's real client.
     """
-    return await send_email(db, to_email, "RedWire — SMTP Test Successful", html)
+    html, text = render_notification_email(
+        heading="SMTP Test",
+        title="Your email configuration is working",
+        message=(
+            "This is a test message from RedWire. If you can read this, your SMTP "
+            "settings are correct and notification emails will be delivered.\n\n"
+            "This is also a preview of the notification email template — the same "
+            "layout is used for per-user notifications and automation email actions."
+        ),
+        meta=[("Delivered to", to_email)],
+    )
+    return await send_email(db, to_email, "RedWire — SMTP Test Successful", html, text)
 
 
 def render_notification_email(
@@ -392,9 +393,9 @@ def render_notification_email(
             meta_text_lines.append(f"{label}: {value}")
         if rows:
             meta_html = (
-                f"<table role='presentation' cellpadding='0' cellspacing='0' border='0' "
-                f"style='width:100%;margin:16px 0 4px;border-collapse:collapse;background:{BG};"
-                f"border:1px solid {BORDER};border-radius:10px;padding:6px 14px;'>"
+                f"<table role='presentation' bgcolor='{BG}' cellpadding='0' cellspacing='0' border='0' "
+                f"style='width:100%;margin:16px 0 4px;border-collapse:collapse;background-color:{BG};"
+                f"border:1px solid {BORDER};border-radius:10px;'>"
                 f"<tr><td style='padding:8px 14px;'><table role='presentation' cellpadding='0' cellspacing='0' border='0'>{rows}</table></td></tr>"
                 f"</table>"
             )
@@ -404,14 +405,18 @@ def render_notification_email(
         if message else ""
     )
 
-    # Bulletproof-ish centered button (works without full CSS support).
+    # Bulletproof centered button. Padding lives on the <td> (Outlook ignores
+    # padding + border-radius on <a>, and honours the bgcolor attribute over CSS
+    # background), so the button stays coloured and padded in Outlook too — it
+    # just loses the rounded corners there. #ffffff label works on the accent in
+    # both light and dark client modes.
     button_html = ""
     if link:
         button_html = (
             f"<table role='presentation' cellpadding='0' cellspacing='0' border='0' style='margin:26px 0 6px;'>"
-            f"<tr><td style='border-radius:8px;background:{ACCENT};'>"
-            f"<a href='{esc(link)}' target='_blank' style='display:inline-block;padding:12px 30px;font-family:inherit;"
-            f"font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;'>{esc(link_label)} &rarr;</a>"
+            f"<tr><td align='center' bgcolor='{ACCENT}' style='background-color:{ACCENT};border-radius:8px;padding:12px 30px;'>"
+            f"<a href='{esc(link)}' target='_blank' style='font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;"
+            f"font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;'>{esc(link_label)} &rarr;</a>"
             f"</td></tr></table>"
         )
 
@@ -430,15 +435,31 @@ def render_notification_email(
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Tell dark-mode-aware clients (Apple Mail, iOS, Outlook.com) this email is
+     already dark-designed, so they DON'T auto-invert it into an unreadable
+     light-on-light mess. -->
 <meta name="color-scheme" content="dark" />
+<meta name="supported-color-schemes" content="dark" />
 <title>RedWire</title>
+<style>
+  :root {{ color-scheme: dark; supported-color-schemes: dark; }}
+  body {{ color-scheme: dark; }}
+  /* Re-assert the dark surfaces where a client still tries to recolour them. */
+  @media (prefers-color-scheme: dark) {{
+    .rw-bg {{ background-color: {BG} !important; }}
+    .rw-card {{ background-color: {CARD} !important; }}
+  }}
+  /* Outlook.com dark mode rewrites colours behind [data-ogsc]/[data-ogsb]. */
+  [data-ogsb] .rw-bg {{ background-color: {BG} !important; }}
+  [data-ogsb] .rw-card {{ background-color: {CARD} !important; }}
+</style>
 </head>
-<body style="margin:0;padding:0;background:{BG};">
+<body class="rw-bg" bgcolor="{BG}" style="margin:0;padding:0;background-color:{BG};color-scheme:dark;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:{BG};font-size:1px;line-height:1px;">{preheader}</div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:{BG};padding:32px 16px;">
+<table role="presentation" class="rw-bg" bgcolor="{BG}" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:{BG};padding:32px 16px;">
   <tr>
     <td align="center">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="width:560px;max-width:100%;background:{CARD};border:1px solid {BORDER};border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <table role="presentation" class="rw-card" bgcolor="{CARD}" cellpadding="0" cellspacing="0" border="0" width="560" style="width:560px;max-width:100%;background-color:{CARD};border:1px solid {BORDER};border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
         <!-- Header -->
         <tr>
           <td style="padding:24px 32px 20px;border-bottom:1px solid {BORDER};">
@@ -453,7 +474,7 @@ def render_notification_email(
           </td>
         </tr>
         <!-- Accent rule -->
-        <tr><td style="height:3px;background:{ACCENT};line-height:3px;font-size:0;">&nbsp;</td></tr>
+        <tr><td bgcolor="{ACCENT}" style="height:3px;background-color:{ACCENT};line-height:3px;font-size:0;">&nbsp;</td></tr>
         <!-- Body -->
         <tr>
           <td style="padding:28px 32px 8px;">

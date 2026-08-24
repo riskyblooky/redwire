@@ -7,6 +7,13 @@ section becomes one release entry.
 ## [1.6.0] — Unreleased
 
 ### Fixed
+- **Notification emails** — the call-to-action button now renders correctly in
+  **Outlook** (padding/background moved onto the button cell), and the dark
+  template now **stays dark** in dark-mode clients instead of being auto-inverted
+  into an unreadable light-on-light state (declares `color-scheme: dark` and
+  locks its surfaces with `bgcolor`; Apple Mail / iOS / Outlook honour this —
+  Gmail still applies minor shifts but stays readable). The admin **Send test
+  email** now uses this same template so you can preview it in your own client.
 - **Activity feed — note edits** now show a **field-level diff** (what changed
   in the title/content) instead of dumping the entire note on every update,
   matching how finding and test-case edits already render. New notes still show
