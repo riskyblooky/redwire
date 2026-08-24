@@ -17,7 +17,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { cn, parseUTCDate } from '@/lib/utils';
 import {
     Plus, Trash2, FileText, Loader2, Search,
     Clock, User as UserIcon, StickyNote, PenLine, ChevronLeft,
@@ -304,7 +304,7 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
         if (searchQuery && !n.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
         // Time filter
         if (filterTime !== 'all') {
-            const d = new Date(n.updated_at);
+            const d = parseUTCDate(n.updated_at);
             const now = new Date();
             const diffMs = now.getTime() - d.getTime();
             const diffHours = diffMs / 3600000;
@@ -357,7 +357,7 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
     );
 
     const formatDate = (dateStr: string) => {
-        const d = new Date(dateStr);
+        const d = parseUTCDate(dateStr);
         const now = new Date();
         const diff = now.getTime() - d.getTime();
         const mins = Math.floor(diff / 60000);
