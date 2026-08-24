@@ -4,9 +4,11 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.6.0] — Unreleased
+## [1.5.1] — 2026-08-23
 
 ### Fixed
+- **Notes** — the "Updated" timestamp on the notes tab no longer always reads
+  "just now"; the time is now parsed as UTC (viewing a note never changes it).
 - **Notification emails** — the call-to-action button now renders correctly in
   **Outlook** (padding/background moved onto the button cell), and the dark
   template now **stays dark** in dark-mode clients instead of being auto-inverted
