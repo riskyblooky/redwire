@@ -20,6 +20,9 @@ section becomes one release entry.
 - **Cleanup tab badge** now shows the **total** number of cleanup artifacts,
   matching the other engagement tab badges, instead of only the count still
   pending.
+- **ATT&CK AI suggestion** now honors the admin **AI TLS-verify** toggle, so
+  technique auto-suggest works against a self-hosted AI endpoint with a
+  self-signed certificate (it previously always verified).
 - **Test-case category dropdown** now populates from the admin-configured
   dynamic test-case types (like findings/assets do) instead of a hardcoded
   list, on both the new- and edit-test-case pages.

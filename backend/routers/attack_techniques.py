@@ -493,9 +493,12 @@ async def suggest_techniques(
     findings = findings_result.scalars().all()
     print(f"[ATT&CK Suggest] Processing {len(findings)} findings concurrently (max {AI_MAX_CONCURRENCY})")
 
-    # Process findings concurrently with bounded concurrency
+    # Process findings concurrently with bounded concurrency. Honor the admin's
+    # TLS-verify toggle (same as the chat/fetch-models paths) so a self-hosted
+    # AI endpoint with a self-signed cert works when verification is disabled.
+    from routers.ai import _ai_tls_verify
     semaphore = asyncio.Semaphore(AI_MAX_CONCURRENCY)
-    async with httpx.AsyncClient(timeout=AI_REQUEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=AI_REQUEST_TIMEOUT, verify=_ai_tls_verify(settings)) as client:
         tasks = [
             _suggest_for_finding(
                 client, f, api_url, api_key, model,
