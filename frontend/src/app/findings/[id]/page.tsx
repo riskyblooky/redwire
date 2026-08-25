@@ -136,7 +136,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const deleteFinding = useDeleteFinding();
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const [viewCleanup, setViewCleanup] = useState<any>(null);
-    const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(false);
+    const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [copiedCvss, setCopiedCvss] = useState(false);
 

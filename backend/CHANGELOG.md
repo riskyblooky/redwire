@@ -6,6 +6,14 @@ section becomes one release entry.
 
 ## [1.5.2] — Unreleased
 
+### Improved
+- **Test-case Notes** — a test case's notes now render in a dedicated collapsible
+  **Notes** section (above Evidence) through the Markdown viewer, instead of as
+  plain text tucked in the sidebar.
+- **Evidence section** on the finding and test-case view pages now starts
+  **collapsed** and has a collapse toggle (matching the other collapsible
+  sections).
+
 ### Fixed
 - **Cleanup tab badge** now shows the **total** number of cleanup artifacts,
   matching the other engagement tab badges, instead of only the count still

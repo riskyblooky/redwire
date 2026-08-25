@@ -112,7 +112,8 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const unlinkFinding = useUnlinkFinding();
     const unlinkAsset = useUnlinkAsset();
     const [viewCleanup, setViewCleanup] = useState<any>(null);
-    const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(false);
+    const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
+    const [isNotesCollapsed, setIsNotesCollapsed] = useState(false);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
     // Link/unlink hooks
@@ -420,6 +421,29 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                 )}
                             </CardContent>
                         </Card>
+
+                        {/* Notes */}
+                        {testcase.notes && (
+                            <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                                <CardHeader
+                                    className="pb-3 border-b border-slate-800/60 cursor-pointer select-none hover:bg-slate-800/30 transition-colors"
+                                    onClick={() => setIsNotesCollapsed(!isNotesCollapsed)}
+                                >
+                                    <CardTitle className="text-white text-lg flex items-center gap-2">
+                                        {isNotesCollapsed ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                                        <StickyNote className="h-4 w-4 text-teal-400" />
+                                        Notes
+                                    </CardTitle>
+                                </CardHeader>
+                                {!isNotesCollapsed && (
+                                    <CardContent className="pt-4">
+                                        <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
+                                            <MarkdownPreview value={testcase.notes} theme="dark" />
+                                        </div>
+                                    </CardContent>
+                                )}
+                            </Card>
+                        )}
 
                         {/* Evidence */}
                         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
@@ -771,12 +795,6 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
 
                                     {/* Metadata */}
                                     <div className="space-y-4">
-                                        {testcase.notes && (
-                                            <div>
-                                                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Notes</h4>
-                                                <p className="text-[11px] text-slate-400 leading-relaxed">{testcase.notes}</p>
-                                            </div>
-                                        )}
                                         <div className="flex items-center justify-between text-[10px]">
                                             <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                                 <User className="h-3 w-3" /> Created By
