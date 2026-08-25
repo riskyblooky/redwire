@@ -51,13 +51,14 @@ export function EditorStyles({ currentUsername }: { currentUsername?: string | n
             }
             .tiptap ul[data-type="taskList"] li {
                 display: flex;
-                align-items: flex-start;
+                align-items: center;
                 gap: 0.5rem;
             }
             .tiptap ul[data-type="taskList"] li > label {
                 flex: 0 0 auto;
                 user-select: none;
-                margin-top: 0.25rem;
+                display: flex;
+                align-items: center;
             }
             .tiptap ul[data-type="taskList"] li > label input[type="checkbox"] {
                 appearance: none;
@@ -86,6 +87,12 @@ export function EditorStyles({ currentUsername }: { currentUsername?: string | n
             }
             .tiptap ul[data-type="taskList"] li > div {
                 flex: 1 1 auto;
+            }
+            /* Zero the paragraph margins inside a task item so the text lines up
+               with the checkbox instead of being pushed down by default p margins. */
+            .tiptap ul[data-type="taskList"] li > div > p {
+                margin: 0;
+                line-height: 1.4;
             }
             .tiptap img {
                 max-width: 100%;
