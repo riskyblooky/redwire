@@ -38,6 +38,7 @@ import { TemplatePickerDialog } from '@/components/ui/template-picker-dialog';
 import { ArrowLeft, Save, Loader2, Plus, ChevronsUpDown, BookOpen, CheckCircle2, XCircle, FileText, ListChecks, ListPlus } from 'lucide-react';
 import { useTestCase, useUpdateTestCase, useTestCases } from '@/lib/hooks/use-testcases';
 import { useEngagements } from '@/lib/hooks/use-engagements';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { toast } from 'sonner';
 import { useTestCaseTemplates } from '@/lib/hooks/use-testcase-templates';
 import { useTags } from '@/lib/hooks/use-tags';
@@ -56,19 +57,6 @@ import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { useAuthStore } from '@/stores/auth-store';
 import { apiErrorMessage } from '@/lib/api';
 
-const categories = [
-    { value: 'RECONNAISSANCE', label: 'Reconnaissance' },
-    { value: 'SCANNING', label: 'Scanning' },
-    { value: 'EXPLOITATION', label: 'Exploitation' },
-    { value: 'POST_EXPLOITATION', label: 'Post Exploitation' },
-    { value: 'PRIVILEGE_ESCALATION', label: 'Privilege Escalation' },
-    { value: 'PERSISTENCE', label: 'Persistence' },
-    { value: 'LATERAL_MOVEMENT', label: 'Lateral Movement' },
-    { value: 'WEB_APPLICATION', label: 'Web Application' },
-    { value: 'SOCIAL_ENGINEERING', label: 'Social Engineering' },
-    { value: 'PHYSICAL', label: 'Physical' },
-    { value: 'OTHER', label: 'Other' },
-];
 
 export default function EditTestCasePage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = useParams(params);
@@ -79,6 +67,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
     const { data: testcase, isLoading: isLoadingTC } = useTestCase(id);
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
+    const { data: categories = [] } = useConfigurableTypes('testcase');
     const { data: tags = [], isLoading: isLoadingTags } = useTags('testcase');
     const updateTestCase = useUpdateTestCase();
     const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -134,7 +123,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                 title: testcase.title || '',
                 engagement_id: testcase.engagement_id || '',
                 parent_id: testcase.parent_id || null,
-                category: (testcase.category as string)?.toUpperCase().trim() || 'OTHER',
+                category: testcase.category || '',
                 description: testcase.description || '',
                 steps: testcase.steps || '',
                 expected_result: testcase.expected_result || '',
@@ -340,7 +329,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                                 >
                                                     <SelectTrigger className="bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
                                                     <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                                        {categories.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                                                        {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                                                     </SelectContent>
                                                 </Select>
                                             </div>

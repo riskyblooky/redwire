@@ -35,6 +35,7 @@ import { TemplatePickerDialog } from '@/components/ui/template-picker-dialog';
 import { ArrowLeft, Save, Loader2, Plus, CornerDownRight, ChevronsUpDown, BookOpen, CheckCircle2 } from 'lucide-react';
 import { useCreateTestCase, useTestCases } from '@/lib/hooks/use-testcases';
 import { useEngagements } from '@/lib/hooks/use-engagements';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { toast } from 'sonner';
 import { useTestCaseTemplates } from '@/lib/hooks/use-testcase-templates';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -45,19 +46,6 @@ import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { apiErrorMessage } from '@/lib/api';
 
-const categories = [
-    { value: 'RECONNAISSANCE', label: 'Reconnaissance' },
-    { value: 'SCANNING', label: 'Scanning' },
-    { value: 'EXPLOITATION', label: 'Exploitation' },
-    { value: 'POST_EXPLOITATION', label: 'Post Exploitation' },
-    { value: 'PRIVILEGE_ESCALATION', label: 'Privilege Escalation' },
-    { value: 'PERSISTENCE', label: 'Persistence' },
-    { value: 'LATERAL_MOVEMENT', label: 'Lateral Movement' },
-    { value: 'WEB_APPLICATION', label: 'Web Application' },
-    { value: 'SOCIAL_ENGINEERING', label: 'Social Engineering' },
-    { value: 'PHYSICAL', label: 'Physical' },
-    { value: 'OTHER', label: 'Other' },
-];
 
 export default function NewTestCasePage() {
     const router = useRouter();
@@ -67,6 +55,7 @@ export default function NewTestCasePage() {
 
     const createTestCase = useCreateTestCase();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
+    const { data: categories = [] } = useConfigurableTypes('testcase');
     const { data: tags = [], isLoading: isLoadingTags } = useTags('testcase');
     const { data: allTestCases = [] } = useTestCases(engagementIdParam || undefined);
     const [templateOpen, setTemplateOpen] = useState(false);
@@ -78,7 +67,7 @@ export default function NewTestCasePage() {
         title: '',
         engagement_id: engagementIdParam || '',
         parent_id: parentIdParam || '',
-        category: 'EXPLOITATION',
+        category: '',
         description: '',
         steps: '',
         expected_result: '',
@@ -240,7 +229,7 @@ export default function NewTestCasePage() {
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                            {categories.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                                            {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                                         </SelectContent>
                                     </Select>
                                 </div>

@@ -20,6 +20,9 @@ section becomes one release entry.
 - **Cleanup tab badge** now shows the **total** number of cleanup artifacts,
   matching the other engagement tab badges, instead of only the count still
   pending.
+- **Test-case category dropdown** now populates from the admin-configured
+  dynamic test-case types (like findings/assets do) instead of a hardcoded
+  list, on both the new- and edit-test-case pages.
 - **Tags are now scoped per entity type** — a tag belongs to findings, test
   cases, OR engagements, so the Tags page tabs (and each picker) only show the
   relevant tags instead of one shared pool leaking across all tabs. Existing
