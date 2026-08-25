@@ -1495,8 +1495,13 @@ class PDFReportGenerator:
 
     # ── Finding card ──────────────────────────────────────────────
 
-    def _finding_card(self, idx: int, finding: Finding) -> Table:
-        """A bordered card for a single finding."""
+    def _finding_card(self, idx: int, finding: Finding) -> tuple:
+        """Flowables for a single finding, as ``(head, body)``.
+
+        ``head`` = the header + meta tables (kept together by the caller);
+        ``body`` = the field flowables, rendered full-width so long content
+        (e.g. an oversized code block) paginates instead of crashing.
+        """
         sev_str   = _v(finding.severity).upper()
         sev_hex   = self._sev_hex(sev_str)
         sev_bg    = _SEV_BG_COLORS.get(sev_str, '#F8FAFC')
@@ -1568,20 +1573,30 @@ class PDFReportGenerator:
         ]))
         elements.append(meta_t)
 
-        # -- Body: details in a clean two-section layout
-        body_rows = []
+        # -- Body: each field is a full-width, page-splittable block. Rendering
+        # the body as top-level flowables (rather than nested table cells) lets
+        # long content — e.g. a fenced code block taller than a page — paginate
+        # instead of crashing ReportLab (a table row / KeepTogether can't be
+        # split across a page boundary).
+        body = []
+
+        def _field_label(label):
+            return Paragraph(label, ParagraphStyle(
+                name=f'FL_{label}_{idx}', parent=self.styles['Label'],
+                fontName=font_b, fontSize=8, leading=10,
+                textColor=colors.HexColor(muted_c),
+                spaceBefore=10, spaceAfter=3,
+            ))
 
         def _add_row(label, value):
-            """Plain (non-markdown) row — used for short scalar values."""
+            """Plain (non-markdown) field — used for short scalar values."""
             if not value:
                 return
-            body_rows.append([
-                _label_para(label),
-                Paragraph(_escape_xml(str(value)[:800]), ParagraphStyle(
-                    name=f'V_{label}_{idx}', parent=self.styles['BodyText2'],
-                    fontSize=9, textColor=colors.HexColor(body_c),
-                )),
-            ])
+            body.append(_field_label(label))
+            body.append(Paragraph(_escape_xml(str(value)[:800]), ParagraphStyle(
+                name=f'V_{label}_{idx}', parent=self.styles['BodyText2'],
+                fontSize=9, textColor=colors.HexColor(body_c),
+            )))
 
         # Inline images in the finding's markdown fields inherit the finding's
         # effective mark.
@@ -1589,8 +1604,8 @@ class PDFReportGenerator:
         _f_mark = self.marking.portion_mark(_f_lvl, _f_suf) if (self.marking and _f_lvl) else None
         _f_anchors = self.marking.image_anchors if self.marking else None
 
-        def _add_md_row(label, value, max_chars=4000):
-            """Markdown row — renders block-level markdown into the cell."""
+        def _add_md_row(label, value, max_chars=50000):
+            """Markdown field — block-level markdown as top-level flowables."""
             if not value:
                 return
             cell_body_style = ParagraphStyle(
@@ -1606,7 +1621,8 @@ class PDFReportGenerator:
             )
             if not flowables:
                 return
-            body_rows.append([_label_para(label), flowables])
+            body.append(_field_label(label))
+            body.extend(flowables)
 
         asset_names = ', '.join([a.name for a in finding.assets]) if finding.assets else 'N/A'
         _add_row('AFFECTED ASSETS', asset_names)
@@ -1622,36 +1638,11 @@ class PDFReportGenerator:
         for _cf_label, _cf_value in _report_cf_rows(self.finding_custom_fields, finding.custom_fields):
             _add_row(_cf_label.upper(), _cf_value)
 
-        if body_rows:
-            body_t = Table(body_rows, colWidths=[1.3 * inch, 5.1 * inch])
-            body_t.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                ('LEFTPADDING', (0, 0), (0, -1), 14),
-                ('LEFTPADDING', (1, 0), (1, -1), 8),
-                ('RIGHTPADDING', (1, 0), (1, -1), 8),
-                ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
-                ('LINEBELOW', (0, 0), (-1, -2), 0.25, colors.HexColor('#E2E8F0')),
-            ]))
-            elements.append(body_t)
-        else:
-            elements.append(Spacer(1, 8))
-
-        card = Table([[e] for e in elements], colWidths=[6.5 * inch])
-        card_style = [
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-        ]
-        # Severity bar on the card's left edge, drawn AFTER the box so it sits
-        # on top (no border overlap). Toggleable via the theme.
-        if show_bar:
-            card_style.append(('LINEBEFORE', (0, 0), (0, -1), 5, colors.HexColor(sev_hex)))
-        card.setStyle(TableStyle(card_style))
-        return card
+        # `elements` holds the header + meta tables (small, page-safe) — the
+        # "head" that should stay together; `body` holds the splittable field
+        # flowables. Returned separately so the caller keeps the head together
+        # while letting the body flow across pages.
+        return elements, body
 
     # ── Generate ──────────────────────────────────────────────────
 
@@ -1771,10 +1762,14 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 8))
 
         for idx, finding in enumerate(self.findings, 1):
-            card = self._finding_card(idx, finding)
-            # Each finding card is its own table → mark per the table guide.
+            head, body = self._finding_card(idx, finding)
             above, below = self._table_mark_flowables([self._eff_mark(finding)])
-            elements.append(KeepTogether(above + [card] + below))
+            elements.extend(above)
+            # Keep the header + meta together so a finding never starts with just
+            # its title stranded at a page bottom; the body flows/splits freely.
+            elements.append(KeepTogether(head))
+            elements.extend(body)
+            elements.extend(below)
             elements.append(Spacer(1, 8))
             self._render_evidence(elements, finding)
             elements.append(Spacer(1, 12))
