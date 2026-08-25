@@ -54,6 +54,7 @@ import {
     useLinkAssetToFinding, useUnlinkAssetFromFinding,
     useLinkAssetToTestCase, useUnlinkAssetFromTestCase,
     useLinkAssetToCleanup, useUnlinkAssetFromCleanup,
+    useLinkAssetToVaultItem, useUnlinkAssetFromVaultItem,
 } from '@/lib/hooks/use-entity-links';
 import { Link as LinkIcon } from 'lucide-react';
 import { apiErrorMessage } from '@/lib/api';
@@ -132,16 +133,20 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     const unlinkTC = useUnlinkAssetFromTestCase();
     const linkCleanup = useLinkAssetToCleanup();
     const unlinkCleanup = useUnlinkAssetFromCleanup();
+    const linkVault = useLinkAssetToVaultItem();
+    const unlinkVault = useUnlinkAssetFromVaultItem();
 
     const handleEntityLink = async (type: import('@/components/ui/link-entity-dialog').LinkResourceType, resourceId: string) => {
         if (type === 'findings') await linkFinding.mutateAsync({ entityId: id, resourceId });
         if (type === 'testcases') await linkTC.mutateAsync({ entityId: id, resourceId });
         if (type === 'cleanup') await linkCleanup.mutateAsync({ entityId: id, resourceId });
+        if (type === 'vault') await linkVault.mutateAsync({ entityId: id, resourceId });
     };
     const handleEntityUnlink = async (type: import('@/components/ui/link-entity-dialog').LinkResourceType, resourceId: string) => {
         if (type === 'findings') await unlinkFinding.mutateAsync({ entityId: id, resourceId });
         if (type === 'testcases') await unlinkTC.mutateAsync({ entityId: id, resourceId });
         if (type === 'cleanup') await unlinkCleanup.mutateAsync({ entityId: id, resourceId });
+        if (type === 'vault') await unlinkVault.mutateAsync({ entityId: id, resourceId });
     };
 
     // Get notes linked to this asset

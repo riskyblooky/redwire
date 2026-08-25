@@ -58,6 +58,7 @@ import {
 import {
     useLinkFindingToVaultItem, useUnlinkFindingFromVaultItem,
     useLinkFindingToCleanup, useUnlinkFindingFromCleanup,
+    useLinkFindingToTestCase, useUnlinkFindingFromTestCase,
 } from '@/lib/hooks/use-entity-links';
 import { useLinkAssetToFinding, useUnlinkAssetFromFinding } from '@/lib/hooks/use-entity-links';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
@@ -135,10 +136,13 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
     const unlinkCleanup = useUnlinkFindingFromCleanup();
     const linkAsset = useLinkAssetToFinding();      // direction reversed — same DB row
     const unlinkAsset = useUnlinkAssetFromFinding();
+    const linkTC = useLinkFindingToTestCase();
+    const unlinkTC = useUnlinkFindingFromTestCase();
 
     const handleEntityLink = async (type: LinkResourceType, resourceId: string) => {
         if (type === 'vault') await linkVault.mutateAsync({ entityId: finding.id, resourceId });
         if (type === 'cleanup') await linkCleanup.mutateAsync({ entityId: finding.id, resourceId });
+        if (type === 'testcases') await linkTC.mutateAsync({ entityId: finding.id, resourceId });
         // For assets: API is /assets/{assetId}/findings/{findingId} — pass the asset
         // as the entity and the finding as the resource so the URL builds correctly.
         if (type === 'assets') await linkAsset.mutateAsync({ entityId: resourceId, resourceId: finding.id });
@@ -146,12 +150,13 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
     const handleEntityUnlink = async (type: LinkResourceType, resourceId: string) => {
         if (type === 'vault') await unlinkVault.mutateAsync({ entityId: finding.id, resourceId });
         if (type === 'cleanup') await unlinkCleanup.mutateAsync({ entityId: finding.id, resourceId });
+        if (type === 'testcases') await unlinkTC.mutateAsync({ entityId: finding.id, resourceId });
         if (type === 'assets') await unlinkAsset.mutateAsync({ entityId: resourceId, resourceId: finding.id });
     };
 
     const linkedIds: LinkedIdMap = {
         findings: new Set(),
-        testcases: new Set(),
+        testcases: new Set((finding.testcases ?? []).map((t: any) => t.id)),
         assets: new Set((finding.assets ?? []).map((a: any) => a.id)),
         vault: new Set((finding.vault_items ?? []).map((v: any) => v.id)),
         cleanup: new Set((finding.cleanup_artifacts ?? []).map((c: any) => c.id)),
@@ -306,7 +311,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                 linkedIds={linkedIds}
                 onLink={handleEntityLink}
                 onUnlink={handleEntityUnlink}
-                allowedTypes={['vault', 'cleanup', 'assets', 'intel', 'infra']}
+                allowedTypes={['testcases', 'vault', 'cleanup', 'assets', 'intel', 'infra']}
             />
             <ChainLinksDialog
                 open={chainDialogOpen}

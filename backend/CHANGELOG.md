@@ -4,6 +4,15 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.5.3] — Unreleased
+
+### Fixed
+- **Entity linking gaps** — the link-items action now offers every supported
+  relationship consistently: the **Findings tab** can link **test cases**; the
+  **Assets tab** can link **findings** and **test cases**; the finding detail
+  view now actually links **assets** (the tab showed but did nothing); and the
+  asset detail page now actually links **vault items** (same silent no-op).
+
 ## [1.5.2] — 2026-08-25
 
 ### Improved

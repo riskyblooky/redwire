@@ -75,6 +75,8 @@ import {
 import {
     useLinkAssetToVaultItem, useUnlinkAssetFromVaultItem,
     useLinkAssetToCleanup, useUnlinkAssetFromCleanup,
+    useLinkAssetToFinding, useUnlinkAssetFromFinding,
+    useLinkAssetToTestCase, useUnlinkAssetFromTestCase,
 } from '@/lib/hooks/use-entity-links';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import {
@@ -151,19 +153,27 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
     const unlinkVault = useUnlinkAssetFromVaultItem();
     const linkCleanup = useLinkAssetToCleanup();
     const unlinkCleanup = useUnlinkAssetFromCleanup();
+    const linkFinding = useLinkAssetToFinding();
+    const unlinkFinding = useUnlinkAssetFromFinding();
+    const linkTC = useLinkAssetToTestCase();
+    const unlinkTC = useUnlinkAssetFromTestCase();
 
     const handleEntityLink = async (type: LinkResourceType, resourceId: string) => {
         if (type === 'vault') await linkVault.mutateAsync({ entityId: asset.id, resourceId });
         if (type === 'cleanup') await linkCleanup.mutateAsync({ entityId: asset.id, resourceId });
+        if (type === 'findings') await linkFinding.mutateAsync({ entityId: asset.id, resourceId });
+        if (type === 'testcases') await linkTC.mutateAsync({ entityId: asset.id, resourceId });
     };
     const handleEntityUnlink = async (type: LinkResourceType, resourceId: string) => {
         if (type === 'vault') await unlinkVault.mutateAsync({ entityId: asset.id, resourceId });
         if (type === 'cleanup') await unlinkCleanup.mutateAsync({ entityId: asset.id, resourceId });
+        if (type === 'findings') await unlinkFinding.mutateAsync({ entityId: asset.id, resourceId });
+        if (type === 'testcases') await unlinkTC.mutateAsync({ entityId: asset.id, resourceId });
     };
 
     const linkedIds: LinkedIdMap = {
-        findings: new Set(),
-        testcases: new Set(),
+        findings: new Set((asset.findings ?? []).map((f: any) => f.id)),
+        testcases: new Set((asset.testcases ?? []).map((t: any) => t.id)),
         assets: new Set(),
         vault: new Set((asset.vault_items ?? []).map((v: any) => v.id)),
         cleanup: new Set((asset.cleanup_artifacts ?? []).map((c: any) => c.id)),
@@ -378,7 +388,7 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
                 linkedIds={linkedIds}
                 onLink={handleEntityLink}
                 onUnlink={handleEntityUnlink}
-                allowedTypes={['vault', 'cleanup']}
+                allowedTypes={['findings', 'testcases', 'vault', 'cleanup']}
             />
         </>
     );

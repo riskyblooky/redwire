@@ -39,6 +39,7 @@ import {
     useLinkFindingToTestCase, useUnlinkFindingFromTestCase,
     useLinkFindingToVaultItem, useUnlinkFindingFromVaultItem,
     useLinkFindingToCleanup, useUnlinkFindingFromCleanup,
+    useLinkAssetToFinding, useUnlinkAssetFromFinding,
 } from '@/lib/hooks/use-entity-links';
 import { toast } from 'sonner';
 import { cn, parseUTCDate } from '@/lib/utils';
@@ -162,18 +163,22 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
     const unlinkVault = useUnlinkFindingFromVaultItem();
     const linkCleanup = useLinkFindingToCleanup();
     const unlinkCleanup = useUnlinkFindingFromCleanup();
+    const linkAsset = useLinkAssetToFinding();   // asset↔finding, reversed direction
+    const unlinkAsset = useUnlinkAssetFromFinding();
 
     const handleEntityLink = async (type: LinkResourceType, resourceId: string) => {
         if (!finding) return;
         if (type === 'testcases') await linkTC.mutateAsync({ entityId: finding.id, resourceId });
         if (type === 'vault') await linkVault.mutateAsync({ entityId: finding.id, resourceId });
         if (type === 'cleanup') await linkCleanup.mutateAsync({ entityId: finding.id, resourceId });
+        if (type === 'assets') await linkAsset.mutateAsync({ entityId: resourceId, resourceId: finding.id });
     };
     const handleEntityUnlink = async (type: LinkResourceType, resourceId: string) => {
         if (!finding) return;
         if (type === 'testcases') await unlinkTC.mutateAsync({ entityId: finding.id, resourceId });
         if (type === 'vault') await unlinkVault.mutateAsync({ entityId: finding.id, resourceId });
         if (type === 'cleanup') await unlinkCleanup.mutateAsync({ entityId: finding.id, resourceId });
+        if (type === 'assets') await unlinkAsset.mutateAsync({ entityId: resourceId, resourceId: finding.id });
     };
 
     const linkedIds: LinkedIdMap = {
