@@ -10,9 +10,11 @@ section becomes one release entry.
 - **Test-case Notes** — a test case's notes now render in a dedicated collapsible
   **Notes** section (above Evidence) through the Markdown viewer, instead of as
   plain text tucked in the sidebar.
-- **Evidence section** on the finding and test-case view pages now starts
-  **collapsed** and has a collapse toggle (matching the other collapsible
-  sections).
+- **Collapsible sections** on the finding and test-case view pages — every
+  main content section (Executive Summary / Technical Analysis / Mitigation /
+  References on findings; Description / Steps / Expected Result / Notes on test
+  cases) now has a collapse toggle, and the **Evidence** section starts
+  collapsed.
 
 ### Fixed
 - **Cleanup tab badge** now shows the **total** number of cleanup artifacts,

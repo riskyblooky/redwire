@@ -137,6 +137,9 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const [viewCleanup, setViewCleanup] = useState<any>(null);
     const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
+    // Per-section collapse (main content sections). Default expanded.
+    const [collapsedSec, setCollapsedSec] = useState<Record<string, boolean>>({});
+    const toggleSec = (k: string) => setCollapsedSec(s => ({ ...s, [k]: !s[k] }));
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [copiedCvss, setCopiedCvss] = useState(false);
 
@@ -424,24 +427,29 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                 <div className="p-8 space-y-10">
                                     {/* Description Section */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-4 text-white">
+                                        <button type="button" onClick={() => toggleSec('summary')} className="flex items-center gap-2 mb-4 text-white w-full text-left">
+                                            {collapsedSec['summary'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <FileText className="h-5 w-5 text-red-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Executive Summary</h3>
-                                        </div>
-                                        <div className="prose prose-invert max-w-none prose-slate">
-                                            <MarkdownPreview value={finding.description} theme="dark" />
-                                        </div>
+                                        </button>
+                                        {!collapsedSec['summary'] && (
+                                            <div className="prose prose-invert max-w-none prose-slate">
+                                                <MarkdownPreview value={finding.description} theme="dark" />
+                                            </div>
+                                        )}
                                     </section>
 
                                     <Separator className="bg-slate-800/60" />
 
                                     {/* Tech Details Section */}
                                     <section className="space-y-8">
-                                        <div className="flex items-center gap-2 mb-2 text-white">
+                                        <button type="button" onClick={() => toggleSec('tech')} className="flex items-center gap-2 mb-2 text-white w-full text-left">
+                                            {collapsedSec['tech'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <Terminal className="h-5 w-5 text-blue-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Technical Analysis</h3>
-                                        </div>
+                                        </button>
 
+                                        {!collapsedSec['tech'] && (
                                         <div className="space-y-6">
                                             {finding.impact && (
                                                 <div className="space-y-2">
@@ -472,29 +480,38 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                 </div>
                                             )}
                                         </div>
+                                        )}
                                     </section>
 
                                     <Separator className="bg-slate-800/60" />
 
                                     {/* Remediation Section */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-4 text-white">
+                                        <button type="button" onClick={() => toggleSec('remediation')} className="flex items-center gap-2 mb-4 text-white w-full text-left">
+                                            {collapsedSec['remediation'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <Shield className="h-5 w-5 text-green-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Mitigation & Remediation</h3>
-                                        </div>
-                                        <div className="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden">
-                                            <MarkdownPreview value={finding.mitigations || ''} theme="dark" />
-                                        </div>
+                                        </button>
+                                        {!collapsedSec['remediation'] && (
+                                            <div className="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden">
+                                                <MarkdownPreview value={finding.mitigations || ''} theme="dark" />
+                                            </div>
+                                        )}
                                     </section>
 
                                     {finding.references && (
                                         <>
                                             <Separator className="bg-slate-800/60" />
                                             <section>
-                                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">External References</h3>
-                                                <div className="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden">
-                                                    <MarkdownPreview value={finding.references || ''} theme="dark" />
-                                                </div>
+                                                <button type="button" onClick={() => toggleSec('refs')} className="flex items-center gap-2 mb-3 w-full text-left">
+                                                    {collapsedSec['refs'] ? <ChevronRight className="h-3.5 w-3.5 text-slate-400" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />}
+                                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">External References</h3>
+                                                </button>
+                                                {!collapsedSec['refs'] && (
+                                                    <div className="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden">
+                                                        <MarkdownPreview value={finding.references || ''} theme="dark" />
+                                                    </div>
+                                                )}
                                             </section>
                                         </>
                                     )}

@@ -114,6 +114,9 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const [viewCleanup, setViewCleanup] = useState<any>(null);
     const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
     const [isNotesCollapsed, setIsNotesCollapsed] = useState(false);
+    // Per-section collapse (main content sections). Default expanded.
+    const [collapsedSec, setCollapsedSec] = useState<Record<string, boolean>>({});
+    const toggleSec = (k: string) => setCollapsedSec(s => ({ ...s, [k]: !s[k] }));
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
     // Link/unlink hooks
@@ -309,39 +312,48 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                 <div className="p-8 space-y-10">
                                     {/* Description Section */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-4 text-white">
+                                        <button type="button" onClick={() => toggleSec('desc')} className="flex items-center gap-2 mb-4 text-white w-full text-left">
+                                            {collapsedSec['desc'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <FileText className="h-5 w-5 text-primary" />
                                             <h3 className="text-xl font-bold tracking-tight">Description</h3>
-                                        </div>
-                                        <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
-                                            <MarkdownPreview value={testcase.description} theme="dark" />
-                                        </div>
+                                        </button>
+                                        {!collapsedSec['desc'] && (
+                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
+                                                <MarkdownPreview value={testcase.description} theme="dark" />
+                                            </div>
+                                        )}
                                     </section>
 
                                     <Separator className="bg-slate-800/60" />
 
                                     {/* Execution Steps Section */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-4 text-white">
+                                        <button type="button" onClick={() => toggleSec('steps')} className="flex items-center gap-2 mb-4 text-white w-full text-left">
+                                            {collapsedSec['steps'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <Terminal className="h-5 w-5 text-blue-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Execution Steps</h3>
-                                        </div>
-                                        <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden">
-                                            <MarkdownPreview value={testcase.steps || 'No steps defined'} theme="dark" />
-                                        </div>
+                                        </button>
+                                        {!collapsedSec['steps'] && (
+                                            <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden">
+                                                <MarkdownPreview value={testcase.steps || 'No steps defined'} theme="dark" />
+                                            </div>
+                                        )}
                                     </section>
 
                                     <Separator className="bg-slate-800/60" />
 
                                     {/* Expected Result Section */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-4 text-white">
+                                        <button type="button" onClick={() => toggleSec('expected')} className="flex items-center gap-2 mb-4 text-white w-full text-left">
+                                            {collapsedSec['expected'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <CheckCircle2 className="h-5 w-5 text-green-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Expected Result</h3>
-                                        </div>
-                                        <div className="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden">
-                                            <MarkdownPreview value={testcase.expected_result || 'None'} theme="dark" />
-                                        </div>
+                                        </button>
+                                        {!collapsedSec['expected'] && (
+                                            <div className="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden">
+                                                <MarkdownPreview value={testcase.expected_result || 'None'} theme="dark" />
+                                            </div>
+                                        )}
                                     </section>
                                     <CustomFieldsDisplay entity="testcase" value={testcase.custom_fields} className="pt-2" collapsible defaultCollapsed />
                                 </div>
