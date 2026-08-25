@@ -206,6 +206,7 @@ export interface EngagementCounts {
     notes: number;
     vault: number;
     attachments: number;
+    cleanup: number;
     cleanup_pending: number;
     attack_techniques: number;
 }

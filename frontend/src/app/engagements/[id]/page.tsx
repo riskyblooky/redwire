@@ -1371,9 +1371,9 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         >
                             <Sparkles className="h-4 w-4 mr-2 shrink-0 group-data-[state=active]:scale-110 transition-transform" />
                             <span className="font-semibold">Cleanup</span>
-                            {(counts?.cleanup_pending ?? 0) > 0 && (
+                            {(counts?.cleanup ?? 0) > 0 && (
                                 <Badge variant="secondary" className="ml-2 bg-lime-500/20 text-lime-400 border-none px-1.5 h-4 text-[10px]">
-                                    {counts?.cleanup_pending}
+                                    {counts?.cleanup}
                                 </Badge>
                             )}
                         </TabsTrigger>

@@ -4,6 +4,13 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.5.2] — Unreleased
+
+### Fixed
+- **Cleanup tab badge** now shows the **total** number of cleanup artifacts,
+  matching the other engagement tab badges, instead of only the count still
+  pending.
+
 ## [1.5.1] — 2026-08-23
 
 ### Fixed

@@ -421,7 +421,8 @@ async def get_engagement_counts(
         "notes": await _count(Note),
         "vault": await _count(VaultItem),
         "attachments": await _count(Evidence),
-        "cleanup_pending": await _count(CleanupArtifact, CleanupArtifact.status == CleanupArtifactStatus.PENDING),
+        "cleanup": await _count(CleanupArtifact),
+        "cleanup_pending": await _count(CleanupArtifact, CleanupArtifactStatus.PENDING == CleanupArtifact.status),
         "attack_techniques": attack_techniques,
     }
 
