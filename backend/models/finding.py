@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, Enum as SQLEnum, ForeignKey, Float, Integer, JSON
+from sqlalchemy import Column, String, DateTime, Text, Enum as SQLEnum, ForeignKey, Float, Integer, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship, backref
 from database import Base, AuditMixin
 from datetime import datetime
@@ -24,9 +24,15 @@ class FindingStatus(str, enum.Enum):
 
 class Tag(Base):
     __tablename__ = "tags"
-    
+    # Tags are scoped to one entity type (finding / testcase / engagement), so a
+    # name is unique per type rather than globally.
+    __table_args__ = (
+        UniqueConstraint("name", "entity_type", name="uq_tags_name_entity_type"),
+    )
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String(50), nullable=False, unique=True, index=True)
+    name = Column(String(50), nullable=False, index=True)
+    entity_type = Column(String(20), nullable=False, server_default="finding", index=True)
     color = Column(String(20), nullable=True) # Hex color or tailwind class
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

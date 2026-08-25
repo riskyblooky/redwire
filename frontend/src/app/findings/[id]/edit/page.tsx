@@ -90,7 +90,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
 
     const { data: finding, isLoading: isLoadingFinding } = useFinding(id);
     const { data: engagements = [] } = useEngagements();
-    const { data: tags = [], isLoading: isLoadingTags } = useTags();
+    const { data: tags = [], isLoading: isLoadingTags } = useTags('finding');
     const updateFinding = useUpdateFinding();
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const { data: cfDefs = [] } = useCustomFieldDefs('finding');

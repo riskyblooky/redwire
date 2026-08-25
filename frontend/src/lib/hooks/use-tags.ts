@@ -1,10 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
+export type TagEntityType = 'finding' | 'testcase' | 'engagement';
+
 export interface Tag {
     id: string;
     name: string;
     color: string | null;
+    entity_type: TagEntityType;
     created_at: string;
 }
 
@@ -18,11 +21,13 @@ export function useCanManageTags() {
     });
 }
 
-export function useTags() {
+export function useTags(entityType?: TagEntityType) {
     return useQuery<Tag[]>({
-        queryKey: ['tags'],
+        queryKey: ['tags', entityType ?? 'all'],
         queryFn: async () => {
-            const { data } = await api.get('/tags');
+            const { data } = await api.get('/tags', {
+                params: entityType ? { entity_type: entityType } : undefined,
+            });
             return data;
         },
     });
@@ -31,7 +36,7 @@ export function useTags() {
 export function useCreateTag() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async (tagData: { name: string; color?: string }) => {
+        mutationFn: async (tagData: { name: string; color?: string; entity_type?: TagEntityType }) => {
             const { data } = await api.post('/tags', tagData);
             return data;
         },

@@ -21,7 +21,7 @@ interface TagPickerFieldProps {
 }
 
 export function TagPickerField({ selected, onChange }: TagPickerFieldProps) {
-    const { data: tags = [], isLoading } = useTags();
+    const { data: tags = [], isLoading } = useTags('engagement');
 
     const toggle = (id: string) => {
         onChange(

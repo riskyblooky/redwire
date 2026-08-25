@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List
+from typing import List, Optional
 from database import get_db
 
 from models.user import User, UserRole
@@ -20,9 +20,13 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 async def get_tags(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    entity_type: Optional[str] = Query(None, description="Filter to one scope: finding | testcase | engagement"),
 ):
-    """Get all tags."""
-    result = await db.execute(select(Tag).order_by(Tag.name))
+    """Get tags, optionally filtered to a single entity-type scope."""
+    stmt = select(Tag)
+    if entity_type:
+        stmt = stmt.where(Tag.entity_type == entity_type)
+    result = await db.execute(stmt.order_by(Tag.name))
     return result.scalars().all()
 
 
@@ -36,10 +40,13 @@ async def create_tag(
     if not await has_global_permission(current_user, Permission.MANAGE_TAGS, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    # Check uniqueness
-    existing = await db.execute(select(Tag).where(Tag.name == tag_data.name))
+    # Uniqueness is per (name, entity_type) — the same name may exist for a
+    # different scope (e.g. "critical" as both a finding and engagement tag).
+    existing = await db.execute(
+        select(Tag).where(Tag.name == tag_data.name, Tag.entity_type == tag_data.entity_type)
+    )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="A tag with this name already exists")
+        raise HTTPException(status_code=409, detail="A tag with this name already exists for this scope")
 
     new_tag = Tag(**tag_data.model_dump())
     db.add(new_tag)
@@ -66,11 +73,13 @@ async def update_tag(
 
     update_fields = tag_data.model_dump(exclude_unset=True)
 
-    # If renaming, check uniqueness
+    # If renaming, check uniqueness within the tag's own scope.
     if "name" in update_fields and update_fields["name"] != tag.name:
-        existing = await db.execute(select(Tag).where(Tag.name == update_fields["name"]))
+        existing = await db.execute(
+            select(Tag).where(Tag.name == update_fields["name"], Tag.entity_type == tag.entity_type)
+        )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="A tag with this name already exists")
+            raise HTTPException(status_code=409, detail="A tag with this name already exists for this scope")
 
     for field, value in update_fields.items():
         setattr(tag, field, value)

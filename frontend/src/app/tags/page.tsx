@@ -99,6 +99,16 @@ export default function TagsPage() {
     const updateTag = useUpdateTag();
     const deleteTag = useDeleteTag();
 
+    // ── Tag scope (which tab) ──
+    const TAB_TO_TYPE = { findings: 'finding', testcases: 'testcase', engagements: 'engagement' } as const;
+    const [activeTab, setActiveTab] = useState<keyof typeof TAB_TO_TYPE>('findings');
+    const activeType = TAB_TO_TYPE[activeTab];
+    const countByType = {
+        finding: tags.filter(t => t.entity_type === 'finding').length,
+        testcase: tags.filter(t => t.entity_type === 'testcase').length,
+        engagement: tags.filter(t => t.entity_type === 'engagement').length,
+    };
+
     // ── UI state ──
     const [search, setSearch] = useState('');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -116,6 +126,7 @@ export default function TagsPage() {
 
     // ── Filter tags ──
     const filteredTags = tags.filter(tag => {
+        if (tag.entity_type !== activeType) return false;   // scope to the active tab
         if (!search) return true;
         return tag.name.toLowerCase().includes(search.toLowerCase());
     }).sort(relevanceComparator(
@@ -128,7 +139,7 @@ export default function TagsPage() {
     const handleCreate = async () => {
         if (!newName.trim()) return;
         try {
-            await createTag.mutateAsync({ name: newName.trim(), color: newColor });
+            await createTag.mutateAsync({ name: newName.trim(), color: newColor, entity_type: activeType });
             toast.success('Tag created');
             setIsCreateOpen(false);
             setNewName('');
@@ -189,22 +200,22 @@ export default function TagsPage() {
                 </div>
 
                 {/* Tabs */}
-                <Tabs defaultValue="findings" className="space-y-4">
+                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as keyof typeof TAB_TO_TYPE)} className="space-y-4">
                     <TabsList className="bg-slate-800/50 border border-slate-700">
                         <TabsTrigger value="findings" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
                             <Bug className="h-4 w-4" />
                             Finding Tags
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tags.length}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{countByType.finding}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="testcases" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
                             <FlaskConical className="h-4 w-4" />
                             Test Case Tags
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tags.length}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{countByType.testcase}</Badge>
                         </TabsTrigger>
                         <TabsTrigger value="engagements" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
                             <Briefcase className="h-4 w-4" />
                             Engagement Tags
-                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{tags.length}</Badge>
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{countByType.engagement}</Badge>
                         </TabsTrigger>
                     </TabsList>
 

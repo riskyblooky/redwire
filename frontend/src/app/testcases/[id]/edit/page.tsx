@@ -79,7 +79,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
     const { data: testcase, isLoading: isLoadingTC } = useTestCase(id);
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
-    const { data: tags = [], isLoading: isLoadingTags } = useTags();
+    const { data: tags = [], isLoading: isLoadingTags } = useTags('testcase');
     const updateTestCase = useUpdateTestCase();
     const { confirm, ConfirmDialog } = useConfirmDialog();
 

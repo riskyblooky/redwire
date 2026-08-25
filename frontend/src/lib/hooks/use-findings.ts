@@ -299,11 +299,13 @@ export const useApproveFindingTemplate = templateAction('approve');
 export const useRejectFindingTemplate = templateAction('reject');
 export const useUnpublishFindingTemplate = templateAction('unpublish');
 
-export function useTags() {
+export function useTags(entityType?: 'finding' | 'testcase' | 'engagement') {
     return useQuery({
-        queryKey: ['tags'],
+        queryKey: ['tags', entityType ?? 'all'],
         queryFn: async () => {
-            const { data } = await api.get<Tag[]>('/findings/tags/list');
+            const { data } = await api.get<Tag[]>('/tags', {
+                params: entityType ? { entity_type: entityType } : undefined,
+            });
             return data;
         },
         staleTime: 60_000,

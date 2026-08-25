@@ -79,7 +79,7 @@ export default function NewFindingPage() {
 
     const createFinding = useCreateFinding();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
-    const { data: tags = [], isLoading: isLoadingTags } = useTags();
+    const { data: tags = [], isLoading: isLoadingTags } = useTags('finding');
     const { data: findingCategories = [] } = useConfigurableTypes('finding');
     const { data: assetTypes = [] } = useConfigurableTypes('asset');
 

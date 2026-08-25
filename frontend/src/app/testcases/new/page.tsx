@@ -67,7 +67,7 @@ export default function NewTestCasePage() {
 
     const createTestCase = useCreateTestCase();
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
-    const { data: tags = [], isLoading: isLoadingTags } = useTags();
+    const { data: tags = [], isLoading: isLoadingTags } = useTags('testcase');
     const { data: allTestCases = [] } = useTestCases(engagementIdParam || undefined);
     const [templateOpen, setTemplateOpen] = useState(false);
 
