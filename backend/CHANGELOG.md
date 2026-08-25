@@ -20,6 +20,10 @@ section becomes one release entry.
 - **Cleanup tab badge** now shows the **total** number of cleanup artifacts,
   matching the other engagement tab badges, instead of only the count still
   pending.
+- **Notes editor styling** — the collaborative notes editor (engagement Notes
+  tab) now shares the standard editor's rendering styles, fixing **code blocks**
+  (syntax highlighting / dark code theme) and **task-list checkboxes** (the
+  themed indigo checkboxes) that had drifted out of sync and rendered unstyled.
 - **PDF report generation** no longer crashes when a finding field contains a
   large markdown block (e.g. a code block taller than a page). Finding content
   now flows and paginates across pages instead of being forced onto one page,
