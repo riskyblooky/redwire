@@ -478,7 +478,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
                                             {finding.technical_details && (
                                                 <div className="space-y-2">
-                                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Additional Evidence / Payload</h4>
+                                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Technical Details</h4>
                                                     <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden">
                                                         <MarkdownPreview value={finding.technical_details} theme="dark" />
                                                     </div>

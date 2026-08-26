@@ -1012,7 +1012,7 @@ function LinkedResourcesBar({
                     onClick={() => router.push(`/findings/${f.id}?engagementId=${engagementId}`)}
                 >
                     <Bug className="h-2.5 w-2.5" />
-                    <span className="max-w-[120px] truncate">{f.title}</span>
+                    <span className="max-w-[120px] truncate" title={f.title}>{f.title}</span>
                     {canEditNote && (
                         <button onClick={(e) => { e.stopPropagation(); onUnlink('findings', f.id); }} className="ml-0.5 hover:text-white">
                             <X className="h-2.5 w-2.5" />
@@ -1027,7 +1027,7 @@ function LinkedResourcesBar({
                     onClick={() => router.push(`/testcases/${t.id}?engagementId=${engagementId}`)}
                 >
                     <Target className="h-2.5 w-2.5" />
-                    <span className="max-w-[120px] truncate">{t.title}</span>
+                    <span className="max-w-[120px] truncate" title={t.title}>{t.title}</span>
                     {canEditNote && (
                         <button onClick={(e) => { e.stopPropagation(); onUnlink('testcases', t.id); }} className="ml-0.5 hover:text-white">
                             <X className="h-2.5 w-2.5" />
@@ -1042,7 +1042,7 @@ function LinkedResourcesBar({
                     onClick={() => router.push(`/assets/${a.id}?engagementId=${engagementId}`)}
                 >
                     <Server className="h-2.5 w-2.5" />
-                    <span className="max-w-[120px] truncate">{a.title}</span>
+                    <span className="max-w-[120px] truncate" title={a.title}>{a.title}</span>
                     {canEditNote && (
                         <button onClick={(e) => { e.stopPropagation(); onUnlink('assets', a.id); }} className="ml-0.5 hover:text-white">
                             <X className="h-2.5 w-2.5" />
@@ -1055,7 +1055,7 @@ function LinkedResourcesBar({
             {note.linked_vault_items?.map(v => (
                 <Badge key={v.id} className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-400 border-amber-500/20 gap-1 shrink-0">
                     <Key className="h-2.5 w-2.5" />
-                    <span className="max-w-[120px] truncate">{v.name}</span>
+                    <span className="max-w-[120px] truncate" title={v.name}>{v.name}</span>
                     {canEditNote && (
                         <button onClick={() => onUnlink('vault', v.id)} className="ml-0.5 hover:text-white">
                             <X className="h-2.5 w-2.5" />
@@ -1068,7 +1068,7 @@ function LinkedResourcesBar({
             {note.linked_cleanup_artifacts?.map(c => (
                 <Badge key={c.id} className="text-[10px] h-5 px-1.5 bg-emerald-500/10 text-emerald-400 border-emerald-500/20 gap-1 shrink-0">
                     <Trash className="h-2.5 w-2.5" />
-                    <span className="max-w-[120px] truncate">{c.title}</span>
+                    <span className="max-w-[120px] truncate" title={c.title}>{c.title}</span>
                     {canEditNote && (
                         <button onClick={() => onUnlink('cleanup', c.id)} className="ml-0.5 hover:text-white">
                             <X className="h-2.5 w-2.5" />
@@ -1083,7 +1083,7 @@ function LinkedResourcesBar({
                     onClick={() => setIntelDetailId(i.id)}
                 >
                     <Radar className="h-2.5 w-2.5" />
-                    <span className="max-w-[120px] truncate">{i.title}</span>
+                    <span className="max-w-[120px] truncate" title={i.title}>{i.title}</span>
                     {canEditNote && onUnlinkIntel && (
                         <button onClick={(e) => { e.stopPropagation(); onUnlinkIntel(i.id); }} className="ml-0.5 hover:text-white">
                             <X className="h-2.5 w-2.5" />
@@ -1098,7 +1098,7 @@ function LinkedResourcesBar({
             {linkedInfraItems.map(i => (
                 <Badge key={i.id} className="text-[10px] h-5 px-1.5 bg-orange-500/10 text-orange-400 border-orange-500/20 gap-1 shrink-0">
                     <Server className="h-2.5 w-2.5" />
-                    <span className="max-w-[120px] truncate">{i.name}</span>
+                    <span className="max-w-[120px] truncate" title={i.name}>{i.name}</span>
                     {canEditNote && onUnlinkInfra && (
                         <button onClick={(e) => { e.stopPropagation(); onUnlinkInfra(i.id); }} className="ml-0.5 hover:text-white">
                             <X className="h-2.5 w-2.5" />
