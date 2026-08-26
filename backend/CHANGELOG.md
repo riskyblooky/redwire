@@ -15,8 +15,12 @@ section becomes one release entry.
 - **ATT&CK AI auto-suggest** now works on the **test cases** sub-tab too (not
   just findings), and both sub-tabs gained an **"Include already-tagged"**
   toggle to re-suggest techniques for items that already have ATT&CK mappings.
+  The suggest controls only appear when AI is configured on the instance.
 
 ### Fixed
+- **Editor hyperlinks** — typing (or a space) after a link no longer extends
+  the hyperlink onto the new text, and clicking the link toolbar button while a
+  link is selected now removes it (toggle off).
 - **Report/download filenames with non-ASCII characters** no longer error when
   generating a report (or exporting an engagement) whose name has accented or
   non-Latin characters. Downloads now use an RFC 6266/5987 dual filename
