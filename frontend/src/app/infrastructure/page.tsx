@@ -24,6 +24,7 @@ import api, { apiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LinkedEntitiesList } from '@/components/ui/linked-entities-list';
 import { Input } from '@/components/ui/input';
 import { FileDropzone, SelectedFileCard } from '@/components/ui/file-dropzone';
 import { MAX_VAULT_FILE_BYTES } from '@/lib/upload-limits';
@@ -939,33 +940,14 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                             Linked Entities
                             <span className="text-xs text-slate-500">({allLinked.length})</span>
                         </h4>
-                        {allLinked.length === 0 ? (
-                            <p className="text-xs text-slate-500 italic py-2">No linked findings, test cases, or notes yet.</p>
-                        ) : (
-                            <div className="space-y-1">
-                                {allLinked.map(entity => (
-                                    <div key={`${entity.type}-${entity.id}`} className="flex items-center justify-between rounded-lg bg-slate-950/50 border border-slate-800 px-3 py-2 min-w-0">
-                                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                                            <Badge className="text-[10px] py-0 bg-slate-800 text-slate-400 border-slate-700 capitalize shrink-0">
-                                                {entity.type}
-                                            </Badge>
-                                            <span className="text-sm text-slate-300 truncate">{entity.title}</span>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-slate-600 hover:text-red-400 shrink-0"
-                                            onClick={async () => {
-                                                await unlinkInfra.mutateAsync({ itemId, entityType: entity.type, entityId: entity.id });
-                                                toast.success('Unlinked');
-                                            }}
-                                        >
-                                            <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        <LinkedEntitiesList
+                            entities={allLinked}
+                            emptyText="No linked findings, test cases, or notes yet."
+                            onUnlink={async (entity) => {
+                                await unlinkInfra.mutateAsync({ itemId, entityType: entity.type, entityId: entity.id });
+                                toast.success('Unlinked');
+                            }}
+                        />
                     </div>
 
                     {/* Meta */}
