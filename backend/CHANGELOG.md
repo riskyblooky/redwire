@@ -6,7 +6,16 @@ section becomes one release entry.
 
 ## [1.5.3] — Unreleased
 
+### Added
+- **Team Lead role** can now be assigned from Admin → Users (create and edit),
+  alongside Operator / Read-Only Admin / Admin — the edit dialog now uses a
+  single **Platform Role** dropdown.
+
 ### Fixed
+- **Analytics 403 for Team Leads** — the stats/analytics scope check now honors
+  a group-granted `view_all_engagements` permission (the standard 3-tier gate),
+  so a user in a group with platform-wide view access can see any engagement's
+  stats instead of getting a spurious 403.
 - **Entity linking gaps** — the link-items action now offers every supported
   relationship consistently: the **Findings tab** can link **test cases**; the
   **Assets tab** can link **findings** and **test cases**; the finding detail

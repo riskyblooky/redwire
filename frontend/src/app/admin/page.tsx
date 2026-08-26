@@ -137,12 +137,10 @@ export default function AdminPage() {
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [editForm, setEditForm] = useState<{
-        isAdmin: boolean;
-        isReadOnlyAdmin: boolean;
+        role: UserRole;
         groupIds: string[];
     }>({
-        isAdmin: false,
-        isReadOnlyAdmin: false,
+        role: UserRole.OPERATOR,
         groupIds: []
     });
     const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -150,12 +148,9 @@ export default function AdminPage() {
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
     const handleEditClick = (user: User) => {
-        const roleStr = user.role as string;
-        const isReadOnlyAdmin = roleStr === UserRole.READ_ONLY_ADMIN;
         setSelectedUser(user);
         setEditForm({
-            isAdmin: roleStr === UserRole.ADMIN || isReadOnlyAdmin,
-            isReadOnlyAdmin,
+            role: (user.role as UserRole) || UserRole.OPERATOR,
             groupIds: (user as any).groups?.map((g: any) => g.id) || []
         });
         setIsEditDialogOpen(true);
@@ -163,14 +158,11 @@ export default function AdminPage() {
 
     const handleUpdateUser = async () => {
         if (!selectedUser) return;
-        const role = editForm.isAdmin
-            ? (editForm.isReadOnlyAdmin ? UserRole.READ_ONLY_ADMIN : UserRole.ADMIN)
-            : UserRole.OPERATOR;
         try {
             await updateUser.mutateAsync({
                 userId: selectedUser.id,
                 data: {
-                    role,
+                    role: editForm.role,
                     group_ids: editForm.groupIds
                 } as any
             });
@@ -580,37 +572,26 @@ export default function AdminPage() {
                         </DialogHeader>
                         <div className="space-y-6 py-4">
                             <div className="space-y-2 p-3 rounded-lg border border-slate-800 bg-slate-900/30">
-                                <div className="flex items-center justify-between">
-                                    <div className="space-y-1">
-                                        <Label className="text-slate-300 flex items-center gap-2">
-                                            <Shield className="h-4 w-4 text-primary" />
-                                            Platform Admin
-                                        </Label>
-                                        <p className="text-[11px] text-slate-500">Full access to admin console and all platform settings.</p>
-                                    </div>
-                                    <Switch
-                                        checked={editForm.isAdmin}
-                                        onCheckedChange={(checked) => setEditForm({ ...editForm, isAdmin: checked, isReadOnlyAdmin: checked ? editForm.isReadOnlyAdmin : false })}
-                                        disabled={selectedUser?.id === currentUser?.id}
-                                    />
-                                </div>
-                                {editForm.isAdmin && (
-                                    <div className="flex items-center gap-3 pt-2 border-t border-slate-800/60">
-                                        <Checkbox
-                                            id="edit-read-only-admin"
-                                            checked={editForm.isReadOnlyAdmin}
-                                            onCheckedChange={(checked) => setEditForm({ ...editForm, isReadOnlyAdmin: !!checked })}
-                                            disabled={selectedUser?.id === currentUser?.id}
-                                            className="border-slate-700 data-[state=checked]:bg-primary"
-                                        />
-                                        <div className="space-y-0.5">
-                                            <Label htmlFor="edit-read-only-admin" className="text-slate-300 cursor-pointer text-sm">
-                                                Read-only
-                                            </Label>
-                                            <p className="text-[11px] text-slate-500">Can view everything an admin can, but cannot modify data.</p>
-                                        </div>
-                                    </div>
-                                )}
+                                <Label className="text-slate-300 flex items-center gap-2">
+                                    <Shield className="h-4 w-4 text-primary" />
+                                    Platform Role
+                                </Label>
+                                <p className="text-[11px] text-slate-500">Built-in access level. Group permissions add feature access on top. Team Lead and the Admin roles get platform-wide access (e.g. all engagements).</p>
+                                <Select
+                                    value={editForm.role}
+                                    onValueChange={(val) => setEditForm({ ...editForm, role: val as UserRole })}
+                                    disabled={selectedUser?.id === currentUser?.id}
+                                >
+                                    <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-slate-950 border-slate-800">
+                                        <SelectItem value={UserRole.OPERATOR} className="text-slate-300">Operator</SelectItem>
+                                        <SelectItem value={UserRole.TEAM_LEAD} className="text-slate-300">Team Lead</SelectItem>
+                                        <SelectItem value={UserRole.READ_ONLY_ADMIN} className="text-slate-300">Read-Only Admin</SelectItem>
+                                        <SelectItem value={UserRole.ADMIN} className="text-slate-300">Admin</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             <div className="space-y-3">
@@ -779,6 +760,7 @@ export default function AdminPage() {
                                     </SelectTrigger>
                                     <SelectContent className="bg-slate-950 border-slate-800">
                                         <SelectItem value={UserRole.OPERATOR} className="text-slate-300">Operator</SelectItem>
+                                        <SelectItem value={UserRole.TEAM_LEAD} className="text-slate-300">Team Lead</SelectItem>
                                         <SelectItem value={UserRole.READ_ONLY_ADMIN} className="text-slate-300">Read-Only Admin</SelectItem>
                                         <SelectItem value={UserRole.ADMIN} className="text-slate-300">Admin</SelectItem>
                                     </SelectContent>

@@ -212,6 +212,21 @@ async def apply_stats_scope(
     """
     is_admin = current_user.role in _ADMIN_ROLES
 
+    # Middle tier of the standard 3-tier gate: a group-granted
+    # VIEW_ALL_ENGAGEMENTS (e.g. the Team Leads group) is platform-wide read
+    # access, so treat it like an admin for stats scoping. Previously only the
+    # enum role was consulted, so a user with this grant but no admin role and
+    # no assignment on the pinned engagement got a spurious 403. Fail closed —
+    # any lookup error leaves is_admin False and the assignment check runs.
+    if not is_admin:
+        try:
+            from auth.permissions import has_global_permission
+            from models.permission import Permission
+            if await has_global_permission(current_user, Permission.VIEW_ALL_ENGAGEMENTS, db):
+                is_admin = True
+        except Exception:
+            pass
+
     if engagement_id and not is_admin:
         member = await db.execute(
             select(EngagementAssignment.user_id).where(
