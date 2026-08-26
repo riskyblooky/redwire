@@ -188,7 +188,7 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                 className="border-slate-800 hover:bg-slate-800/50 cursor-pointer"
                 onClick={() => onViewDetail ? onViewDetail(finding.id) : router.push(`/findings/${finding.id}?engagementId=${engagementId}&tab=findings`)}
             >
-                <TableCell className="font-medium text-white">{finding.title}</TableCell>
+                <TableCell className="font-medium text-white"><span className="block truncate max-w-[200px] md:max-w-[300px] lg:max-w-[420px] xl:max-w-[560px] 2xl:max-w-[760px]" title={finding.title}>{finding.title}</span></TableCell>
                 {col('severity') && <TableCell><Badge className={severityColors[finding.severity]}>{finding.severity}</Badge></TableCell>}
                 {col('status') && <TableCell><Badge variant="outline" className={findingStatusColors[finding.status]}>{finding.status.replace('_', ' ')}</Badge></TableCell>}
                 {col('discussions') && <TableCell>

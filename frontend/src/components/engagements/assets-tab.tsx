@@ -194,11 +194,11 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
                 <TableCell>
                     <div className="flex flex-col">
                         <span className="font-bold text-white group-hover:text-primary transition-colors uppercase tracking-tight text-xs">
-                            {asset.name}
+                            <span className="inline-block align-bottom truncate max-w-[180px] md:max-w-[280px] lg:max-w-[380px] xl:max-w-[520px] 2xl:max-w-[720px]" title={asset.name}>{asset.name}</span>
                             {!asset.in_scope && <span className="ml-2 text-[10px] text-slate-500 italic lowercase tracking-normal">(out of scope)</span>}
                         </span>
                         <div className="flex items-center gap-2 mt-1">
-                            <span className="text-slate-400 font-mono text-xs">{asset.identifier}</span>
+                            <span className="text-slate-400 font-mono text-xs block truncate max-w-[180px] md:max-w-[280px] lg:max-w-[380px] xl:max-w-[520px] 2xl:max-w-[720px]" title={asset.identifier}>{asset.identifier}</span>
                             {asset.ports && asset.ports.length > 0 && (
                                 <Popover>
                                     <PopoverTrigger asChild>

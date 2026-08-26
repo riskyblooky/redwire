@@ -265,7 +265,7 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                         ) : (
                             <span className="w-5 shrink-0">{depth > 0 && <CornerDownRight className="h-3.5 w-3.5 text-slate-600" />}</span>
                         )}
-                        <span className="truncate">{testcase.title}</span>
+                        <span className="truncate max-w-[200px] md:max-w-[300px] lg:max-w-[420px] xl:max-w-[560px] 2xl:max-w-[760px]" title={testcase.title}>{testcase.title}</span>
                     </div>
                 </TableCell>
                 {col('category') && (() => { const style = testCaseCategoryStyles[testcase.category] || testCaseCategoryStyles.OTHER; const Icon = style.icon; return (<TableCell><Badge className={cn("gap-1.5 py-1 px-2.5 font-bold text-[10px] uppercase tracking-wider border", style.color)}><Icon className="h-3 w-3" />{testcase.category.replace('_', ' ')}</Badge></TableCell>); })()}
