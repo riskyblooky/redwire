@@ -34,7 +34,7 @@ from schemas.infra_vault import (
 # wrap the MinIO blob (separate at-rest layer for FILE-type vault items).
 from utils.vault_crypto import encrypt_bytes, decrypt_bytes
 from utils.storage import storage_service
-from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped
+from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped, content_disposition_attachment
 
 router = APIRouter(prefix="/infra", tags=["infrastructure"])
 
@@ -791,7 +791,7 @@ async def download_infra_vault_file(
     return StreamingResponse(
         io.BytesIO(file_data),
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{vi.filename or "file"}"'},
+        headers={"Content-Disposition": content_disposition_attachment(vi.filename or "file")},
     )
 
 

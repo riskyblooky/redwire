@@ -161,3 +161,21 @@ async def read_upload_capped(
             )
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def content_disposition_attachment(filename: Optional[str]) -> str:
+    """Build a safe ``Content-Disposition: attachment`` header value.
+
+    Emits BOTH an ASCII-sanitised ``filename=`` fallback and an RFC 5987
+    ``filename*=UTF-8''<percent-encoded>`` form (RFC 6266 dual-emission), so a
+    non-ASCII name (e.g. an engagement title with accented characters) doesn't
+    raise a latin-1 encode error when the header is serialised, and clients
+    still render the real name. Also strips CR/LF to prevent header injection.
+    """
+    from urllib.parse import quote
+    raw = (filename or "download").replace("\r", "").replace("\n", "")
+    ascii_fallback = "".join(
+        c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in raw
+    ) or "download"
+    utf8_encoded = quote(raw, safe="")
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{utf8_encoded}"

@@ -12,6 +12,11 @@ section becomes one release entry.
   single **Platform Role** dropdown.
 
 ### Fixed
+- **Report/download filenames with non-ASCII characters** no longer error when
+  generating a report (or exporting an engagement) whose name has accented or
+  non-Latin characters. Downloads now use an RFC 6266/5987 dual filename
+  (ASCII fallback + UTF-8 `filename*`), so the real name renders and the header
+  never fails to encode.
 - **Admin users table** now shows each user's real platform role (Operator /
   Team Lead / Read-Only Admin / Admin / Read-Only) instead of labeling everyone
   who isn't an admin as "User".

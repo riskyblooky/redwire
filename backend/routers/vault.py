@@ -30,7 +30,7 @@ from utils.vault_access_log import should_log_vault_access
 # Only the file-blob helpers (encrypt_bytes / decrypt_bytes) need an
 # explicit wrap in this router; the secret-text columns no longer do.
 from utils.vault_crypto import encrypt_bytes, decrypt_bytes
-from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped
+from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped, content_disposition_attachment
 from utils.storage import storage_service
 from sqlalchemy.orm import selectinload
 
@@ -578,11 +578,7 @@ async def download_vault_file(
     # HTML in an error banner. Use RFC 6266's dual-emission shape
     # (`filename=` ASCII-fallback + `filename*=UTF-8''<pct-encoded>`)
     # so clients get a safe rendering regardless of the original name.
-    from urllib.parse import quote as _pq
-    _raw = (item.filename or "download").replace("\r", "").replace("\n", "")
-    _ascii_fallback = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in _raw)
-    _utf8_encoded = _pq(_raw, safe="")
-    disposition = f'attachment; filename="{_ascii_fallback}"; filename*=UTF-8\'\'{_utf8_encoded}'
+    disposition = content_disposition_attachment(item.filename or "download")
     return Response(
         content=file_bytes,
         media_type="application/octet-stream",

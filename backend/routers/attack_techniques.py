@@ -4,6 +4,7 @@ and ATT&CK Navigator JSON export.
 """
 
 import json
+from utils.uploads import content_disposition_attachment
 import logging
 import re
 from typing import Optional, List
@@ -662,6 +663,6 @@ async def export_navigator_json(
     return JSONResponse(
         content=layer,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": content_disposition_attachment(filename),
         },
     )

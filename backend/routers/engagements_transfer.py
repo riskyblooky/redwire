@@ -14,7 +14,7 @@ from database import get_db
 from auth.dependencies import get_current_user
 from models.user import User, UserRole
 from utils.storage import storage_service
-from utils.uploads import read_upload_capped
+from utils.uploads import read_upload_capped, content_disposition_attachment
 # Note: vault secret columns are encrypted at rest via the EncryptedText
 # column type — reads come back as plaintext, writes encrypt on bind.
 # Export and import paths therefore pass plain str values; no per-call
@@ -973,7 +973,7 @@ async def export_engagement(
         zip_buf,
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": content_disposition_attachment(filename),
             # GHSA-vwgf-r8qp-8gwr: surface the archive's root SHA-256
             # to the export UI so the operator can send it out-of-band
             # to whoever will import the archive.

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Query, UploadFile, File as FastAPIFile
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.uploads import content_disposition_attachment
 from sqlalchemy import select
 from typing import List, Optional
 import logging
@@ -570,7 +571,7 @@ async def download_evidence(
         return StreamingResponse(
             file_stream, 
             media_type=evidence.mime_type or "application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{evidence.original_filename.replace(chr(34), "").replace(chr(13), "").replace(chr(10), "")}"'}
+            headers={"Content-Disposition": content_disposition_attachment(evidence.original_filename)}
         )
     except Exception as e:
         # Check for MinIO/S3 missing file error

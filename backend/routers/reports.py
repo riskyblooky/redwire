@@ -87,7 +87,7 @@ from models.permission import Permission
 from models.user import UserRole
 from utils.report_generator import PDFReportGenerator, MarkdownReportGenerator, HTMLReportGenerator
 from utils.storage import storage_service
-from utils.uploads import safe_content_type
+from utils.uploads import safe_content_type, content_disposition_attachment
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -333,7 +333,7 @@ async def _do_generate_report(
         return Response(
             content=pdf_content,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"', **marking_warning_headers}
+            headers={"Content-Disposition": content_disposition_attachment(filename), **marking_warning_headers}
         )
 
     elif config.report_format == ReportFormat.MARKDOWN:
@@ -343,7 +343,7 @@ async def _do_generate_report(
         return Response(
             content=md_content,
             media_type="text/markdown",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"', **marking_warning_headers}
+            headers={"Content-Disposition": content_disposition_attachment(filename), **marking_warning_headers}
         )
 
     elif config.report_format == ReportFormat.HTML:
@@ -353,7 +353,7 @@ async def _do_generate_report(
         return Response(
             content=html_content,
             media_type="text/html",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"', **marking_warning_headers}
+            headers={"Content-Disposition": content_disposition_attachment(filename), **marking_warning_headers}
         )
 
     elif config.report_format in (ReportFormat.JSON_ZIP, ReportFormat.JSON_LAYOUT_ZIP):
@@ -599,7 +599,7 @@ async def _do_generate_report(
         return StreamingResponse(
             _stream_spooled_zip(spooled),
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": content_disposition_attachment(filename)},
         )
 
     raise HTTPException(
