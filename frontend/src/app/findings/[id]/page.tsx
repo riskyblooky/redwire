@@ -56,7 +56,13 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { useFinding, useUpdateFinding, useDeleteFinding } from '@/lib/hooks/use-findings';
+import { useFinding, useUpdateFinding, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
+import { severityRating } from '@/lib/cvss31';
+import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
+import { InlineSelectField, InlineSelectOption } from '@/components/ui/inline/inline-select-field';
+import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
+import { InlineCvssField } from '@/components/ui/inline/inline-cvss-field';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { useEngagement } from '@/lib/hooks/use-engagements';
@@ -68,7 +74,6 @@ import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
 import DiscussionSection from '@/components/discussions/discussion-section';
-import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserName } from '@/components/ui/user-name';
@@ -284,6 +289,29 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const canEdit = useCanEdit(finding?.engagement_id, 'finding', finding?.created_by);
     const canDelete = useCanDelete(finding?.engagement_id, 'finding', finding?.created_by);
 
+    // ── Inline editing (double-click a field to edit it in place) ──
+    const { data: allTags = [] } = useTags('finding');
+    const { data: findingTypes = [] } = useConfigurableTypes('finding');
+
+    // Single-field patch through the existing update hook (PUT behaves as a
+    // partial patch — only the fields we pass are touched).
+    const saveField = async (patch: Record<string, any>) => {
+        await updateFinding.mutateAsync({ id, ...patch } as any);
+    };
+
+    const SEVERITY_OPTIONS: InlineSelectOption[] = [
+        { value: 'CRITICAL', label: 'CRITICAL', badgeClass: severityColors.CRITICAL },
+        { value: 'HIGH', label: 'HIGH', badgeClass: severityColors.HIGH },
+        { value: 'MEDIUM', label: 'MEDIUM', badgeClass: severityColors.MEDIUM },
+        { value: 'LOW', label: 'LOW', badgeClass: severityColors.LOW },
+        { value: 'INFO', label: 'INFO', badgeClass: severityColors.INFO },
+    ];
+    const categoryOptions: InlineSelectOption[] = findingTypes.map((t: any) => ({ value: t.name, label: t.name }));
+
+    // CVSS score → severity enum (mirrors the edit page's auto-sync on Apply).
+    const scoreToSeverity = (score: number) =>
+        (({ None: 'INFO', Low: 'LOW', Medium: 'MEDIUM', High: 'HIGH', Critical: 'CRITICAL' } as Record<string, string>)[severityRating(score)] || 'INFO');
+
     const handleStatusChange = async (newStatus: string) => {
         // If selecting REMEDIATED and there are unremediated assets, prompt
         if (newStatus === 'REMEDIATED' && finding) {
@@ -372,12 +400,32 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                 <h1 className="text-3xl font-bold text-white tracking-tight">{finding.title}</h1>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
-                                <Badge className={cn("px-2 py-0.5", severityColors[finding.severity])}>{finding.severity}</Badge>
+                                <InlineSelectField
+                                    value={finding.severity}
+                                    options={SEVERITY_OPTIONS}
+                                    canEdit={canEdit}
+                                    onSave={(v) => saveField({ severity: v })}
+                                    renderRead={(_opt, val) => <Badge className={cn("px-2 py-0.5", severityColors[val])}>{val}</Badge>}
+                                />
                                 <Badge variant="outline" className={cn("px-2 py-0.5", statusColors[finding.status])}>{finding.status.replace('_', ' ')}</Badge>
-                                {finding.category && (
-                                    <Badge variant="secondary" className="bg-slate-800 text-slate-400 border-none font-medium px-2 py-0.5">{finding.category}</Badge>
+                                {(finding.category || canEdit) && (
+                                    <InlineSelectField
+                                        value={finding.category || ''}
+                                        options={categoryOptions}
+                                        canEdit={canEdit}
+                                        onSave={(v) => saveField({ category: v })}
+                                        renderRead={(_opt, val) => val
+                                            ? <Badge variant="secondary" className="bg-slate-800 text-slate-400 border-none font-medium px-2 py-0.5">{val}</Badge>
+                                            : <span className="text-xs text-slate-600 italic">no category</span>}
+                                    />
                                 )}
-                                <TagList tags={finding.tags} />
+                                <InlineTagsField
+                                    tags={finding.tags}
+                                    allTags={allTags}
+                                    selectedIds={(finding.tags || []).map((t: any) => t.id)}
+                                    canEdit={canEdit}
+                                    onSave={(ids) => saveField({ tag_ids: ids })}
+                                />
                                 {engagement && (
                                     <Link href={`/engagements/${engagement.id}?tab=${returnTab}`} className="text-sm text-primary hover:underline flex items-center gap-1 ml-2">
                                         <Target className="h-3 w-3" /> {engagement.name}
@@ -430,9 +478,15 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                             <h3 className="text-xl font-bold tracking-tight">Executive Summary</h3>
                                         </button>
                                         {!collapsedSec['summary'] && (
-                                            <div className="prose prose-invert max-w-none prose-slate">
-                                                <MarkdownPreview value={finding.description} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={finding.description || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ description: v })}
+                                                engagementId={finding.engagement_id}
+                                                fieldContext={{ resourceType: 'finding', fieldName: 'description' }}
+                                                previewWrapperClassName="prose prose-invert max-w-none prose-slate"
+                                                emptyText="Double-click to add an executive summary…"
+                                            />
                                         )}
                                     </section>
 
@@ -448,32 +502,50 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
                                         {!collapsedSec['tech'] && (
                                         <div className="space-y-6">
-                                            {finding.impact && (
+                                            {(finding.impact || canEdit) && (
                                                 <div className="space-y-2">
                                                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                                                         <ShieldAlert className="h-3 w-3" /> Potential Impact
                                                     </h4>
-                                                    <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
-                                                        <MarkdownPreview value={finding.impact} theme="dark" />
-                                                    </div>
+                                                    <InlineMarkdownField
+                                                        value={finding.impact || ''}
+                                                        canEdit={canEdit}
+                                                        onSave={(v) => saveField({ impact: v })}
+                                                        engagementId={finding.engagement_id}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'impact' }}
+                                                        previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
+                                                        emptyText="Double-click to add potential impact…"
+                                                    />
                                                 </div>
                                             )}
 
-                                            {finding.steps_to_reproduce && (
+                                            {(finding.steps_to_reproduce || canEdit) && (
                                                 <div className="space-y-2">
                                                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Steps to Reproduce</h4>
-                                                    <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden">
-                                                        <MarkdownPreview value={finding.steps_to_reproduce} theme="dark" />
-                                                    </div>
+                                                    <InlineMarkdownField
+                                                        value={finding.steps_to_reproduce || ''}
+                                                        canEdit={canEdit}
+                                                        onSave={(v) => saveField({ steps_to_reproduce: v })}
+                                                        engagementId={finding.engagement_id}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'steps_to_reproduce' }}
+                                                        previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
+                                                        emptyText="Double-click to add reproduction steps…"
+                                                    />
                                                 </div>
                                             )}
 
-                                            {finding.technical_details && (
+                                            {(finding.technical_details || canEdit) && (
                                                 <div className="space-y-2">
                                                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Technical Details</h4>
-                                                    <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden">
-                                                        <MarkdownPreview value={finding.technical_details} theme="dark" />
-                                                    </div>
+                                                    <InlineMarkdownField
+                                                        value={finding.technical_details || ''}
+                                                        canEdit={canEdit}
+                                                        onSave={(v) => saveField({ technical_details: v })}
+                                                        engagementId={finding.engagement_id}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'technical_details' }}
+                                                        previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
+                                                        emptyText="Double-click to add technical details…"
+                                                    />
                                                 </div>
                                             )}
                                         </div>
@@ -490,13 +562,19 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                             <h3 className="text-xl font-bold tracking-tight">Mitigation & Remediation</h3>
                                         </button>
                                         {!collapsedSec['remediation'] && (
-                                            <div className="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden">
-                                                <MarkdownPreview value={finding.mitigations || ''} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={finding.mitigations || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ mitigations: v })}
+                                                engagementId={finding.engagement_id}
+                                                fieldContext={{ resourceType: 'finding', fieldName: 'mitigations' }}
+                                                previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden"
+                                                emptyText="Double-click to add remediation guidance…"
+                                            />
                                         )}
                                     </section>
 
-                                    {finding.references && (
+                                    {(finding.references || canEdit) && (
                                         <>
                                             <Separator className="bg-slate-800/60" />
                                             <section>
@@ -505,9 +583,15 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">External References</h3>
                                                 </button>
                                                 {!collapsedSec['refs'] && (
-                                                    <div className="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden">
-                                                        <MarkdownPreview value={finding.references || ''} theme="dark" />
-                                                    </div>
+                                                    <InlineMarkdownField
+                                                        value={finding.references || ''}
+                                                        canEdit={canEdit}
+                                                        onSave={(v) => saveField({ references: v })}
+                                                        engagementId={finding.engagement_id}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'references' }}
+                                                        previewWrapperClassName="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden"
+                                                        emptyText="Double-click to add external references…"
+                                                    />
                                                 )}
                                             </section>
                                         </>
@@ -572,6 +656,11 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                 <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Risk Assessment</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-8">
+                                <InlineCvssField
+                                    vector={finding.cvss_vector}
+                                    canEdit={canEdit}
+                                    onSave={(score, vector) => saveField({ cvss_score: score, cvss_vector: vector, severity: scoreToSeverity(score) })}
+                                >
                                 <div className="flex flex-col items-center justify-center p-6 bg-slate-950/50 rounded-2xl border border-slate-800/50 shadow-inner">
                                     <span className={cn("text-5xl font-black italic tracking-tighter transition-all hover:scale-110 cursor-default",
                                         (finding.cvss_score || 0) >= 9 ? 'text-red-600 drop-shadow-[0_0_10px_rgba(220,38,38,0.3)]' :
@@ -595,6 +684,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                         </button>
                                     )}
                                 </div>
+                                </InlineCvssField>
 
                                 <div className="space-y-6">
                                     <div className="space-y-3">
