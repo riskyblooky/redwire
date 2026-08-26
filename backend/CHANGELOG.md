@@ -12,6 +12,9 @@ section becomes one release entry.
   single **Platform Role** dropdown.
 
 ### Fixed
+- **Admin users table** now shows each user's real platform role (Operator /
+  Team Lead / Read-Only Admin / Admin / Read-Only) instead of labeling everyone
+  who isn't an admin as "User".
 - **Analytics 403 for Team Leads** — the stats/analytics scope check now honors
   a group-granted `view_all_engagements` permission (the standard 3-tier gate),
   so a user in a group with platform-wide view access can see any engagement's
