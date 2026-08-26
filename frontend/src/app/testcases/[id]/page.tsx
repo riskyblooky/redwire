@@ -120,7 +120,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const unlinkAsset = useUnlinkAsset();
     const [viewCleanup, setViewCleanup] = useState<any>(null);
     const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
-    const [isNotesCollapsed, setIsNotesCollapsed] = useState(false);
+    const [isNotesCollapsed, setIsNotesCollapsed] = useState(true);
     // Per-section collapse (main content sections). Default expanded.
     const [collapsedSec, setCollapsedSec] = useState<Record<string, boolean>>({});
     const toggleSec = (k: string) => setCollapsedSec(s => ({ ...s, [k]: !s[k] }));
