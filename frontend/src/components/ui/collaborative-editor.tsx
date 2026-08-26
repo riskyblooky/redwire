@@ -511,6 +511,10 @@ export default function CollaborativeEditor({
 }: CollaborativeEditorProps) {
     const { user: currentUser } = useAuthStore();
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+    // True once the server's document state has been applied — used to keep the
+    // loading overlay up until the note content is actually present, not just
+    // the WebSocket open.
+    const [hasSynced, setHasSynced] = useState(false);
     const [peerCount, setPeerCount] = useState(0);
     const [, setForceUpdate] = useState(0);
     const wsRef = useRef<WebSocket | null>(null);
@@ -555,6 +559,9 @@ export default function CollaborativeEditor({
         let isCleaningUp = false;
         let initialContentPending: string | null = null;
         let initialContentTimer: NodeJS.Timeout | undefined;
+        // Belt-and-suspenders: guarantees the loading overlay is dismissed even
+        // if neither a peer sync nor an initial_content frame ever arrives.
+        let readyFallbackTimer: NodeJS.Timeout | undefined;
 
         // Track awareness changes → update peer count
         const awarenessChangeHandler = () => {
@@ -622,6 +629,8 @@ export default function CollaborativeEditor({
                 if (isCleaningUp) { ws.close(); return; }
                 setConnectionStatus('connected');
                 retryCount = 0;
+                clearTimeout(readyFallbackTimer);
+                readyFallbackTimer = setTimeout(() => setHasSynced(true), 2_000);
 
                 // FIRST frame MUST be the auth bearer. Backend has 5s
                 // to receive it before closing with 1008 (see
@@ -661,7 +670,10 @@ export default function CollaborativeEditor({
                         if (data.type === 'initial_content') {
                             // Store it; only apply if no peer sync fills the doc
                             initialContentPending = data.content || '';
-                            // Give peers 800ms to sync their state before falling back to DB content
+                            // Give peers a brief window to sync their (authoritative)
+                            // state before falling back to the DB copy. Kept short so
+                            // the common single-user case reveals the note quickly
+                            // instead of staring at a blank editor.
                             clearTimeout(initialContentTimer);
                             initialContentTimer = setTimeout(() => {
                                 const fragment = ydoc.getXmlFragment('default');
@@ -670,7 +682,8 @@ export default function CollaborativeEditor({
                                     editorRef.current.commands.setContent(initialContentPending);
                                 }
                                 initialContentPending = null;
-                            }, 800);
+                                setHasSynced(true);   // DB baseline settled — reveal the editor
+                            }, 300);
                         } else if (data.type === 'request_save') {
                             // Server wants us to save current content to DB
                             const ed = editorRef.current;
@@ -711,6 +724,7 @@ export default function CollaborativeEditor({
                             const responseEncoder = encoding.createEncoder();
                             encoding.writeVarUint(responseEncoder, MSG_SYNC);
                             syncProtocol.readSyncMessage(decoder, responseEncoder, ydoc, 'remote');
+                            setHasSynced(true);   // server doc state applied — content is ready
                             // If a response was generated (sync step 2), send it back
                             if (encoding.length(responseEncoder) > 1) {
                                 sendBinary(encoding.toUint8Array(responseEncoder));
@@ -807,6 +821,7 @@ export default function CollaborativeEditor({
         return () => {
             isCleaningUp = true;
             clearTimeout(initialContentTimer);
+            clearTimeout(readyFallbackTimer);
             clearTimeout(reconnectTimeout);
             clearInterval(staleCleanupInterval);
             awareness.off('change', trackPeerActivity);
@@ -1026,9 +1041,15 @@ export default function CollaborativeEditor({
 
             {/* Editor content — the only scrolling region, so the toolbar stays put */}
             <div
-                className="flex-1 min-h-0 overflow-y-auto"
+                className="relative flex-1 min-h-0 overflow-y-auto"
                 onClick={() => editor?.commands.focus()}
             >
+                {(connectionStatus === 'connecting' || (connectionStatus === 'connected' && !hasSynced)) && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950/60 backdrop-blur-[1px]">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                        <p className="text-xs text-slate-400">Loading note…</p>
+                    </div>
+                )}
                 <EditorContent editor={editor} />
             </div>
             <EditorStyles currentUsername={currentUser?.username} />
