@@ -25,6 +25,7 @@ import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TagList } from '@/components/ui/tag-list';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Edit, Trash2, CheckSquare, Loader2, Play, CheckCircle2, XCircle, Zap, Flag, Layout, Circle, ArrowUpCircle, Globe, Radar, Calendar, Bug, X, Lock, Key, Shield, Sparkles, StickyNote, FileText, Terminal, User, Clock, ClipboardCheck, Target, Server, Layers, Plus, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
@@ -253,16 +254,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         <ClipboardCheck className="h-3 w-3" /> {engagement.name}
                                     </Link>
                                 )}
-                                {testcase.tags && testcase.tags.length > 0 && testcase.tags.map(tag => (
-                                    <Badge
-                                        key={tag.id}
-                                        variant="outline"
-                                        className="px-2 py-0.5 border-none font-bold text-[10px] uppercase tracking-wider"
-                                        style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                                    >
-                                        {tag.name}
-                                    </Badge>
-                                ))}
+                                <TagList tags={testcase.tags} />
                             </div>
                         </div>
                     </div>
@@ -534,18 +526,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                     {testcase.tags && testcase.tags.length > 0 && (
                                         <div>
                                             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Tags</h4>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {testcase.tags.map(tag => (
-                                                    <Badge
-                                                        key={tag.id}
-                                                        variant="outline"
-                                                        className="px-2 py-0.5 border-none font-bold text-[10px] uppercase tracking-wider"
-                                                        style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                                                    >
-                                                        {tag.name}
-                                                    </Badge>
-                                                ))}
-                                            </div>
+                                            <TagList tags={testcase.tags} max={8} />
                                         </div>
                                     )}
 

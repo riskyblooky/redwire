@@ -29,6 +29,7 @@ import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TagList } from '@/components/ui/tag-list';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
@@ -376,16 +377,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                 {finding.category && (
                                     <Badge variant="secondary" className="bg-slate-800 text-slate-400 border-none font-medium px-2 py-0.5">{finding.category}</Badge>
                                 )}
-                                {finding.tags?.map(tag => (
-                                    <Badge
-                                        key={tag.id}
-                                        variant="outline"
-                                        className="px-2 py-0.5 border-none font-bold text-[10px] uppercase tracking-wider"
-                                        style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                                    >
-                                        {tag.name}
-                                    </Badge>
-                                ))}
+                                <TagList tags={finding.tags} />
                                 {engagement && (
                                     <Link href={`/engagements/${engagement.id}?tab=${returnTab}`} className="text-sm text-primary hover:underline flex items-center gap-1 ml-2">
                                         <Target className="h-3 w-3" /> {engagement.name}

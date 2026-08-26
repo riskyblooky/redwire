@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TagList } from '@/components/ui/tag-list';
 import { Separator } from '@/components/ui/separator';
 import {
     Edit, Trash2, FileText, Loader2, Server, StickyNote, Bug,
@@ -206,6 +207,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 </Badge>
                                             )}
                                         </div>
+                                        <TagList tags={testcase.tags} className="mt-2" />
                                     </div>
                                 </div>
 
