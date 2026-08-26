@@ -34,6 +34,9 @@ router = APIRouter(prefix="/attack", tags=["attack"])
 
 class SuggestRequest(BaseModel):
     finding_ids: list[str] = []
+    testcase_ids: list[str] = []
+    source: str = "finding"          # 'finding' | 'testcase'
+    include_mapped: bool = False     # re-suggest even for items that already have techniques
 
 
 # ── Coverage ──────────────────────────────────────────────────────────
@@ -253,34 +256,45 @@ def _extract_techniques_from_content(content: str) -> list[dict] | None:
 
 async def _suggest_for_finding(
     client: "httpx.AsyncClient",
-    finding: Finding,
+    entity,
     api_url: str,
     api_key: str,
     model: str,
     semaphore: "asyncio.Semaphore",
     index: int,
     total: int,
+    kind: str = "finding",
 ) -> dict:
-    """Process a single finding through the LLM. Runs under a semaphore."""
+    """Process a single finding or test case through the LLM (under a semaphore).
+
+    Findings and test cases share the same shape (title / category / description),
+    so this handles both; ``kind`` labels the result. Test cases also feed their
+    steps/expected result into the prompt for a better mapping.
+    """
     async with semaphore:
-        # Skip API call entirely for findings with no real content — saves a
+        noun = "Finding" if kind == "finding" else "Test case"
+        base = {"entity_type": kind, "entity_id": entity.id, "entity_title": entity.title}
+        # Skip API call entirely for entities with no real content — saves a
         # round-trip and avoids the model hallucinating from a one-word title.
-        title_text = (finding.title or "").strip()
-        desc_text = (finding.description or "").strip()
-        if len(title_text) + len(desc_text) < 20:
-            return {
-                "finding_id": finding.id,
-                "finding_title": finding.title,
-                "techniques": [],
-                "error": "Finding has insufficient detail to map (title and description nearly empty).",
-            }
+        title_text = (entity.title or "").strip()
+        desc_text = (entity.description or "").strip()
+        extra = ""
+        if kind == "testcase":
+            steps = (getattr(entity, "steps", None) or "").strip()
+            expected = (getattr(entity, "expected_result", None) or "").strip()
+            if steps:
+                extra += f"\nSteps: {steps[:AI_MAX_DESCRIPTION_CHARS]}"
+            if expected:
+                extra += f"\nExpected result: {expected[:400]}"
+        if len(title_text) + len(desc_text) + len(extra) < 20:
+            return {**base, "techniques": [], "error": f"{noun} has insufficient detail to map."}
 
         user_msg = (
             f"Title: {title_text}\n"
-            f"Category: {finding.category or 'N/A'}\n"
-            f"Description: {desc_text[:AI_MAX_DESCRIPTION_CHARS]}"
+            f"Category: {entity.category or 'N/A'}\n"
+            f"Description: {desc_text[:AI_MAX_DESCRIPTION_CHARS]}{extra}"
         )
-        print(f"[ATT&CK Suggest] [{index}/{total}] Calling AI for finding: {finding.title[:60]}")
+        print(f"[ATT&CK Suggest] [{index}/{total}] Calling AI for {noun}: {entity.title[:60]}")
         try:
             resp = await client.post(
                 f"{api_url}/chat/completions",
@@ -372,8 +386,7 @@ async def _suggest_for_finding(
                     else:
                         err = "Model returned no parseable JSON in content, tool_calls, or reasoning."
                     return {
-                        "finding_id": finding.id,
-                        "finding_title": finding.title,
+                        **base,
                         "techniques": [],
                         "error": err,
                     }
@@ -384,8 +397,7 @@ async def _suggest_for_finding(
                     f"from {source_used}. Preview: {preview}"
                 )
                 return {
-                    "finding_id": finding.id,
-                    "finding_title": finding.title,
+                    **base,
                     "techniques": techniques,
                 }
             else:
@@ -401,16 +413,14 @@ async def _suggest_for_finding(
                 except Exception:
                     pass
                 return {
-                    "finding_id": finding.id,
-                    "finding_title": finding.title,
+                    **base,
                     "techniques": [],
                     "error": err_msg,
                 }
         except Exception as e:
             print(f"[ATT&CK Suggest] [{index}/{total}] Exception: {type(e).__name__}: {e}")
             return {
-                "finding_id": finding.id,
-                "finding_title": finding.title,
+                **base,
                 "techniques": [],
                 "error": f"{type(e).__name__}: {e}",
             }
@@ -465,47 +475,43 @@ async def suggest_techniques(
         print("[ATT&CK Suggest] No API key, returning 400")
         raise HTTPException(400, "AI API key not configured")
 
-    # Fetch findings
-    finding_ids = request.finding_ids
-    if not finding_ids:
-        # Default: all unmapped findings for this engagement
-        findings_result = await db.execute(
-            select(Finding)
-            .where(Finding.engagement_id == engagement_id)
-            .options(selectinload(Finding.attack_techniques))
-        )
-        all_findings = findings_result.scalars().all()
-        unmapped = [f for f in all_findings if not f.attack_techniques]
-        finding_ids = [f.id for f in unmapped]
-        print(f"[ATT&CK Suggest] Found {len(all_findings)} total findings, {len(unmapped)} unmapped")
+    # Resolve which entities to process — findings or test cases, honoring the
+    # include_mapped toggle. Both are scoped to this engagement so caller-supplied
+    # ids can't reach other tenants' engagements (GHSA-gg6r-62gm-r9cp).
+    kind = "testcase" if request.source == "testcase" else "finding"
+    Model = TestCase if kind == "testcase" else Finding
+    req_ids = request.testcase_ids if kind == "testcase" else request.finding_ids
+    noun = "test cases" if kind == "testcase" else "findings"
 
-    if not finding_ids:
-        print("[ATT&CK Suggest] No unmapped findings, returning early")
-        return {"suggestions": [], "message": "All findings already have techniques mapped"}
+    if req_ids:
+        rows = (await db.execute(
+            select(Model).where(Model.id.in_(req_ids), Model.engagement_id == engagement_id)
+            .options(selectinload(Model.attack_techniques))
+        )).scalars().all()
+    else:
+        rows = (await db.execute(
+            select(Model).where(Model.engagement_id == engagement_id)
+            .options(selectinload(Model.attack_techniques))
+        )).scalars().all()
 
-    # Fetch the actual finding data — scope to this engagement so caller-supplied
-    # finding_ids can't reach into other tenants' engagements (GHSA-gg6r-62gm-r9cp).
-    findings_result = await db.execute(
-        select(Finding).where(
-            Finding.id.in_(finding_ids),
-            Finding.engagement_id == engagement_id,
-        )
-    )
-    findings = findings_result.scalars().all()
-    print(f"[ATT&CK Suggest] Processing {len(findings)} findings concurrently (max {AI_MAX_CONCURRENCY})")
+    # By default only unmapped items; include_mapped re-suggests for all.
+    entities = rows if request.include_mapped else [e for e in rows if not e.attack_techniques]
+    print(f"[ATT&CK Suggest] {len(rows)} {noun}; processing {len(entities)} (include_mapped={request.include_mapped})")
 
-    # Process findings concurrently with bounded concurrency. Honor the admin's
-    # TLS-verify toggle (same as the chat/fetch-models paths) so a self-hosted
-    # AI endpoint with a self-signed cert works when verification is disabled.
+    if not entities:
+        return {"suggestions": [], "message": f"No {noun} to map (all already have techniques mapped)."}
+
+    # Process concurrently with bounded concurrency. Honor the admin's TLS-verify
+    # toggle so a self-hosted AI endpoint with a self-signed cert works.
     from routers.ai import _ai_tls_verify
     semaphore = asyncio.Semaphore(AI_MAX_CONCURRENCY)
     async with httpx.AsyncClient(timeout=AI_REQUEST_TIMEOUT, verify=_ai_tls_verify(settings)) as client:
         tasks = [
             _suggest_for_finding(
-                client, f, api_url, api_key, model,
-                semaphore, i + 1, len(findings),
+                client, e, api_url, api_key, model,
+                semaphore, i + 1, len(entities), kind=kind,
             )
-            for i, f in enumerate(findings)
+            for i, e in enumerate(entities)
         ]
         suggestions = await asyncio.gather(*tasks)
 

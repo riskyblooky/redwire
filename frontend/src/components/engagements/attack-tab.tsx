@@ -67,6 +67,7 @@ import {
     type CoverageTestCase,
 } from '@/lib/hooks/use-attack';
 import { useUpdateFinding } from '@/lib/hooks/use-findings';
+import { useUpdateTestCase } from '@/lib/hooks/use-testcases';
 import { CheckSquare } from 'lucide-react';
 import { apiErrorMessage } from '@/lib/api';
 
@@ -123,6 +124,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
     const navigatorExport = useAttackNavigatorExport(engagementId);
     const aiSuggest = useAiSuggestTechniques(engagementId);
     const updateFinding = useUpdateFinding();
+    const updateTestCase = useUpdateTestCase();
 
     const isTestcaseSource = source === 'testcase';
     const itemNoun = isTestcaseSource ? 'test case' : 'finding';
@@ -135,6 +137,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [aiElapsed, setAiElapsed] = useState(0);
     const [appliedFindingIds, setAppliedFindingIds] = useState<Set<string>>(new Set());
+    const [includeMapped, setIncludeMapped] = useState(false);
     const [mappedOnly, setMappedOnly] = useState(true);
 
     // Elapsed timer for AI suggest
@@ -189,7 +192,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
         // Fresh run — clear any "Applied" markers from a previous batch
         setAppliedFindingIds(new Set());
         try {
-            const result = await aiSuggest.mutateAsync(undefined);
+            const result = await aiSuggest.mutateAsync({ source, includeMapped });
             if (result.message) {
                 toast.info(result.message);
                 return;
@@ -204,7 +207,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
             if (succeeded > 0) setShowSuggestions(true);
 
             if (succeeded === total) {
-                toast.success(`Generated suggestions for ${total} findings`);
+                toast.success(`Generated suggestions for ${total} ${itemNounPlural}`);
             } else if (succeeded > 0) {
                 toast.warning(
                     `${succeeded} of ${total} succeeded`,
@@ -226,22 +229,23 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
     }, [aiSuggest]);
 
     // Apply a single AI suggestion
-    const handleApplySuggestion = useCallback(async (findingId: string, techniqueIds: string[]) => {
+    const handleApplySuggestion = useCallback(async (entityId: string, techniqueIds: string[]) => {
         try {
-            await updateFinding.mutateAsync({
-                id: findingId,
-                attack_technique_ids: techniqueIds,
-            });
+            if (isTestcaseSource) {
+                await updateTestCase.mutateAsync({ id: entityId, attack_technique_ids: techniqueIds } as any);
+            } else {
+                await updateFinding.mutateAsync({ id: entityId, attack_technique_ids: techniqueIds });
+            }
             setAppliedFindingIds(prev => {
                 const next = new Set(prev);
-                next.add(findingId);
+                next.add(entityId);
                 return next;
             });
-            toast.success('Techniques applied to finding');
+            toast.success(`Techniques applied to ${itemNoun}`);
         } catch {
             toast.error('Failed to apply techniques');
         }
-    }, [updateFinding]);
+    }, [updateFinding, updateTestCase, isTestcaseSource, itemNoun]);
 
     if (isLoading) {
         return (
@@ -408,24 +412,31 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                     {navigatorExport.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
                     Navigator Export
                 </Button>
-                {!isTestcaseSource && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary"
-                        onClick={handleAiSuggest}
-                        disabled={aiSuggest.isPending}
-                    >
-                        {aiSuggest.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
-                        {aiSuggest.isPending
-                            ? `AI Analyzing… ${Math.floor(aiElapsed / 60)}:${String(aiElapsed % 60).padStart(2, '0')}`
-                            : 'AI Auto-Suggest'}
-                    </Button>
-                )}
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none" title="Also re-suggest for items that already have techniques mapped">
+                    <input
+                        type="checkbox"
+                        checked={includeMapped}
+                        onChange={(e) => setIncludeMapped(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-primary"
+                    />
+                    Include already-tagged
+                </label>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary"
+                    onClick={handleAiSuggest}
+                    disabled={aiSuggest.isPending}
+                >
+                    {aiSuggest.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+                    {aiSuggest.isPending
+                        ? `AI Analyzing… ${Math.floor(aiElapsed / 60)}:${String(aiElapsed % 60).padStart(2, '0')}`
+                        : 'AI Auto-Suggest'}
+                </Button>
             </div>
 
-            {/* ── AI Suggestions Panel (findings only) ─────────── */}
-            {!isTestcaseSource && showSuggestions && aiSuggest.data && aiSuggest.data.suggestions.length > 0 && (
+            {/* ── AI Suggestions Panel ─────────── */}
+            {showSuggestions && aiSuggest.data && aiSuggest.data.suggestions.length > 0 && (
                 <Card className="border-primary/30 bg-primary/5">
                     <CardHeader className="p-4 pb-2">
                         <div className="flex items-center justify-between">
@@ -445,10 +456,10 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                     </CardHeader>
                     <CardContent className="p-4 pt-2 space-y-3">
                         {aiSuggest.data.suggestions.map(suggestion => {
-                            const isApplied = appliedFindingIds.has(suggestion.finding_id);
+                            const isApplied = appliedFindingIds.has(suggestion.entity_id);
                             return (
                             <div
-                                key={suggestion.finding_id}
+                                key={suggestion.entity_id}
                                 className={cn(
                                     "rounded-lg p-3 border transition-colors",
                                     isApplied
@@ -457,7 +468,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                                 )}
                             >
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-semibold text-white">{suggestion.finding_title}</span>
+                                    <span className="text-xs font-semibold text-white">{suggestion.entity_title}</span>
                                     {suggestion.techniques.length > 0 && (
                                         isApplied ? (
                                             <Badge className="h-6 text-[10px] bg-emerald-500/15 text-emerald-300 border-emerald-500/30 gap-1">
@@ -470,7 +481,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                                                 size="sm"
                                                 className="h-6 text-[10px] border-primary/30 text-primary hover:bg-primary/10"
                                                 onClick={() => handleApplySuggestion(
-                                                    suggestion.finding_id,
+                                                    suggestion.entity_id,
                                                     suggestion.techniques.map(t => t.technique_id)
                                                 )}
                                             >

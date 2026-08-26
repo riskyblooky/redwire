@@ -11,6 +11,11 @@ section becomes one release entry.
   alongside Operator / Read-Only Admin / Admin — the edit dialog now uses a
   single **Platform Role** dropdown.
 
+### Improved
+- **ATT&CK AI auto-suggest** now works on the **test cases** sub-tab too (not
+  just findings), and both sub-tabs gained an **"Include already-tagged"**
+  toggle to re-suggest techniques for items that already have ATT&CK mappings.
+
 ### Fixed
 - **Report/download filenames with non-ASCII characters** no longer error when
   generating a report (or exporting an engagement) whose name has accented or

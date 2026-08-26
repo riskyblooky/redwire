@@ -43,8 +43,9 @@ export interface SuggestionResult {
 }
 
 export interface FindingSuggestion {
-    finding_id: string;
-    finding_title: string;
+    entity_type: 'finding' | 'testcase';
+    entity_id: string;
+    entity_title: string;
     techniques: SuggestionResult[];
     error?: string;
 }
@@ -84,10 +85,15 @@ export function useAiSuggestTechniques(engagementId: string) {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (findingIds?: string[]) => {
+        mutationFn: async (opts?: { source?: 'finding' | 'testcase'; findingIds?: string[]; testcaseIds?: string[]; includeMapped?: boolean }) => {
             const { data } = await api.post<SuggestResponse>(
                 `/attack/engagement/${engagementId}/suggest`,
-                { finding_ids: findingIds || [] },
+                {
+                    source: opts?.source ?? 'finding',
+                    finding_ids: opts?.findingIds || [],
+                    testcase_ids: opts?.testcaseIds || [],
+                    include_mapped: opts?.includeMapped ?? false,
+                },
                 { timeout: 600_000 } // 10 minutes — local LLM inference can be slow
             );
             return data;
