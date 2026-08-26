@@ -1,11 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { TagList, TagListTag } from '@/components/ui/tag-list';
-import { Button } from '@/components/ui/button';
-import { Loader2, Pencil, Check, Tag as TagIcon } from 'lucide-react';
+import {
+    Popover, PopoverContent, PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+    Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
+} from '@/components/ui/command';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 interface InlineTagsFieldProps {
     /** Current tags, for the read view. */
@@ -19,9 +24,9 @@ interface InlineTagsFieldProps {
 }
 
 /**
- * Tags that read as a TagList and, on double-click (for editors), expand into a
- * compact chip picker with Save/Cancel. Toggling chips stages the selection;
- * Save commits the full tag_ids set via the caller's onSave.
+ * Tags that read as a TagList and, for editors, open a searchable multi-select
+ * dropdown (checkbox list). Toggling stages the selection; closing the dropdown
+ * commits the full tag_ids set via the caller's onSave (only if it changed).
  */
 export function InlineTagsField({
     tags = [],
@@ -31,13 +36,8 @@ export function InlineTagsField({
     canEdit = false,
     max = 6,
 }: InlineTagsFieldProps) {
-    const [editing, setEditing] = useState(false);
-    const [saving, setSaving] = useState(false);
+    const [open, setOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set(selectedIds));
-
-    useEffect(() => {
-        if (editing) setSelected(new Set(selectedIds));
-    }, [editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const toggle = (id: string) => {
         setSelected(prev => {
@@ -47,74 +47,79 @@ export function InlineTagsField({
         });
     };
 
-    const save = async () => {
-        setSaving(true);
+    const commitIfChanged = async (finalSel: Set<string>) => {
+        const next = [...finalSel];
+        const changed = next.length !== selectedIds.length || next.some(id => !selectedIds.includes(id));
+        if (!changed) return;
         try {
-            await onSave([...selected]);
-            setEditing(false);
+            await onSave(next);
             toast.success('Tags updated');
         } catch (e: any) {
             toast.error(e?.response?.data?.detail || e?.message || 'Failed to update tags');
-        } finally {
-            setSaving(false);
         }
     };
 
-    if (editing && canEdit) {
-        return (
-            <div className="rounded-lg border border-slate-700 bg-slate-950/40 p-2 space-y-2 max-w-md">
-                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
-                    {allTags.length === 0 && <span className="text-xs text-slate-500 italic p-1">No tags defined for this type.</span>}
-                    {allTags.map(t => {
-                        const on = selected.has(t.id);
-                        const color = t.color || '#64748b';
-                        return (
-                            <button
-                                key={t.id}
-                                type="button"
-                                onClick={() => toggle(t.id)}
-                                className={cn(
-                                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors',
-                                    on ? 'text-white' : 'text-slate-400 border-slate-700 hover:border-slate-600'
-                                )}
-                                style={on ? { backgroundColor: `${color}25`, borderColor: `${color}80`, color } : undefined}
-                            >
-                                {on && <Check className="h-3 w-3" />}
-                                {t.name}
-                            </button>
-                        );
-                    })}
-                </div>
-                <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-800/60">
-                    <Button variant="ghost" size="sm" className="h-6 text-slate-400 hover:text-white" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
-                    <Button size="sm" className="h-6 bg-primary hover:bg-primary/90 text-white" onClick={save} disabled={saving}>
-                        {saving ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Saving</> : 'Save'}
-                    </Button>
-                </div>
-            </div>
-        );
-    }
+    const handleOpenChange = (o: boolean) => {
+        if (o) {
+            setSelected(new Set(selectedIds)); // seed from current on open
+            setOpen(true);
+        } else {
+            setOpen(false);
+            commitIfChanged(selected); // commit staged selection on close
+        }
+    };
+
+    const readView = tags.length > 0
+        ? <TagList tags={tags} max={max} />
+        : canEdit ? <span className="text-xs text-slate-600 italic">no tags</span> : null;
+
+    if (!canEdit) return <>{readView}</>;
 
     return (
         <span
-            className="group/inline relative inline-flex items-center gap-1"
-            onDoubleClick={() => canEdit && setEditing(true)}
-            title={canEdit ? 'Double-click to edit tags' : undefined}
+            className="group/inline inline-flex items-center gap-1"
+            onDoubleClick={() => handleOpenChange(true)}
         >
-            {tags.length > 0
-                ? <TagList tags={tags} max={max} />
-                : canEdit && <span className="text-xs text-slate-600 italic">no tags</span>}
-            {canEdit && (
-                <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    className="p-0.5 rounded opacity-0 group-hover/inline:opacity-100 text-slate-500 hover:text-white transition-opacity"
-                    title="Edit tags"
-                    aria-label="Edit tags"
-                >
-                    <Pencil className="h-3 w-3" />
-                </button>
-            )}
+            {readView}
+            <Popover open={open} onOpenChange={handleOpenChange}>
+                <PopoverTrigger asChild>
+                    <button
+                        type="button"
+                        className="p-0.5 rounded opacity-0 group-hover/inline:opacity-100 data-[state=open]:opacity-100 text-slate-500 hover:text-white transition-opacity"
+                        title="Edit tags"
+                        aria-label="Edit tags"
+                    >
+                        <Pencil className="h-3 w-3" />
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-0 bg-slate-900 border-slate-800 text-white" align="start">
+                    <Command className="bg-transparent">
+                        <CommandInput placeholder="Search tags…" className="text-xs" />
+                        <CommandList>
+                            <CommandEmpty className="py-4 text-center text-xs text-slate-500">
+                                {allTags.length === 0 ? 'No tags defined for this type.' : 'No tags found.'}
+                            </CommandEmpty>
+                            <CommandGroup>
+                                {allTags.map(t => {
+                                    const on = selected.has(t.id);
+                                    return (
+                                        <CommandItem
+                                            key={t.id}
+                                            value={t.name}
+                                            onSelect={() => toggle(t.id)}
+                                            className="gap-2 text-xs cursor-pointer aria-selected:bg-slate-800"
+                                        >
+                                            <Checkbox checked={on} className="h-3.5 w-3.5 pointer-events-none" />
+                                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color || '#64748b' }} />
+                                            <span className="flex-1 truncate">{t.name}</span>
+                                        </CommandItem>
+                                    );
+                                })}
+                            </CommandGroup>
+                        </CommandList>
+                    </Command>
+                </PopoverContent>
+            </Popover>
         </span>
     );
 }
