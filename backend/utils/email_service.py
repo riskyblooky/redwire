@@ -367,12 +367,13 @@ def render_notification_email(
     def esc(s):
         return _html.escape(str(s)) if s is not None else ""
 
-    # Brand palette (mirrors the app's dark theme + indigo-purple accent).
+    # Brand palette (mirrors the app's dark theme + RedWire red accent).
     BG = "#060608"          # page background
     CARD = "#0c0c12"        # card surface
     BORDER = "#1e1e2a"      # hairlines
-    ACCENT = "#7c3aed"      # --primary (indigo-purple)
-    ACCENT_SOFT = "rgba(124,58,237,0.12)"
+    ACCENT = "#dc2626"      # RedWire brand red (matches the logo)
+    ACCENT_SOFT = "rgba(220,38,38,0.14)"
+    EYEBROW = "#fca5a5"     # readable red-tint for the header eyebrow label
     TEXT = "#e2e8f0"
     MUTED = "#94a3b8"
     FAINT = "#64748b"
@@ -405,18 +406,31 @@ def render_notification_email(
         if message else ""
     )
 
-    # Bulletproof centered button. Padding lives on the <td> (Outlook ignores
-    # padding + border-radius on <a>, and honours the bgcolor attribute over CSS
-    # background), so the button stays coloured and padded in Outlook too — it
-    # just loses the rounded corners there. #ffffff label works on the accent in
-    # both light and dark client modes.
+    # Bulletproof centered button. Outlook on Windows repaints CSS/bgcolor
+    # buttons in dark mode (the accent drifts toward blue and the label darkens),
+    # so we hand Outlook a VML <roundrect> whose fillcolor + label colour are
+    # locked against that transform. Every other client gets the CSS button.
     button_html = ""
     if link:
+        safe_link = esc(link)
+        label = f"{esc(link_label)} &rarr;"
         button_html = (
             f"<table role='presentation' cellpadding='0' cellspacing='0' border='0' style='margin:26px 0 6px;'>"
+            f"<tr><td align='center'>"
+            f"<!--[if mso]>"
+            f"<v:roundrect xmlns:v='urn:schemas-microsoft-com:vml' xmlns:w='urn:schemas-microsoft-com:office:word' "
+            f"href='{safe_link}' style='height:42px;v-text-anchor:middle;width:240px;' arcsize='19%' stroke='f' fillcolor='{ACCENT}'>"
+            f"<w:anchorlock/>"
+            f"<center style='color:#ffffff;font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:600;'>{label}</center>"
+            f"</v:roundrect>"
+            f"<![endif]-->"
+            f"<!--[if !mso]><!-- -->"
+            f"<table role='presentation' cellpadding='0' cellspacing='0' border='0'>"
             f"<tr><td align='center' bgcolor='{ACCENT}' style='background-color:{ACCENT};border-radius:8px;padding:12px 30px;'>"
-            f"<a href='{esc(link)}' target='_blank' style='font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;"
-            f"font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;'>{esc(link_label)} &rarr;</a>"
+            f"<a href='{safe_link}' target='_blank' style='font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;"
+            f"font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;'>{label}</a>"
+            f"</td></tr></table>"
+            f"<!--<![endif]-->"
             f"</td></tr></table>"
         )
 
@@ -431,7 +445,7 @@ def render_notification_email(
 
     html = f"""\
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -467,7 +481,7 @@ def render_notification_email(
               <tr>
                 <td align="left" style="vertical-align:middle;">{brand_mark}</td>
                 <td align="right" style="vertical-align:middle;">
-                  <span style="display:inline-block;padding:5px 12px;background:{ACCENT_SOFT};color:#c4b5fd;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-radius:999px;">{esc(heading)}</span>
+                  <span style="display:inline-block;padding:5px 12px;background:{ACCENT_SOFT};color:{EYEBROW};font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-radius:999px;">{esc(heading)}</span>
                 </td>
               </tr>
             </table>
