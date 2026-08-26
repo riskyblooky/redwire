@@ -61,7 +61,7 @@ interface GraphData {
         source: string;
         target: string;
         label?: string;
-        kind?: string; // 'chain' for causal chain edges; undefined for factual associations
+        kind?: string; // 'chain' causal | 'hierarchy' testcase parent→child | undefined factual association
     }>;
     pinned_positions?: Record<string, { x: number; y: number }> | null;
     pinned_by?: string | null;
@@ -139,6 +139,9 @@ const typeConfig: Record<string, { bg: string; border: string; text: string; ico
 // Colour for operator-authored causal chain edges — distinct from the muted
 // slate of factual association edges.
 const CHAIN_EDGE_COLOR = '#818cf8'; // indigo-400
+// Organizational test-case parent → child (hierarchy) edges. Rendered muted +
+// dashed so the tree structure reads as scaffolding, not a causal step.
+const HIERARCHY_EDGE_COLOR = '#64748b'; // slate-500
 
 // ── Custom Node ──
 function GraphNode({ data, type }: { data: GraphNodeData; type?: string }) {
@@ -695,7 +698,8 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
 
         const allRfEdges: Edge[] = allLinkedEdges.map((e) => {
             const isChain = e.kind === 'chain';
-            const stroke = isChain ? CHAIN_EDGE_COLOR : '#475569';
+            const isHierarchy = e.kind === 'hierarchy';
+            const stroke = isChain ? CHAIN_EDGE_COLOR : isHierarchy ? HIERARCHY_EDGE_COLOR : '#475569';
             return {
                 id: e.id,
                 source: e.source,
@@ -703,9 +707,9 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
                 label: e.label,
                 data: { kind: e.kind },
                 type: 'smoothstep' as const,
-                animated: true,
-                style: { stroke, strokeWidth: isChain ? 2 : 1.5 },
-                labelStyle: { fill: isChain ? '#a5b4fc' : '#64748b', fontSize: 9, fontWeight: isChain ? 700 : 600 },
+                animated: !isHierarchy,
+                style: { stroke, strokeWidth: isChain ? 2 : 1.5, ...(isHierarchy ? { strokeDasharray: '5 4' } : {}) },
+                labelStyle: { fill: isChain ? '#a5b4fc' : isHierarchy ? '#94a3b8' : '#64748b', fontSize: 9, fontWeight: isChain ? 700 : 600 },
                 labelBgStyle: { fill: '#0f172a', fillOpacity: 0.9 },
                 labelBgPadding: [4, 2] as [number, number],
                 markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: stroke },
@@ -777,12 +781,15 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
     // Highlight edges connected to selected node
     useEffect(() => {
         setEdges(currentEdges => currentEdges.map(edge => {
-            const isChain = (edge.data as { kind?: string } | undefined)?.kind === 'chain';
+            const edgeKind = (edge.data as { kind?: string } | undefined)?.kind;
+            const isChain = edgeKind === 'chain';
+            const isHierarchy = edgeKind === 'hierarchy';
             if (!selectedNode) {
                 // No selection — restore each edge's base styling (chain edges
-                // keep their distinct indigo; associations go muted slate).
-                const stroke = isChain ? CHAIN_EDGE_COLOR : '#475569';
-                return { ...edge, style: { stroke, strokeWidth: isChain ? 2 : 1.5 }, animated: true, labelStyle: { fill: isChain ? '#a5b4fc' : '#64748b', fontSize: 9, fontWeight: isChain ? 700 : 600 } };
+                // keep their distinct indigo; hierarchy edges stay dashed slate;
+                // associations go muted slate).
+                const stroke = isChain ? CHAIN_EDGE_COLOR : isHierarchy ? HIERARCHY_EDGE_COLOR : '#475569';
+                return { ...edge, style: { stroke, strokeWidth: isChain ? 2 : 1.5, ...(isHierarchy ? { strokeDasharray: '5 4' } : {}) }, animated: !isHierarchy, labelStyle: { fill: isChain ? '#a5b4fc' : isHierarchy ? '#94a3b8' : '#64748b', fontSize: 9, fontWeight: isChain ? 700 : 600 } };
             }
             const isConnected = edge.source === selectedNode.id || edge.target === selectedNode.id;
             if (isConnected) {

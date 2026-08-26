@@ -74,10 +74,15 @@ async def get_attack_graph(
 
     # ── Test Cases ──
     result = await db.execute(
-        select(TestCase.id, TestCase.title, TestCase.category, TestCase.is_executed, TestCase.is_successful)
+        select(TestCase.id, TestCase.title, TestCase.category, TestCase.is_executed, TestCase.is_successful, TestCase.parent_id)
         .where(TestCase.engagement_id == engagement_id)
     )
+    testcase_ids = set()
+    testcase_parents = []   # (child_id, parent_id) for the organizational tree
     for row in result.all():
+        testcase_ids.add(row.id)
+        if row.parent_id:
+            testcase_parents.append((row.id, row.parent_id))
         tc_status = "Not Executed"
         if row.is_executed:
             tc_status = "Pass" if row.is_successful else "Fail"
@@ -90,6 +95,24 @@ async def get_attack_graph(
                 "status": tc_status,
                 "entityId": row.id,
             },
+        })
+
+    # ── Test Case hierarchy (organizational parent → child tree) ──
+    # The testcases.parent_id tree, drawn so a hierarchical chain like
+    # "Test web app → Test auth → Test JWT sig → finding" reads as one
+    # connected path even when the intermediate parent test cases produced no
+    # findings of their own. Distinct "hierarchy" kind so the UI can style it
+    # apart from causal chain + factual association edges. parent_id is
+    # ON DELETE SET NULL, so guard on the engagement's rendered test-case set.
+    for child_id, parent_id in testcase_parents:
+        if parent_id not in testcase_ids:
+            continue
+        edges.append({
+            "id": f"e-tc-parent-{parent_id}-{child_id}",
+            "source": f"testcase-{parent_id}",
+            "target": f"testcase-{child_id}",
+            "label": "subtest",
+            "kind": "hierarchy",
         })
 
     # ── Findings ──
