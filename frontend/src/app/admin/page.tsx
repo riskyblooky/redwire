@@ -93,6 +93,16 @@ import {
     TabsTrigger,
 } from '@/components/ui/tabs';
 
+// Platform-role badge styling. Covers every UserRole so the users table shows
+// the real role (Operator / Team Lead / …) instead of a generic "User".
+const ROLE_BADGE: Record<string, { label: string; className: string }> = {
+    admin:           { label: 'Admin',       className: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
+    read_only_admin: { label: 'RO Admin',    className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+    team_lead:       { label: 'Team Lead',   className: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
+    operator:        { label: 'Operator',    className: 'bg-slate-500/10 text-slate-300 border-slate-600/40' },
+    read_only:       { label: 'Read-Only',   className: 'bg-slate-500/10 text-slate-400 border-slate-700' },
+};
+
 export default function AdminPage() {
     const searchParams = useSearchParams();
     const defaultTab = searchParams?.get('tab') || 'users';
@@ -383,19 +393,11 @@ export default function AdminPage() {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {user.role === UserRole.ADMIN ? (
-                                                        <Badge className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/20">
-                                                            Admin
-                                                        </Badge>
-                                                    ) : (user.role as string) === 'read_only_admin' ? (
-                                                        <Badge className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/20">
-                                                            RO Admin
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-400">
-                                                            User
-                                                        </Badge>
-                                                    )}
+                                                    {(() => {
+                                                        const b = ROLE_BADGE[user.role as string]
+                                                            ?? { label: String(user.role || 'Unknown').replace(/_/g, ' '), className: 'border-slate-700 text-slate-400' };
+                                                        return <Badge className={`text-[10px] ${b.className}`}>{b.label}</Badge>;
+                                                    })()}
                                                 </TableCell>
                                                 <TableCell>
                                                     {(() => {
