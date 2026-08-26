@@ -43,9 +43,16 @@ import {
     Link as LinkIcon, Image as ImageIcon, CheckSquare, CodeXml, ChevronDown,
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    Table as TableIcon, Trash2, Plus, Minus, Workflow,
+    Table as TableIcon, Trash2, Plus, Minus, Workflow, Clock, Timer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+/** `[YYYY-MM-DD HH:MM:SS] ` in local time, for note timestamps. */
+function fmtTimestamp(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `[${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}] `;
+}
 import { Separator } from '@/components/ui/separator';
 import {
     Dialog,
@@ -124,6 +131,26 @@ const MenuBar = ({ editor }: { editor: any }) => {
     const [imageDialogOpen, setImageDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
     const [imageUrl, setImageUrl] = useState('');
+
+    // When ON, each new line (Enter) is auto-prefixed with a timestamp — an
+    // operator-log mode. Kept in a ref so the keydown listener isn't re-bound.
+    const [persistTimestamp, setPersistTimestamp] = useState(false);
+    const persistRef = useRef(persistTimestamp);
+    persistRef.current = persistTimestamp;
+
+    useEffect(() => {
+        if (!editor) return;
+        const dom = editor.view?.dom as HTMLElement | undefined;
+        if (!dom) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (persistRef.current && e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                // Let the newline commit first, then prefix the fresh line.
+                setTimeout(() => editor.chain().insertContent(fmtTimestamp()).run(), 0);
+            }
+        };
+        dom.addEventListener('keydown', onKey);
+        return () => dom.removeEventListener('keydown', onKey);
+    }, [editor]);
 
     if (!editor) return null;
 
@@ -334,6 +361,22 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('mermaid') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                     title="Insert Mermaid diagram">
                     <Workflow className="h-4 w-4" />
+                </Button>
+
+                <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+
+                {/* Timestamp: insert now, and a toggle to auto-timestamp each new line */}
+                <Button type="button" variant="ghost" size="icon"
+                    onClick={() => editor.chain().focus().insertContent(fmtTimestamp()).run()}
+                    className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+                    title="Insert current timestamp">
+                    <Clock className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon"
+                    onClick={() => setPersistTimestamp(p => !p)}
+                    className={cn("h-8 w-8 hover:bg-slate-800", persistTimestamp ? 'text-primary bg-primary/10' : 'text-slate-400')}
+                    title={persistTimestamp ? 'Auto-timestamp each new line: ON (click to turn off)' : 'Auto-timestamp each new line'}>
+                    <Timer className="h-4 w-4" />
                 </Button>
 
                 <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
