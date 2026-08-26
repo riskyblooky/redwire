@@ -69,7 +69,8 @@ import {
 import { useUpdateFinding } from '@/lib/hooks/use-findings';
 import { useUpdateTestCase } from '@/lib/hooks/use-testcases';
 import { CheckSquare } from 'lucide-react';
-import { apiErrorMessage } from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
 
 export type AttackTabSource = 'finding' | 'testcase';
 
@@ -125,6 +126,15 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
     const aiSuggest = useAiSuggestTechniques(engagementId);
     const updateFinding = useUpdateFinding();
     const updateTestCase = useUpdateTestCase();
+
+    // Only surface AI auto-suggest when AI is actually configured on the instance.
+    const { data: aiStatus } = useQuery<{ enabled: boolean }>({
+        queryKey: ['ai', 'status'],
+        queryFn: async () => (await api.get('/ai/settings/status')).data,
+        staleTime: 60_000,
+        retry: false,
+    });
+    const aiEnabled = !!aiStatus?.enabled;
 
     const isTestcaseSource = source === 'testcase';
     const itemNoun = isTestcaseSource ? 'test case' : 'finding';
@@ -412,27 +422,31 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                     {navigatorExport.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
                     Navigator Export
                 </Button>
-                <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none" title="Also re-suggest for items that already have techniques mapped">
-                    <input
-                        type="checkbox"
-                        checked={includeMapped}
-                        onChange={(e) => setIncludeMapped(e.target.checked)}
-                        className="h-3.5 w-3.5 accent-primary"
-                    />
-                    Include already-tagged
-                </label>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary"
-                    onClick={handleAiSuggest}
-                    disabled={aiSuggest.isPending}
-                >
-                    {aiSuggest.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
-                    {aiSuggest.isPending
-                        ? `AI Analyzing… ${Math.floor(aiElapsed / 60)}:${String(aiElapsed % 60).padStart(2, '0')}`
-                        : 'AI Auto-Suggest'}
-                </Button>
+                {aiEnabled && (
+                    <>
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none" title="Also re-suggest for items that already have techniques mapped">
+                            <input
+                                type="checkbox"
+                                checked={includeMapped}
+                                onChange={(e) => setIncludeMapped(e.target.checked)}
+                                className="h-3.5 w-3.5 accent-primary"
+                            />
+                            Include already-tagged
+                        </label>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary"
+                            onClick={handleAiSuggest}
+                            disabled={aiSuggest.isPending}
+                        >
+                            {aiSuggest.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+                            {aiSuggest.isPending
+                                ? `AI Analyzing… ${Math.floor(aiElapsed / 60)}:${String(aiElapsed % 60).padStart(2, '0')}`
+                                : 'AI Auto-Suggest'}
+                        </Button>
+                    </>
+                )}
             </div>
 
             {/* ── AI Suggestions Panel ─────────── */}
