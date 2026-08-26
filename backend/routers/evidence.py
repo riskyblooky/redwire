@@ -202,6 +202,43 @@ async def update_evidence(
         val = update_data["classification_suffix"]
         evidence.classification_suffix = (str(val)[:120] if val else None)
 
+    # Re-linking: an attachment belongs to at most one finding OR one test
+    # case. The client sends the intended end state; a null clears the link.
+    if "finding_id" in update_data or "testcase_id" in update_data:
+        # Moving/removing evidence tied to a VERIFIED finding is a
+        # chain-of-custody change — block it like a byte mutation.
+        await _assert_evidence_mutable(db, evidence, current_user, "relink")
+
+        new_finding_id = (update_data.get("finding_id") if "finding_id" in update_data else evidence.finding_id) or None
+        new_testcase_id = (update_data.get("testcase_id") if "testcase_id" in update_data else evidence.testcase_id) or None
+        if new_finding_id and new_testcase_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Evidence can be linked to a finding or a test case, not both.",
+            )
+
+        eng_id = await get_evidence_engagement_id(evidence, db)
+        if new_finding_id:
+            res = await db.execute(select(Finding.engagement_id).where(Finding.id == new_finding_id))
+            target_eng = res.scalar_one_or_none()
+            if target_eng is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
+            if eng_id and target_eng != eng_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Finding belongs to a different engagement.")
+            evidence.engagement_id = evidence.engagement_id or target_eng
+        if new_testcase_id:
+            res = await db.execute(select(TestCase.engagement_id).where(TestCase.id == new_testcase_id))
+            target_eng = res.scalar_one_or_none()
+            if target_eng is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test case not found")
+            if eng_id and target_eng != eng_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Test case belongs to a different engagement.")
+            evidence.engagement_id = evidence.engagement_id or target_eng
+
+        evidence.finding_id = new_finding_id
+        evidence.testcase_id = new_testcase_id
+        change_parts.append("link")
+
     evidence.updated_by = current_user.id
     
     await db.commit()

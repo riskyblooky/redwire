@@ -78,12 +78,16 @@ export function useUpdateEvidence() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ id, description, includeInReport, classificationLevel, classificationSuffix }: { id: string; description?: string; includeInReport?: boolean; classificationLevel?: string | null; classificationSuffix?: string | null }) => {
+        mutationFn: async ({ id, description, includeInReport, classificationLevel, classificationSuffix, findingId, testcaseId }: { id: string; description?: string; includeInReport?: boolean; classificationLevel?: string | null; classificationSuffix?: string | null; findingId?: string | null; testcaseId?: string | null }) => {
             const updateData: any = {};
             if (description !== undefined) updateData.description = description;
             if (includeInReport !== undefined) updateData.include_in_report = includeInReport;
             if (classificationLevel !== undefined) updateData.classification_level = classificationLevel;
             if (classificationSuffix !== undefined) updateData.classification_suffix = classificationSuffix;
+            // Re-link to a finding or test case (null clears). Send both keys
+            // together so the backend enforces single-target exclusivity.
+            if (findingId !== undefined) updateData.finding_id = findingId;
+            if (testcaseId !== undefined) updateData.testcase_id = testcaseId;
 
             const { data } = await api.patch<Evidence>(`/evidence/${id}`, updateData);
             return data;

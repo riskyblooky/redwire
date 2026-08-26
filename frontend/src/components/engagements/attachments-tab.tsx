@@ -64,6 +64,7 @@ import { FileDropzone, SelectedFileCard } from '@/components/ui/file-dropzone';
 import { MAX_EVIDENCE_BYTES } from '@/lib/upload-limits';
 import { Textarea } from '@/components/ui/textarea';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
+import { EvidenceLinkDialog } from '@/components/engagements/evidence-link-dialog';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -88,7 +89,7 @@ const ATTACHMENTS_COLUMNS: ColumnDef[] = [
     { key: 'actions',   label: 'Actions',    required: true },
 ];
 
-const AttachmentRow = ({ item, engagementId, router, getFileIcon, formatSize, handleToggleReportStatus, handleDelete, col = () => true }: any) => {
+const AttachmentRow = ({ item, engagementId, router, getFileIcon, formatSize, handleToggleReportStatus, handleDelete, onLink, col = () => true }: any) => {
     const canEdit = useCanEdit(engagementId, 'evidence', item.created_by);
     const canDelete = useCanDelete(engagementId, 'evidence', item.created_by);
 
@@ -226,6 +227,15 @@ const AttachmentRow = ({ item, engagementId, router, getFileIcon, formatSize, ha
                             <Download className="h-4 w-4 mr-2" />
                             Download
                         </DropdownMenuItem>
+                        {canEdit && (
+                            <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={(e) => {
+                                e.stopPropagation();
+                                onLink?.(item);
+                            }}>
+                                <Link2 className="h-4 w-4 mr-2" />
+                                Link to…
+                            </DropdownMenuItem>
+                        )}
                         {canDelete && (
                             <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={(e) => {
                                 e.stopPropagation();
@@ -251,6 +261,7 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
     const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+    const [linkingItem, setLinkingItem] = useState<any | null>(null);
 
     // Permission guards
     const { user } = useAuthStore();
@@ -442,6 +453,7 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
                                         formatSize={formatSize}
                                         handleToggleReportStatus={handleToggleReportStatus}
                                         handleDelete={handleDelete}
+                                        onLink={setLinkingItem}
                                         col={col}
                                     />
                                 ))}
@@ -450,6 +462,21 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
                     </div>
                 )}
             </CardContent>
+
+            <EvidenceLinkDialog
+                open={!!linkingItem}
+                onOpenChange={(v) => { if (!v) setLinkingItem(null); }}
+                engagementId={engagementId}
+                evidence={linkingItem}
+                onApply={async ({ findingId, testcaseId }) => {
+                    try {
+                        await updateEvidence.mutateAsync({ id: linkingItem.id, findingId, testcaseId });
+                        toast.success(findingId || testcaseId ? 'Attachment linked' : 'Attachment unlinked');
+                    } catch (err) {
+                        toast.error(getErrorMessage(err, 'Failed to update link'));
+                    }
+                }}
+            />
 
             <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
                 <DialogContent className="bg-slate-950 border-slate-800 text-white">
