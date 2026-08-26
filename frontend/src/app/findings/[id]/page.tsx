@@ -63,6 +63,7 @@ import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-fiel
 import { InlineSelectField, InlineSelectOption } from '@/components/ui/inline/inline-select-field';
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
+import { InlineTextField } from '@/components/ui/inline/inline-text-field';
 import { InlineCvssField } from '@/components/ui/inline/inline-cvss-field';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
@@ -398,7 +399,13 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                         </Button>
                         <div>
                             <div className="flex items-center gap-3">
-                                <h1 className="text-3xl font-bold text-white tracking-tight">{finding.title}</h1>
+                                <InlineTextField
+                                    value={finding.title}
+                                    canEdit={canEdit}
+                                    onSave={(v) => saveField({ title: v })}
+                                    className="text-3xl font-bold text-white tracking-tight"
+                                    placeholder="Finding title"
+                                />
                             </div>
                             <div className="flex items-center gap-2 mt-1">
                                 <InlineSelectField
