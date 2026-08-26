@@ -23,7 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Edit, Trash2, Calendar, FileText, Loader2, Radar, Skull, EyeOff, CheckCircle, CheckSquare, Sparkles, StickyNote, Bug, Server, Target, User, Clock, Lock, Key, Shield, Network, Plus, X } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Calendar, FileText, Loader2, Radar, Skull, EyeOff, CheckCircle, CheckSquare, Sparkles, StickyNote, Bug, Server, Target, User, Clock, Lock, Key, Shield, Network, Plus, X, Copy } from 'lucide-react';
 import { useAsset, useDeleteAsset, useUpdateAsset, useAddAssetPort, useDeleteAssetPort } from '@/lib/hooks/use-assets';
 import { useEngagement } from '@/lib/hooks/use-engagements';
 import { toast } from 'sonner';
@@ -58,17 +58,10 @@ import {
 } from '@/lib/hooks/use-entity-links';
 import { Link as LinkIcon } from 'lucide-react';
 import { apiErrorMessage } from '@/lib/api';
-import { MarkdownPreview } from '@/components/ui/markdown-editor';
-
-const assetTypeColors: Record<string, string> = {
-    IP_ADDRESS: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    DOMAIN: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-    URL: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
-    APPLICATION: 'bg-green-500/10 text-green-400 border-green-500/20',
-    SERVER: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    NETWORK: 'bg-pink-500/10 text-pink-400 border-pink-500/20',
-    OTHER: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
+import { InlineTextField } from '@/components/ui/inline/inline-text-field';
+import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
+import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 
 const assetTypeAccentColors: Record<string, string> = {
     IP_ADDRESS: 'bg-blue-500',
@@ -171,6 +164,22 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     const canEdit = useCanEdit(asset?.engagement_id, 'asset', asset?.created_by);
     const canDelete = useCanDelete(asset?.engagement_id, 'asset', asset?.created_by);
 
+    // ── Inline editing (double-click a field to edit it in place) ──
+    const { data: assetTypes = [] } = useConfigurableTypes('asset');
+
+    const saveField = async (patch: Record<string, any>) => {
+        await updateAsset.mutateAsync({ id, ...patch } as any);
+    };
+
+    // asset_type is a fixed enum (IP_ADDRESS…), while the configurable types are
+    // friendly-named ("IP Address"). Options keep the enum as the saved value +
+    // the friendly label, and borrow the configurable-type colour by label.
+    const assetTypeOptions: InlineComboboxOption[] = Object.keys(assetTypeLabels).map((key) => {
+        const label = assetTypeLabels[key];
+        const ct = (assetTypes as any[]).find((t) => t.name === label);
+        return { value: key, label, color: ct?.color };
+    });
+
     const handleEdit = () => {
         const query = returnEngagementId ? `?engagementId=${returnEngagementId}&tab=${returnTab}` : '';
         router.push(`/assets/${id}/edit${query}`);
@@ -234,22 +243,42 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                         </Button>
                         <div>
                             <div className="flex items-center gap-3">
-                                <h1 className="text-3xl font-bold text-white tracking-tight">{asset.name}</h1>
+                                <InlineTextField
+                                    value={asset.name}
+                                    canEdit={canEdit}
+                                    onSave={(v) => saveField({ name: v })}
+                                    className="text-3xl font-bold text-white tracking-tight"
+                                    placeholder="Asset name"
+                                />
                             </div>
                             <div className="flex items-center gap-2 mt-1">
-                                <Badge className={cn('px-2 py-0.5', assetTypeColors[asset.asset_type] || assetTypeColors.OTHER)}>
-                                    {assetTypeLabels[asset.asset_type] || asset.asset_type}
-                                </Badge>
-                                <code
-                                    className="text-xs font-mono text-pink-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50 cursor-pointer hover:bg-slate-700/60 hover:text-pink-300 transition-colors"
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(asset.identifier);
-                                        toast.success('Copied to clipboard', { description: asset.identifier });
-                                    }}
-                                    title="Click to copy"
-                                >
-                                    {asset.identifier}
-                                </code>
+                                <InlineComboboxField
+                                    value={asset.asset_type}
+                                    options={assetTypeOptions}
+                                    canEdit={canEdit}
+                                    onSave={(v) => saveField({ asset_type: v })}
+                                    placeholder="Search types…"
+                                />
+                                <span className="inline-flex items-center gap-1">
+                                    <InlineTextField
+                                        value={asset.identifier}
+                                        canEdit={canEdit}
+                                        onSave={(v) => saveField({ identifier: v })}
+                                        className="text-xs font-mono text-pink-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50"
+                                        placeholder="Identifier"
+                                    />
+                                    <button
+                                        type="button"
+                                        className="p-1 rounded text-slate-500 hover:text-pink-300 hover:bg-slate-700/60 transition-colors"
+                                        title="Copy to clipboard"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(asset.identifier);
+                                            toast.success('Copied to clipboard', { description: asset.identifier });
+                                        }}
+                                    >
+                                        <Copy className="h-3 w-3" />
+                                    </button>
+                                </span>
                                 {engagement && (
                                     <Link href={`/engagements/${engagement.id}?tab=${returnTab}`} className="text-sm text-primary hover:underline flex items-center gap-1 ml-2">
                                         <Target className="h-3 w-3" /> {engagement.name}
@@ -304,12 +333,17 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                             <FileText className="h-5 w-5 text-primary" />
                                             <h3 className="text-xl font-bold tracking-tight">Description</h3>
                                         </div>
-                                        {asset.description
-                                            ? <MarkdownPreview value={asset.description} />
-                                            : <p className="text-slate-600 italic">No description provided</p>}
+                                        <InlineMarkdownField
+                                            value={asset.description || ''}
+                                            canEdit={canEdit}
+                                            onSave={(v) => saveField({ description: v })}
+                                            engagementId={asset.engagement_id}
+                                            fieldContext={{ resourceType: 'asset', fieldName: 'description' }}
+                                            emptyText="Double-click to add a description…"
+                                        />
                                     </section>
 
-                                    {asset.notes && (
+                                    {(asset.notes || canEdit) && (
                                         <>
                                             <Separator className="bg-slate-800/60" />
 
@@ -319,9 +353,15 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                                     <StickyNote className="h-5 w-5 text-teal-400" />
                                                     <h3 className="text-xl font-bold tracking-tight">Internal Notes</h3>
                                                 </div>
-                                                <div className="bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
-                                                    <MarkdownPreview value={asset.notes} />
-                                                </div>
+                                                <InlineMarkdownField
+                                                    value={asset.notes || ''}
+                                                    canEdit={canEdit}
+                                                    onSave={(v) => saveField({ notes: v })}
+                                                    engagementId={asset.engagement_id}
+                                                    fieldContext={{ resourceType: 'asset', fieldName: 'notes' }}
+                                                    previewWrapperClassName="bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
+                                                    emptyText="Double-click to add internal notes…"
+                                                />
                                             </section>
                                         </>
                                     )}
