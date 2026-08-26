@@ -62,6 +62,12 @@ import {
     useLinkTestCaseToCleanup, useUnlinkTestCaseFromCleanup,
 } from '@/lib/hooks/use-entity-links';
 import { Link as LinkIcon } from 'lucide-react';
+import { useTags } from '@/lib/hooks/use-findings';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
+import { InlineTextField } from '@/components/ui/inline/inline-text-field';
+import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
+import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
+import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 
 const categoryLabels: Record<string, string> = {
     RECONNAISSANCE: 'Reconnaissance',
@@ -158,6 +164,18 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const canEdit = useCanEdit(testcase?.engagement_id, 'testcase', testcase?.created_by);
     const canDelete = useCanDelete(testcase?.engagement_id, 'testcase', testcase?.created_by);
 
+    // ── Inline editing (double-click a field to edit it in place) ──
+    const { data: allTags = [] } = useTags('testcase');
+    const { data: testcaseTypes = [] } = useConfigurableTypes('testcase');
+
+    // Single-field patch through the existing update hook (PUT behaves as a
+    // partial patch — only the fields we pass are touched).
+    const saveField = async (patch: Record<string, any>) => {
+        await updateTestCase.mutateAsync({ id, ...patch } as any);
+    };
+
+    const categoryOptions: InlineComboboxOption[] = testcaseTypes.map((t: any) => ({ value: t.name, label: t.name, color: t.color }));
+
     const handleExecute = async (success: boolean) => {
         try {
             await updateTestCase.mutateAsync({
@@ -235,13 +253,25 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                         </Button>
                         <div>
                             <div className="flex items-center gap-3">
-                                <h1 className="text-3xl font-bold text-white tracking-tight">{testcase.title}</h1>
+                                <InlineTextField
+                                    value={testcase.title}
+                                    canEdit={canEdit}
+                                    onSave={(v) => saveField({ title: v })}
+                                    className="text-3xl font-bold text-white tracking-tight"
+                                    placeholder="Test case title"
+                                />
                             </div>
                             <div className="flex items-center gap-2 mt-1">
-                                <Badge className={cn("gap-1.5 py-0.5 px-2 font-bold text-[10px] uppercase tracking-wider border", categoryStyle.color)}>
-                                    <CategoryIcon className="h-3 w-3" />
-                                    {testcase.category.replace('_', ' ')}
-                                </Badge>
+                                {(testcase.category || canEdit) && (
+                                    <InlineComboboxField
+                                        value={testcase.category || ''}
+                                        options={categoryOptions}
+                                        canEdit={canEdit}
+                                        onSave={(v) => saveField({ category: v })}
+                                        placeholder="Search categories…"
+                                        emptyLabel="no category"
+                                    />
+                                )}
                                 {testcase.is_executed ? (
                                     <Badge className={cn(testcase.is_successful ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20')}>
                                         {testcase.is_successful ? 'Pass' : 'Fail'}
@@ -254,7 +284,13 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         <ClipboardCheck className="h-3 w-3" /> {engagement.name}
                                     </Link>
                                 )}
-                                <TagList tags={testcase.tags} />
+                                <InlineTagsField
+                                    tags={testcase.tags}
+                                    allTags={allTags}
+                                    selectedIds={(testcase.tags || []).map((t: any) => t.id)}
+                                    canEdit={canEdit}
+                                    onSave={(ids) => saveField({ tag_ids: ids })}
+                                />
                             </div>
                         </div>
                     </div>
@@ -310,9 +346,15 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             <h3 className="text-xl font-bold tracking-tight">Description</h3>
                                         </button>
                                         {!collapsedSec['desc'] && (
-                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
-                                                <MarkdownPreview value={testcase.description} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={testcase.description || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ description: v })}
+                                                engagementId={testcase.engagement_id}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'description' }}
+                                                previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
+                                                emptyText="Double-click to add a description…"
+                                            />
                                         )}
                                     </section>
 
@@ -326,9 +368,15 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             <h3 className="text-xl font-bold tracking-tight">Execution Steps</h3>
                                         </button>
                                         {!collapsedSec['steps'] && (
-                                            <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden">
-                                                <MarkdownPreview value={testcase.steps || 'No steps defined'} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={testcase.steps || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ steps: v })}
+                                                engagementId={testcase.engagement_id}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'steps' }}
+                                                previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
+                                                emptyText="Double-click to add execution steps…"
+                                            />
                                         )}
                                     </section>
 
@@ -342,9 +390,15 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             <h3 className="text-xl font-bold tracking-tight">Expected Result</h3>
                                         </button>
                                         {!collapsedSec['expected'] && (
-                                            <div className="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden">
-                                                <MarkdownPreview value={testcase.expected_result || 'None'} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={testcase.expected_result || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ expected_result: v })}
+                                                engagementId={testcase.engagement_id}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'expected_result' }}
+                                                previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden"
+                                                emptyText="Double-click to add the expected result…"
+                                            />
                                         )}
                                     </section>
                                     <CustomFieldsDisplay entity="testcase" value={testcase.custom_fields} className="pt-2" collapsible defaultCollapsed />
@@ -427,7 +481,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                         </Card>
 
                         {/* Notes */}
-                        {testcase.notes && (
+                        {(testcase.notes || canEdit) && (
                             <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
                                 <CardHeader
                                     className="pb-3 border-b border-slate-800/60 cursor-pointer select-none hover:bg-slate-800/30 transition-colors"
@@ -441,9 +495,15 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                 </CardHeader>
                                 {!isNotesCollapsed && (
                                     <CardContent className="pt-4">
-                                        <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50">
-                                            <MarkdownPreview value={testcase.notes} theme="dark" />
-                                        </div>
+                                        <InlineMarkdownField
+                                            value={testcase.notes || ''}
+                                            canEdit={canEdit}
+                                            onSave={(v) => saveField({ notes: v })}
+                                            engagementId={testcase.engagement_id}
+                                            fieldContext={{ resourceType: 'testcase', fieldName: 'notes' }}
+                                            previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
+                                            emptyText="Double-click to add notes…"
+                                        />
                                     </CardContent>
                                 )}
                             </Card>
