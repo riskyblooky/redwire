@@ -169,6 +169,15 @@ const MenuBar = ({ editor }: { editor: any }) => {
         setLinkDialogOpen(true);
     };
 
+    // Clicking the link button while a link is active removes it (toggle off).
+    const toggleLink = () => {
+        if (editor.isActive('link')) {
+            editor.chain().focus().extendMarkRange('link').unsetLink().run();
+        } else {
+            openLinkDialog();
+        }
+    };
+
     const handleSetLink = () => {
         if (linkUrl === '') {
             editor.chain().focus().extendMarkRange('link').unsetLink().run();
@@ -438,7 +447,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={openLinkDialog}
+                    onClick={toggleLink}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('link') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
                     <LinkIcon className="h-4 w-4" />
@@ -759,7 +768,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             Placeholder.configure({
                 placeholder: placeholder || 'Start typing...',
             }),
-            Link.configure({
+            Link.extend({ inclusive: false }).configure({
                 openOnClick: false,
                 HTMLAttributes: {
                     class: 'text-blue-400 underline hover:text-blue-300 cursor-pointer',
