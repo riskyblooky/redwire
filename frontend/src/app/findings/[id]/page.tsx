@@ -61,6 +61,7 @@ import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { severityRating } from '@/lib/cvss31';
 import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
 import { InlineSelectField, InlineSelectOption } from '@/components/ui/inline/inline-select-field';
+import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 import { InlineCvssField } from '@/components/ui/inline/inline-cvss-field';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -306,7 +307,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
         { value: 'LOW', label: 'LOW', badgeClass: severityColors.LOW },
         { value: 'INFO', label: 'INFO', badgeClass: severityColors.INFO },
     ];
-    const categoryOptions: InlineSelectOption[] = findingTypes.map((t: any) => ({ value: t.name, label: t.name }));
+    const categoryOptions: InlineComboboxOption[] = findingTypes.map((t: any) => ({ value: t.name, label: t.name, color: t.color }));
 
     // CVSS score → severity enum (mirrors the edit page's auto-sync on Apply).
     const scoreToSeverity = (score: number) =>
@@ -409,14 +410,13 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                 />
                                 <Badge variant="outline" className={cn("px-2 py-0.5", statusColors[finding.status])}>{finding.status.replace('_', ' ')}</Badge>
                                 {(finding.category || canEdit) && (
-                                    <InlineSelectField
+                                    <InlineComboboxField
                                         value={finding.category || ''}
                                         options={categoryOptions}
                                         canEdit={canEdit}
                                         onSave={(v) => saveField({ category: v })}
-                                        renderRead={(_opt, val) => val
-                                            ? <Badge variant="secondary" className="bg-slate-800 text-slate-400 border-none font-medium px-2 py-0.5">{val}</Badge>
-                                            : <span className="text-xs text-slate-600 italic">no category</span>}
+                                        placeholder="Search categories…"
+                                        emptyLabel="no category"
                                     />
                                 )}
                                 <InlineTagsField
