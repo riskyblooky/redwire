@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import {
     Loader2, Search, Filter, ArrowUp, ArrowDown, User as UserIcon,
-    History, Check, ChevronsUpDown, X, ArrowRight, ChevronLeft, ChevronRight,
+    History, X, ArrowRight, ChevronLeft, ChevronRight,
     ChevronsLeft, ChevronsRight, Calendar as CalendarIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -18,15 +18,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import {
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { computeLineDiff } from '@/components/ui/version-history-panel';
 import { resourceTypeIcons, resourceTypeColors, openThreadFromLog } from './logs-tab';
 import { FeedItemPicker } from './feed-item-picker';
+import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 
 interface FeedChange { field: string; label: string; old: string | null; new: string | null }
 interface FeedItem {
@@ -49,6 +46,13 @@ interface FeedItem {
 const PAGE_SIZE = 20;
 
 // Multi-select vocabulary — the content-bearing resource types.
+const ACTION_OPTIONS: { value: string; label: string }[] = [
+    { value: 'created', label: 'Created' },
+    { value: 'updated', label: 'Updated' },
+    { value: 'deleted', label: 'Deleted' },
+    { value: 'commented', label: 'Comments' },
+];
+
 const TYPE_OPTIONS: { value: string; label: string }[] = [
     { value: 'finding', label: 'Findings' },
     { value: 'testcase', label: 'Test Cases' },
@@ -200,10 +204,9 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
     const [search, setSearch] = useState('');
     const debouncedSearch = useDebounce(search, 500);
     const [types, setTypes] = useState<string[]>([]);
-    const [typesOpen, setTypesOpen] = useState(false);
     const [itemIds, setItemIds] = useState<string[]>([]);
-    const [actionCategory, setActionCategory] = useState('all');
-    const [userFilter, setUserFilter] = useState('all');
+    const [actionCategories, setActionCategories] = useState<string[]>([]);
+    const [userIds, setUserIds] = useState<string[]>([]);
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [includeAll, setIncludeAll] = useState(false);
@@ -213,7 +216,7 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
 
     useEffect(() => {
         setPage(1);
-    }, [debouncedSearch, types, itemIds, actionCategory, userFilter, dateFrom, dateTo, includeAll, sortOrder]);
+    }, [debouncedSearch, types, itemIds, actionCategories, userIds, dateFrom, dateTo, includeAll, sortOrder]);
 
     useCollaboration({
         resourceType: 'engagement',
@@ -231,7 +234,7 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
     });
 
     const { data, isLoading } = useQuery({
-        queryKey: ['engagement-feed', engagementId, debouncedSearch, types, itemIds, actionCategory, userFilter, dateFrom, dateTo, includeAll, sortOrder, page],
+        queryKey: ['engagement-feed', engagementId, debouncedSearch, types, itemIds, actionCategories, userIds, dateFrom, dateTo, includeAll, sortOrder, page],
         refetchOnMount: 'always',
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -239,8 +242,8 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
             if (debouncedSearch) params.append('search', debouncedSearch);
             if (types.length) params.append('resource_types', types.join(','));
             if (itemIds.length) params.append('resource_ids', itemIds.join(','));
-            if (actionCategory !== 'all') params.append('action_category', actionCategory);
-            if (userFilter !== 'all') params.append('user_id', userFilter);
+            if (actionCategories.length) params.append('action_categories', actionCategories.join(','));
+            if (userIds.length) params.append('user_ids', userIds.join(','));
             if (dateFrom) params.append('date_from', `${dateFrom}T00:00:00`);
             if (dateTo) params.append('date_to', `${dateTo}T23:59:59`);
             if (includeAll) params.append('include_all', 'true');
@@ -256,15 +259,16 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
     const total = data?.total ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-    const toggleType = (v: string) =>
-        setTypes((prev) => (prev.includes(v) ? prev.filter((t) => t !== v) : [...prev, v]));
-
-    const hasFilters = !!debouncedSearch || types.length > 0 || itemIds.length > 0 || actionCategory !== 'all' ||
-        userFilter !== 'all' || !!dateFrom || !!dateTo || includeAll;
+    const hasFilters = !!debouncedSearch || types.length > 0 || itemIds.length > 0 || actionCategories.length > 0 ||
+        userIds.length > 0 || !!dateFrom || !!dateTo || includeAll;
     const clearFilters = () => {
-        setSearch(''); setTypes([]); setItemIds([]); setActionCategory('all'); setUserFilter('all');
+        setSearch(''); setTypes([]); setItemIds([]); setActionCategories([]); setUserIds([]);
         setDateFrom(''); setDateTo(''); setIncludeAll(false);
     };
+
+    const userOptions = (engagement?.assigned_users || []).map((u: any) => ({
+        value: u.id, label: displayName(u), sublabel: `@${u.username}`,
+    }));
 
     return (
         <Card className="border-slate-800 bg-slate-900/50">
@@ -285,62 +289,28 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
                         />
                     </div>
 
-                    {/* Type multi-select */}
-                    <Popover open={typesOpen} onOpenChange={setTypesOpen}>
-                        <PopoverTrigger asChild>
-                            <Button variant="outline" role="combobox" className="h-8 justify-between gap-2 border-slate-700 bg-slate-900 text-xs font-normal text-slate-300 hover:bg-slate-800 hover:text-white">
-                                <span className="flex items-center gap-1.5">
-                                    <Filter className="h-3 w-3 text-slate-400" />
-                                    {types.length ? `${types.length} type${types.length > 1 ? 's' : ''}` : 'All types'}
-                                </span>
-                                <ChevronsUpDown className="h-3 w-3 opacity-50" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="start" className="w-52 border-slate-700 bg-slate-900 p-1">
-                            {TYPE_OPTIONS.map((opt) => (
-                                <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => toggleType(opt.value)}
-                                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-slate-300 hover:bg-slate-800"
-                                >
-                                    <Check className={cn('h-3.5 w-3.5', types.includes(opt.value) ? 'opacity-100 text-blue-400' : 'opacity-0')} />
-                                    {opt.label}
-                                </button>
-                            ))}
-                        </PopoverContent>
-                    </Popover>
+                    {/* Type multi-select (searchable) */}
+                    <MultiSelectFilter
+                        label="All types" icon={Filter} countNoun="type"
+                        options={TYPE_OPTIONS} selected={types} onChange={setTypes}
+                        searchPlaceholder="Search types…"
+                    />
 
                     {/* Specific-item multi-select */}
                     <FeedItemPicker engagementId={engagementId} selected={itemIds} onChange={setItemIds} />
 
-                    <Select value={actionCategory} onValueChange={setActionCategory}>
-                        <SelectTrigger className="h-8 w-[120px] border-slate-700 bg-slate-900 text-xs">
-                            <SelectValue placeholder="Action" />
-                        </SelectTrigger>
-                        <SelectContent className="border-slate-800 bg-slate-900">
-                            <SelectItem value="all">All actions</SelectItem>
-                            <SelectItem value="created">Created</SelectItem>
-                            <SelectItem value="updated">Updated</SelectItem>
-                            <SelectItem value="deleted">Deleted</SelectItem>
-                            <SelectItem value="commented">Comments</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    {/* Action multi-select */}
+                    <MultiSelectFilter
+                        label="All actions" countNoun="action" searchable={false}
+                        options={ACTION_OPTIONS} selected={actionCategories} onChange={setActionCategories}
+                    />
 
-                    <Select value={userFilter} onValueChange={setUserFilter}>
-                        <SelectTrigger className="h-8 w-[130px] border-slate-700 bg-slate-900 text-xs">
-                            <div className="flex items-center gap-2">
-                                <UserIcon className="h-3 w-3 text-slate-400" />
-                                <SelectValue placeholder="User" />
-                            </div>
-                        </SelectTrigger>
-                        <SelectContent className="border-slate-800 bg-slate-900">
-                            <SelectItem value="all">All users</SelectItem>
-                            {(engagement?.assigned_users || []).map((u: any) => (
-                                <SelectItem key={u.id} value={u.id} title={`@${u.username}`}>{displayName(u)}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    {/* User multi-select (searchable) */}
+                    <MultiSelectFilter
+                        label="All users" icon={UserIcon} countNoun="user"
+                        options={userOptions} selected={userIds} onChange={setUserIds}
+                        searchPlaceholder="Search users…"
+                    />
 
                     <div className="flex items-center gap-1 text-xs text-slate-400">
                         <CalendarIcon className="h-3 w-3 text-slate-500" />

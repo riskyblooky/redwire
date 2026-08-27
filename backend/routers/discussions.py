@@ -1051,7 +1051,9 @@ async def get_activity_feed(
     resource_types: Optional[str] = None,      # CSV of resource types
     resource_ids: Optional[str] = None,        # CSV of specific entity ids to scope to
     action_category: Optional[str] = None,     # created | updated | deleted | commented
+    action_categories: Optional[str] = None,   # CSV of the above (multi-select)
     user_id: Optional[str] = None,
+    user_ids: Optional[str] = None,            # CSV of user ids (multi-select)
     search: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
@@ -1081,12 +1083,22 @@ async def get_activity_feed(
         if ids:
             base_query = base_query.where(ActivityLog.resource_id.in_(ids))
 
-    if action_category:
-        prefixes = _FEED_ACTION_PREFIXES.get(action_category)
+    # Action category — accept a single value or a CSV of them (multi-select).
+    cats = []
+    if action_categories:
+        cats = [c.strip() for c in action_categories.split(",") if c.strip()]
+    elif action_category:
+        cats = [action_category]
+    if cats:
+        prefixes = [p for c in cats for p in (_FEED_ACTION_PREFIXES.get(c) or [])]
         if prefixes:
             base_query = base_query.where(or_(*[ActivityLog.action.like(f"{p}%") for p in prefixes]))
 
-    if user_id:
+    if user_ids:
+        uids = [u.strip() for u in user_ids.split(",") if u.strip()]
+        if uids:
+            base_query = base_query.where(ActivityLog.user_id.in_(uids))
+    elif user_id:
         base_query = base_query.where(ActivityLog.user_id == user_id)
 
     if search:
