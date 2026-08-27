@@ -51,8 +51,10 @@ const ICON_MAP: Record<string, any> = {
 // ── Theme constants ────────────────────────────────────────────────
 // Themed via CSS variables so tooltips follow the user's selected accent
 // theme (--popover / --border / --foreground change per theme_preference).
-// wrapperStyle z-index + allowEscapeViewBox let the tooltip render above and
-// outside the widget card instead of being clipped by it.
+// allowEscapeViewBox is kept false on both axes so the tooltip stays clamped
+// inside the chart (and therefore on-screen) — letting it escape the viewBox
+// made it run off the bottom of the page for widgets low on the dashboard.
+// The card doesn't clip its content, so clamping doesn't reintroduce clipping.
 const TOOLTIP_STYLE = {
     contentStyle: {
         backgroundColor: 'hsl(var(--popover))',
@@ -64,7 +66,7 @@ const TOOLTIP_STYLE = {
     itemStyle: { color: 'hsl(var(--popover-foreground))' },
     labelStyle: { color: 'hsl(var(--muted-foreground))' },
     wrapperStyle: { zIndex: 50, outline: 'none' },
-    allowEscapeViewBox: { x: true, y: true } as { x: boolean; y: boolean },
+    allowEscapeViewBox: { x: false, y: false } as { x: boolean; y: boolean },
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
