@@ -18,6 +18,8 @@ export interface MultiSelectOption {
     iconClass?: string;
     /** When set, the label renders as a colour-tinted badge (with the icon inside). */
     badgeClass?: string;
+    /** A hex colour (e.g. a tag colour) — renders the label as a tinted pill. */
+    color?: string | null;
     /** When set, a profile photo avatar is shown instead of an icon. */
     avatar?: { id: string; full_name?: string; username?: string; profile_photo?: string | null };
 }
@@ -104,13 +106,18 @@ export function MultiSelectFilter({
                                         <Check className={cn('h-3.5 w-3.5 shrink-0', on ? 'opacity-100 text-blue-400' : 'opacity-0')} />
                                         {opt.avatar
                                             ? <UserAvatar user={opt.avatar} className="h-4 w-4 shrink-0" />
-                                            : (!opt.badgeClass && OptIcon) ? <OptIcon className={cn('h-3.5 w-3.5 shrink-0', opt.iconClass)} /> : null}
+                                            : (!opt.badgeClass && !opt.color && OptIcon) ? <OptIcon className={cn('h-3.5 w-3.5 shrink-0', opt.iconClass)} /> : null}
                                         {opt.badgeClass
                                             ? <Badge className={cn('gap-1 h-5 px-1.5 text-[10px] font-medium border', opt.badgeClass)}>
                                                 {OptIcon && <OptIcon className="h-3 w-3" />}
                                                 {opt.label}
                                             </Badge>
-                                            : <span className="flex-1 truncate">{opt.label}</span>}
+                                            : opt.color
+                                                ? <span className="inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] font-medium truncate max-w-[160px]"
+                                                        style={{ backgroundColor: `${opt.color}1a`, color: opt.color, borderColor: `${opt.color}40` }}>
+                                                    {opt.label}
+                                                </span>
+                                                : <span className="flex-1 truncate">{opt.label}</span>}
                                         {opt.sublabel && <span className="text-[10px] text-slate-500 shrink-0">{opt.sublabel}</span>}
                                     </CommandItem>
                                 );

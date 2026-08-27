@@ -135,6 +135,7 @@ async def get_engagements(
                                             description="Exact match on engagement_type"),
     start_date_from: Optional[str] = Query(None, description="Lower bound (inclusive) on start_date, ISO date"),
     start_date_to: Optional[str] = Query(None, description="Upper bound (inclusive) on start_date, ISO date"),
+    tag_ids: Optional[str] = Query(None, description="CSV of tag ids — match engagements carrying any of them"),
     sort_by: str = Query("start_date", description="Sort field — one of name|engagement_type|status|start_date|end_date|created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     response: Response = Depends(_inject_response),
@@ -239,6 +240,12 @@ async def get_engagements(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid start_date_to: {start_date_to}")
         base_filters.append(Engagement.start_date <= dt_to)
+
+    if tag_ids:
+        from models.finding import Tag
+        _tag_id_list = [t.strip() for t in tag_ids.split(",") if t.strip()]
+        if _tag_id_list:
+            base_filters.append(Engagement.tags.any(Tag.id.in_(_tag_id_list)))
 
     count_stmt = select(func.count()).select_from(Engagement)
     for f in base_filters:

@@ -39,8 +39,10 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
-import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X, KeyRound } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X, KeyRound, Tag as TagIcon } from 'lucide-react';
 import { useEngagementsPage, useDeleteEngagement } from '@/lib/hooks/use-engagements';
+import { useTags } from '@/lib/hooks/use-findings';
+import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { useDebounce } from '@/lib/hooks/use-debounce';
 import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { useAuthStore } from '@/stores/auth-store';
@@ -228,6 +230,8 @@ export default function EngagementsPage() {
 
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [typeFilter, setTypeFilter] = useState<string>('all');
+    const [tagFilter, setTagFilter] = useState<string[]>([]);
+    const { data: engagementTags = [] } = useTags('engagement');
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
     // Filter row is collapsed by default so search is the primary control.
@@ -297,7 +301,7 @@ export default function EngagementsPage() {
     const debouncedSearch = useDebounce(searchTerm, 300);
     useEffect(() => {
         setPage(1);
-    }, [showProposed, showMine, pageSize, debouncedSearch, statusFilter, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
+    }, [showProposed, showMine, pageSize, debouncedSearch, statusFilter, typeFilter, dateFrom, dateTo, tagFilter, sortField, sortOrder]);
 
     const engagementsQuery = useEngagementsPage({
         includeProposed: canSeeProposed && showProposed,
@@ -309,6 +313,7 @@ export default function EngagementsPage() {
         type: typeFilter,
         startDateFrom: dateFrom,
         startDateTo: dateTo,
+        tagIds: tagFilter,
         sortBy: sortField as any,
         sortOrder,
     });
@@ -341,7 +346,7 @@ export default function EngagementsPage() {
     const typeLabels: Record<string, string> = {};
     engagementTypes.forEach(t => { typeLabels[t.name] = t.description || t.name; });
 
-    const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || searchTerm !== '' || dateFrom !== '' || dateTo !== '';
+    const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || searchTerm !== '' || dateFrom !== '' || dateTo !== '' || tagFilter.length > 0;
 
     // Server does search/filter/sort now — see useEngagementsPage. Anything
     // rendered from the list should reference `engagements` directly.
@@ -709,6 +714,15 @@ export default function EngagementsPage() {
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                {/* Tag filter */}
+                                <MultiSelectFilter
+                                    label="All tags" icon={TagIcon} countNoun="tag"
+                                    options={engagementTags.map((t: any) => ({ value: t.id, label: t.name, color: t.color }))}
+                                    selected={tagFilter}
+                                    onChange={setTagFilter}
+                                    searchPlaceholder="Search tags…"
+                                    triggerClassName="h-9"
+                                />
                                 {/* Date range filter */}
                                 <div className="flex items-center gap-1.5 text-sm">
                                     <span className="text-slate-500 text-xs">From</span>
@@ -786,7 +800,7 @@ export default function EngagementsPage() {
                                 )}
                                 {hasActiveFilters && (
                                     <button
-                                        onClick={() => { setStatusFilter('all'); setTypeFilter('all'); setSearchTerm(''); setDateFrom(''); setDateTo(''); }}
+                                        onClick={() => { setStatusFilter('all'); setTypeFilter('all'); setSearchTerm(''); setDateFrom(''); setDateTo(''); setTagFilter([]); }}
                                         className="text-xs text-slate-400 hover:text-white transition-colors ml-1 underline underline-offset-2"
                                     >
                                         Clear all

@@ -36,6 +36,9 @@ import {
     buildTestCaseTree, flattenTree, TestCaseTreeNode,
     useLinkFinding, useUnlinkFinding, useLinkAsset, useUnlinkAsset,
 } from '@/lib/hooks/use-testcases';
+import { useTags } from '@/lib/hooks/use-findings';
+import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
+import { Tag as TagIcon } from 'lucide-react';
 import {
     useLinkTestCaseToFinding, useUnlinkTestCaseFromFinding,
     useLinkTestCaseToAsset, useUnlinkTestCaseFromAsset,
@@ -434,19 +437,21 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
     const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState<{
         categories: string[];
+        tags: string[];
         status: '' | 'pending' | 'executed';
         result: '' | 'passed' | 'failed';
         createdBy: string;
         dateAfter: string;
-    }>({ categories: [], status: '', result: '', createdBy: '', dateAfter: '' });
+    }>({ categories: [], tags: [], status: '', result: '', createdBy: '', dateAfter: '' });
+    const { data: allTags = [] } = useTags('testcase');
 
-    const hasActiveFilters = filters.categories.length > 0 || !!filters.status || !!filters.result || !!filters.createdBy || !!filters.dateAfter;
+    const hasActiveFilters = filters.categories.length > 0 || filters.tags.length > 0 || !!filters.status || !!filters.result || !!filters.createdBy || !!filters.dateAfter;
 
     const toggleCategory = (cat: string) => setFilters(prev => ({
         ...prev,
         categories: prev.categories.includes(cat) ? prev.categories.filter(c => c !== cat) : [...prev.categories, cat],
     }));
-    const clearFilters = () => setFilters({ categories: [], status: '', result: '', createdBy: '', dateAfter: '' });
+    const clearFilters = () => setFilters({ categories: [], tags: [], status: '', result: '', createdBy: '', dateAfter: '' });
 
     const [sortField, setSortField] = useState<string>(() => {
         if (typeof window !== 'undefined') return localStorage.getItem('redwire_sort_engagement_testcases_field') || 'title';
@@ -480,11 +485,12 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
         function matchesNode(node: TestCaseTreeNode) {
             const matchesText = !term || node.title.toLowerCase().includes(term) || node.category.toLowerCase().includes(term) || node.description.toLowerCase().includes(term);
             const matchesCat = filters.categories.length === 0 || filters.categories.includes(node.category);
+            const matchesTags = filters.tags.length === 0 || ((node as any).tags || []).some((t: any) => filters.tags.includes(t.id));
             const matchesStatus = !filters.status || (filters.status === 'executed' ? node.is_executed : !node.is_executed);
             const matchesResult = !filters.result || (node.is_executed && (filters.result === 'passed' ? node.is_successful : !node.is_successful));
             const matchesCreatedBy = !filters.createdBy || (node.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
             const matchesDate = !filters.dateAfter || new Date(node.created_at) >= new Date(filters.dateAfter);
-            return matchesText && matchesCat && matchesStatus && matchesResult && matchesCreatedBy && matchesDate;
+            return matchesText && matchesCat && matchesTags && matchesStatus && matchesResult && matchesCreatedBy && matchesDate;
         }
         if (!search && !hasActiveFilters) return testCaseTree;
         function filterNodes(nodes: TestCaseTreeNode[]): TestCaseTreeNode[] {
@@ -710,6 +716,18 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                                     </label>
                                 ))}
                             </div>
+                        </div>
+                        {/* Tags */}
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Tags</span>
+                            <MultiSelectFilter
+                                label="All tags" icon={TagIcon} countNoun="tag"
+                                options={allTags.map((t: any) => ({ value: t.id, label: t.name, color: t.color }))}
+                                selected={filters.tags}
+                                onChange={(ids) => setFilters(p => ({ ...p, tags: ids }))}
+                                searchPlaceholder="Search tags…"
+                                triggerClassName="h-7"
+                            />
                         </div>
                         {/* Status */}
                         <div className="flex flex-col gap-1.5">

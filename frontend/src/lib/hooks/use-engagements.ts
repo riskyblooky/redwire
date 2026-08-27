@@ -122,6 +122,7 @@ export interface EngagementsPageQuery {
     type?: string;      // exact engagement_type; omit or 'all' for no filter
     startDateFrom?: string;   // ISO date
     startDateTo?: string;     // ISO date
+    tagIds?: string[];        // filter to engagements carrying any of these tag ids
     sortBy?: 'name' | 'engagement_type' | 'status' | 'start_date' | 'end_date' | 'created_at';
     sortOrder?: 'asc' | 'desc';
 }
@@ -148,13 +149,14 @@ export function useEngagementsPage(options?: EngagementsPageQuery) {
     const typeFilter = options?.type && options.type !== 'all' ? options.type : '';
     const dateFrom = options?.startDateFrom || '';
     const dateTo = options?.startDateTo || '';
+    const tagIds = options?.tagIds || [];
     const sortBy = options?.sortBy || 'start_date';
     const sortOrder = options?.sortOrder || 'desc';
 
     return useQuery<EngagementsPage>({
         queryKey: ['engagements', 'page', {
             includeProposed, mine, page, pageSize, q, statusFilter, typeFilter,
-            dateFrom, dateTo, sortBy, sortOrder,
+            dateFrom, dateTo, tagIds, sortBy, sortOrder,
         }],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -167,6 +169,7 @@ export function useEngagementsPage(options?: EngagementsPageQuery) {
             if (typeFilter) params.set('type', typeFilter);
             if (dateFrom) params.set('start_date_from', dateFrom);
             if (dateTo) params.set('start_date_to', dateTo);
+            if (tagIds.length) params.set('tag_ids', tagIds.join(','));
             params.set('sort_by', sortBy);
             params.set('sort_order', sortOrder);
             const res = await api.get<Engagement[]>(`/engagements?${params.toString()}`);

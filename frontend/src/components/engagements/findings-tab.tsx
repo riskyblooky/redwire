@@ -26,7 +26,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useFindings, useDeleteFinding } from '@/lib/hooks/use-findings';
+import { useFindings, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
+import { Tag as TagIcon } from 'lucide-react';
 import { useInfiniteScroll } from '@/lib/hooks/use-infinite-scroll';
 import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
@@ -399,11 +401,13 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
     const [filters, setFilters] = useState<{
         severities: string[];
         statuses: string[];
+        tags: string[];
         createdBy: string;
         dateAfter: string;
-    }>({ severities: [], statuses: [], createdBy: '', dateAfter: '' });
+    }>({ severities: [], statuses: [], tags: [], createdBy: '', dateAfter: '' });
+    const { data: allTags = [] } = useTags('finding');
 
-    const hasActiveFilters = filters.severities.length > 0 || filters.statuses.length > 0 || !!filters.createdBy || !!filters.dateAfter;
+    const hasActiveFilters = filters.severities.length > 0 || filters.statuses.length > 0 || filters.tags.length > 0 || !!filters.createdBy || !!filters.dateAfter;
 
     const toggleMulti = (key: 'severities' | 'statuses', val: string) => {
         setFilters(prev => {
@@ -411,7 +415,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
             return { ...prev, [key]: cur.includes(val) ? cur.filter(v => v !== val) : [...cur, val] };
         });
     };
-    const clearFilters = () => setFilters({ severities: [], statuses: [], createdBy: '', dateAfter: '' });
+    const clearFilters = () => setFilters({ severities: [], statuses: [], tags: [], createdBy: '', dateAfter: '' });
 
     const [sortField, setSortField] = useState<string>(() => {
         if (typeof window !== 'undefined') return localStorage.getItem('redwire_sort_engagement_findings_field') || 'created_at';
@@ -444,9 +448,10 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                 f.severity.toLowerCase().includes(term);
             const matchesSeverity = filters.severities.length === 0 || filters.severities.includes(f.severity);
             const matchesStatus = filters.statuses.length === 0 || filters.statuses.includes(f.status);
+            const matchesTags = filters.tags.length === 0 || (f.tags || []).some((t: any) => filters.tags.includes(t.id));
             const matchesCreatedBy = !filters.createdBy || (f.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
             const matchesDate = !filters.dateAfter || new Date(f.created_at) >= new Date(filters.dateAfter);
-            return matchesText && matchesSeverity && matchesStatus && matchesCreatedBy && matchesDate;
+            return matchesText && matchesSeverity && matchesStatus && matchesTags && matchesCreatedBy && matchesDate;
         })
         .sort(relevanceComparator(
             search,
@@ -569,6 +574,18 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                                     </label>
                                 ))}
                             </div>
+                        </div>
+                        {/* Tags */}
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Tags</span>
+                            <MultiSelectFilter
+                                label="All tags" icon={TagIcon} countNoun="tag"
+                                options={allTags.map((t: any) => ({ value: t.id, label: t.name, color: t.color }))}
+                                selected={filters.tags}
+                                onChange={(ids) => setFilters(p => ({ ...p, tags: ids }))}
+                                searchPlaceholder="Search tags…"
+                                triggerClassName="h-7"
+                            />
                         </div>
                         {/* Created By */}
                         <div className="flex flex-col gap-1.5">
