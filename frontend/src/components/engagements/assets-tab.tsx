@@ -22,7 +22,7 @@ import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, cus
 import { ColumnToggle } from '@/components/ui/column-toggle';
 import { useRouter } from 'next/navigation';
 import {
-    Search, Plus, Server, Loader2, ArrowUpDown, ArrowUp, ArrowDown,
+    Search, Plus, Server, Loader2, ArrowUpDown, ArrowUp, ArrowDown, User as UserIcon,
     Sparkles, MoreVertical, Trash2, Edit, MessageSquare, X,
     StickyNote, Bug, CheckSquare, Filter, Download, Upload,
     Target, Globe, LinkIcon, Box, Monitor, NetworkIcon, Radar,
@@ -41,6 +41,7 @@ import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permiss
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { displayNameFrom } from '@/lib/display-name';
 import { AssetImportDialog } from '@/components/engagements/asset-import-dialog';
 import { AssetDetailSheet } from '@/components/engagements/asset-detail-sheet';
@@ -439,17 +440,17 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
         scope: '' | 'in' | 'out';
         scanned: '' | 'yes' | 'no';
         pwned: '' | 'yes' | 'no';
-        createdBy: string;
+        createdBy: string[];
         dateAfter: string;
-    }>({ types: [], scope: '', scanned: '', pwned: '', createdBy: '', dateAfter: '' });
+    }>({ types: [], scope: '', scanned: '', pwned: '', createdBy: [], dateAfter: '' });
 
-    const hasAssetFilters = assetFilters.types.length > 0 || !!assetFilters.scope || !!assetFilters.scanned || !!assetFilters.pwned || !!assetFilters.createdBy || !!assetFilters.dateAfter;
+    const hasAssetFilters = assetFilters.types.length > 0 || !!assetFilters.scope || !!assetFilters.scanned || !!assetFilters.pwned || assetFilters.createdBy.length > 0 || !!assetFilters.dateAfter;
 
     const toggleAssetType = (t: string) => setAssetFilters(prev => ({
         ...prev,
         types: prev.types.includes(t) ? prev.types.filter(v => v !== t) : [...prev.types, t],
     }));
-    const clearAssetFilters = () => setAssetFilters({ types: [], scope: '', scanned: '', pwned: '', createdBy: '', dateAfter: '' });
+    const clearAssetFilters = () => setAssetFilters({ types: [], scope: '', scanned: '', pwned: '', createdBy: [], dateAfter: '' });
 
     // Sort (persisted)
     const [sortField, setSortField] = useState<string>(() => {
@@ -517,11 +518,31 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
             if (assetFilters.scanned === 'no' && a.is_scanned) return false;
             if (assetFilters.pwned === 'yes' && !a.is_pwned) return false;
             if (assetFilters.pwned === 'no' && a.is_pwned) return false;
-            if (assetFilters.createdBy && !(a.created_by_username || '').toLowerCase().includes(assetFilters.createdBy.toLowerCase())) return false;
+            if (assetFilters.createdBy.length > 0 && !assetFilters.createdBy.includes(a.created_by_username)) return false;
             if (assetFilters.dateAfter && new Date(a.created_at) < new Date(assetFilters.dateAfter)) return false;
             return true;
         });
     }, [assets, assetFilters, hasAssetFilters]);
+
+    // Type options (colour-coded badge + icon) + created-by options (with avatars).
+    const typeFilterOptions = Object.entries(assetTypeLabels).map(([key, label]) => ({
+        value: key, label, icon: assetTypeStyles[key]?.icon, badgeClass: assetTypeStyles[key]?.color,
+    }));
+    const createdByOptions = useMemo(() => {
+        const seen = new Map<string, any>();
+        for (const a of assets as any[]) {
+            const uname = a.created_by_username;
+            if (uname && !seen.has(uname)) {
+                seen.set(uname, {
+                    value: uname,
+                    label: a.created_by_full_name || uname,
+                    sublabel: `@${uname}`,
+                    avatar: { id: a.created_by, full_name: a.created_by_full_name, username: uname, profile_photo: a.created_by_profile_photo },
+                });
+            }
+        }
+        return [...seen.values()].sort((x, y) => x.label.localeCompare(y.label));
+    }, [assets]);
 
     // Export
     const [showExportDialog, setShowExportDialog] = useState(false);
@@ -711,11 +732,11 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                             {assetFilters.pwned === 'yes' ? 'Pwned' : 'Not Pwned'}<X className="h-3 w-3" />
                         </Badge>
                     )}
-                    {assetFilters.createdBy && (
-                        <Badge className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] gap-1 pr-1 cursor-pointer hover:bg-primary/90/20" onClick={() => setAssetFilters(p => ({ ...p, createdBy: '' }))}>
-                            By: {assetFilters.createdBy}<X className="h-3 w-3" />
+                    {assetFilters.createdBy.map(u => (
+                        <Badge key={u} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] gap-1 pr-1 cursor-pointer hover:bg-indigo-500/20" onClick={() => setAssetFilters(p => ({ ...p, createdBy: p.createdBy.filter(v => v !== u) }))}>
+                            By: {u}<X className="h-3 w-3" />
                         </Badge>
-                    )}
+                    ))}
                     {assetFilters.dateAfter && (
                         <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] gap-1 pr-1 cursor-pointer hover:bg-amber-500/20" onClick={() => setAssetFilters(p => ({ ...p, dateAfter: '' }))}>
                             After: {assetFilters.dateAfter}<X className="h-3 w-3" />
@@ -752,14 +773,14 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                         {/* Asset Type */}
                         <div className="flex flex-col gap-1">
                             <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Type</span>
-                            <div className="flex flex-wrap gap-x-2 gap-y-1 max-w-[280px]">
-                                {Object.entries(assetTypeLabels).map(([key, label]) => (
-                                    <label key={key} className="flex items-center gap-1.5 cursor-pointer">
-                                        <Checkbox checked={assetFilters.types.includes(key)} onCheckedChange={() => toggleAssetType(key)} className="h-3.5 w-3.5" />
-                                        <span className="text-xs text-slate-300">{label}</span>
-                                    </label>
-                                ))}
-                            </div>
+                            <MultiSelectFilter
+                                label="All types" countNoun="type"
+                                options={typeFilterOptions}
+                                selected={assetFilters.types}
+                                onChange={(vals) => setAssetFilters(p => ({ ...p, types: vals }))}
+                                searchPlaceholder="Search types…"
+                                triggerClassName="h-7"
+                            />
                         </div>
                         {/* Scope */}
                         <div className="flex flex-col gap-1">
@@ -797,7 +818,14 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                         {/* Created By */}
                         <div className="flex flex-col gap-1">
                             <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Created By</span>
-                            <input type="text" placeholder="username..." value={assetFilters.createdBy} onChange={e => setAssetFilters(p => ({ ...p, createdBy: e.target.value }))} className="h-7 text-xs bg-slate-800/50 border border-slate-700 rounded px-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-primary w-28" />
+                            <MultiSelectFilter
+                                label="Anyone" icon={UserIcon} countNoun="user"
+                                options={createdByOptions}
+                                selected={assetFilters.createdBy}
+                                onChange={(vals) => setAssetFilters(p => ({ ...p, createdBy: vals }))}
+                                searchPlaceholder="Search users…"
+                                triggerClassName="h-7"
+                            />
                         </div>
                         {/* Date After */}
                         <div className="flex flex-col gap-1">
