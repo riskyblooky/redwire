@@ -586,7 +586,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                     <CardDescription>Target systems and resources</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="relative w-64 mr-2">
+                    <div className="relative w-80 lg:w-96 mr-2">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                         <Input placeholder="Search... (port:80, service:http, version:8.2)" className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
