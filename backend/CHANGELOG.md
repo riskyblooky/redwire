@@ -4,20 +4,114 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.5.4] — 2026-08-26
+
+### Added
+- **Record a test-case result without a pass/fail verdict** — the execution flow
+  gains a "No Verdict" option that marks the case executed while leaving the
+  pass/fail result unset, for logging an actual result without asserting an
+  outcome. Shown as "Executed / No verdict" throughout. A separate **Save**
+  action logs the actual result without changing the execution status at all,
+  for recording incremental work before deciding an outcome.
+- **Search assets by port version** — the asset search now supports a `version:`
+  token (e.g. `version:8.2`) and free-text over ports, so typing a service name
+  or version string (`OpenSSH 8.2`, `Apache`) finds the asset by its port.
+- **Filter by tags** on the findings and test-case tabs and the engagements
+  list — a searchable, colour-coded tag multi-select in the advanced-filters
+  panel (the filter icon). Engagement tag filtering is server-side so it works
+  with pagination.
+- **Category filter** on the findings and test-case tabs is now a searchable,
+  colour-coded dropdown built from the categories actually in use (replacing the
+  test-case checkbox grid; findings had no category filter before).
+- **Asset filters** — the Type filter is now a searchable colour-coded dropdown
+  (type badge + icon), and Created By is a searchable dropdown of the assets'
+  creators with profile-photo avatars (replacing the checkbox grid and the
+  free-text box). The asset search bar is also wider.
+- **Filter the activity feed by specific items** — a new searchable multi-select
+  on the activity feed lets you scope the stream to one or more specific
+  findings, test cases, assets, or notes (in addition to the existing filter by
+  resource type).
+- **Activity feed filters are now searchable multi-selects** — the Type, Action,
+  and User filters use a consistent searchable dropdown; Action and User (which
+  were single-select) can now scope to several actions or several users at once.
+  The Type filter is colour-coded per type and the User filter shows profile
+  photos.
+- **Activity feed date range** collapsed into a single calendar button with
+  quick presets (Last 7 / 30 / 90 days, Last year) plus a custom from/to range.
+
+### Fixed
+- **Dashboard chart tooltips** no longer run off the bottom of the page for
+  widgets low on the dashboard — the hover tooltip is clamped to the chart so it
+  stays on-screen.
+- **Test case Notes section** now starts collapsed on the view page (expand to
+  read/edit), so it no longer pushes the rest of the page down by default.
+- **Long titles no longer force a horizontal scrollbar** on the findings, test
+  cases, and assets tab tables — the title column now truncates with an ellipsis
+  (full text on hover), scaling up on wider/higher-res screens before it
+  truncates.
+
+### Added
+- **Inline field editing on the test case and asset view pages** — extends the
+  double-click-to-edit behaviour introduced for findings in 1.5.3 to test cases
+  and assets. Test cases: title, description, execution steps, expected result,
+  notes, category (searchable, colour-coded), and tags (multi-select dropdown).
+  Assets: name, identifier (with a copy button), asset type (searchable, colour-
+  coded), description, and notes. Each saves a single-field patch; editor-only,
+  with an "add" affordance on empty optional fields.
+
 ## [1.5.3] — 2026-08-26
 
 ### Added
+- **Inline field editing on the finding view page** — double-click a field to
+  edit it in place and save, without opening the full edit page. Works for the
+  title, the markdown fields (description, impact, steps, technical details,
+  mitigations, references), severity, category (searchable, colour-coded), tags
+  (multi-select dropdown), and CVSS (opens the calculator, auto-syncs severity).
+  Editor-only; empty optional fields surface an "add" affordance. (Test case +
+  asset pages to follow.)
+- **Link attachments to a finding or test case** from the Attachments tab — a
+  new "Link to…" row action opens a searchable single-target picker (with a
+  "Not linked" option to clear). The backend enforces the single-target rule
+  (a finding *or* a test case, not both), same-engagement scoping, and the
+  chain-of-custody guard (attachments on a VERIFIED finding can't be moved).
 - **Team Lead role** can now be assigned from Admin → Users (create and edit),
   alongside Operator / Read-Only Admin / Admin — the edit dialog now uses a
   single **Platform Role** dropdown.
 
 ### Improved
+- **Test-case execution result** section restyled to match the app's theme (soft
+  tinted Pass / Fail / No-Verdict buttons, a state-coloured result card), with
+  tooltips explaining that pass/fail means the actual result matched — or didn't
+  match — the expected result.
+- **Attack graph now shows the test-case hierarchy** — parent → child
+  (`subtest`) edges from the test-case tree are drawn (dashed, distinct from
+  causal chain edges), so a hierarchical chain like "Test web app → Test auth
+  → Test JWT sig → finding" reads as one connected path even when the
+  intermediate parent test cases produced no findings of their own.
+- **Collaborative notes editor** now shows a loading spinner ("Loading note…")
+  while it connects and syncs, instead of a blank content area, and paints the
+  note faster: the DB-content fallback debounce dropped from 800ms to 300ms, so
+  a single user opening a note no longer waits on a fixed peer-sync window that
+  will never fire.
 - **ATT&CK AI auto-suggest** now works on the **test cases** sub-tab too (not
   just findings), and both sub-tabs gained an **"Include already-tagged"**
   toggle to re-suggest techniques for items that already have ATT&CK mappings.
   The suggest controls only appear when AI is configured on the instance.
+- **Intel & Infrastructure linked-entities lists** now scale cleanly — because
+  these are global items that can accumulate many links, the detail panels cap
+  the list height with an internal scroll, add a filter box past a threshold,
+  and collapse to the first few rows with a "Show all N" expander instead of
+  rendering an unbounded list that overflowed the dialog.
 
 ### Fixed
+- **Notification email in Outlook** — switched the email accent from the
+  off-brand indigo-purple to the RedWire brand red, and render the CTA as an
+  Outlook VML button so its red fill + white label survive Outlook's dark-mode
+  colour transform (which previously repainted the button blue with a darkened,
+  hard-to-read label). Other clients keep the CSS rounded button.
+- **Cleanup actions menu** — the cleanup artifacts table now always shows the
+  row actions (⋮) menu, instead of hiding it until hover, matching the
+  findings / test cases / assets tables.
 - **Editor hyperlinks** — typing (or a space) after a link no longer extends
   the hyperlink onto the new text, and clicking the link toolbar button while a
   link is selected now removes it (toggle off).
