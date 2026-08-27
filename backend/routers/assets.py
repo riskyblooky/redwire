@@ -702,7 +702,8 @@ async def get_assets(
     search: Optional[str] = Query(None),
     port: Optional[int] = Query(None, description="Filter assets that have this port number"),
     service: Optional[str] = Query(None, description="Filter assets that have this service name"),
-    port_state: Optional[str] = Query(None, description="Port state filter (OPEN, CLOSED, FILTERED). Defaults to OPEN when port/service filters active"),
+    version: Optional[str] = Query(None, description="Filter assets that have a port with this version"),
+    port_state: Optional[str] = Query(None, description="Port state filter (OPEN, CLOSED, FILTERED). Defaults to OPEN when port/service/version filters active"),
     sort_by: Optional[str] = Query("created_at"),
     sort_order: Optional[str] = Query("desc"),
     skip: int = 0,
@@ -734,22 +735,33 @@ async def get_assets(
     
     if search:
         search_term = f"%{search}%"
-        from sqlalchemy import or_
+        from sqlalchemy import or_, exists
+        # Free text also matches any of the asset's ports' service name or
+        # version, so typing e.g. "OpenSSH 8.2" finds the asset by its port.
+        port_text_match = exists().where(
+            (AssetPort.asset_id == Asset.id) & or_(
+                AssetPort.service_name.ilike(search_term),
+                AssetPort.version.ilike(search_term),
+            )
+        )
         query = query.where(
             or_(
                 Asset.name.ilike(search_term),
                 Asset.identifier.ilike(search_term),
                 Asset.description.ilike(search_term),
+                port_text_match,
             )
         )
-    
-    # Port / service filtering
-    if port is not None or service:
+
+    # Port / service / version filtering
+    if port is not None or service or version:
         query = query.join(AssetPort, AssetPort.asset_id == Asset.id)
         if port is not None:
             query = query.where(AssetPort.port_number == port)
         if service:
             query = query.where(AssetPort.service_name.ilike(f"%{service}%"))
+        if version:
+            query = query.where(AssetPort.version.ilike(f"%{version}%"))
         if port_state:
             query = query.where(AssetPort.state == port_state)
         else:

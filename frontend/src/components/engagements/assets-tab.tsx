@@ -121,15 +121,18 @@ const assetTypeStyles: Record<string, { color: string; icon: any }> = {
  * Extracts "port:N" and "service:name" tokens from the query string,
  * returning them separately from the remaining free-text search.
  */
-function parseAssetSearch(input: string): { search: string; port?: number; service?: string } {
+function parseAssetSearch(input: string): { search: string; port?: number; service?: string; version?: string } {
     let port: number | undefined;
     let service: string | undefined;
+    let version: string | undefined;
     let remaining = input;
     const portMatch = remaining.match(/\bport:(\d+)/i);
     if (portMatch) { port = parseInt(portMatch[1], 10); remaining = remaining.replace(portMatch[0], ''); }
     const serviceMatch = remaining.match(/\bservice:(\S+)/i);
     if (serviceMatch) { service = serviceMatch[1]; remaining = remaining.replace(serviceMatch[0], ''); }
-    return { search: remaining.trim(), port, service };
+    const versionMatch = remaining.match(/\bversion:(\S+)/i);
+    if (versionMatch) { version = versionMatch[1]; remaining = remaining.replace(versionMatch[0], ''); }
+    return { search: remaining.trim(), port, service, version };
 }
 
 const SortIcon = ({ field, currentField, order }: { field: string; currentField: string; order: 'asc' | 'desc' }) => {
@@ -468,6 +471,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
         search: parsedSearch.search || undefined,
         port: parsedSearch.port,
         service: parsedSearch.service,
+        version: parsedSearch.version,
         sortBy: sortField,
         sortOrder,
         skip: (currentPage - 1) * ASSET_PAGE_SIZE,
@@ -563,9 +567,9 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                 <div className="flex items-center gap-2">
                     <div className="relative w-64 mr-2">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-                        <Input placeholder="Search... (port:80, service:http)" className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        <Input placeholder="Search... (port:80, service:http, version:8.2)" className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
-                    {(parsedSearch.port !== undefined || parsedSearch.service) && (
+                    {(parsedSearch.port !== undefined || parsedSearch.service || parsedSearch.version) && (
                         <div className="flex items-center gap-1">
                             {parsedSearch.port !== undefined && (
                                 <Badge variant="secondary" className="bg-cyan-500/15 text-cyan-400 border border-cyan-500/25 text-[10px] gap-1 pr-1 cursor-pointer hover:bg-cyan-500/25" onClick={() => setSearch(prev => prev.replace(/\bport:\d+\s*/i, '').trim())}>
@@ -575,6 +579,11 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                             {parsedSearch.service && (
                                 <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 text-[10px] gap-1 pr-1 cursor-pointer hover:bg-emerald-500/25" onClick={() => setSearch(prev => prev.replace(/\bservice:\S+\s*/i, '').trim())}>
                                     Service: {parsedSearch.service}<X className="h-3 w-3" />
+                                </Badge>
+                            )}
+                            {parsedSearch.version && (
+                                <Badge variant="secondary" className="bg-violet-500/15 text-violet-400 border border-violet-500/25 text-[10px] gap-1 pr-1 cursor-pointer hover:bg-violet-500/25" onClick={() => setSearch(prev => prev.replace(/\bversion:\S+\s*/i, '').trim())}>
+                                    Version: {parsedSearch.version}<X className="h-3 w-3" />
                                 </Badge>
                             )}
                         </div>
@@ -644,6 +653,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                                     if (parsedSearch.search) params.search = parsedSearch.search;
                                     if (parsedSearch.port !== undefined) params.port = String(parsedSearch.port);
                                     if (parsedSearch.service) params.service = parsedSearch.service;
+                                    if (parsedSearch.version) params.version = parsedSearch.version;
                                     const { data } = await api.get<{ items: any[]; total: number }>('/assets', { params });
                                     const allExportAssets = data.items;
                                     const isSingleCol = selectedCols.length === 1;
@@ -794,7 +804,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                             <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Created After</span>
                             <input type="date" value={assetFilters.dateAfter} onChange={e => setAssetFilters(p => ({ ...p, dateAfter: e.target.value }))} className="h-7 text-xs bg-slate-800/50 border border-slate-700 rounded px-2 text-white focus:outline-none focus:border-primary w-36 [color-scheme:dark]" />
                         </div>
-                        {(parsedSearch.port !== undefined || parsedSearch.service || hasAssetFilters) && (
+                        {(parsedSearch.port !== undefined || parsedSearch.service || parsedSearch.version || hasAssetFilters) && (
                             <Button size="sm" variant="ghost" className="text-slate-400 hover:text-white mt-4 text-xs" onClick={() => { setSearch(prev => prev.replace(/\bport:\d+\s*/i, '').replace(/\bservice:\S+\s*/i, '').trim()); clearAssetFilters(); }}>Clear all</Button>
                         )}
                     </div>

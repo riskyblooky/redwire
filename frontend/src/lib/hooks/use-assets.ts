@@ -35,6 +35,7 @@ interface UseAssetsOptions {
     search?: string;
     port?: number;
     service?: string;
+    version?: string;
     portState?: string;
     sortBy?: string;
     sortOrder?: string;
@@ -50,17 +51,18 @@ export function useAssets(engagementIdOrOptions?: string | UseAssetsOptions) {
         ? { engagementId: engagementIdOrOptions }
         : (engagementIdOrOptions ?? {});
 
-    const { engagementId, search, port, service, portState, sortBy, sortOrder, skip, limit, enabled } = options;
+    const { engagementId, search, port, service, version, portState, sortBy, sortOrder, skip, limit, enabled } = options;
 
     const query = useQuery({
         enabled: enabled ?? true,
-        queryKey: ['assets', engagementId ?? 'all', search ?? '', port ?? '', service ?? '', portState ?? '', sortBy ?? '', sortOrder ?? '', skip ?? 0, limit ?? 100],
+        queryKey: ['assets', engagementId ?? 'all', search ?? '', port ?? '', service ?? '', version ?? '', portState ?? '', sortBy ?? '', sortOrder ?? '', skip ?? 0, limit ?? 100],
         queryFn: async () => {
             const params: Record<string, string> = {};
             if (engagementId) params.engagement_id = engagementId;
             if (search) params.search = search;
             if (port !== undefined) params.port = String(port);
             if (service) params.service = service;
+            if (version) params.version = version;
             if (portState) params.port_state = portState;
             if (sortBy) params.sort_by = sortBy;
             if (sortOrder) params.sort_order = sortOrder;
