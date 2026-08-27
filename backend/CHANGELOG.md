@@ -38,6 +38,19 @@ section becomes one release entry.
   photos.
 - **Activity feed date range** collapsed into a single calendar button with
   quick presets (Last 7 / 30 / 90 days, Last year) plus a custom from/to range.
+- **Inline field editing on the test case and asset view pages** — extends the
+  double-click-to-edit behaviour introduced for findings in 1.5.3 to test cases
+  and assets. Test cases: title, description, execution steps, expected result,
+  notes, category (searchable, colour-coded), and tags (multi-select dropdown).
+  Assets: name, identifier (with a copy button), asset type (searchable, colour-
+  coded), description, and notes. Each saves a single-field patch; editor-only,
+  with an "add" affordance on empty optional fields.
+
+### Improved
+- **Test-case execution result** section restyled to match the app's theme (soft
+  tinted Pass / Fail / No-Verdict buttons, a state-coloured result card), with
+  tooltips explaining that pass/fail means the actual result matched — or didn't
+  match — the expected result.
 
 ### Fixed
 - **Dashboard chart tooltips** no longer run off the bottom of the page for
@@ -49,15 +62,6 @@ section becomes one release entry.
   cases, and assets tab tables — the title column now truncates with an ellipsis
   (full text on hover), scaling up on wider/higher-res screens before it
   truncates.
-
-### Added
-- **Inline field editing on the test case and asset view pages** — extends the
-  double-click-to-edit behaviour introduced for findings in 1.5.3 to test cases
-  and assets. Test cases: title, description, execution steps, expected result,
-  notes, category (searchable, colour-coded), and tags (multi-select dropdown).
-  Assets: name, identifier (with a copy button), asset type (searchable, colour-
-  coded), description, and notes. Each saves a single-field patch; editor-only,
-  with an "add" affordance on empty optional fields.
 
 ## [1.5.3] — 2026-08-26
 
@@ -79,10 +83,6 @@ section becomes one release entry.
   single **Platform Role** dropdown.
 
 ### Improved
-- **Test-case execution result** section restyled to match the app's theme (soft
-  tinted Pass / Fail / No-Verdict buttons, a state-coloured result card), with
-  tooltips explaining that pass/fail means the actual result matched — or didn't
-  match — the expected result.
 - **Attack graph now shows the test-case hierarchy** — parent → child
   (`subtest`) edges from the test-case tree are drawn (dashed, distinct from
   causal chain edges), so a hierarchical chain like "Test web app → Test auth
