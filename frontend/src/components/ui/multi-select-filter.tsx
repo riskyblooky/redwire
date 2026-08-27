@@ -6,6 +6,8 @@ import {
     Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from '@/components/ui/command';
 import { Check, ChevronsUpDown } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
 
 export interface MultiSelectOption {
@@ -14,6 +16,10 @@ export interface MultiSelectOption {
     sublabel?: string;
     icon?: React.ComponentType<{ className?: string }>;
     iconClass?: string;
+    /** When set, the label renders as a colour-tinted badge (with the icon inside). */
+    badgeClass?: string;
+    /** When set, a profile photo avatar is shown instead of an icon. */
+    avatar?: { id: string; full_name?: string; username?: string; profile_photo?: string | null };
 }
 
 interface MultiSelectFilterProps {
@@ -96,8 +102,15 @@ export function MultiSelectFilter({
                                         className="gap-2 text-xs cursor-pointer aria-selected:bg-slate-800"
                                     >
                                         <Check className={cn('h-3.5 w-3.5 shrink-0', on ? 'opacity-100 text-blue-400' : 'opacity-0')} />
-                                        {OptIcon && <OptIcon className={cn('h-3.5 w-3.5 shrink-0', opt.iconClass)} />}
-                                        <span className="flex-1 truncate">{opt.label}</span>
+                                        {opt.avatar
+                                            ? <UserAvatar user={opt.avatar} className="h-4 w-4 shrink-0" />
+                                            : (!opt.badgeClass && OptIcon) ? <OptIcon className={cn('h-3.5 w-3.5 shrink-0', opt.iconClass)} /> : null}
+                                        {opt.badgeClass
+                                            ? <Badge className={cn('gap-1 h-5 px-1.5 text-[10px] font-medium border', opt.badgeClass)}>
+                                                {OptIcon && <OptIcon className="h-3 w-3" />}
+                                                {opt.label}
+                                            </Badge>
+                                            : <span className="flex-1 truncate">{opt.label}</span>}
                                         {opt.sublabel && <span className="text-[10px] text-slate-500 shrink-0">{opt.sublabel}</span>}
                                     </CommandItem>
                                 );

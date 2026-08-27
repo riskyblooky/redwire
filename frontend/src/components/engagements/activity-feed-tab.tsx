@@ -266,8 +266,14 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
         setDateFrom(''); setDateTo(''); setIncludeAll(false);
     };
 
+    const typeOptions = TYPE_OPTIONS.map((o) => ({
+        value: o.value, label: o.label,
+        icon: resourceTypeIcons[o.value], badgeClass: resourceTypeColors[o.value],
+    }));
+
     const userOptions = (engagement?.assigned_users || []).map((u: any) => ({
         value: u.id, label: displayName(u), sublabel: `@${u.username}`,
+        avatar: { id: u.id, full_name: u.full_name, username: u.username, profile_photo: u.profile_photo },
     }));
 
     return (
@@ -289,10 +295,10 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
                         />
                     </div>
 
-                    {/* Type multi-select (searchable) */}
+                    {/* Type multi-select (searchable, colour-coded per type) */}
                     <MultiSelectFilter
                         label="All types" icon={Filter} countNoun="type"
-                        options={TYPE_OPTIONS} selected={types} onChange={setTypes}
+                        options={typeOptions} selected={types} onChange={setTypes}
                         searchPlaceholder="Search types…"
                     />
 
