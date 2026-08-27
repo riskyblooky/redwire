@@ -85,7 +85,7 @@ async def get_attack_graph(
             testcase_parents.append((row.id, row.parent_id))
         tc_status = "Not Executed"
         if row.is_executed:
-            tc_status = "Pass" if row.is_successful else "Fail"
+            tc_status = "Pass" if row.is_successful is True else "Fail" if row.is_successful is False else "Executed"
         nodes.append({
             "id": f"testcase-{row.id}",
             "type": "testcase",

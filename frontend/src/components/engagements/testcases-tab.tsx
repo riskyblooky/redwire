@@ -273,7 +273,7 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                 </TableCell>
                 {col('category') && (() => { const style = testCaseCategoryStyles[testcase.category] || testCaseCategoryStyles.OTHER; const Icon = style.icon; return (<TableCell><Badge className={cn("gap-1.5 py-1 px-2.5 font-bold text-[10px] uppercase tracking-wider border", style.color)}><Icon className="h-3 w-3" />{testcase.category.replace('_', ' ')}</Badge></TableCell>); })()}
                 {col('status') && <TableCell>{testcase.is_executed ? <Badge className="bg-blue-500/20 text-blue-400">Executed</Badge> : <Badge className="bg-slate-500/20 text-slate-400">Pending</Badge>}</TableCell>}
-                {col('result') && <TableCell>{testcase.is_executed ? (testcase.is_successful ? <Badge className="bg-green-500/20 text-green-400">Passed</Badge> : <Badge className="bg-red-500/20 text-red-400">Failed</Badge>) : <span className="text-slate-500">-</span>}</TableCell>}
+                {col('result') && <TableCell>{testcase.is_executed ? (testcase.is_successful === true ? <Badge className="bg-green-500/20 text-green-400">Passed</Badge> : testcase.is_successful === false ? <Badge className="bg-red-500/20 text-red-400">Failed</Badge> : <Badge className="bg-slate-500/20 text-slate-300">No verdict</Badge>) : <span className="text-slate-500">-</span>}</TableCell>}
                 {col('discussions') && <TableCell>
                     {testcase.unresolved_thread_count && testcase.unresolved_thread_count > 0 ? (
                         <div className="flex items-center gap-2 text-amber-400"><MessageSquare className="h-4 w-4" /><span className="text-sm font-medium">{testcase.unresolved_thread_count}</span></div>
@@ -496,7 +496,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
             const matchesCat = filters.categories.length === 0 || filters.categories.includes(node.category);
             const matchesTags = filters.tags.length === 0 || ((node as any).tags || []).some((t: any) => filters.tags.includes(t.id));
             const matchesStatus = !filters.status || (filters.status === 'executed' ? node.is_executed : !node.is_executed);
-            const matchesResult = !filters.result || (node.is_executed && (filters.result === 'passed' ? node.is_successful : !node.is_successful));
+            const matchesResult = !filters.result || (node.is_executed && (filters.result === 'passed' ? node.is_successful === true : node.is_successful === false));
             const matchesCreatedBy = !filters.createdBy || (node.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
             const matchesDate = !filters.dateAfter || new Date(node.created_at) >= new Date(filters.dateAfter);
             return matchesText && matchesCat && matchesTags && matchesStatus && matchesResult && matchesCreatedBy && matchesDate;
@@ -518,7 +518,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                     case 'title': cmp = a.title.localeCompare(b.title); break;
                     case 'category': cmp = a.category.localeCompare(b.category); break;
                     case 'is_executed': cmp = (a.is_executed ? 1 : 0) - (b.is_executed ? 1 : 0); break;
-                    case 'result': cmp = (a.is_executed ? (a.is_successful ? 2 : 1) : 0) - (b.is_executed ? (b.is_successful ? 2 : 1) : 0); break;
+                    case 'result': cmp = (a.is_executed ? (a.is_successful === true ? 3 : a.is_successful === false ? 1 : 2) : 0) - (b.is_executed ? (b.is_successful === true ? 3 : b.is_successful === false ? 1 : 2) : 0); break;
                     case 'created_at': cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
                     case 'unresolved_thread_count': cmp = (a.unresolved_thread_count || 0) - (b.unresolved_thread_count || 0); break;
                     case 'created_by_username': cmp = (a.created_by_username || '').localeCompare(b.created_by_username || ''); break;

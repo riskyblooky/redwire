@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { TagList } from '@/components/ui/tag-list';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Edit, Trash2, CheckSquare, Loader2, Play, CheckCircle2, XCircle, Zap, Flag, Layout, Circle, ArrowUpCircle, Globe, Radar, Calendar, Bug, X, Lock, Key, Shield, Sparkles, StickyNote, FileText, Terminal, User, Clock, ClipboardCheck, Target, Server, Layers, Plus, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, CheckSquare, Loader2, Play, CheckCircle2, XCircle, MinusCircle, Zap, Flag, Layout, Circle, ArrowUpCircle, Globe, Radar, Calendar, Bug, X, Lock, Key, Shield, Sparkles, StickyNote, FileText, Terminal, User, Clock, ClipboardCheck, Target, Server, Layers, Plus, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import { EvidenceUpload } from '@/components/findings/evidence-upload';
 import { EvidenceCard } from '@/components/findings/evidence-card';
 import { useTestCase, useUpdateTestCase, useDeleteTestCase, useUnlinkFinding, useUnlinkAsset } from '@/lib/hooks/use-testcases';
@@ -176,7 +176,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
 
     const categoryOptions: InlineComboboxOption[] = testcaseTypes.map((t: any) => ({ value: t.name, label: t.name, color: t.color }));
 
-    const handleExecute = async (success: boolean) => {
+    const handleExecute = async (success: boolean | null) => {
         try {
             await updateTestCase.mutateAsync({
                 id: id,
@@ -185,6 +185,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                 is_successful: success,
             });
             setIsExecuting(false);
+            toast.success(success === true ? 'Marked as passed' : success === false ? 'Marked as failed' : 'Result recorded (no verdict)');
             refetch();
         } catch (error) {
             console.error('Failed to update test case result:', error);
@@ -273,8 +274,8 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                     />
                                 )}
                                 {testcase.is_executed ? (
-                                    <Badge className={cn(testcase.is_successful ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20')}>
-                                        {testcase.is_successful ? 'Pass' : 'Fail'}
+                                    <Badge className={cn(testcase.is_successful === true ? 'bg-green-500/10 text-green-400 border-green-500/20' : testcase.is_successful === false ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20')}>
+                                        {testcase.is_successful === true ? 'Pass' : testcase.is_successful === false ? 'Fail' : 'Executed'}
                                     </Badge>
                                 ) : (
                                     <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20">Pending</Badge>
@@ -407,7 +408,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                         </Card>
 
                         {/* Execution Result Card - Below main card, still in 3-col area */}
-                        <Card className={cn("border-slate-800 backdrop-blur-xs", testcase.is_executed ? (testcase.is_successful ? 'bg-green-500/5' : 'bg-red-500/5') : 'bg-slate-900/50')}>
+                        <Card className={cn("border-slate-800 backdrop-blur-xs", testcase.is_executed ? (testcase.is_successful === true ? 'bg-green-500/5' : testcase.is_successful === false ? 'bg-red-500/5' : 'bg-slate-800/40') : 'bg-slate-900/50')}>
                             <CardHeader className="pb-3 border-b border-slate-800/60 mb-4">
                                 <div className="flex items-center justify-between">
                                     <CardTitle className="text-white text-lg flex items-center gap-2">
@@ -415,8 +416,8 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         Execution Result
                                     </CardTitle>
                                     {testcase.is_executed && (
-                                        <Badge className={cn("text-sm px-3 py-1", testcase.is_successful ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20')}>
-                                            {testcase.is_successful ? 'SUCCESS (PASS)' : 'FAILED (FAIL)'}
+                                        <Badge className={cn("text-sm px-3 py-1", testcase.is_successful === true ? 'bg-green-500/10 text-green-400 border-green-500/20' : testcase.is_successful === false ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20')}>
+                                            {testcase.is_successful === true ? 'SUCCESS (PASS)' : testcase.is_successful === false ? 'FAILED (FAIL)' : 'EXECUTED (NO VERDICT)'}
                                         </Badge>
                                     )}
                                 </div>
@@ -451,12 +452,15 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         </div>
 
                                         {isExecuting ? (
-                                            <div className="flex gap-4 pt-4 border-t border-slate-800">
-                                                <Button onClick={() => handleExecute(true)} size="lg" className="bg-green-600 hover:bg-green-700 flex-1 h-14 text-lg">
+                                            <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-800">
+                                                <Button onClick={() => handleExecute(true)} size="lg" className="bg-green-600 hover:bg-green-700 flex-1 min-w-[140px] h-14 text-lg">
                                                     <CheckCircle2 className="h-6 w-6 mr-3" /> Pass Test
                                                 </Button>
-                                                <Button onClick={() => handleExecute(false)} size="lg" className="bg-red-600 hover:bg-red-700 flex-1 h-14 text-lg">
+                                                <Button onClick={() => handleExecute(false)} size="lg" className="bg-red-600 hover:bg-red-700 flex-1 min-w-[140px] h-14 text-lg">
                                                     <XCircle className="h-6 w-6 mr-3" /> Fail Test
+                                                </Button>
+                                                <Button onClick={() => handleExecute(null)} variant="outline" size="lg" className="border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white h-14 px-5" title="Save the result without marking pass or fail">
+                                                    <MinusCircle className="h-5 w-5 mr-2" /> No Verdict
                                                 </Button>
                                                 <Button variant="ghost" size="lg" onClick={() => setIsExecuting(false)} className="text-slate-400 h-14">
                                                     Cancel
@@ -561,15 +565,20 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                 {/* Execution Status */}
                                 <div className="flex flex-col items-center justify-center p-6 bg-slate-950/50 rounded-2xl border border-slate-800/50 shadow-inner">
                                     {testcase.is_executed ? (
-                                        testcase.is_successful ? (
+                                        testcase.is_successful === true ? (
                                             <>
                                                 <CheckCircle2 className="h-12 w-12 text-green-400 drop-shadow-[0_0_10px_rgba(34,197,94,0.3)] mb-2" />
                                                 <span className="text-2xl font-black text-green-400 tracking-tight">PASS</span>
                                             </>
-                                        ) : (
+                                        ) : testcase.is_successful === false ? (
                                             <>
                                                 <XCircle className="h-12 w-12 text-red-400 drop-shadow-[0_0_10px_rgba(239,68,68,0.3)] mb-2" />
                                                 <span className="text-2xl font-black text-red-400 tracking-tight">FAIL</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <MinusCircle className="h-12 w-12 text-slate-400 mb-2" />
+                                                <span className="text-2xl font-black text-slate-300 tracking-tight">EXECUTED</span>
                                             </>
                                         )
                                     ) : (

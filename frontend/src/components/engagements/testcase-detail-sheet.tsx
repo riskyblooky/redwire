@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import {
     Edit, Trash2, FileText, Loader2, Server, StickyNote, Bug,
     Sparkles, Lock, User, Clock, Radar, Package, Paperclip,
-    ExternalLink, CheckCircle, XCircle, Circle, CheckSquare,
+    ExternalLink, CheckCircle, XCircle, MinusCircle, Circle, CheckSquare,
     Globe, Zap, Flag, ArrowUpCircle, Layout, Link as LinkIcon,
 } from 'lucide-react';
 import { useTestCase, useDeleteTestCase, useUpdateTestCase } from '@/lib/hooks/use-testcases';
@@ -192,13 +192,17 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                             {/* Execution status */}
                                             {testcase.is_executed ? (
                                                 <Badge className={cn('px-2 py-0.5 text-[10px] border gap-1.5',
-                                                    testcase.is_successful
+                                                    testcase.is_successful === true
                                                         ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                                                        : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                        : testcase.is_successful === false
+                                                            ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                            : 'bg-slate-500/10 text-slate-300 border-slate-500/20'
                                                 )}>
-                                                    {testcase.is_successful
+                                                    {testcase.is_successful === true
                                                         ? <><CheckCircle className="h-3 w-3" /> Passed</>
-                                                        : <><XCircle className="h-3 w-3" /> Failed</>
+                                                        : testcase.is_successful === false
+                                                            ? <><XCircle className="h-3 w-3" /> Failed</>
+                                                            : <><MinusCircle className="h-3 w-3" /> Executed</>
                                                     }
                                                 </Badge>
                                             ) : (
@@ -297,9 +301,11 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                     <>
                                         <div>
                                             <div className="flex items-center gap-2 mb-2">
-                                                {testcase.is_successful
+                                                {testcase.is_successful === true
                                                     ? <CheckCircle className="h-4 w-4 text-green-400" />
-                                                    : <XCircle className="h-4 w-4 text-red-400" />}
+                                                    : testcase.is_successful === false
+                                                        ? <XCircle className="h-4 w-4 text-red-400" />
+                                                        : <MinusCircle className="h-4 w-4 text-slate-400" />}
                                                 <h4 className="text-sm font-bold text-white">Actual Result</h4>
                                             </div>
                                             <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50">
