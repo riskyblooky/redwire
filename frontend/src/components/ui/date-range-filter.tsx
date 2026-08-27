@@ -44,6 +44,7 @@ export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
     const [preset, setPreset] = useState<string | null>(null);
 
     const applyPreset = (days: number, label: string) => {
+        if (preset === label) { clear(); return; } // clicking the active preset toggles it off
         const end = new Date();
         const start = new Date();
         start.setDate(start.getDate() - (days - 1)); // inclusive of today
@@ -62,20 +63,15 @@ export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
             : 'Any time';
 
     return (
+        <span className="inline-flex items-center">
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className={cn('h-8 gap-1.5 border-slate-700 bg-slate-900 text-xs font-normal text-slate-300 hover:bg-slate-800 hover:text-white', active && 'text-white')}
+                    className={cn('h-8 gap-1.5 border-slate-700 bg-slate-900 text-xs font-normal text-slate-300 hover:bg-slate-800 hover:text-white', active && 'text-white rounded-r-none border-r-0')}
                 >
                     <CalendarIcon className="h-3 w-3 text-slate-400" />
                     {summary}
-                    {active && (
-                        <X
-                            className="h-3 w-3 text-slate-500 hover:text-white"
-                            onClick={(e) => { e.stopPropagation(); clear(); }}
-                        />
-                    )}
                 </Button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-64 space-y-2 border-slate-700 bg-slate-900 p-2 text-white">
@@ -120,5 +116,16 @@ export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
                 )}
             </PopoverContent>
         </Popover>
+        {active && (
+            <Button
+                variant="outline"
+                onClick={clear}
+                title="Clear dates"
+                className="h-8 rounded-l-none border-l-0 border-slate-700 bg-slate-900 px-2 text-slate-500 hover:bg-slate-800 hover:text-white"
+            >
+                <X className="h-3 w-3" />
+            </Button>
+        )}
+        </span>
     );
 }
