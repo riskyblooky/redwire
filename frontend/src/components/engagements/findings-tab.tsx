@@ -27,6 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useFindings, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { Tag as TagIcon } from 'lucide-react';
 import { useInfiniteScroll } from '@/lib/hooks/use-infinite-scroll';
@@ -401,13 +402,22 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
     const [filters, setFilters] = useState<{
         severities: string[];
         statuses: string[];
+        categories: string[];
         tags: string[];
         createdBy: string;
         dateAfter: string;
-    }>({ severities: [], statuses: [], tags: [], createdBy: '', dateAfter: '' });
+    }>({ severities: [], statuses: [], categories: [], tags: [], createdBy: '', dateAfter: '' });
     const { data: allTags = [] } = useTags('finding');
+    const { data: findingTypes = [] } = useConfigurableTypes('finding');
+    // Category options come from the categories actually present in the data
+    // (free-form), colour-matched to configurable types by name where available.
+    const categoryColor: Record<string, string> = {};
+    findingTypes.forEach((t: any) => { if (t.color) categoryColor[t.name.toLowerCase()] = t.color; });
+    const categoryOptions = [...new Set(findings.map((f: any) => f.category).filter(Boolean) as string[])]
+        .sort((a, b) => a.localeCompare(b))
+        .map((c) => ({ value: c, label: c, color: categoryColor[c.toLowerCase()] || null }));
 
-    const hasActiveFilters = filters.severities.length > 0 || filters.statuses.length > 0 || filters.tags.length > 0 || !!filters.createdBy || !!filters.dateAfter;
+    const hasActiveFilters = filters.severities.length > 0 || filters.statuses.length > 0 || filters.categories.length > 0 || filters.tags.length > 0 || !!filters.createdBy || !!filters.dateAfter;
 
     const toggleMulti = (key: 'severities' | 'statuses', val: string) => {
         setFilters(prev => {
@@ -415,7 +425,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
             return { ...prev, [key]: cur.includes(val) ? cur.filter(v => v !== val) : [...cur, val] };
         });
     };
-    const clearFilters = () => setFilters({ severities: [], statuses: [], tags: [], createdBy: '', dateAfter: '' });
+    const clearFilters = () => setFilters({ severities: [], statuses: [], categories: [], tags: [], createdBy: '', dateAfter: '' });
 
     const [sortField, setSortField] = useState<string>(() => {
         if (typeof window !== 'undefined') return localStorage.getItem('redwire_sort_engagement_findings_field') || 'created_at';
@@ -448,10 +458,11 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                 f.severity.toLowerCase().includes(term);
             const matchesSeverity = filters.severities.length === 0 || filters.severities.includes(f.severity);
             const matchesStatus = filters.statuses.length === 0 || filters.statuses.includes(f.status);
+            const matchesCategory = filters.categories.length === 0 || (f.category != null && filters.categories.includes(f.category));
             const matchesTags = filters.tags.length === 0 || (f.tags || []).some((t: any) => filters.tags.includes(t.id));
             const matchesCreatedBy = !filters.createdBy || (f.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
             const matchesDate = !filters.dateAfter || new Date(f.created_at) >= new Date(filters.dateAfter);
-            return matchesText && matchesSeverity && matchesStatus && matchesTags && matchesCreatedBy && matchesDate;
+            return matchesText && matchesSeverity && matchesStatus && matchesCategory && matchesTags && matchesCreatedBy && matchesDate;
         })
         .sort(relevanceComparator(
             search,
@@ -574,6 +585,18 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                                     </label>
                                 ))}
                             </div>
+                        </div>
+                        {/* Category */}
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Category</span>
+                            <MultiSelectFilter
+                                label="All categories" countNoun="category" countNounPlural="categories"
+                                options={categoryOptions}
+                                selected={filters.categories}
+                                onChange={(vals) => setFilters(p => ({ ...p, categories: vals }))}
+                                searchPlaceholder="Search categories…"
+                                triggerClassName="h-7"
+                            />
                         </div>
                         {/* Tags */}
                         <div className="flex flex-col gap-1.5">

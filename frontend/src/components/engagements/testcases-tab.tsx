@@ -444,6 +444,15 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
         dateAfter: string;
     }>({ categories: [], tags: [], status: '', result: '', createdBy: '', dateAfter: '' });
     const { data: allTags = [] } = useTags('testcase');
+    const { data: testcaseTypes = [] } = useConfigurableTypes('testcase');
+    // Category options come from the categories actually present in the data
+    // (they're free-form and include values not in the configurable list),
+    // colour-matched to configurable types by name where available.
+    const categoryColor: Record<string, string> = {};
+    testcaseTypes.forEach((t: any) => { if (t.color) categoryColor[t.name.toLowerCase()] = t.color; });
+    const categoryOptions = [...new Set(testcases.map((t: any) => t.category).filter(Boolean) as string[])]
+        .sort((a, b) => a.localeCompare(b))
+        .map((c) => ({ value: c, label: c, color: categoryColor[c.toLowerCase()] || null }));
 
     const hasActiveFilters = filters.categories.length > 0 || filters.tags.length > 0 || !!filters.status || !!filters.result || !!filters.createdBy || !!filters.dateAfter;
 
@@ -708,14 +717,14 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                         {/* Category */}
                         <div className="flex flex-col gap-1.5">
                             <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Category</span>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                                {Object.keys(testCaseCategoryStyles).map(cat => (
-                                    <label key={cat} className="flex items-center gap-1.5 cursor-pointer">
-                                        <Checkbox checked={filters.categories.includes(cat)} onCheckedChange={() => toggleCategory(cat)} className="h-3.5 w-3.5" />
-                                        <span className="text-xs text-slate-300">{cat.replace(/_/g, ' ')}</span>
-                                    </label>
-                                ))}
-                            </div>
+                            <MultiSelectFilter
+                                label="All categories" countNoun="category" countNounPlural="categories"
+                                options={categoryOptions}
+                                selected={filters.categories}
+                                onChange={(vals) => setFilters(p => ({ ...p, categories: vals }))}
+                                searchPlaceholder="Search categories…"
+                                triggerClassName="h-7"
+                            />
                         </div>
                         {/* Tags */}
                         <div className="flex flex-col gap-1.5">

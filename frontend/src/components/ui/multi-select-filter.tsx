@@ -34,6 +34,8 @@ interface MultiSelectFilterProps {
     icon?: React.ComponentType<{ className?: string }>;
     /** Singular noun for the "N nouns" trigger summary (e.g. "user"). */
     countNoun?: string;
+    /** Explicit plural for the summary when the noun isn't just noun+"s" (e.g. "categories"). */
+    countNounPlural?: string;
     searchable?: boolean;
     searchPlaceholder?: string;
     triggerClassName?: string;
@@ -52,6 +54,7 @@ export function MultiSelectFilter({
     onChange,
     icon: TriggerIcon,
     countNoun = 'selected',
+    countNounPlural,
     searchable = true,
     searchPlaceholder = 'Search…',
     triggerClassName,
@@ -66,7 +69,7 @@ export function MultiSelectFilter({
     };
 
     const summary = selected.length
-        ? `${selected.length} ${countNoun}${selected.length > 1 ? 's' : ''}`
+        ? `${selected.length} ${selected.length > 1 ? (countNounPlural ?? `${countNoun}s`) : countNoun}`
         : label;
 
     return (
