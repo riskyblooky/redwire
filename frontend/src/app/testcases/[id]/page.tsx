@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { TagList } from '@/components/ui/tag-list';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Edit, Trash2, CheckSquare, Loader2, Play, CheckCircle2, XCircle, MinusCircle, Zap, Flag, Layout, Circle, ArrowUpCircle, Globe, Radar, Calendar, Bug, X, Lock, Key, Shield, Sparkles, StickyNote, FileText, Terminal, User, Clock, ClipboardCheck, Target, Server, Layers, Plus, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, CheckSquare, Loader2, Play, CheckCircle2, XCircle, MinusCircle, Save, Zap, Flag, Layout, Circle, ArrowUpCircle, Globe, Radar, Calendar, Bug, X, Lock, Key, Shield, Sparkles, StickyNote, FileText, Terminal, User, Clock, ClipboardCheck, Target, Server, Layers, Plus, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import { EvidenceUpload } from '@/components/findings/evidence-upload';
 import { EvidenceCard } from '@/components/findings/evidence-card';
 import { useTestCase, useUpdateTestCase, useDeleteTestCase, useUnlinkFinding, useUnlinkAsset } from '@/lib/hooks/use-testcases';
@@ -191,6 +191,20 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
         } catch (error) {
             console.error('Failed to update test case result:', error);
             toast.error('Failed to update test case result');
+        }
+    };
+
+    // Save just the actual result — leaves is_executed / is_successful untouched,
+    // for logging incremental work before deciding an outcome.
+    const handleSaveResult = async () => {
+        try {
+            await updateTestCase.mutateAsync({ id: id, actual_result: actualResult });
+            setIsExecuting(false);
+            toast.success('Result saved');
+            refetch();
+        } catch (error) {
+            console.error('Failed to save test case result:', error);
+            toast.error('Failed to save result');
         }
     };
 
@@ -438,7 +452,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                 </div>
                             </CardHeader>
                             <CardContent className="space-y-6">
-                                {!testcase.is_executed && !isExecuting ? (
+                                {!testcase.is_executed && !testcase.actual_result && !isExecuting ? (
                                     <div className="text-center py-8">
                                         <p className="text-slate-400 mb-6 text-lg">This test case has not been executed yet.</p>
                                         {canEdit && (
@@ -491,7 +505,16 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                                 <MinusCircle className="h-4 w-4 mr-2" /> No Verdict
                                                             </Button>
                                                         </TooltipTrigger>
-                                                        <TooltipContent className="max-w-[240px] text-center">Record the result without asserting pass or fail.</TooltipContent>
+                                                        <TooltipContent className="max-w-[240px] text-center">Mark the test executed without asserting pass or fail.</TooltipContent>
+                                                    </Tooltip>
+                                                    <div className="w-px self-stretch bg-slate-800 mx-1" />
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <Button onClick={handleSaveResult} variant="outline" size="lg" className="h-12 px-5 bg-blue-500/5 hover:bg-blue-500/15 text-blue-300/90 border border-blue-500/25 hover:border-blue-500/40 transition-all">
+                                                                <Save className="h-4 w-4 mr-2" /> Save
+                                                            </Button>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="max-w-[240px] text-center">Save the result without changing the execution status — for logging progress.</TooltipContent>
                                                     </Tooltip>
                                                     <Button variant="ghost" size="lg" onClick={() => setIsExecuting(false)} className="h-12 text-slate-400 hover:text-white">
                                                         Cancel
