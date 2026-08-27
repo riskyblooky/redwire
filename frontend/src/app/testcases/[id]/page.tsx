@@ -62,6 +62,7 @@ import {
     useLinkTestCaseToCleanup, useUnlinkTestCaseFromCleanup,
 } from '@/lib/hooks/use-entity-links';
 import { Link as LinkIcon } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTags } from '@/lib/hooks/use-findings';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { InlineTextField } from '@/components/ui/inline/inline-text-field';
@@ -408,7 +409,12 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                         </Card>
 
                         {/* Execution Result Card - Below main card, still in 3-col area */}
-                        <Card className={cn("border-slate-800 backdrop-blur-xs", testcase.is_executed ? (testcase.is_successful === true ? 'bg-green-500/5' : testcase.is_successful === false ? 'bg-red-500/5' : 'bg-slate-800/40') : 'bg-slate-900/50')}>
+                        <Card className={cn("backdrop-blur-xs overflow-hidden border border-slate-800 border-l-2 transition-colors",
+                            testcase.is_executed
+                                ? (testcase.is_successful === true ? 'bg-green-500/[0.04] border-l-green-500/60'
+                                    : testcase.is_successful === false ? 'bg-red-500/[0.04] border-l-red-500/60'
+                                        : 'bg-slate-500/[0.04] border-l-slate-500/60')
+                                : 'bg-slate-900/50 border-l-blue-500/50')}>
                             <CardHeader className="pb-3 border-b border-slate-800/60 mb-4">
                                 <div className="flex items-center justify-between">
                                     <CardTitle className="text-white text-lg flex items-center gap-2">
@@ -416,9 +422,18 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         Execution Result
                                     </CardTitle>
                                     {testcase.is_executed && (
-                                        <Badge className={cn("text-sm px-3 py-1", testcase.is_successful === true ? 'bg-green-500/10 text-green-400 border-green-500/20' : testcase.is_successful === false ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20')}>
-                                            {testcase.is_successful === true ? 'SUCCESS (PASS)' : testcase.is_successful === false ? 'FAILED (FAIL)' : 'EXECUTED (NO VERDICT)'}
-                                        </Badge>
+                                        <TooltipProvider delayDuration={200}>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Badge className={cn("text-sm px-3 py-1 cursor-default", testcase.is_successful === true ? 'bg-green-500/10 text-green-400 border-green-500/20' : testcase.is_successful === false ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20')}>
+                                                        {testcase.is_successful === true ? 'Passed' : testcase.is_successful === false ? 'Failed' : 'No verdict'}
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                                <TooltipContent className="max-w-[240px] text-center">
+                                                    {testcase.is_successful === true ? 'The actual result matched the expected result.' : testcase.is_successful === false ? 'The actual result did not match the expected result.' : 'Executed, but no pass/fail verdict was recorded.'}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
                                     )}
                                 </div>
                             </CardHeader>
@@ -427,7 +442,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                     <div className="text-center py-8">
                                         <p className="text-slate-400 mb-6 text-lg">This test case has not been executed yet.</p>
                                         {canEdit && (
-                                            <Button onClick={() => setIsExecuting(true)} size="lg" className="bg-blue-600 hover:bg-blue-700 text-base px-8">
+                                            <Button onClick={() => setIsExecuting(true)} size="lg" className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:border-blue-500/50 text-base px-8 shadow-[0_0_25px_rgba(59,130,246,0.06)] transition-all">
                                                 <Play className="h-5 w-5 mr-2 fill-current" />
                                                 Record Execution Result
                                             </Button>
@@ -452,20 +467,37 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         </div>
 
                                         {isExecuting ? (
-                                            <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-800">
-                                                <Button onClick={() => handleExecute(true)} size="lg" className="bg-green-600 hover:bg-green-700 flex-1 min-w-[140px] h-14 text-lg">
-                                                    <CheckCircle2 className="h-6 w-6 mr-3" /> Pass Test
-                                                </Button>
-                                                <Button onClick={() => handleExecute(false)} size="lg" className="bg-red-600 hover:bg-red-700 flex-1 min-w-[140px] h-14 text-lg">
-                                                    <XCircle className="h-6 w-6 mr-3" /> Fail Test
-                                                </Button>
-                                                <Button onClick={() => handleExecute(null)} variant="outline" size="lg" className="border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white h-14 px-5" title="Save the result without marking pass or fail">
-                                                    <MinusCircle className="h-5 w-5 mr-2" /> No Verdict
-                                                </Button>
-                                                <Button variant="ghost" size="lg" onClick={() => setIsExecuting(false)} className="text-slate-400 h-14">
-                                                    Cancel
-                                                </Button>
-                                            </div>
+                                            <TooltipProvider delayDuration={200}>
+                                                <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-800">
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <Button onClick={() => handleExecute(true)} size="lg" className="flex-1 min-w-[140px] h-12 bg-green-500/10 hover:bg-green-500/20 text-green-300 border border-green-500/30 hover:border-green-500/50 font-semibold shadow-[0_0_20px_rgba(34,197,94,0.05)] transition-all">
+                                                                <CheckCircle2 className="h-5 w-5 mr-2" /> Pass Test
+                                                            </Button>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="max-w-[240px] text-center">The actual result matched the expected result — the test behaved as intended.</TooltipContent>
+                                                    </Tooltip>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <Button onClick={() => handleExecute(false)} size="lg" className="flex-1 min-w-[140px] h-12 bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 hover:border-red-500/50 font-semibold shadow-[0_0_20px_rgba(239,68,68,0.05)] transition-all">
+                                                                <XCircle className="h-5 w-5 mr-2" /> Fail Test
+                                                            </Button>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="max-w-[240px] text-center">The actual result did not match the expected result — the test did not behave as intended.</TooltipContent>
+                                                    </Tooltip>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <Button onClick={() => handleExecute(null)} variant="outline" size="lg" className="h-12 px-5 bg-slate-800/40 hover:bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600 hover:text-white transition-all">
+                                                                <MinusCircle className="h-4 w-4 mr-2" /> No Verdict
+                                                            </Button>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="max-w-[240px] text-center">Record the result without asserting pass or fail.</TooltipContent>
+                                                    </Tooltip>
+                                                    <Button variant="ghost" size="lg" onClick={() => setIsExecuting(false)} className="h-12 text-slate-400 hover:text-white">
+                                                        Cancel
+                                                    </Button>
+                                                </div>
+                                            </TooltipProvider>
                                         ) : (
                                             <div className="flex justify-end pt-2">
                                                 {canEdit && (
