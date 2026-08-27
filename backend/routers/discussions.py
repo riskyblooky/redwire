@@ -1049,6 +1049,7 @@ async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
 async def get_activity_feed(
     engagement_id: str,
     resource_types: Optional[str] = None,      # CSV of resource types
+    resource_ids: Optional[str] = None,        # CSV of specific entity ids to scope to
     action_category: Optional[str] = None,     # created | updated | deleted | commented
     user_id: Optional[str] = None,
     search: Optional[str] = None,
@@ -1073,6 +1074,12 @@ async def get_activity_feed(
             base_query = base_query.where(ActivityLog.resource_type.in_(types))
     elif not include_all:
         base_query = base_query.where(ActivityLog.resource_type.in_(FEED_CONTENT_TYPES))
+
+    # Scope to specific entities (by resource_id) — powers the feed's item filter.
+    if resource_ids:
+        ids = [i.strip() for i in resource_ids.split(",") if i.strip()]
+        if ids:
+            base_query = base_query.where(ActivityLog.resource_id.in_(ids))
 
     if action_category:
         prefixes = _FEED_ACTION_PREFIXES.get(action_category)

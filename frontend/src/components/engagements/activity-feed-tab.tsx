@@ -26,6 +26,7 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { computeLineDiff } from '@/components/ui/version-history-panel';
 import { resourceTypeIcons, resourceTypeColors, openThreadFromLog } from './logs-tab';
+import { FeedItemPicker } from './feed-item-picker';
 
 interface FeedChange { field: string; label: string; old: string | null; new: string | null }
 interface FeedItem {
@@ -200,6 +201,7 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
     const debouncedSearch = useDebounce(search, 500);
     const [types, setTypes] = useState<string[]>([]);
     const [typesOpen, setTypesOpen] = useState(false);
+    const [itemIds, setItemIds] = useState<string[]>([]);
     const [actionCategory, setActionCategory] = useState('all');
     const [userFilter, setUserFilter] = useState('all');
     const [dateFrom, setDateFrom] = useState('');
@@ -211,7 +213,7 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
 
     useEffect(() => {
         setPage(1);
-    }, [debouncedSearch, types, actionCategory, userFilter, dateFrom, dateTo, includeAll, sortOrder]);
+    }, [debouncedSearch, types, itemIds, actionCategory, userFilter, dateFrom, dateTo, includeAll, sortOrder]);
 
     useCollaboration({
         resourceType: 'engagement',
@@ -229,13 +231,14 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
     });
 
     const { data, isLoading } = useQuery({
-        queryKey: ['engagement-feed', engagementId, debouncedSearch, types, actionCategory, userFilter, dateFrom, dateTo, includeAll, sortOrder, page],
+        queryKey: ['engagement-feed', engagementId, debouncedSearch, types, itemIds, actionCategory, userFilter, dateFrom, dateTo, includeAll, sortOrder, page],
         refetchOnMount: 'always',
         queryFn: async () => {
             const params = new URLSearchParams();
             params.append('engagement_id', engagementId);
             if (debouncedSearch) params.append('search', debouncedSearch);
             if (types.length) params.append('resource_types', types.join(','));
+            if (itemIds.length) params.append('resource_ids', itemIds.join(','));
             if (actionCategory !== 'all') params.append('action_category', actionCategory);
             if (userFilter !== 'all') params.append('user_id', userFilter);
             if (dateFrom) params.append('date_from', `${dateFrom}T00:00:00`);
@@ -256,10 +259,10 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
     const toggleType = (v: string) =>
         setTypes((prev) => (prev.includes(v) ? prev.filter((t) => t !== v) : [...prev, v]));
 
-    const hasFilters = !!debouncedSearch || types.length > 0 || actionCategory !== 'all' ||
+    const hasFilters = !!debouncedSearch || types.length > 0 || itemIds.length > 0 || actionCategory !== 'all' ||
         userFilter !== 'all' || !!dateFrom || !!dateTo || includeAll;
     const clearFilters = () => {
-        setSearch(''); setTypes([]); setActionCategory('all'); setUserFilter('all');
+        setSearch(''); setTypes([]); setItemIds([]); setActionCategory('all'); setUserFilter('all');
         setDateFrom(''); setDateTo(''); setIncludeAll(false);
     };
 
@@ -307,6 +310,9 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
                             ))}
                         </PopoverContent>
                     </Popover>
+
+                    {/* Specific-item multi-select */}
+                    <FeedItemPicker engagementId={engagementId} selected={itemIds} onChange={setItemIds} />
 
                     <Select value={actionCategory} onValueChange={setActionCategory}>
                         <SelectTrigger className="h-8 w-[120px] border-slate-700 bg-slate-900 text-xs">
