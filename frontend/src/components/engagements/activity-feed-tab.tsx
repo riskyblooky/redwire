@@ -6,7 +6,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
     Loader2, Search, Filter, ArrowUp, ArrowDown, User as UserIcon,
     History, X, ArrowRight, ChevronLeft, ChevronRight,
-    ChevronsLeft, ChevronsRight, Calendar as CalendarIcon,
+    ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn, parseUTCDate } from '@/lib/utils';
@@ -24,6 +24,7 @@ import { computeLineDiff } from '@/components/ui/version-history-panel';
 import { resourceTypeIcons, resourceTypeColors, openThreadFromLog } from './logs-tab';
 import { FeedItemPicker } from './feed-item-picker';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
+import { DateRangeFilter } from '@/components/ui/date-range-filter';
 
 interface FeedChange { field: string; label: string; old: string | null; new: string | null }
 interface FeedItem {
@@ -318,14 +319,11 @@ export function ActivityFeedTab({ engagementId }: { engagementId: string }) {
                         searchPlaceholder="Search users…"
                     />
 
-                    <div className="flex items-center gap-1 text-xs text-slate-400">
-                        <CalendarIcon className="h-3 w-3 text-slate-500" />
-                        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                            className="h-8 w-[140px] border-slate-700 bg-slate-900 text-xs" title="From date" />
-                        <span className="text-slate-600">→</span>
-                        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                            className="h-8 w-[140px] border-slate-700 bg-slate-900 text-xs" title="To date" />
-                    </div>
+                    {/* Date range — presets + custom, collapsed into one button */}
+                    <DateRangeFilter
+                        from={dateFrom} to={dateTo}
+                        onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+                    />
 
                     <Button
                         variant="outline"
