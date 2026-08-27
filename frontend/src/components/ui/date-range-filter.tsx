@@ -86,7 +86,7 @@ export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
                             type="button"
                             onClick={() => applyPreset(p.days, p.label)}
                             className={cn(
-                                'rounded border px-2 py-1.5 text-left text-xs transition-colors',
+                                'rounded border px-2 py-1.5 text-center text-xs transition-colors',
                                 preset === p.label ? 'border-blue-500/40 bg-blue-500/10 text-blue-300' : 'border-slate-700 text-slate-300 hover:bg-slate-800'
                             )}
                         >
@@ -96,19 +96,22 @@ export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
                 </div>
                 <div className="space-y-1.5 border-t border-slate-800 pt-2">
                     <p className="text-[10px] uppercase tracking-wider text-slate-500">Custom range</p>
-                    <div className="flex items-center gap-1">
+                    <label className="flex items-center gap-2">
+                        <span className="w-8 shrink-0 text-[10px] uppercase text-slate-500">From</span>
                         <Input
-                            type="date" value={from} title="From date"
+                            type="date" value={from}
                             onChange={(e) => { setPreset(null); onChange(e.target.value, to); }}
-                            className="h-7 border-slate-700 bg-slate-950 text-xs"
+                            className="h-7 flex-1 border-slate-700 bg-slate-950 text-xs"
                         />
-                        <span className="text-xs text-slate-600">→</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                        <span className="w-8 shrink-0 text-[10px] uppercase text-slate-500">To</span>
                         <Input
-                            type="date" value={to} title="To date"
+                            type="date" value={to}
                             onChange={(e) => { setPreset(null); onChange(from, e.target.value); }}
-                            className="h-7 border-slate-700 bg-slate-950 text-xs"
+                            className="h-7 flex-1 border-slate-700 bg-slate-950 text-xs"
                         />
-                    </div>
+                    </label>
                 </div>
                 {active && (
                     <button type="button" onClick={clear} className="text-[11px] text-slate-400 hover:text-white">
