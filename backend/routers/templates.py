@@ -368,6 +368,9 @@ async def mark_template_used(
     """Increment a finding template's usage counter — called when the template
     is applied via the picker. Bound-param SQL so the atomic increment doesn't
     bump updated_at (usage isn't an edit)."""
+    # Same visibility gate as every other template read — don't let the counter
+    # bump act as an existence oracle for (or mutate) a draft the caller can't see.
+    await _get_visible_template(template_id, db, current_user)
     row = (await db.execute(
         text("UPDATE finding_templates SET usage_count = usage_count + 1 "
              "WHERE id = :id RETURNING usage_count").bindparams(id=template_id)

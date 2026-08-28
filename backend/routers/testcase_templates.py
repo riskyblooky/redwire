@@ -354,6 +354,18 @@ async def mark_template_used(
     """Increment a test-case template's usage counter — called when the template
     is applied via the picker. Bound-param SQL so the atomic increment doesn't
     bump updated_at (usage isn't an edit)."""
+    # Same visibility gate as the list/read endpoints — a template the caller
+    # can't see 404s before the counter bump, so /use can't act as an existence
+    # oracle for (or mutate) someone else's private draft.
+    tmpl = (await db.execute(
+        select(TestCaseTemplate).where(TestCaseTemplate.id == template_id)
+    )).scalar_one_or_none()
+    if tmpl is None or not (
+        tmpl.status == TemplateStatus.PUBLISHED
+        or tmpl.created_by == current_user.id
+        or (tmpl.status == TemplateStatus.SUBMITTED and _can_manage(current_user))
+    ):
+        raise HTTPException(status_code=404, detail="Template not found")
     row = (await db.execute(
         text("UPDATE testcase_templates SET usage_count = usage_count + 1 "
              "WHERE id = :id RETURNING usage_count").bindparams(id=template_id)
