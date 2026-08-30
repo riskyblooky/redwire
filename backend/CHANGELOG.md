@@ -4,6 +4,36 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.5.5] — Unreleased
+
+### Added
+- **AI writing assistant in the editor** — an "Ask AI" panel on finding,
+  test-case, asset, engagement, and note fields helps draft or edit the field
+  you're on. It's grounded in the record (title, severity, CVSS, status), can
+  look up how the same field reads in your other findings to match their style,
+  and stays scoped to that one field rather than producing a whole write-up.
+  Highlight text first and it rewrites just the selection (with a one-click
+  "Replace selection"); otherwise it inserts at the cursor.
+- **Readability review** — a **Review** button checks the current field for
+  AI-slop and readability and returns concrete, field-scoped fixes (it never
+  rewrites the field for you), using a bundled writing-review skill.
+- **AI assistant on notes** — the collaborative notes editor gains the same
+  Ask AI + Review assistant (hidden for read-only viewers).
+
+### Improved
+- **Resizable editors** — drag the bottom corner to resize the whole editor,
+  and an inner handle to rebalance the editor against the AI panel without
+  changing the overall size. AI replies now render as formatted markdown, and
+  the assistant shows live "thinking" and data-lookup indicators.
+- Editor toolbar icons now all have hover tooltips.
+
+### Security
+- **Template usage-counter endpoints now enforce the template visibility gate** —
+  `POST /{template_id}/use` (finding + test-case templates) previously bumped the
+  counter keyed only on the id with no visibility check, letting any authenticated
+  user increment (and existence-probe via 200-vs-404) another user's non-published
+  draft. It now 404s a template the caller can't see, like every other read.
+
 ## [1.5.4] — 2026-08-26
 
 ### Added
