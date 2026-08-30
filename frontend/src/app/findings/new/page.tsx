@@ -16,6 +16,7 @@
  */
 'use client';
 import { useState, useEffect } from 'react';
+import { buildFindingContext } from '@/lib/ai-entity-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -379,7 +380,7 @@ export default function NewFindingPage() {
                                                     onChange={(val) => handleChange('description', val)}
                                                     placeholder="Detailed description of the vulnerability..."
                                                     minHeight="400px"
-                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Description' }} engagementId={formData.engagement_id}
+                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Description', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id}
                                                 />
                                             </div>
 
@@ -390,7 +391,7 @@ export default function NewFindingPage() {
                                                     onChange={(val) => handleChange('impact', val)}
                                                     placeholder="Business or technical impact..."
                                                     minHeight="300px"
-                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Impact' }} engagementId={formData.engagement_id}
+                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Impact', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id}
                                                 />
                                             </div>
                                         </CardContent>
@@ -407,7 +408,7 @@ export default function NewFindingPage() {
                                                     onChange={(val) => handleChange('steps_to_reproduce', val)}
                                                     placeholder="1. Navigate to...&#10;2. Input payload...&#10;3. Observe response..."
                                                     minHeight="300px"
-                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce' }} engagementId={formData.engagement_id}
+                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id}
                                                 />
                                             </div>
 
@@ -418,7 +419,7 @@ export default function NewFindingPage() {
                                                     onChange={(val) => handleChange('technical_details', val)}
                                                     placeholder="Detailed proof-of-concept, payload examples, or code snippets..."
                                                     minHeight="300px"
-                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details' }} engagementId={formData.engagement_id}
+                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id}
                                                 />
                                             </div>
                                         </CardContent>
@@ -435,7 +436,7 @@ export default function NewFindingPage() {
                                                     onChange={(val) => handleChange('mitigations', val)}
                                                     placeholder="Recommended fix or patching steps..."
                                                     minHeight="250px"
-                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations' }} engagementId={formData.engagement_id}
+                                                    fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id}
                                                 />
                                             </div>
                                             <div className="space-y-4">
@@ -445,7 +446,7 @@ export default function NewFindingPage() {
                                                     onChange={(val) => handleChange('references', val)}
                                                     placeholder="CVE links, blog posts, advisories..."
                                                     minHeight="200px"
-                                                    fieldContext={{ resourceType: 'finding', fieldName: 'References' }} engagementId={formData.engagement_id}
+                                                    fieldContext={{ resourceType: 'finding', fieldName: 'References', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id}
                                                 />
                                             </div>
                                         </CardContent>

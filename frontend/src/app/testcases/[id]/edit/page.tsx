@@ -13,6 +13,7 @@
 'use client';
 
 import { useParams } from '@/lib/hooks/use-params';
+import { buildTestcaseContext } from '@/lib/ai-entity-context';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -336,7 +337,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Description *</Label>
-                                                <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -348,12 +349,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                         <CardContent className="space-y-6 pt-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Steps</Label>
-                                                <MarkdownEditor value={formData.steps} onChange={(val) => handleChange('steps', val)} minHeight="300px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.steps} onChange={(val) => handleChange('steps', val)} minHeight="300px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Expected Result</Label>
-                                                <MarkdownEditor value={formData.expected_result} onChange={(val) => handleChange('expected_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.expected_result} onChange={(val) => handleChange('expected_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-3 border-t border-slate-800 pt-5">
@@ -385,12 +386,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Actual Result</Label>
-                                                <MarkdownEditor value={formData.actual_result} onChange={(val) => handleChange('actual_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Actual Result' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.actual_result} onChange={(val) => handleChange('actual_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Actual Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Notes</Label>
-                                                <MarkdownEditor value={formData.notes} onChange={(val) => handleChange('notes', val)} minHeight="120px" fieldContext={{ resourceType: 'testcase', fieldName: 'Notes' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.notes} onChange={(val) => handleChange('notes', val)} minHeight="120px" fieldContext={{ resourceType: 'testcase', fieldName: 'Notes', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>

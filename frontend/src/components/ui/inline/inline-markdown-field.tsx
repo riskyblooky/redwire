@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { EditorFieldContext } from '@/lib/types';
 
 interface InlineMarkdownFieldProps {
     value: string;
@@ -13,7 +14,7 @@ interface InlineMarkdownFieldProps {
     canEdit?: boolean;
     /** Passed to the editor for image paste/drop upload + version context. */
     engagementId?: string;
-    fieldContext?: { resourceType: string; fieldName: string };
+    fieldContext?: EditorFieldContext;
     /** Classes for the wrapper around the read-only MarkdownPreview (e.g. prose). */
     previewWrapperClassName?: string;
     /** Shown (muted) in the read view when the value is empty and editing is allowed. */
@@ -85,11 +86,12 @@ export function InlineMarkdownField({
                         fieldContext={fieldContext}
                         placeholder={placeholder}
                         minHeight={minHeight}
+                        resizable
                         disabled={saving}
                     />
                 </div>
                 <div className="flex items-center justify-between mt-2">
-                    <span className="text-[10px] text-slate-500">⌘/Ctrl+Enter to save · Esc to cancel</span>
+                    <span className="text-[10px] text-slate-500">Drag the bottom edge to resize · ⌘/Ctrl+Enter to save · Esc to cancel</span>
                     <div className="flex gap-2">
                         <Button variant="ghost" size="sm" className="h-7 text-slate-400 hover:text-white" onClick={cancel} disabled={saving}>Cancel</Button>
                         <Button size="sm" className="h-7 bg-primary hover:bg-primary/90 text-white" onClick={save} disabled={saving}>

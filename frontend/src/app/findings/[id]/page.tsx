@@ -22,6 +22,7 @@
 'use client';
 
 import { useParams } from '@/lib/hooks/use-params';
+import { buildFindingContext } from '@/lib/ai-entity-context';
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -490,7 +491,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ description: v })}
                                                 engagementId={finding.engagement_id}
-                                                fieldContext={{ resourceType: 'finding', fieldName: 'description' }}
+                                                fieldContext={{ resourceType: 'finding', fieldName: 'description', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="prose prose-invert max-w-none prose-slate"
                                                 emptyText="Double-click to add an executive summary…"
                                             />
@@ -519,7 +520,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ impact: v })}
                                                         engagementId={finding.engagement_id}
-                                                        fieldContext={{ resourceType: 'finding', fieldName: 'impact' }}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'impact', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
                                                         emptyText="Double-click to add potential impact…"
                                                     />
@@ -534,7 +535,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ steps_to_reproduce: v })}
                                                         engagementId={finding.engagement_id}
-                                                        fieldContext={{ resourceType: 'finding', fieldName: 'steps_to_reproduce' }}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'steps_to_reproduce', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
                                                         emptyText="Double-click to add reproduction steps…"
                                                     />
@@ -549,7 +550,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ technical_details: v })}
                                                         engagementId={finding.engagement_id}
-                                                        fieldContext={{ resourceType: 'finding', fieldName: 'technical_details' }}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'technical_details', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
                                                         emptyText="Double-click to add technical details…"
                                                     />
@@ -574,7 +575,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ mitigations: v })}
                                                 engagementId={finding.engagement_id}
-                                                fieldContext={{ resourceType: 'finding', fieldName: 'mitigations' }}
+                                                fieldContext={{ resourceType: 'finding', fieldName: 'mitigations', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden"
                                                 emptyText="Double-click to add remediation guidance…"
                                             />
@@ -595,7 +596,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ references: v })}
                                                         engagementId={finding.engagement_id}
-                                                        fieldContext={{ resourceType: 'finding', fieldName: 'references' }}
+                                                        fieldContext={{ resourceType: 'finding', fieldName: 'references', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden"
                                                         emptyText="Double-click to add external references…"
                                                     />

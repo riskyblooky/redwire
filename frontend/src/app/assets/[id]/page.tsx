@@ -16,6 +16,7 @@
 'use client';
 
 import { useParams } from '@/lib/hooks/use-params';
+import { buildAssetContext } from '@/lib/ai-entity-context';
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
@@ -338,7 +339,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                             canEdit={canEdit}
                                             onSave={(v) => saveField({ description: v })}
                                             engagementId={asset.engagement_id}
-                                            fieldContext={{ resourceType: 'asset', fieldName: 'description' }}
+                                            fieldContext={{ resourceType: 'asset', fieldName: 'description', entityContext: buildAssetContext(asset) }}
                                             emptyText="Double-click to add a description…"
                                         />
                                     </section>
@@ -358,7 +359,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                                     canEdit={canEdit}
                                                     onSave={(v) => saveField({ notes: v })}
                                                     engagementId={asset.engagement_id}
-                                                    fieldContext={{ resourceType: 'asset', fieldName: 'notes' }}
+                                                    fieldContext={{ resourceType: 'asset', fieldName: 'notes', entityContext: buildAssetContext(asset) }}
                                                     previewWrapperClassName="bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
                                                     emptyText="Double-click to add internal notes…"
                                                 />

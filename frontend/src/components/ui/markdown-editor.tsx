@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuthStore } from '@/stores/auth-store';
 import { processMentionsInMarkdown } from '@/lib/mention-utils';
+import { EditorFieldContext } from '@/lib/types';
 
 import "@uiw/react-markdown-preview/markdown.css";
 
@@ -23,12 +24,14 @@ interface MarkdownEditorProps {
     minHeight?: string;
     id?: string;
     className?: string;
-    fieldContext?: { resourceType: string; fieldName: string };
+    fieldContext?: EditorFieldContext;
     /** Required for paste/drop image upload. */
     engagementId?: string;
+    /** Fixed-height, user-resizable editor (corner + AI-split handles). */
+    resizable?: boolean;
 }
 
-export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable }: MarkdownEditorProps) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -50,6 +53,7 @@ export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeig
             className={className}
             fieldContext={fieldContext}
             engagementId={engagementId}
+            resizable={resizable}
         />
     );
 }

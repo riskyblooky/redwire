@@ -15,6 +15,7 @@
 'use client';
 
 import { useParams } from '@/lib/hooks/use-params';
+import { buildFindingContext } from '@/lib/ai-entity-context';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -494,11 +495,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                             />
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Description *</Label>
-                                                <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="400px" fieldContext={{ resourceType: 'finding', fieldName: 'Description' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="400px" fieldContext={{ resourceType: 'finding', fieldName: 'Description', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Impact</Label>
-                                                <MarkdownEditor value={formData.impact} onChange={(val) => handleChange('impact', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Impact' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.impact} onChange={(val) => handleChange('impact', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Impact', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -509,11 +510,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                         <CardContent className="pt-6 space-y-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Steps to Reproduce</Label>
-                                                <MarkdownEditor value={formData.steps_to_reproduce} onChange={(val) => handleChange('steps_to_reproduce', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.steps_to_reproduce} onChange={(val) => handleChange('steps_to_reproduce', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Technical Details</Label>
-                                                <MarkdownEditor value={formData.technical_details} onChange={(val) => handleChange('technical_details', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.technical_details} onChange={(val) => handleChange('technical_details', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -524,11 +525,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                         <CardContent className="pt-6 space-y-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Mitigations</Label>
-                                                <MarkdownEditor value={formData.mitigations} onChange={(val) => handleChange('mitigations', val)} minHeight="250px" fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.mitigations} onChange={(val) => handleChange('mitigations', val)} minHeight="250px" fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">References</Label>
-                                                <MarkdownEditor value={formData.references} onChange={(val) => handleChange('references', val)} minHeight="200px" fieldContext={{ resourceType: 'finding', fieldName: 'References' }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor value={formData.references} onChange={(val) => handleChange('references', val)} minHeight="200px" fieldContext={{ resourceType: 'finding', fieldName: 'References', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>

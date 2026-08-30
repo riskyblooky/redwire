@@ -11,6 +11,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { buildEngagementContext } from '@/lib/ai-entity-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
 import DashboardLayout from '@/components/layout/dashboard-layout';
@@ -447,7 +448,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                             onChange={val => handleChange('description', val)}
                                             placeholder="Brief description of the engagement..."
                                             minHeight="130px"
-                                            fieldContext={{ resourceType: 'engagement', fieldName: 'Description' }}
+                                            fieldContext={{ resourceType: 'engagement', fieldName: 'Description', entityContext: buildEngagementContext(formData) }}
                                         />
                                     </div>
 
@@ -458,7 +459,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                             onChange={val => handleChange('scope', val)}
                                             placeholder="Define what is in scope (IP ranges, domains, apps, exclusions)..."
                                             minHeight="220px"
-                                            fieldContext={{ resourceType: 'engagement', fieldName: 'Scope' }}
+                                            fieldContext={{ resourceType: 'engagement', fieldName: 'Scope', entityContext: buildEngagementContext(formData) }}
                                         />
                                     </div>
 
@@ -469,7 +470,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                             onChange={val => handleChange('objectives', val)}
                                             placeholder="What are the goals and success criteria for this engagement?"
                                             minHeight="220px"
-                                            fieldContext={{ resourceType: 'engagement', fieldName: 'Objectives' }}
+                                            fieldContext={{ resourceType: 'engagement', fieldName: 'Objectives', entityContext: buildEngagementContext(formData) }}
                                         />
                                     </div>
 

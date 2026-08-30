@@ -1,3 +1,17 @@
+/**
+ * Context passed to the in-editor AI assistant (the "Ask AI" panel in the
+ * markdown editor). `resourceType`/`fieldName` label what is being edited;
+ * `entityContext` is an optional bag of read-only facts about the record
+ * (title, severity, CVSS, status, …) that the backend renders into the AI
+ * system prompt so suggestions are grounded in the actual record. Values are
+ * plain scalars; empties are dropped before sending.
+ */
+export interface EditorFieldContext {
+    resourceType: string;
+    fieldName: string;
+    entityContext?: Record<string, string | number | null | undefined>;
+}
+
 // User types
 export enum UserRole {
     ADMIN = 'admin',

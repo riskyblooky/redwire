@@ -15,6 +15,7 @@
 'use client';
 
 import { useState } from 'react';
+import { buildTestcaseContext } from '@/lib/ai-entity-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -241,7 +242,7 @@ export default function NewTestCasePage() {
                                         onChange={(val) => handleChange('description', val)}
                                         placeholder="Goal of this test case..."
                                         minHeight="250px"
-                                        fieldContext={{ resourceType: 'testcase', fieldName: 'Description' }} engagementId={formData.engagement_id}
+                                        fieldContext={{ resourceType: 'testcase', fieldName: 'Description', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id}
                                     />
                                 </div>
 
@@ -252,7 +253,7 @@ export default function NewTestCasePage() {
                                         onChange={(val) => handleChange('steps', val)}
                                         placeholder="1. Navigate to /login\n2. Enter ' OR 1=1 -- in the username field..."
                                         minHeight="350px"
-                                        fieldContext={{ resourceType: 'testcase', fieldName: 'Execution Steps' }} engagementId={formData.engagement_id}
+                                        fieldContext={{ resourceType: 'testcase', fieldName: 'Execution Steps', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id}
                                     />
                                 </div>
 
@@ -263,7 +264,7 @@ export default function NewTestCasePage() {
                                         onChange={(val) => handleChange('expected_result', val)}
                                         placeholder="The application should reject the input..."
                                         minHeight="200px"
-                                        fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result' }} engagementId={formData.engagement_id}
+                                        fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id}
                                     />
                                 </div>
 

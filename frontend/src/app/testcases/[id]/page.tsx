@@ -18,6 +18,7 @@
 'use client';
 
 import { useParams } from '@/lib/hooks/use-params';
+import { buildTestcaseContext } from '@/lib/ai-entity-context';
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -367,7 +368,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ description: v })}
                                                 engagementId={testcase.engagement_id}
-                                                fieldContext={{ resourceType: 'testcase', fieldName: 'description' }}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'description', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add a description…"
                                             />
@@ -389,7 +390,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ steps: v })}
                                                 engagementId={testcase.engagement_id}
-                                                fieldContext={{ resourceType: 'testcase', fieldName: 'steps' }}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'steps', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
                                                 emptyText="Double-click to add execution steps…"
                                             />
@@ -411,7 +412,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ expected_result: v })}
                                                 engagementId={testcase.engagement_id}
-                                                fieldContext={{ resourceType: 'testcase', fieldName: 'expected_result' }}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'expected_result', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden"
                                                 emptyText="Double-click to add the expected result…"
                                             />
@@ -559,7 +560,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             canEdit={canEdit}
                                             onSave={(v) => saveField({ notes: v })}
                                             engagementId={testcase.engagement_id}
-                                            fieldContext={{ resourceType: 'testcase', fieldName: 'notes' }}
+                                            fieldContext={{ resourceType: 'testcase', fieldName: 'notes', entityContext: buildTestcaseContext(testcase) }}
                                             previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
                                             emptyText="Double-click to add notes…"
                                         />

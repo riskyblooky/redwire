@@ -39,7 +39,7 @@ import {
     Sparkles, Send, X, ClipboardPaste, Loader2, Database,
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    Table as TableIcon, Trash2, Plus, Minus, Workflow,
+    Table as TableIcon, Trash2, Plus, Minus, Workflow, TextSelect, ListChecks, ChevronsUpDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -60,6 +60,9 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
+import { EditorFieldContext } from '@/lib/types';
+import { ChatMarkdownStyles } from './chat-markdown';
+import { AiAssistantPanel } from './ai-assistant-panel';
 
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common);
@@ -146,11 +149,16 @@ interface TiptapEditorProps {
     minHeight?: string;
     id?: string;
     className?: string;
-    fieldContext?: { resourceType: string; fieldName: string };
+    fieldContext?: EditorFieldContext;
     /** When provided, paste/drop of image files uploads them via
      *  POST /markdown-images and inserts the resulting URL.
      *  Without it the toolbar image-by-URL dialog still works. */
     engagementId?: string;
+    /** Fixed-height, user-resizable mode: a corner handle drags the whole
+     *  editor taller/shorter, and (when the AI panel is open) an inner handle
+     *  rebalances the split between the text area and the AI panel without
+     *  changing the total height. Used by the inline editor. */
+    resizable?: boolean;
 }
 
 const MenuBar = ({ editor }: { editor: any }) => {
@@ -209,6 +217,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Undo"
                     onClick={() => editor.chain().focus().undo().run()}
                     disabled={!editor.can().chain().focus().undo().run()}
                     className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800"
@@ -219,6 +228,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Redo"
                     onClick={() => editor.chain().focus().redo().run()}
                     disabled={!editor.can().chain().focus().redo().run()}
                     className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800"
@@ -235,6 +245,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                             type="button"
                             variant="ghost"
                             size="sm"
+                            title="Heading / paragraph"
                             className="h-8 px-2 gap-1 text-slate-400 hover:text-white hover:bg-slate-800"
                         >
                             <HeadingIcon className="h-4 w-4" />
@@ -261,6 +272,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Bold (Ctrl+B)"
                     onClick={() => editor.chain().focus().toggleBold().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('bold') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -270,6 +282,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Italic (Ctrl+I)"
                     onClick={() => editor.chain().focus().toggleItalic().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('italic') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -279,6 +292,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Underline (Ctrl+U)"
                     onClick={() => editor.chain().focus().toggleUnderline().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('underline') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -288,6 +302,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Strikethrough"
                     onClick={() => editor.chain().focus().toggleStrike().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('strike') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -297,6 +312,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Inline code"
                     onClick={() => editor.chain().focus().toggleCode().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('code') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -447,6 +463,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Insert / edit link"
                     onClick={toggleLink}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('link') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -459,6 +476,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Bullet list"
                     onClick={() => editor.chain().focus().toggleBulletList().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('bulletList') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -468,6 +486,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Numbered list"
                     onClick={() => editor.chain().focus().toggleOrderedList().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('orderedList') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -477,6 +496,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Task list"
                     onClick={() => editor.chain().focus().toggleTaskList().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('taskList') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -489,6 +509,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Blockquote"
                     onClick={() => editor.chain().focus().toggleBlockquote().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('blockquote') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -498,6 +519,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Code block"
                     onClick={() => editor.chain().focus().toggleCodeBlock().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('codeBlock') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
@@ -585,6 +607,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    title="Insert image"
                     onClick={openImageDialog}
                     className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800"
                 >
@@ -719,32 +742,25 @@ async function uploadAndInsertImage(view: any, file: File, pos: number, engageme
     }
 }
 
-export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId }: TiptapEditorProps) {
+/** Seed the resizable editor's starting height from the caller's minHeight
+ *  (e.g. "400px" → 400) so each editor opens at its intended size; falls back
+ *  to a sensible default for non-px values like "min(75vh, 720px)". */
+function parseInitialEditorHeight(minHeight?: string): number {
+    const m = minHeight ? /^(\d+)px$/.exec(minHeight.trim()) : null;
+    return m ? Math.max(220, parseInt(m[1], 10)) : 360;
+}
+
+export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true }: TiptapEditorProps) {
     const [, setForceUpdate] = useState(0);
     const currentUsername = useAuthStore((s) => s.user?.username);
 
-    // Check if AI is enabled
-    const { data: aiStatus } = useQuery<{ enabled: boolean; model: string; mcp_enabled: boolean; mcp_url: string }>({
-        queryKey: ['ai', 'status'],
-        queryFn: async () => {
-            const resp = await api.get('/ai/settings/status');
-            return resp.data;
-        },
-        staleTime: 60_000,
-        retry: false,
-    });
-    const aiEnabled = aiStatus?.enabled && !!fieldContext;
-    const mcpEnabled = aiStatus?.mcp_enabled;
-
-    // AI chat state
-    const [aiOpen, setAiOpen] = useState(false);
-    const [aiMessages, setAiMessages] = useState<{ role: string; content: string }[]>([]);
-    const [aiInput, setAiInput] = useState('');
-    const [aiStreaming, setAiStreaming] = useState(false);
-    const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
-    const [mcpLoading, setMcpLoading] = useState(false);
-    const aiScrollRef = useRef<HTMLDivElement>(null);
-    const aiInputRef = useRef<HTMLInputElement>(null);
+    // Whole-editor height (corner resize handle). The AI assistant docked below
+    // owns its own split. Seeded from minHeight so each editor opens at its
+    // intended size; only applied when `resizable`.
+    const [editorHeight, setEditorHeight] = useState(() => parseInitialEditorHeight(minHeight));
+    const editorHeightRef = useRef(parseInitialEditorHeight(minHeight));
+    useEffect(() => { editorHeightRef.current = editorHeight; }, [editorHeight]);
+    const dragRef = useRef<{ startY: number; startH: number } | null>(null);
     const editorRef = useRef<any>(null);
 
     const editor = useEditor({
@@ -856,7 +872,8 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             onChange(markdown);
         },
         onSelectionUpdate: () => {
-            // Force re-render of MenuBar when selection changes
+            // Force re-render of MenuBar when selection changes. (The AI panel
+            // tracks the selection itself via editor.on('selectionUpdate').)
             setForceUpdate(prev => prev + 1);
         },
         editorProps: {
@@ -924,261 +941,63 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     // Keep editorRef in sync
     editorRef.current = editor;
 
-    // AI handlers (placed after editor is declared)
-    const handleAiSend = useCallback(async () => {
-        if (!aiInput.trim() || aiStreaming) return;
-        const userMsg = { role: 'user', content: aiInput.trim() };
-        const newMessages = [...aiMessages, userMsg];
-        setAiMessages(newMessages);
-        setAiInput('');
-        setAiStreaming(true);
-
-        // Get current editor content
-        let editorContent = '';
-        const ed = editorRef.current;
-        if (ed) {
-            editorContent = (ed.storage as any).markdown?.getMarkdown?.() || '';
-        }
-
-        try {
-            const token = localStorage.getItem('access_token');
-            const resp = await fetch(`${api.defaults.baseURL}/ai/chat`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    messages: newMessages,
-                    editor_content: editorContent,
-                    field_context: fieldContext,
-                }),
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                setAiMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.detail || resp.statusText}` }]);
-                setAiStreaming(false);
-                return;
-            }
-
-            const reader = resp.body?.getReader();
-            const decoder = new TextDecoder();
-            let assistantContent = '';
-            setAiMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-            if (reader) {
-                while (true) {
-                    const { done, value: chunk } = await reader.read();
-                    if (done) break;
-                    const text = decoder.decode(chunk);
-                    const lines = text.split('\n');
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6).trim();
-                            if (data === '[DONE]') continue;
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.error) {
-                                    assistantContent += `\nError: ${parsed.error}`;
-                                } else {
-                                    const delta = parsed.choices?.[0]?.delta?.content || '';
-                                    assistantContent += delta;
-                                }
-                                setAiMessages(prev => {
-                                    const updated = [...prev];
-                                    updated[updated.length - 1] = { role: 'assistant', content: assistantContent };
-                                    return updated;
-                                });
-                            } catch { /* skip unparseable lines */ }
-                        }
-                    }
-                }
-            }
-        } catch (err: any) {
-            setAiMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]);
-        }
-        setAiStreaming(false);
-    }, [aiInput, aiMessages, aiStreaming, fieldContext]);
-
-    // Auto-scroll AI messages
-    useEffect(() => {
-        if (aiScrollRef.current) {
-            aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight;
-        }
-    }, [aiMessages]);
-
-    const handleInsertAiResponse = useCallback((content: string) => {
-        const ed = editorRef.current;
-        if (!ed) return;
-        ed.chain().focus().insertContent(content).run();
+    // Corner resize: drag the whole editor taller/shorter.
+    const onResizeMove = useCallback((e: MouseEvent) => {
+        const d = dragRef.current;
+        if (!d) return;
+        const dy = e.clientY - d.startY; // drag down = taller
+        setEditorHeight(Math.max(260, Math.min(1100, d.startH + dy)));
     }, []);
-
-    // MCP tool call handler
-    const callMcpTool = useCallback(async (toolName: string, args: Record<string, string> = {}) => {
-        setMcpLoading(true);
-        setMcpToolsOpen(false);
-        setAiMessages(prev => [...prev, { role: 'user', content: `🔌 Querying: ${toolName}${Object.keys(args).length ? ` (${JSON.stringify(args)})` : ''}` }]);
-        try {
-            const resp = await api.post('/ai/mcp/call-tool', { tool_name: toolName, arguments: args });
-            const resultText = JSON.stringify(resp.data.result, null, 2);
-            setAiMessages(prev => [...prev, { role: 'assistant', content: `📊 **${toolName}** result:\n\`\`\`json\n${resultText}\n\`\`\`` }]);
-        } catch (err: any) {
-            const detail = apiErrorMessage(err) || err.message;
-            setAiMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${detail}` }]);
-        }
-        setMcpLoading(false);
-    }, []);
+    const onResizeEnd = useCallback(() => {
+        dragRef.current = null;
+        window.removeEventListener('mousemove', onResizeMove);
+        window.removeEventListener('mouseup', onResizeEnd);
+        document.body.style.userSelect = '';
+    }, [onResizeMove]);
+    const startResize = useCallback((e: React.MouseEvent) => {
+        dragRef.current = { startY: e.clientY, startH: editorHeightRef.current };
+        window.addEventListener('mousemove', onResizeMove);
+        window.addEventListener('mouseup', onResizeEnd);
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+        e.stopPropagation();
+    }, [onResizeMove, onResizeEnd]);
 
     return (
-        <div id={id} className={cn("flex flex-col border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", className)}>
+        <div
+            id={id}
+            className={cn("flex flex-col border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", className)}
+            style={resizable ? { height: editorHeight } : undefined}
+        >
             <MenuBar editor={editor} />
             <div
-                className="overflow-y-auto"
-                style={{ minHeight }}
+                className={cn("overflow-y-auto", resizable && "flex-1 min-h-0")}
+                style={resizable ? undefined : { minHeight }}
                 onClick={() => editor?.commands.focus()}
             >
                 <EditorContent editor={editor} />
             </div>
 
-            {/* AI Assistant overlay */}
-            {aiEnabled && (
-                <div className="border-t border-slate-800">
-                    {!aiOpen ? (
-                        /* Collapsed bar */
-                        <button
-                            type="button"
-                            onClick={() => { setAiOpen(true); setTimeout(() => aiInputRef.current?.focus(), 100); }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-500 hover:text-violet-400 hover:bg-slate-900/50 transition-colors"
-                        >
-                            <Sparkles className="h-3.5 w-3.5" />
-                            <span>Ask AI for help with this {fieldContext?.fieldName?.toLowerCase() || 'field'}...</span>
-                        </button>
-                    ) : (
-                        /* Expanded AI chat */
-                        <div className="bg-slate-950/60 backdrop-blur-sm">
-                            {/* Header */}
-                            <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-800/60">
-                                <span className="text-[11px] font-semibold text-violet-400 flex items-center gap-1.5">
-                                    <Sparkles className="h-3 w-3" /> AI Assistant
-                                    {aiStatus?.model && <span className="text-slate-600 font-normal">· {aiStatus.model}</span>}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                    {aiMessages.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setAiMessages([])}
-                                            className="text-[10px] text-slate-500 hover:text-slate-300 px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors"
-                                        >
-                                            Clear
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={() => setAiOpen(false)}
-                                        className="text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-slate-800 transition-colors"
-                                    >
-                                        <X className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
-                            </div>
+            {/* AI assistant (shared with the collaborative editor). Docks below
+                the content; owns its own split. */}
+            <AiAssistantPanel
+                editor={editor}
+                fieldContext={fieldContext}
+                maxHeight={resizable ? editorHeight - 150 : undefined}
+            />
 
-                            {/* Messages */}
-                            {aiMessages.length > 0 && (
-                                <div ref={aiScrollRef} className="max-h-[200px] overflow-y-auto px-3 py-2 space-y-2">
-                                    {aiMessages.map((msg, i) => (
-                                        <div key={i} className={cn(
-                                            "text-xs rounded-lg px-3 py-2 max-w-[90%]",
-                                            msg.role === 'user'
-                                                ? 'bg-violet-500/10 text-violet-200 border border-violet-500/20 ml-auto'
-                                                : 'bg-slate-800/60 text-slate-300 border border-slate-700/40'
-                                        )}>
-                                            <div className="whitespace-pre-wrap break-words">{msg.content || (aiStreaming && i === aiMessages.length - 1 ? '...' : '')}</div>
-                                            {msg.role === 'assistant' && msg.content && !aiStreaming && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleInsertAiResponse(msg.content)}
-                                                    className="flex items-center gap-1 mt-1.5 text-[10px] text-violet-400 hover:text-violet-300 transition-colors"
-                                                >
-                                                    <ClipboardPaste className="h-3 w-3" /> Insert into editor
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* Input */}
-                            <div className="flex items-center gap-2 px-3 py-2">
-                                {mcpEnabled && (
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMcpToolsOpen(!mcpToolsOpen)}
-                                            disabled={mcpLoading}
-                                            className="p-1.5 rounded-lg border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 transition-colors disabled:opacity-30"
-                                            title="Query data via MCP"
-                                        >
-                                            {mcpLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
-                                        </button>
-                                        {mcpToolsOpen && (
-                                            <div className="absolute bottom-full left-0 mb-1 w-56 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden">
-                                                <div className="px-3 py-1.5 border-b border-slate-800">
-                                                    <span className="text-[10px] font-semibold text-cyan-400">MCP Data Tools</span>
-                                                </div>
-                                                <div className="max-h-[200px] overflow-y-auto py-1">
-                                                    {[
-                                                        { name: 'list_engagements', label: 'List Engagements' },
-                                                        { name: 'get_global_stats', label: 'Global Stats' },
-                                                        { name: 'search', label: 'Search...', needsInput: true },
-                                                    ].map(tool => (
-                                                        <button
-                                                            key={tool.name}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (tool.needsInput) {
-                                                                    const q = prompt('Search query:');
-                                                                    if (q) callMcpTool(tool.name, { query: q });
-                                                                    else setMcpToolsOpen(false);
-                                                                } else {
-                                                                    callMcpTool(tool.name);
-                                                                }
-                                                            }}
-                                                            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-2"
-                                                        >
-                                                            <Database className="h-3 w-3 text-cyan-400/60" />
-                                                            {tool.label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                                <input
-                                    ref={aiInputRef}
-                                    type="text"
-                                    value={aiInput}
-                                    onChange={(e) => setAiInput(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiSend(); } }}
-                                    placeholder={`Ask about ${fieldContext?.fieldName?.toLowerCase() || 'this field'}...`}
-                                    disabled={aiStreaming}
-                                    className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors disabled:opacity-50"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={handleAiSend}
-                                    disabled={aiStreaming || !aiInput.trim()}
-                                    className="p-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-30 disabled:hover:bg-violet-600 transition-colors"
-                                >
-                                    {aiStreaming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                                </button>
-                            </div>
-                        </div>
-                    )}
+            {/* Corner grab handle: drag to resize the whole editor vertically. */}
+            {resizable && (
+                <div
+                    onMouseDown={startResize}
+                    title="Drag to resize the editor"
+                    className="group/edrag h-3.5 shrink-0 border-t border-slate-800/60 flex items-center justify-end px-1.5 cursor-ns-resize hover:bg-slate-800/40 transition-colors"
+                >
+                    <ChevronsUpDown className="h-3 w-3 text-slate-600 group-hover/edrag:text-slate-400" />
                 </div>
             )}
             <EditorStyles currentUsername={currentUsername} />
+            <ChatMarkdownStyles />
         </div>
     );
 }

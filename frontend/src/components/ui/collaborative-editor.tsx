@@ -7,6 +7,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import { AuthAwareImage as Image } from './auth-image-node-view';
 import { EditorStyles } from './editor-styles';
+import { AiAssistantPanel } from './ai-assistant-panel';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -1052,6 +1053,15 @@ export default function CollaborativeEditor({
                 )}
                 <EditorContent editor={editor} />
             </div>
+
+            {/* AI assistant for notes (shared component). Hidden for read-only
+                viewers, who can't insert its output anyway. */}
+            {!disabled && (
+                <AiAssistantPanel
+                    editor={editor}
+                    fieldContext={{ resourceType: 'note', fieldName: 'note' }}
+                />
+            )}
             <EditorStyles currentUsername={currentUser?.username} />
         </div>
     );
