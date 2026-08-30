@@ -7,6 +7,11 @@ section becomes one release entry.
 ## [1.5.5] — Unreleased
 
 ### Added
+- **Interactive HTML report — design &amp; prototype** — a portable, offline report
+  "site" (three audience lenses: Executive / Security / Developer; a live
+  attack graph with per-finding attack paths; exposure-by-asset; markdown-
+  rendered sections). Design spec + clickable prototype under
+  `docs/report-redesign/`; the generator lands in a later release.
 - **AI writing assistant in the editor** — an "Ask AI" panel on finding,
   test-case, asset, engagement, and note fields helps draft or edit the field
   you're on. It's grounded in the record (title, severity, CVSS, status), can
