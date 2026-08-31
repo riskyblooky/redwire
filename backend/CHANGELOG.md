@@ -46,6 +46,9 @@ section becomes one release entry.
   changing the overall size. AI replies now render as formatted markdown, and
   the assistant shows live "thinking" and data-lookup indicators.
 - Editor toolbar icons now all have hover tooltips.
+- **Paste a link onto selected text** — pasting an `http`/`https`/`mailto` URL
+  while text is selected now turns the selection into a hyperlink instead of
+  replacing it.
 
 ### Security
 - **Template usage-counter endpoints now enforce the template visibility gate** —

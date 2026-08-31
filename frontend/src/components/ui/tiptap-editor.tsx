@@ -742,6 +742,19 @@ async function uploadAndInsertImage(view: any, file: File, pos: number, engageme
     }
 }
 
+/** True when `text` is a single, whitespace-free http/https/mailto URL — the
+ *  shape we treat as "paste a link over the selection" rather than plain text. */
+function isLikelyUrl(text: string): boolean {
+    const t = text.trim();
+    if (!t || /\s/.test(t)) return false;
+    try {
+        const u = new URL(t);
+        return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:';
+    } catch {
+        return false;
+    }
+}
+
 /** Seed the resizable editor's starting height from the caller's minHeight
  *  (e.g. "400px" → 400) so each editor opens at its intended size; falls back
  *  to a sensible default for non-px values like "min(75vh, 720px)". */
@@ -902,6 +915,18 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             },
             // Paste handler (Cmd/Ctrl+V from screenshot tools, etc.)
             handlePaste: (view, event, _slice) => {
+                // Paste a URL over highlighted text → turn the selection into a
+                // hyperlink pointing at the pasted URL (instead of replacing it).
+                const pastedText = (event as ClipboardEvent).clipboardData?.getData('text/plain') ?? '';
+                const { from, to, empty } = view.state.selection;
+                const linkMark = view.state.schema.marks.link;
+                if (!empty && linkMark && isLikelyUrl(pastedText)) {
+                    event.preventDefault();
+                    const tr = view.state.tr.addMark(from, to, linkMark.create({ href: pastedText.trim() }));
+                    view.dispatch(tr.setMeta('preventAutolink', true));
+                    return true;
+                }
+
                 const items = (event as ClipboardEvent).clipboardData?.items;
                 if (!items) return false;
                 const images: File[] = [];
