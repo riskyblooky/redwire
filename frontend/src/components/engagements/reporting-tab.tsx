@@ -1654,9 +1654,12 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                 src={previewBlobUrl}
                                 className="w-full h-full min-h-[60vh]"
                                 title="Report Preview"
-                                // HTML reports render author content — sandbox so no script
-                                // can execute in the app origin (defense-in-depth vs XSS).
-                                sandbox={format === 'html' ? '' : undefined}
+                                // The interactive HTML report is a self-contained app: allow its
+                                // own scripts to run, but withhold allow-same-origin so it stays a
+                                // null origin (no app-origin access). Author content in the report
+                                // is markdown-sanitized server-side and can't break out of the
+                                // injected data, so this is safe.
+                                sandbox={format === 'html' ? 'allow-scripts' : undefined}
                             />
                         ) : format === 'markdown' && previewResult ? (
                             <MarkdownPreview blob={previewResult.blob} />

@@ -27,3 +27,19 @@ If you redistribute RedWire, keep this component's directory, its `LICENSE`,
 and its provenance intact.
 
 Full GPL-3.0 license text: `backend/third_party/yeswehack-claude-kit/LICENSE`.
+
+---
+
+## Embedded web fonts (interactive HTML report)
+
+- **Components:** Archivo, IBM Plex Sans, IBM Plex Mono
+- **License:** SIL Open Font License 1.1 (OFL-1.1)
+- **Copyright:** © the respective font authors (Omnibus-Type; IBM)
+- **Source:** Google Fonts
+- **Location in this repo:** base64-embedded (WOFF2) in
+  `backend/report_templates/interactive/report.template.html`
+
+These faces are embedded so the generated interactive HTML report renders with
+its intended typography **fully offline** (no CDN). The OFL permits embedding
+and redistribution of the fonts, including inside documents/software, provided
+the fonts are not sold on their own.

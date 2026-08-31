@@ -7,11 +7,15 @@ section becomes one release entry.
 ## [1.5.5] — Unreleased
 
 ### Added
-- **Interactive HTML report — design &amp; prototype** — a portable, offline report
-  "site" (three audience lenses: Executive / Security / Developer; a live
-  attack graph with per-finding attack paths; exposure-by-asset; markdown-
-  rendered sections). Design spec + clickable prototype under
-  `docs/report-redesign/`; the generator lands in a later release.
+- **Interactive HTML report** — the HTML report format is now a portable,
+  offline, self-contained interactive report: an Overview dashboard (risk
+  posture, severity mix, key metrics, exposure-by-asset), filter/search/sort
+  findings, a hierarchical test-case view, a **live attack graph** (with a
+  per-finding "attack path"), an evidence gallery, and cleanup triage — all in
+  three audience lenses (Executive / Security / Developer). It's a single
+  `.html` file with everything embedded (data, images, fonts), so it opens by
+  double-click and renders fully offline. Design spec + clickable prototype
+  under `docs/report-redesign/`.
 - **AI writing assistant in the editor** — an "Ask AI" panel on finding,
   test-case, asset, engagement, and note fields helps draft or edit the field
   you're on. It's grounded in the record (title, severity, CVSS, status), can
@@ -26,6 +30,10 @@ section becomes one release entry.
   Ask AI + Review assistant (hidden for read-only viewers).
 
 ### Improved
+- **Richer test cases in the PDF report** — the flat 4-column test-case table is
+  replaced by a hierarchical detail view: the parent → child test tree, a
+  pass/fail status chip, and markdown-rendered steps / expected result / actual
+  result / notes, plus the findings each test discovered.
 - **Resizable editors** — drag the bottom corner to resize the whole editor,
   and an inner handle to rebalance the editor against the AI panel without
   changing the overall size. AI replies now render as formatted markdown, and

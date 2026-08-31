@@ -1890,7 +1890,26 @@ class PDFReportGenerator:
 
     # ── Table section renderers ───────────────────────────────────
 
+    # Test-case status → (key, label, hex). Darker shades read well on white paper.
+    _TC_STATUS = {
+        'pass': ('✓ Pass', '#16A34A'),
+        'fail': ('✗ Fail', '#DC2626'),
+        'exec': ('Executed · no verdict', '#2563EB'),
+        'none': ('Not executed', '#64748B'),
+    }
+
+    @staticmethod
+    def _tc_status(tc):
+        if tc.is_successful is True:  return 'pass'
+        if tc.is_successful is False: return 'fail'
+        if tc.is_executed:            return 'exec'
+        return 'none'
+
     def _render_testcases_section(self, elements, section: ReportSection):
+        """Hierarchical test plan: one detail block per test case (parent → child),
+        with a pass/fail status chip and markdown-rendered steps / expected /
+        actual / notes and the findings each test discovered — modeled on the
+        cleanup-artifact detail renderer."""
         elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 16))
 
@@ -1902,74 +1921,119 @@ class PDFReportGenerator:
         font   = _t(self.theme, 'font_family')
         font_b = f'{font}-Bold'
         dark   = _t(self.theme, 'secondary_color')
+        muted  = _t(self.theme, 'muted_text_color')
 
-        header_style = ParagraphStyle(
-            name='TCHeader', parent=self.styles['Normal'],
-            fontSize=9, fontName=font_b, textColor=colors.white,
-        )
-        cell_style = ParagraphStyle(
-            name='TCCell', parent=self.styles['Normal'],
-            fontSize=9, fontName=font, textColor=colors.HexColor(_t(self.theme, 'body_text_color')),
-        )
+        # summary line
+        total    = len(self.testcases)
+        passed   = sum(1 for t in self.testcases if t.is_successful is True)
+        failed   = sum(1 for t in self.testcases if t.is_successful is False)
+        executed = sum(1 for t in self.testcases if t.is_executed)
+        elements.append(Paragraph(
+            f'{total} test case{"s" if total != 1 else ""} · {executed} executed · '
+            f'{passed} passed · {failed} failed',
+            ParagraphStyle(name='TCSummary', parent=self.styles['BodyText2'], fontSize=9.5,
+                           textColor=colors.HexColor(muted), spaceAfter=14)))
 
-        per_row = bool(self.marking and self.marking.per_row)
-        zebra, alt_bg, grid = self._table_style_tokens()
+        # build the parent → child tree (parent_id is a scalar column, always loaded)
+        id_set = {t.id for t in self.testcases}
+        kids = {}
+        for t in self.testcases:
+            key = t.parent_id if t.parent_id in id_set else None
+            kids.setdefault(key, []).append(t)
+        for lst in kids.values():
+            lst.sort(key=lambda t: ((_v(t.category) or ''), (t.title or '')))
 
-        header_cells = [
-            Paragraph('TEST CASE', header_style),
-            Paragraph('CATEGORY', header_style),
-            Paragraph('EXECUTED', header_style),
-            Paragraph('RESULT', header_style),
-        ]
-        if per_row:
-            header_cells = [self._row_mark_cell(None, None, header=True)] + header_cells
-        rows = [header_cells]
+        order = []  # (testcase, depth, hierarchical-number)
+        def _walk(parent, prefix, depth):
+            for i, t in enumerate(kids.get(parent, []), 1):
+                num = f'{prefix}{i}'
+                order.append((t, depth, num))
+                _walk(t.id, num + '.', depth + 1)
+        _walk(None, '', 0)
 
-        tc_levels = []
-        for tc in self.testcases:
-            lvl, suf = self._eff_mark(tc)
-            tc_levels.append((lvl, suf))
-            executed = '✓' if tc.is_executed else '–'
-            result   = '✓ Pass' if tc.is_successful else ('✗ Fail' if tc.is_successful is False else 'N/A')
-            cells = [
-                Paragraph(_escape_xml(tc.title[:80]), cell_style),
-                Paragraph(_v(tc.category).replace('_', ' ').title(), cell_style),
-                Paragraph(executed, cell_style),
-                Paragraph(result, cell_style),
-            ]
-            if per_row:
-                cells = [self._row_mark_cell(lvl, suf)] + cells
-            rows.append(cells)
+        for t, depth, num in order:
+            det_rows = []
 
-        if per_row:
-            col_widths = [0.55 * inch, 2.45 * inch, 1.4 * inch, 0.85 * inch, 1.0 * inch]
-            center_from = 3
-        else:
-            col_widths = [3.0 * inch, 1.4 * inch, 0.85 * inch, 1.0 * inch]
-            center_from = 2
+            def _label(label):
+                return Paragraph(label, ParagraphStyle(
+                    name=f'TCL_{t.id}_{label}', parent=self.styles['Label'],
+                    fontSize=8, fontName=font_b, textColor=colors.HexColor(muted)))
 
-        t = Table(rows, colWidths=col_widths, repeatRows=1)
-        style = [
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(dark)),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN', (center_from, 1), (-1, -1), 'CENTER'),
-            ('TOPPADDING', (0, 0), (-1, -1), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('LINEBELOW', (0, 0), (-1, -1), 0.25, grid),
-        ]
-        if zebra:
-            style.append(('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, alt_bg]))
-        t.setStyle(TableStyle(style))
+            def _add(label, val):
+                if not val:
+                    return
+                det_rows.append([_label(label), Paragraph(_escape_xml(str(val)[:800]), ParagraphStyle(
+                    name=f'TCV_{t.id}_{label}', parent=self.styles['BodyText2'], fontSize=9))])
 
-        above, below = self._table_mark_flowables(tc_levels)
-        for fl in above:
-            elements.append(fl)
-        elements.append(t)
-        for fl in below:
-            elements.append(fl)
-        elements.append(Spacer(1, 20))
+            def _add_md(label, val, max_chars=3000):
+                if not val:
+                    return
+                cs = ParagraphStyle(name=f'TCM_{t.id}_{label}', parent=self.styles['BodyText2'],
+                                    fontSize=9, spaceAfter=2)
+                _lvl, _suf = self._eff_mark(t)
+                _mk = self.marking.portion_mark(_lvl, _suf) if (self.marking and _lvl) else None
+                fls = _md_to_flowables(
+                    str(val), cs, max_chars=max_chars,
+                    image_resolver=self._resolve_markdown_image,
+                    max_image_width=4.5 * inch, max_image_height=3.0 * inch,
+                    mark_text=_mk, mark_anchors=self.marking.image_anchors if self.marking else None,
+                    mark_fg=self._mark_fg(_lvl))
+                if fls:
+                    det_rows.append([_label(label), fls])
+
+            if t.category:
+                _add('CATEGORY', _v(t.category).replace('_', ' ').title())
+            _add_md('DESCRIPTION', t.description)
+            _add_md('STEPS', t.steps)
+            _add_md('EXPECTED RESULT', t.expected_result)
+            _add_md('ACTUAL RESULT', t.actual_result)
+            _add_md('NOTES', t.notes)
+            if t.assets:
+                _add('ASSETS', ', '.join(a.name for a in t.assets))
+            tc_findings = getattr(t, 'findings', None) or []
+            if tc_findings:
+                fnames = ', '.join(
+                    f'{_escape_xml(f.title)} ({_v(f.severity).title()})' for f in tc_findings)
+                det_rows.append([_label('DISCOVERED FINDINGS'), Paragraph(fnames, ParagraphStyle(
+                    name=f'TCF_{t.id}', parent=self.styles['BodyText2'], fontSize=9))])
+
+            sc_key = self._tc_status(t)
+            sc_label, sc_hex = self._TC_STATUS[sc_key]
+            indent = 14 + depth * 16
+            title_p = Paragraph(f'{num}&nbsp;&nbsp;{self._mark_prefix(t)}{_escape_xml(t.title)}',
+                ParagraphStyle(name=f'TCTitle_{t.id}', parent=self.styles['FindingTitle'], fontSize=10))
+            status_p = Paragraph(f'<b>{sc_label}</b>', ParagraphStyle(
+                name=f'TCStatus_{t.id}', parent=self.styles['Normal'], fontSize=9, fontName=font_b,
+                textColor=colors.HexColor(sc_hex), alignment=2))
+            header = Table([[title_p, status_p]], colWidths=[5.0 * inch, 1.5 * inch])
+            header.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(dark)),
+                ('LEFTPADDING', (0, 0), (0, 0), indent),
+                ('RIGHTPADDING', (1, 0), (1, 0), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LINEBEFORE', (0, 0), (0, 0), 4, colors.HexColor(sc_hex)),
+            ]))
+
+            tc_above, tc_below = self._table_mark_flowables([self._eff_mark(t)])
+            block = [header]
+            if det_rows:
+                body_t = Table(det_rows, colWidths=[1.3 * inch, 5.2 * inch])
+                body_t.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                    ('LEFTPADDING', (0, 0), (0, -1), indent),
+                    ('LEFTPADDING', (1, 0), (1, -1), 8),
+                    ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+                    ('LINEBELOW', (0, 0), (-1, -2), 0.25, colors.HexColor('#E2E8F0')),
+                    ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+                ]))
+                block.append(body_t)
+            elements.append(KeepTogether(tc_above + block + tc_below))
+            elements.append(Spacer(1, 10))
+        elements.append(Spacer(1, 10))
 
     def _render_cleanup_artifacts_section(self, elements, section: ReportSection):
         elements.append(self._section_header_table(section.title.upper(), section))
@@ -2432,172 +2496,164 @@ class HTMLReportGenerator:
         return self._rewrite_inline_images(html)
 
     # ── generate ──────────────────────────────────────────────────
-    def generate(self) -> str:
-        primary = _t(self.theme, 'primary_color')
-        dark = _t(self.theme, 'secondary_color')
-        body_c = _t(self.theme, 'body_text_color')
-        font = _t(self.theme, 'font_family')
-        alt_bg = _t(self.theme, 'table_alt_row_bg')
-        grid = _t(self.theme, 'table_grid_color')
 
-        banner_html = ''
+    # ── interactive report: build data + inject into the app template ──
+    _FSTATUS = {
+        'OPEN': 'open', 'IN_PROGRESS': 'progress', 'REMEDIATED': 'remediated',
+        'RESOLVED': 'remediated', 'CLOSED': 'remediated', 'FIXED': 'remediated',
+        'ACCEPTED': 'open', 'FALSE_POSITIVE': 'remediated',
+    }
+
+    def _fstatus(self, status):
+        s = _v(status).upper()
+        if s in self._FSTATUS:
+            return self._FSTATUS[s]
+        if 'PROGRESS' in s:
+            return 'progress'
+        if any(k in s for k in ('RESOLV', 'REMEDI', 'CLOS', 'FIX')):
+            return 'remediated'
+        return 'open'
+
+    def _title_case(self, val):
+        return _v(val).replace('_', ' ').title() if val else ''
+
+    def _build_report_data(self):
+        eng = self.engagement
+
+        # stable display ids
+        fid = {f.id: f'F{i:02d}' for i, f in enumerate(self.findings, 1)}
+        tid = {t.id: f'T{i}' for i, t in enumerate(self.testcases, 1)}
+        tc_ids = set(tid)
+
+        findings = []
+        for f in self.findings:
+            ev = []
+            for e in (f.evidence or []):
+                if not getattr(e, 'include_in_report', False):
+                    continue
+                if (e.mime_type or '').lower().startswith('image/'):
+                    uri = self._data_uri(e.filename, e.mime_type)
+                    if uri:
+                        ev.append({'img': uri, 'cap': _escape_xml(e.description or e.original_filename or '')})
+            mark_tok = ''
+            if self.marking:
+                _lvl, _suf = self._eff(f)
+                mark_tok = self.marking.portion_mark(_lvl, _suf) or ''
+            findings.append({
+                'id': fid[f.id], 'sev': _v(f.severity).lower(), 'status': self._fstatus(f.status),
+                'cvss': (round(float(f.cvss_score), 1) if f.cvss_score is not None else 0),
+                'vec': f.cvss_vector or '—',
+                'cwe': self._title_case(f.category),
+                'mark': mark_tok, 'title': f.title or 'Untitled',
+                'assets': [a.name for a in (f.assets or [])],
+                'desc': self._md(f.description), 'impact': self._md(f.impact), 'biz': '',
+                'steps': self._md(f.steps_to_reproduce), 'tech': self._md(f.technical_details),
+                'remed': self._md(f.mitigations),
+                'refs_html': self._md(f.references) if f.references else '',
+                'ev': ev,
+            })
+
+        testcases = []
+        for t in self.testcases:
+            if t.is_successful is True:
+                st = 'Pass'
+            elif t.is_successful is False:
+                st = 'Fail'
+            elif t.is_executed:
+                st = 'Executed'
+            else:
+                st = 'Not Executed'
+            testcases.append({
+                'id': tid[t.id], 'label': t.title or 'Untitled', 'status': st,
+                'parent': (tid.get(t.parent_id) if t.parent_id in tc_ids else None),
+                'finds': [fid[x.id] for x in (getattr(t, 'findings', None) or []) if x.id in fid],
+                'desc': self._md(t.description), 'steps': self._md(t.steps),
+                'expected': self._md(t.expected_result), 'actual': self._md(t.actual_result),
+                'notes': self._md(t.notes),
+            })
+
+        asset_map = {}
+        for f in self.findings:
+            sev = _v(f.severity).lower()
+            for a in (f.assets or []):
+                d = asset_map.setdefault(a.name, {
+                    'n': a.name, 'type': self._title_case(getattr(a, 'asset_type', None)) or 'Asset', 'sevs': {}})
+                d['sevs'][sev] = d['sevs'].get(sev, 0) + 1
+        assets = list(asset_map.values())
+
+        cleanup = []
+        for ca in self.cleanup_artifacts:
+            linked_f = next((fid[x.id] for x in (getattr(ca, 'findings', None) or []) if x.id in fid), None)
+            linked_a = next((x.name for x in (getattr(ca, 'assets', None) or [])), None)
+            cleanup.append({
+                't': ca.title or 'Artifact', 'type': self._title_case(ca.artifact_type),
+                'sys': ca.location or '', 'owner': '',
+                'status': self._title_case(ca.status) or 'Pending',
+                'finding': linked_f, 'asset': linked_a,
+                'note': _escape_xml((ca.description or ca.cleanup_notes or '')[:400]),
+            })
+
+        rating = (_v(self.findings[0].severity).upper() if self.findings else 'INFO')
+        cvsses = [f.cvss_score for f in self.findings if f.cvss_score]
+        score = max(cvsses) if cvsses else {'CRITICAL': 9.5, 'HIGH': 7.5, 'MEDIUM': 5.0,
+                                             'LOW': 3.0, 'INFO': 0.5}.get(rating, 0)
+        top = self.findings[0].title if self.findings else ''
+        n = len(self.findings)
+        risk = {
+            'rating': rating, 'score': round(float(score), 1),
+            'caption': (f'Overall risk posture · driven by {top}' if top else 'Overall risk posture'),
+            'summary_html': self._md(getattr(eng, 'description', None)) if getattr(eng, 'description', None) else '',
+            'subtitle': f'{n} finding{"s" if n != 1 else ""} confirmed across this engagement.',
+        }
+
+        marking = {}
         if self.marking and self._banner_level:
             b = self.marking.banner(self._banner_level)
             if b:
-                text, bg, fg = b
-                banner_html = (f'<div class="banner" style="background:{bg};color:{fg}">'
-                               f'{_escape_xml(text)}</div>')
+                marking = {'banner': b[0], 'caption': (getattr(self.marking, 'distribution_statement', '') or '')}
 
-        parts = [f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<title>{_escape_xml(_t(self.theme, 'cover_title') or 'Report')} — {_escape_xml(self.engagement.name)}</title>
-<style>
-  :root {{ --primary:{primary}; --dark:{dark}; --body:{body_c}; --alt:{alt_bg}; --grid:{grid}; }}
-  body {{ font-family:{font}, Arial, sans-serif; color:var(--body); max-width:60rem; margin:0 auto; padding:2rem; line-height:1.5; }}
-  .banner {{ text-align:center; font-weight:bold; padding:.4rem; letter-spacing:.05em; position:sticky; top:0; }}
-  .banner.bottom {{ position:static; margin-top:2rem; }}
-  h1.cover {{ color:var(--primary); font-size:2rem; margin:.2rem 0; }}
-  .cover-meta {{ color:#64748b; font-size:.9rem; }}
-  .section-bar {{ background:var(--dark); color:#fff; padding:.6rem 1rem; font-size:1.1rem; font-weight:bold; border-top:3px solid var(--primary); margin-top:2rem; }}
-  table {{ border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }}
-  th {{ background:var(--dark); color:#fff; text-align:left; padding:.5rem; }}
-  td {{ padding:.5rem; border-bottom:1px solid var(--grid); vertical-align:top; }}
-  tr:nth-child(even) td {{ background:var(--alt); }}
-  .finding {{ border:1px solid var(--grid); border-radius:6px; margin:1rem 0; overflow:hidden; }}
-  .finding-head {{ background:var(--dark); color:#fff; padding:.6rem 1rem; font-weight:bold; }}
-  .finding-body {{ padding:1rem; }}
-  .label {{ color:#64748b; font-size:.7rem; font-weight:bold; text-transform:uppercase; letter-spacing:.05em; margin-top:.8rem; }}
-  .sev {{ display:inline-block; padding:.1rem .5rem; border-radius:3px; color:#fff; font-size:.75rem; font-weight:bold; }}
-  .pmark {{ font-weight:bold; color:var(--primary); }}
-  .legend span {{ display:inline-block; padding:.1rem .5rem; margin:.1rem; border-radius:3px; font-size:.75rem; font-weight:bold; }}
-  figure {{ margin:1rem 0; }} figure img {{ max-width:100%; border:1px solid var(--grid); }}
-  figcaption {{ color:#64748b; font-size:.8rem; text-align:center; }}
-  img {{ max-width:100%; }}
-</style></head><body>"""]
+        window = ''
+        sd, ed = getattr(eng, 'start_date', None), getattr(eng, 'end_date', None)
+        if sd and ed:
+            window = f'{sd.strftime("%b %d").replace(" 0", " ")} – {ed.strftime("%b %d, %Y").replace(" 0", " ")}'
+        ref = _t(self.theme, 'report_reference') or ''
+        ver = _t(self.theme, 'report_version') or ''
+        ref_full = (f'{ref} · {ver}' if ref and ver else (ref or ver))
+        team = len(getattr(eng, 'assigned_users', None) or [])
+        eng_type = self._title_case(getattr(eng, 'engagement_type', None)) or (eng.name or 'Engagement')
 
-        if banner_html:
-            parts.append(banner_html)
+        fields = [['Client', eng.client_name or '—', None], ['Engagement', eng_type, None]]
+        if window:
+            fields.append(['Window', window, None])
+        if ref_full:
+            fields.append(['Report ref', ref_full, None])
+        fields.append(['Prepared by', 'RedWire', None])
+        if team:
+            fields.append(['Team', f'{team} operator{"s" if team != 1 else ""}', None])
+        if marking.get('banner'):
+            fields.append(['Classification', marking['banner'], '#FFC000'])
+        fields.append(['Findings', f'{n} confirmed', None])
 
-        # Cover block
-        parts.append('<header style="text-align:center;padding:2rem 0;border-bottom:2px solid var(--primary)">')
-        parts.append(f'<h1 class="cover">{_escape_xml(_t(self.theme, "cover_title") or "Security Assessment Report")}</h1>')
-        parts.append(f'<div class="cover-meta"><strong>{_escape_xml(self.engagement.name)}</strong></div>')
-        parts.append(f'<div class="cover-meta">Client: {_escape_xml(self.engagement.client_name or "")}</div>')
-        parts.append(f'<div class="cover-meta">{datetime.now().strftime("%B %d, %Y")}</div>')
-        ref = _t(self.theme, 'report_reference'); ver = _t(self.theme, 'report_version')
-        if ref or ver:
-            parts.append(f'<div class="cover-meta">{_escape_xml(("REF: "+ref) if ref else "")} {_escape_xml(("v"+ver) if ver else "")}</div>')
-        if self.marking and self.marking.show_legend and self._banner_level:
-            chips = ''.join(
-                f'<span style="background:{bg};color:{fg}">{_escape_xml(full or abbr)}</span>'
-                for abbr, full, bg, fg in self.marking.legend_entries()
-            )
-            parts.append(f'<div class="legend" style="margin-top:1rem">{chips}</div>')
-            if self.marking.distribution_statement:
-                parts.append(f'<div class="cover-meta" style="margin-top:.5rem">{_escape_xml(self.marking.distribution_statement)}</div>')
-        parts.append('</header>')
+        meta = {
+            'title': _t(self.theme, 'cover_title') or 'Security Assessment Report',
+            'client': eng.client_name or eng.name, 'engagement': eng_type,
+            'ref': ref_full, 'summary': '', 'fields': fields,
+        }
 
-        for section in self.sections:
-            st = section.section_type
-            if st == SectionType.TEXT:
-                parts.append(self._section_bar(section))
-                parts.append(self._md(section.content or ''))
-            elif st == SectionType.FINDINGS:
-                parts.append(self._section_bar(section))
-                parts.append(self._findings_html())
-            elif st == SectionType.TESTCASES:
-                parts.append(self._section_bar(section))
-                parts.append(self._testcases_html())
-            elif st == SectionType.CLEANUP_ARTIFACTS:
-                parts.append(self._section_bar(section))
-                parts.append(self._cleanup_html())
+        return {'meta': meta, 'risk': risk, 'marking': marking, 'findings': findings,
+                'testcases': testcases, 'assets': assets, 'cleanup': cleanup, 'chain': []}
 
-        if banner_html:
-            parts.append(banner_html.replace('class="banner"', 'class="banner bottom"'))
-        parts.append('</body></html>')
-        return '\n'.join(parts)
-
-    def _section_bar(self, section):
-        return f'<div class="section-bar">{self._heading_mark_prefix(section)}{_escape_xml(section.title.upper())}</div>'
-
-    def _findings_html(self):
-        if not self.findings:
-            return '<p>No findings recorded for this engagement.</p>'
-        counts = {}
-        for f in self.findings:
-            k = _v(f.severity).upper()
-            counts[k] = counts.get(k, 0) + 1
-        rows = ''.join(
-            f'<tr><td><span class="sev" style="background:{self._sev_color(s)}">{s}</span></td>'
-            f'<td>{counts.get(s, 0)}</td></tr>'
-            for s in _SEV_ORDER
-        )
-        out = [f'<h3>{self._heading_mark_prefix()}Severity Distribution</h3><table><tr><th>Severity</th><th>Count</th></tr>{rows}</table>']
-        for idx, f in enumerate(self.findings, 1):
-            sev = _v(f.severity).upper()
-            out.append('<div class="finding">')
-            out.append(f'<div class="finding-head" style="border-left:5px solid {self._sev_color(sev)}">'
-                       f'{self._mark_prefix(f)}F{idx:02d} — {_escape_xml(f.title)} '
-                       f'<span class="sev" style="background:{self._sev_color(sev)};float:right">{sev}</span></div>')
-            out.append('<div class="finding-body">')
-            assets = ', '.join(a.name for a in f.assets) if f.assets else 'N/A'
-            out.append(f'<div class="label">Affected Assets</div><div>{_escape_xml(assets)}</div>')
-            if f.cvss_score is not None:
-                cvss = f'{f.cvss_score}' + (f' | {_escape_xml(f.cvss_vector)}' if f.cvss_vector else '')
-                out.append(f'<div class="label">CVSS</div><div>{cvss}</div>')
-            for lbl, val in (('Description', f.description), ('Impact', f.impact),
-                             ('Steps to Reproduce', f.steps_to_reproduce),
-                             ('Recommendations', f.mitigations), ('References', f.references)):
-                if val:
-                    out.append(f'<div class="label">{lbl}</div>{self._md(val)}')
-            # Admin-defined custom fields flagged show_in_report.
-            for _cf_label, _cf_value in _report_cf_rows(self.finding_custom_fields, f.custom_fields):
-                out.append(f'<div class="label">{_escape_xml(_cf_label)}</div><div>{_escape_xml(_cf_value)}</div>')
-            # Evidence images
-            for ev in (f.evidence or []):
-                if not getattr(ev, 'include_in_report', False):
-                    continue
-                ev_lvl, ev_suf = self._eff_evidence(ev, f)
-                tok = self.marking.portion_mark(ev_lvl, ev_suf) if self.marking else ''
-                mime = (ev.mime_type or '').lower()
-                cap = f'{_escape_xml(tok)+" " if tok else ""}{_escape_xml(ev.description or "")} [{_escape_xml(ev.original_filename)}]'
-                if mime in PDFReportGenerator._IMAGE_MIMES:
-                    uri = self._data_uri(ev.filename, ev.mime_type)
-                    if uri:
-                        out.append(f'<figure><img src="{uri}" alt=""><figcaption>{cap}</figcaption></figure>')
-                        continue
-                out.append(f'<div class="cover-meta">📎 {cap}</div>')
-            out.append('</div></div>')
-        return '\n'.join(out)
-
-    def _testcases_html(self):
-        if not self.testcases:
-            return '<p>No test cases recorded.</p>'
-        per_row = bool(self.marking and self.marking.per_row)
-        head = '<tr>' + ('<th>Mark</th>' if per_row else '') + '<th>Test Case</th><th>Category</th><th>Executed</th><th>Result</th></tr>'
-        rows = []
-        for tc in self.testcases:
-            executed = '✓' if tc.is_executed else '–'
-            result = '✓ Pass' if tc.is_successful else ('✗ Fail' if tc.is_successful is False else 'N/A')
-            mark = ''
-            if per_row:
-                lvl, suf = self._eff(tc)
-                mark = f'<td class="pmark">{_escape_xml(self.marking.portion_mark(lvl, suf))}</td>'
-            rows.append(f'<tr>{mark}<td>{_escape_xml(tc.title)}</td><td>{_escape_xml(_v(tc.category).replace("_"," ").title())}</td>'
-                        f'<td>{executed}</td><td>{result}</td></tr>')
-        return f'<table>{head}{"".join(rows)}</table>'
-
-    def _cleanup_html(self):
-        if not self.cleanup_artifacts:
-            return '<p>No cleanup artifacts recorded.</p>'
-        per_row = bool(self.marking and self.marking.per_row)
-        head = '<tr>' + ('<th>Mark</th>' if per_row else '') + '<th>Artifact</th><th>Type</th><th>Status</th><th>Location</th></tr>'
-        rows = []
-        for ca in self.cleanup_artifacts:
-            mark = ''
-            if per_row:
-                lvl, suf = self._eff(ca)
-                mark = f'<td class="pmark">{_escape_xml(self.marking.portion_mark(lvl, suf))}</td>'
-            rows.append(f'<tr>{mark}<td>{_escape_xml(ca.title)}</td><td>{_escape_xml(_v(ca.artifact_type).replace("_"," ").title())}</td>'
-                        f'<td>{_escape_xml(_v(ca.status).replace("_"," ").title())}</td><td>{_escape_xml(ca.location or "N/A")}</td></tr>')
-        return f'<table>{head}{"".join(rows)}</table>'
+    def generate(self) -> str:
+        """Portable, offline, interactive HTML report — a self-contained app whose
+        data is injected as ``window.__REPORT__`` (markdown pre-rendered, images
+        embedded as data URIs). Replaces the old single-page HTML clone."""
+        import json as _json
+        import os as _os
+        data = self._build_report_data()
+        tmpl_path = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)),
+                                  'report_templates', 'interactive', 'report.template.html')
+        with open(tmpl_path, 'r', encoding='utf-8') as fh:
+            tmpl = fh.read()
+        # ``</`` is escaped so a field can never break out of the <script> tag.
+        payload = 'window.__REPORT__ = ' + _json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + ';'
+        return tmpl.replace('/*__REPORT_DATA__*/', payload, 1)
