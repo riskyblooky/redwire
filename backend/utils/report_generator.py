@@ -1493,6 +1493,168 @@ class PDFReportGenerator:
         ]))
         return t
 
+    # ── Overview / dashboard charts (reportlab.graphics, no new deps) ──
+
+    def _severity_donut(self, counts, total, size=94):
+        from reportlab.graphics.shapes import Drawing, Wedge, String, Circle
+        d = Drawing(size, size)
+        cx = cy = size / 2.0
+        r = size / 2.0 - 3
+        start = 90.0
+        for sev in _SEV_ORDER:
+            v = counts.get(sev, 0)
+            if not v:
+                continue
+            ext = 360.0 * v / (total or 1)
+            d.add(Wedge(cx, cy, r, start - ext, start, yradius=r,
+                        fillColor=colors.HexColor(self._sev_hex(sev)),
+                        strokeColor=colors.white, strokeWidth=1.4))
+            start -= ext
+        d.add(Circle(cx, cy, r * 0.60, fillColor=colors.white, strokeColor=None))
+        d.add(String(cx, cy + 1, str(total), textAnchor='middle', fontSize=18,
+                     fontName='Helvetica-Bold', fillColor=colors.HexColor(_t(self.theme, 'body_text_color'))))
+        d.add(String(cx, cy - 12, 'FINDINGS', textAnchor='middle', fontSize=6,
+                     fillColor=colors.HexColor(_t(self.theme, 'muted_text_color'))))
+        return d
+
+    def _metric_tiles(self, pairs):
+        """pairs: (label, value, hexcolor) → compact 2-col grid of stat tiles."""
+        muted = _t(self.theme, 'muted_text_color')
+        cells = []
+        for label, value, hexc in pairs:
+            num = Paragraph(str(value), ParagraphStyle(
+                name=f'_mn_{label}', parent=self.styles['Normal'], fontSize=17,
+                fontName='Helvetica-Bold', textColor=colors.HexColor(hexc), leading=18))
+            lbl = Paragraph(label, ParagraphStyle(
+                name=f'_ml_{label}', parent=self.styles['Normal'], fontSize=7.5,
+                textColor=colors.HexColor(muted), leading=9))
+            inner = Table([[num], [lbl]], colWidths=[1.25 * inch])
+            inner.setStyle(TableStyle([
+                ('LEFTPADDING', (0, 0), (-1, -1), 10), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (0, 0), 8), ('BOTTOMPADDING', (0, 0), (0, 0), 1),
+                ('TOPPADDING', (0, 1), (0, 1), 0), ('BOTTOMPADDING', (0, 1), (0, 1), 8),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+                ('LINEBEFORE', (0, 0), (0, -1), 2.5, colors.HexColor(hexc)),
+            ]))
+            cells.append(inner)
+        grid = [[cells[i], cells[i + 1] if i + 1 < len(cells) else '']
+                for i in range(0, len(cells), 2)]
+        t = Table(grid, colWidths=[1.4 * inch, 1.4 * inch])
+        t.setStyle(TableStyle([('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                               ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                               ('VALIGN', (0, 0), (-1, -1), 'TOP')]))
+        return t
+
+    def _exposure_chart(self, asset_rows, width=460, row_h=22):
+        """asset_rows: (name, {sev:count}, total) → horizontal stacked bars."""
+        from reportlab.graphics.shapes import Drawing, Rect, String
+        rows = sorted(asset_rows, key=lambda x: -x[2])[:6]
+        if not rows:
+            return None
+        maxt = max((r[2] for r in rows), default=1) or 1
+        label_w = 150
+        bar_max = width - label_w - 40
+        h = len(rows) * row_h + 6
+        d = Drawing(width, h)
+        body = _t(self.theme, 'body_text_color'); muted = _t(self.theme, 'muted_text_color')
+        for i, (name, sevs, total) in enumerate(rows):
+            y = h - (i + 1) * row_h + 6
+            nm = name if len(name) <= 30 else name[:29] + '…'
+            d.add(String(0, y + 1, nm, fontSize=8, fillColor=colors.HexColor(body)))
+            x = label_w
+            for sev in _SEV_ORDER:
+                c = sevs.get(sev, 0)
+                if not c:
+                    continue
+                w = (c / maxt) * bar_max
+                d.add(Rect(x, y - 1, w, 9, fillColor=colors.HexColor(self._sev_hex(sev)),
+                           strokeColor=colors.white, strokeWidth=0.6))
+                x += w
+            d.add(String(x + 5, y + 1, str(total), fontSize=8, fontName='Helvetica-Bold',
+                         fillColor=colors.HexColor(muted)))
+        return d
+
+    def _severity_legend(self, counts):
+        """One-row colour key + per-severity counts (doubles as the donut legend)."""
+        body = _t(self.theme, 'body_text_color')
+        cells = []
+        for sev in _SEV_ORDER:
+            c = counts.get(sev, 0)
+            cells.append(Paragraph(
+                f'<font color="{self._sev_hex(sev)}">●</font> <b>{c}</b> {sev.capitalize()}',
+                ParagraphStyle(name=f'_lg_{sev}', parent=self.styles['Normal'], fontSize=8.5,
+                               textColor=colors.HexColor(body), leading=11)))
+        t = Table([cells], colWidths=[1.3 * inch] * len(_SEV_ORDER))
+        t.setStyle(TableStyle([
+            ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LINEABOVE', (0, 0), (-1, 0), 0.5, colors.HexColor('#E2E8F0')),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#E2E8F0')),
+        ]))
+        return t
+
+    def _render_overview(self, elements):
+        """A risk-overview dashboard page: rating + severity donut + key-metric
+        tiles + exposure-by-asset — mirroring the interactive report overview."""
+        if not self.findings:
+            return
+        counts = {}
+        for f in self.findings:
+            k = _v(f.severity).upper()
+            counts[k] = counts.get(k, 0) + 1
+        total = len(self.findings)
+        rating = _v(self.findings[0].severity).upper()
+        cvsses = [f.cvss_score for f in self.findings if f.cvss_score]
+        score = float(max(cvsses)) if cvsses else 0.0
+        muted = _t(self.theme, 'muted_text_color')
+        body = _t(self.theme, 'body_text_color')
+
+        elements.append(self._section_header_table('RISK OVERVIEW', None))
+        elements.append(Spacer(1, 14))
+
+        rating_p = Paragraph(rating, ParagraphStyle(name='_rating', parent=self.styles['Normal'],
+            fontSize=26, fontName='Helvetica-Bold', textColor=colors.HexColor(self._sev_hex(rating)), leading=27))
+        score_p = Paragraph(f'CVSS up to <b>{score:.1f}</b>', ParagraphStyle(name='_rscore',
+            parent=self.styles['Normal'], fontSize=10, textColor=colors.HexColor(body), leading=13))
+        cap_p = Paragraph('Overall risk posture', ParagraphStyle(name='_rcap', parent=self.styles['Normal'],
+            fontSize=8, textColor=colors.HexColor(muted), leading=10))
+        risk_cell = Table([[rating_p], [score_p], [cap_p]], colWidths=[2.0 * inch])
+        risk_cell.setStyle(TableStyle([('LEFTPADDING', (0, 0), (-1, -1), 0),
+                                       ('TOPPADDING', (0, 0), (-1, -1), 1), ('BOTTOMPADDING', (0, 0), (-1, -1), 1)]))
+
+        agg = {}
+        for f in self.findings:
+            sev = _v(f.severity).upper()
+            for a in (f.assets or []):
+                d = agg.setdefault(a.name, {})
+                d[sev] = d.get(sev, 0) + 1
+        fixed = sum(1 for f in self.findings if _v(f.status).upper() in ('RESOLVED', 'REMEDIATED', 'CLOSED', 'FIXED'))
+        tiles = self._metric_tiles([
+            ('FINDINGS', total, body),
+            ('ASSETS', len(agg), '#3B82F6'),
+            ('TEST CASES', len(self.testcases), '#059669'),
+            ('FIXED', fixed, '#16A34A'),
+        ])
+
+        top = Table([[risk_cell, self._severity_donut(counts, total), tiles]],
+                    colWidths=[2.1 * inch, 1.5 * inch, 2.9 * inch])
+        top.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                                 ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                                 ('ALIGN', (1, 0), (1, 0), 'CENTER')]))
+        elements.append(top)
+        elements.append(Spacer(1, 16))
+        elements.append(self._severity_legend(counts))
+        elements.append(Spacer(1, 20))
+
+        arows = [(name, sevs, sum(sevs.values())) for name, sevs in agg.items()]
+        chart = self._exposure_chart(arows)
+        if chart is not None:
+            elements.append(Paragraph('EXPOSURE BY ASSET', ParagraphStyle(name='_exl', parent=self.styles['Label'],
+                fontSize=8, fontName='Helvetica-Bold', textColor=colors.HexColor(muted), spaceAfter=8)))
+            elements.append(chart)
+        elements.append(PageBreak())
+
     # ── Finding card ──────────────────────────────────────────────
 
     def _finding_card(self, idx: int, finding: Finding) -> tuple:
@@ -1638,11 +1800,291 @@ class PDFReportGenerator:
         for _cf_label, _cf_value in _report_cf_rows(self.finding_custom_fields, finding.custom_fields):
             _add_row(_cf_label.upper(), _cf_value)
 
+        # Attack path — the per-finding subgraph (test cases → finding → assets →
+        # cleanup), mirroring the interactive report. Rendered only when there is
+        # something beyond the finding node itself to show.
+        if _t(self.theme, 'show_attack_graph') is not False:
+            try:
+                sg_nodes, sg_edges = self._finding_subgraph(finding)
+                if len(sg_nodes) >= 2:
+                    d = self._graph_drawing(sg_nodes, sg_edges, avail_w=6.4 * inch, compact=True)
+                    if d is not None:
+                        body.append(_field_label('ATTACK PATH'))
+                        body.append(d)
+            except Exception as _ge:
+                _log.warning("attack-path graph render failed for finding %s: %s", finding.id, _ge)
+
         # `elements` holds the header + meta tables (small, page-safe) — the
         # "head" that should stay together; `body` holds the splittable field
         # flowables. Returned separately so the caller keeps the head together
         # while letting the body flow across pages.
         return elements, body
+
+    # ── Attack graph (native reportlab.graphics; mirrors the web report) ──
+    #
+    # Same node/edge model as the interactive HTML report's graph:
+    #   nodes: testcase | finding | asset | cleanup
+    #   edges: subtest (parent→child TC) · discovered (TC→finding)
+    #          · impacts (finding→asset) · cleanup (asset|finding→cleanup)
+    # Rendered with a longest-path (Sugiyama-style) column layout, drawn once
+    # per finding as an "attack path", and once for the whole engagement when
+    # the graph is small enough to stay legible on a static page.
+
+    _ENT_ASSET = '#2563EB'      # blue-600  (light-theme entity colors)
+    _ENT_TESTCASE = '#059669'   # emerald-600
+    _ENT_CLEANUP = '#4D7C0F'    # lime-700
+
+    @staticmethod
+    def _graph_status(tc):
+        if getattr(tc, 'is_successful', None) is True:
+            return 'Pass'
+        if getattr(tc, 'is_successful', None) is False:
+            return 'Fail'
+        if getattr(tc, 'is_executed', None):
+            return 'Executed'
+        return None
+
+    def _display_ids(self):
+        if not hasattr(self, '_did_f'):
+            self._did_f = {f.id: f'F{i:02d}' for i, f in enumerate(self.findings, 1)}
+            self._did_t = {t.id: f'T{i}' for i, t in enumerate(self.testcases, 1)}
+        return self._did_f, self._did_t
+
+    def _node_color(self, n):
+        t = n['type']
+        if t == 'finding':
+            return self._sev_hex(n.get('sev', 'INFO'))
+        if t == 'testcase':
+            return self._ENT_TESTCASE
+        if t == 'asset':
+            return self._ENT_ASSET
+        return self._ENT_CLEANUP
+
+    def _edge_style(self, kind):
+        """(hex, width, dash-or-None) — matches the web EDGE_STYLE mapping.
+
+        'discovered' uses the web brand purple (not the PDF theme primary, which
+        defaults to the same red as Critical severity and would read as a severity
+        cue on an edge)."""
+        return {
+            'subtest':    ('#94A3B8', 1.0, None),
+            'discovered': ('#7C3AED', 1.6, None),
+            'impacts':    ('#60A5FA', 1.0, (3, 3)),
+            'cleanup':    ('#B45309', 1.0, (2, 3)),
+        }.get(kind, ('#94A3B8', 1.0, None))
+
+    def _finding_subgraph(self, f):
+        """(nodes, edges) for one finding: the test cases that discovered it (with
+        their parent chain), the finding, its assets, and its cleanup artifacts."""
+        dF, dT = self._display_ids()
+        tcmap = {t.id: t for t in self.testcases}
+        nodes, edges, seen = [], [], set()
+        for t in self.testcases:
+            if any(x.id == f.id for x in (t.findings or [])):
+                edges.append({'s': t.id, 't': f.id, 'kind': 'discovered'})
+                cur = t
+                while cur is not None:
+                    if cur.id not in seen:
+                        seen.add(cur.id)
+                        nodes.append({'id': cur.id, 'type': 'testcase', 'label': cur.title or 'Test case',
+                                      'did': dT.get(cur.id, ''), 'status': self._graph_status(cur)})
+                    if cur.parent_id and cur.parent_id in tcmap:
+                        edges.append({'s': cur.parent_id, 't': cur.id, 'kind': 'subtest'})
+                        cur = tcmap[cur.parent_id]
+                    else:
+                        cur = None
+        nodes.append({'id': f.id, 'type': 'finding', 'label': f.title or 'Untitled',
+                      'did': dF.get(f.id, ''), 'sev': _v(f.severity).upper()})
+        f_asset_names = {a.name for a in (f.assets or [])}
+        seen_assets = set()
+        for a in (f.assets or []):
+            if a.name in seen_assets:
+                continue
+            seen_assets.add(a.name)
+            nodes.append({'id': 'a-' + a.name, 'type': 'asset', 'label': a.name, 'did': ''})
+            edges.append({'s': f.id, 't': 'a-' + a.name, 'kind': 'impacts'})
+        for i, ca in enumerate(self.cleanup_artifacts):
+            if any(x.id == f.id for x in (ca.findings or [])):
+                cid = 'sC%d' % i
+                nodes.append({'id': cid, 'type': 'cleanup', 'label': ca.title or 'Artifact', 'did': ''})
+                linked_a = next((x.name for x in (ca.assets or [])), None)
+                src = ('a-' + linked_a) if (linked_a and linked_a in f_asset_names) else f.id
+                edges.append({'s': src, 't': cid, 'kind': 'cleanup'})
+        return nodes, edges
+
+    def _build_full_graph(self):
+        """(nodes, edges) for the whole engagement — the web buildGraph()."""
+        dF, dT = self._display_ids()
+        nodes, edges, aid = [], [], {}
+        for t in self.testcases:
+            nodes.append({'id': t.id, 'type': 'testcase', 'label': t.title or 'Test case',
+                          'did': dT.get(t.id, ''), 'status': self._graph_status(t)})
+        for f in self.findings:
+            nodes.append({'id': f.id, 'type': 'finding', 'label': f.title or 'Untitled',
+                          'did': dF.get(f.id, ''), 'sev': _v(f.severity).upper()})
+        asset_names = []
+        for f in self.findings:
+            for a in (f.assets or []):
+                if a.name not in aid:
+                    aid[a.name] = 'A%d' % len(asset_names)
+                    asset_names.append(a.name)
+        for name in asset_names:
+            nodes.append({'id': aid[name], 'type': 'asset', 'label': name, 'did': ''})
+        for i, ca in enumerate(self.cleanup_artifacts):
+            cid = 'C%d' % i
+            nodes.append({'id': cid, 'type': 'cleanup', 'label': ca.title or 'Artifact', 'did': ''})
+            linked_a = next((x.name for x in (ca.assets or [])), None)
+            linked_f = next((x.id for x in (ca.findings or [])), None)
+            src = aid.get(linked_a) if (linked_a and linked_a in aid) else linked_f
+            if src:
+                edges.append({'s': src, 't': cid, 'kind': 'cleanup'})
+        for t in self.testcases:
+            if getattr(t, 'parent_id', None):
+                edges.append({'s': t.parent_id, 't': t.id, 'kind': 'subtest'})
+            for f in (t.findings or []):
+                edges.append({'s': t.id, 't': f.id, 'kind': 'discovered'})
+        for f in self.findings:
+            for a in (f.assets or []):
+                if a.name in aid:
+                    edges.append({'s': f.id, 't': aid[a.name], 'kind': 'impacts'})
+        return nodes, edges
+
+    @staticmethod
+    def _layer_nodes(nodes, edges):
+        """Longest-path layering (the web renderGraph topo pass). Returns id→layer."""
+        inD = {n['id']: 0 for n in nodes}
+        outA = {n['id']: [] for n in nodes}
+        for e in edges:
+            outA[e['s']].append(e['t'])
+            inD[e['t']] += 1
+        layer = {n['id']: 0 for n in nodes}
+        ind = dict(inD)
+        q = [nid for nid in inD if ind[nid] == 0]
+        while q:
+            nid = q.pop(0)
+            for t in outA[nid]:
+                if layer[nid] + 1 > layer[t]:
+                    layer[t] = layer[nid] + 1
+                ind[t] -= 1
+                if ind[t] == 0:
+                    q.append(t)
+        return layer
+
+    def _draw_node(self, group, n, NW, NH, compact):
+        from reportlab.graphics.shapes import Rect, String, Circle
+        col = self._node_color(n)
+        x, y = n['x'], n['y']
+        muted = _t(self.theme, 'muted_text_color')
+        body = _t(self.theme, 'body_text_color')
+        group.add(Rect(x, y, NW, NH, rx=4, ry=4, fillColor=colors.white,
+                       strokeColor=colors.HexColor(col), strokeWidth=1.1))
+        group.add(Rect(x, y, 3.2, NH, fillColor=colors.HexColor(col), strokeColor=None))
+        group.add(Circle(x + 12, y + NH - 10, 3, fillColor=colors.HexColor(col), strokeColor=None))
+        did = n.get('did', '')
+        top = did
+        if n['type'] == 'testcase' and n.get('status'):
+            top = f'{did} · {n["status"]}' if did else n['status']
+        if top:
+            group.add(String(x + 20, y + NH - 12.5, top, fontSize=6.3, fontName='Helvetica-Bold',
+                             fillColor=colors.HexColor(muted)))
+        lim = 20 if compact else 24
+        lbl = n['label'] if len(n['label']) <= lim else n['label'][:lim - 1] + '…'
+        group.add(String(x + 8, y + 6, lbl, fontSize=7.4,
+                         fillColor=colors.HexColor(body)))
+
+    def _draw_edge(self, group, a, b, kind, NW, NH):
+        from reportlab.graphics.shapes import Path
+        hexc, w, dash = self._edge_style(kind)
+        sx, sy = a['x'] + NW, a['y'] + NH / 2.0
+        tx, ty = b['x'], b['y'] + NH / 2.0
+        mx = (sx + tx) / 2.0
+        p = Path(strokeColor=colors.HexColor(hexc), strokeWidth=w, fillColor=None)
+        if dash:
+            p.strokeDashArray = list(dash)
+        p.moveTo(sx, sy)
+        p.curveTo(mx, sy, mx, ty, tx, ty)
+        group.add(p)
+
+    def _graph_drawing(self, nodes, edges, avail_w, compact=True):
+        from reportlab.graphics.shapes import Drawing, Group
+        if not nodes:
+            return None
+        byId = {n['id']: n for n in nodes}
+        edges = [e for e in edges if e['s'] in byId and e['t'] in byId]
+        layer = self._layer_nodes(nodes, edges)
+        NW = 118 if compact else 138
+        NH = 30
+        hgap, vgap = 32, 12
+        cols = {}
+        for n in nodes:
+            cols.setdefault(layer[n['id']], []).append(n)
+        max_layer = max(layer.values()) if layer else 0
+        max_rows = max((len(v) for v in cols.values()), default=1)
+        w_nat = (max_layer + 1) * NW + max_layer * hgap
+        h_nat = max_rows * NH + (max_rows - 1) * vgap
+        for L, ns in cols.items():
+            col_h = len(ns) * NH + (len(ns) - 1) * vgap
+            y0 = (h_nat - col_h) / 2.0
+            for i, n in enumerate(ns):
+                n['x'] = L * (NW + hgap)
+                n['y'] = h_nat - y0 - NH - i * (NH + vgap)
+        g = Group()
+        for e in edges:
+            self._draw_edge(g, byId[e['s']], byId[e['t']], e['kind'], NW, NH)
+        for n in nodes:
+            self._draw_node(g, n, NW, NH, compact)
+        s = min(1.0, avail_w / w_nat) if w_nat > avail_w else 1.0
+        if s != 1.0:
+            g.transform = (s, 0, 0, s, 0, 0)
+        d = Drawing(w_nat * s, h_nat * s)
+        d.add(g)
+        return d
+
+    def _graph_legend(self):
+        body = _t(self.theme, 'body_text_color')
+        muted = _t(self.theme, 'muted_text_color')
+        items = [(self._ENT_TESTCASE, 'Test case'), ('#64748B', 'Finding'),
+                 (self._ENT_ASSET, 'Asset'), (self._ENT_CLEANUP, 'Cleanup')]
+        cells = [Paragraph(f'<font color="{c}">■</font> {t}', ParagraphStyle(
+                    name=f'_gl_{t}', parent=self.styles['Normal'], fontSize=8,
+                    textColor=colors.HexColor(body), leading=10)) for c, t in items]
+        edgep = Paragraph(
+            'test&#8594;finding <b>discovered</b> · finding&#8943;asset <b>impacts</b> · &#8594;<b>cleanup</b>',
+            ParagraphStyle(name='_gle', parent=self.styles['Normal'], fontSize=7.3,
+                           textColor=colors.HexColor(muted), leading=10))
+        t = Table([cells + [edgep]], colWidths=[0.9 * inch] * 4 + [2.9 * inch])
+        t.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                               ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                               ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2)]))
+        return t
+
+    def _render_attack_graph_section(self, elements):
+        """Full-engagement attack graph — only when small enough to read on paper.
+        Larger engagements rely on the per-finding attack paths inside each card."""
+        nodes, edges = self._build_full_graph()
+        if len(nodes) < 3:
+            return
+        # Legibility gate: a static page can't pan/zoom, so a tall finding column
+        # becomes an unreadable stripe. Skip past a threshold; per-finding paths cover it.
+        layer = self._layer_nodes(nodes, edges)
+        cols = {}
+        for n in nodes:
+            cols.setdefault(layer[n['id']], []).append(n['id'])
+        # The width auto-scales to the page, so the tallest column (not the node
+        # total) is what governs legibility on a static page. Past ~12 rows the
+        # graph becomes a cramped stripe — skip it; the per-finding paths carry it.
+        max_rows = max((len(v) for v in cols.values()), default=1)
+        if max_rows > 12:
+            return
+        elements.append(PageBreak())
+        elements.append(self._section_header_table('ATTACK GRAPH', None))
+        elements.append(Spacer(1, 12))
+        elements.append(self._graph_legend())
+        elements.append(Spacer(1, 14))
+        d = self._graph_drawing(nodes, edges, avail_w=6.5 * inch, compact=False)
+        if d is not None:
+            elements.append(d)
+        elements.append(Spacer(1, 24))
 
     # ── Generate ──────────────────────────────────────────────────
 
@@ -1668,6 +2110,14 @@ class PDFReportGenerator:
 
         # Table of contents
         self._render_toc(elements)
+
+        # Risk-overview dashboard (charts) — mirrors the interactive report
+        if _t(self.theme, 'show_risk_overview') is not False:
+            self._render_overview(elements)
+
+        # Full-engagement attack graph (when small enough to read on a static page)
+        if _t(self.theme, 'show_attack_graph') is not False:
+            self._render_attack_graph_section(elements)
 
         # Sections
         for section in self.sections:

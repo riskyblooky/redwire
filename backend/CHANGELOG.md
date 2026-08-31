@@ -30,6 +30,13 @@ section becomes one release entry.
   Ask AI + Review assistant (hidden for read-only viewers).
 
 ### Improved
+- **PDF report front-page dashboard + attack graphs** — the PDF now opens with a
+  Risk Overview page mirroring the interactive report: the overall risk rating,
+  a severity donut, key-metric tiles (findings / assets / test cases / fixed), a
+  severity legend, and an exposure-by-asset chart. Each finding also carries an
+  **attack path** diagram (test cases → finding → assets → cleanup), and small
+  engagements get a full-engagement **attack graph** section. All rendered
+  natively — no new dependencies.
 - **Richer test cases in the PDF report** — the flat 4-column test-case table is
   replaced by a hierarchical detail view: the parent → child test tree, a
   pass/fail status chip, and markdown-rendered steps / expected result / actual
