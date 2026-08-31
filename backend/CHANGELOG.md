@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.5.5] — Unreleased
+## [1.5.5] — 2026-08-30
 
 ### Added
 - **Interactive HTML report** — the HTML report format is now a portable,
