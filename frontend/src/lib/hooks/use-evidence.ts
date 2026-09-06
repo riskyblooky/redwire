@@ -137,9 +137,9 @@ export function useReplaceEvidenceFile() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ id, file }: { id: string; file: Blob }) => {
+        mutationFn: async ({ id, file, filename }: { id: string; file: Blob; filename?: string }) => {
             const formData = new FormData();
-            formData.append('file', file, 'edited-image.png');
+            formData.append('file', file, filename || 'edited-image.png');
 
             const { data } = await api.put<Evidence>(`/evidence/${id}/replace-file`, formData, {
                 headers: {

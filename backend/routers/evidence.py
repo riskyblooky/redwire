@@ -87,21 +87,21 @@ async def get_evidence(
     from models.testcase import TestCase
     
     result = await db.execute(
-        select(Evidence, User.username, User.full_name, Finding.title.label("finding_title"), TestCase.title.label("testcase_title"))
+        select(Evidence, User.username, User.full_name, Finding.title.label("finding_title"), Finding.status.label("finding_status"), TestCase.title.label("testcase_title"))
         .outerjoin(User, Evidence.created_by == User.id)
         .outerjoin(Finding, Evidence.finding_id == Finding.id)
         .outerjoin(TestCase, Evidence.testcase_id == TestCase.id)
         .where(Evidence.id == evidence_id)
     )
     row = result.first()
-    
+
     if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Evidence not found"
         )
-    
-    evidence, username, full_name, finding_title, testcase_title = row
+
+    evidence, username, full_name, finding_title, finding_status, testcase_title = row
     
     # Authorization Check using RBAC
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
@@ -125,8 +125,9 @@ async def get_evidence(
     evidence.created_by_username = username
     evidence.created_by_full_name = full_name
     evidence.finding_title = finding_title
+    evidence.finding_status = getattr(finding_status, "value", finding_status)
     evidence.testcase_title = testcase_title
-    
+
     return evidence
 
 @router.patch("/{evidence_id}", response_model=EvidenceResponse)

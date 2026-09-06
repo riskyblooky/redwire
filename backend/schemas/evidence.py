@@ -34,6 +34,9 @@ class EvidenceResponse(EvidenceBase):
     unresolved_thread_count: Optional[int] = 0
     finding_title: Optional[str] = None
     testcase_title: Optional[str] = None
+    # Parent finding's status, so the UI can warn before an edit that the
+    # chain-of-custody lock (VERIFIED → immutable) will reject.
+    finding_status: Optional[str] = None
 
     class Config:
         from_attributes = True

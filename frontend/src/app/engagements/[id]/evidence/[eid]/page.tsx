@@ -55,6 +55,9 @@ import { useEvidence, getEvidenceUrl, useDeleteEvidence, useUpdateEvidence, useR
 import { getEvidenceDownloadUrl } from '@/lib/evidence-download';
 import { useUsers } from '@/lib/hooks/use-users';
 import ImageEditor from '@/components/ui/image-editor';
+import TextFileEditor, { isTextEditable } from '@/components/ui/text-file-editor';
+import CsvTableEditor, { isCsv, parseCsv } from '@/components/ui/csv-table-editor';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useEngagement } from '@/lib/hooks/use-engagements';
 import DiscussionSection from '@/components/discussions/discussion-section';
@@ -100,10 +103,16 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
 
     const { data: exifData, isLoading: isLoadingExif } = useEvidenceExif(eid, evidence?.mime_type);
 
+    const { confirm: confirmDialog, ConfirmDialog } = useConfirmDialog();
+
     const [isEditorOpen, setIsEditorOpen] = useState(false);
+    const [isTextEditorOpen, setIsTextEditorOpen] = useState(false);
+    const [isCsvEditorOpen, setIsCsvEditorOpen] = useState(false);
     const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
     const [fileUrl, setFileUrl] = useState<string | null>(null);
+    const [textPreview, setTextPreview] = useState<string | null>(null);
+    const [textPreviewLoading, setTextPreviewLoading] = useState(false);
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [exifOpen, setExifOpen] = useState(false);
     const [description, setDescription] = useState('');
@@ -122,6 +131,21 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
         }).catch(() => {});
         return () => { cancelled = true; };
     }, [eid]);
+
+    // Inline text/CSV preview for editable text attachments (mirrors the image preview).
+    useEffect(() => {
+        if (!fileUrl || !evidence || !(isTextEditable(evidence.mime_type, evidence.original_filename) || isCsv(evidence.mime_type, evidence.original_filename))) {
+            setTextPreview(null);
+            return;
+        }
+        let cancelled = false;
+        setTextPreviewLoading(true);
+        fetch(fileUrl)
+            .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+            .then((text) => { if (!cancelled) { setTextPreview(text); setTextPreviewLoading(false); } })
+            .catch(() => { if (!cancelled) { setTextPreview(null); setTextPreviewLoading(false); } });
+        return () => { cancelled = true; };
+    }, [fileUrl, evidence]);
 
     const handleDelete = async () => {
         if (!evidence) return;
@@ -161,6 +185,26 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
         } catch (err) {
             toast.error('Failed to update classification');
         }
+    };
+
+    // Open an editor, but warn first if the attachment is locked by chain of
+    // custody (parent finding VERIFIED) — the save would be rejected with a 409,
+    // so let the user back out before spending effort editing.
+    const openEditor = async (which: 'image' | 'text' | 'csv') => {
+        const locked = !!evidence?.finding_id && evidence?.finding_status === 'VERIFIED';
+        if (locked) {
+            const ok = await confirmDialog({
+                title: 'Attachment is locked',
+                description:
+                    'The parent finding is VERIFIED, so this attachment is locked for chain-of-custody integrity. Any edit will be rejected when you try to save. Open the editor anyway?',
+                confirmLabel: 'Open anyway',
+                variant: 'warning',
+            });
+            if (ok !== true) return;
+        }
+        if (which === 'image') setIsEditorOpen(true);
+        else if (which === 'csv') setIsCsvEditorOpen(true);
+        else setIsTextEditorOpen(true);
     };
 
     const handleBack = () => {
@@ -209,6 +253,8 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
 
     const isImage = evidence.mime_type?.startsWith('image/');
     const isPDF = evidence.mime_type?.includes('pdf');
+    const isCsvFile = isCsv(evidence.mime_type, evidence.original_filename);
+    const isText = !isCsvFile && isTextEditable(evidence.mime_type, evidence.original_filename);
 
     return (
         <DashboardLayout>
@@ -243,10 +289,32 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                     variant="outline"
                                     size="sm"
                                     className="h-9 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary/80"
-                                    onClick={() => setIsEditorOpen(true)}
+                                    onClick={() => openEditor('image')}
                                 >
                                     <Pencil className="h-4 w-4 mr-2" />
                                     Edit Image
+                                </Button>
+                            )}
+                            {isText && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary/80"
+                                    onClick={() => openEditor('text')}
+                                >
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Edit Text
+                                </Button>
+                            )}
+                            {isCsvFile && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary/80"
+                                    onClick={() => openEditor('csv')}
+                                >
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Edit Table
                                 </Button>
                             )}
                             <Button
@@ -293,6 +361,51 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                                 className="max-w-full max-h-full object-contain p-4"
                                             />
                                         </div>
+                                    ) : isCsvFile ? (
+                                        textPreviewLoading ? (
+                                            <div className="flex items-center justify-center w-full py-20 text-slate-600">
+                                                <Loader2 className="h-6 w-6 animate-spin" />
+                                            </div>
+                                        ) : textPreview !== null ? (
+                                            <div className="w-full h-full max-h-[560px] overflow-auto self-start p-3">
+                                                <table className="border-collapse text-xs">
+                                                    <tbody>
+                                                        {parseCsv(textPreview).slice(0, 200).map((row, r) => (
+                                                            <tr key={r}>
+                                                                <td className="sticky left-0 bg-slate-900 border border-slate-800 px-2 py-1 text-center text-slate-600 select-none">{r + 1}</td>
+                                                                {row.map((cell, c) => (
+                                                                    <td key={c} className="border border-slate-800 px-2 py-1 text-slate-300 whitespace-pre align-top">{cell}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col items-center gap-4 text-slate-500 py-20 px-6 max-w-md text-center">
+                                                <div className="h-20 w-20 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-800">
+                                                    <FileIcon className="h-10 w-10 opacity-40" />
+                                                </div>
+                                                <p className="text-sm">Couldn't load a preview for this file. Download it to view its contents.</p>
+                                            </div>
+                                        )
+                                    ) : isText ? (
+                                        textPreviewLoading ? (
+                                            <div className="flex items-center justify-center w-full py-20 text-slate-600">
+                                                <Loader2 className="h-6 w-6 animate-spin" />
+                                            </div>
+                                        ) : textPreview !== null ? (
+                                            <pre className="w-full h-full max-h-[560px] overflow-auto p-5 text-xs leading-relaxed text-slate-300 font-mono whitespace-pre-wrap break-words self-start">
+                                                {textPreview || <span className="text-slate-600 italic">Empty file.</span>}
+                                            </pre>
+                                        ) : (
+                                            <div className="flex flex-col items-center gap-4 text-slate-500 py-20 px-6 max-w-md text-center">
+                                                <div className="h-20 w-20 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-800">
+                                                    <FileIcon className="h-10 w-10 opacity-40" />
+                                                </div>
+                                                <p className="text-sm">Couldn't load a preview for this file. Download it to view its contents.</p>
+                                            </div>
+                                        )
                                     ) : (
                                         <div className="flex flex-col items-center gap-4 text-slate-500 py-20 px-6 max-w-md text-center">
                                             <div className="h-20 w-20 rounded-2xl bg-slate-900 flex items-center justify-center border border-slate-800">
@@ -651,6 +764,43 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                     />
                 )}
 
+                {/* Text Editor Modal */}
+                {isText && fileUrl && (
+                    <TextFileEditor
+                        open={isTextEditorOpen}
+                        onClose={() => setIsTextEditorOpen(false)}
+                        fileUrl={fileUrl}
+                        filename={evidence.original_filename}
+                        mimeType={evidence.mime_type}
+                        engagementId={id}
+                        onSave={async (blob) => {
+                            await replaceFile.mutateAsync({ id: evidence.id, file: blob, filename: evidence.original_filename });
+                            const url = await getEvidenceDownloadUrl(eid, true);
+                            setFileUrl(url);
+                            setIsTextEditorOpen(false);
+                            toast.success('File saved successfully');
+                        }}
+                    />
+                )}
+
+                {/* CSV Table Editor Modal */}
+                {isCsvFile && fileUrl && (
+                    <CsvTableEditor
+                        open={isCsvEditorOpen}
+                        onClose={() => setIsCsvEditorOpen(false)}
+                        fileUrl={fileUrl}
+                        filename={evidence.original_filename}
+                        mimeType={evidence.mime_type}
+                        onSave={async (blob) => {
+                            await replaceFile.mutateAsync({ id: evidence.id, file: blob, filename: evidence.original_filename });
+                            const url = await getEvidenceDownloadUrl(eid, true);
+                            setFileUrl(url);
+                            setIsCsvEditorOpen(false);
+                            toast.success('File saved successfully');
+                        }}
+                    />
+                )}
+
                 {/* Lightbox Modal */}
                 {isImage && fileUrl && (
                     <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
@@ -669,6 +819,8 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                         </DialogContent>
                     </Dialog>
                 )}
+
+                <ConfirmDialog />
             </div>
         </DashboardLayout>
     );

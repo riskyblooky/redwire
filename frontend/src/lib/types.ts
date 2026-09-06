@@ -259,6 +259,7 @@ export interface Evidence {
     unresolved_thread_count?: number;
     finding_title?: string;
     testcase_title?: string;
+    finding_status?: string;
 }
 
 // Test Case types
