@@ -2,6 +2,7 @@
 
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import { activeLineKey, createActiveLineExtension } from './active-line-extension';
 import { Markdown } from 'tiptap-markdown';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
@@ -39,7 +40,7 @@ import {
     Sparkles, Send, X, ClipboardPaste, Loader2, Database,
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    Table as TableIcon, Trash2, Plus, Minus, Workflow, TextSelect, ListChecks, ChevronsUpDown,
+    Table as TableIcon, Trash2, Plus, Minus, Workflow, TextSelect, ListChecks, ChevronsUpDown, Hash,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -159,9 +160,13 @@ interface TiptapEditorProps {
      *  rebalances the split between the text area and the AI panel without
      *  changing the total height. Used by the inline editor. */
     resizable?: boolean;
+    /** Show a left gutter numbering each top-level block, and highlight the
+     *  block the cursor is in. Users can toggle it from the toolbar; this only
+     *  sets the initial state. */
+    lineNumbers?: boolean;
 }
 
-const MenuBar = ({ editor }: { editor: any }) => {
+const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any; showLineNumbers?: boolean; onToggleLineNumbers?: () => void }) => {
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [imageDialogOpen, setImageDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
@@ -613,6 +618,22 @@ const MenuBar = ({ editor }: { editor: any }) => {
                 >
                     <ImageIcon className="h-4 w-4" />
                 </Button>
+
+                {onToggleLineNumbers && (
+                    <>
+                        <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title={showLineNumbers ? 'Hide line numbers' : 'Show line numbers'}
+                            onClick={onToggleLineNumbers}
+                            className={cn("h-8 w-8 hover:bg-slate-800", showLineNumbers ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        >
+                            <Hash className="h-4 w-4" />
+                        </Button>
+                    </>
+                )}
             </div>
 
             {/* Link Dialog */}
@@ -763,8 +784,10 @@ function parseInitialEditorHeight(minHeight?: string): number {
     return m ? Math.max(220, parseInt(m[1], 10)) : 360;
 }
 
-export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true }: TiptapEditorProps) {
+export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true, lineNumbers = false }: TiptapEditorProps) {
     const [, setForceUpdate] = useState(0);
+    const [showLineNumbers, setShowLineNumbers] = useState(lineNumbers);
+    const showLineNumbersRef = useRef(lineNumbers);
     const currentUsername = useAuthStore((s) => s.user?.username);
 
     // Whole-editor height (corner resize handle). The AI assistant docked below
@@ -876,6 +899,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                     };
                 },
             }),
+            createActiveLineExtension(showLineNumbersRef),
         ],
         content: value,
         editable: !disabled,
@@ -966,6 +990,17 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     // Keep editorRef in sync
     editorRef.current = editor;
 
+    // The active-line highlight is a ProseMirror decoration (see
+    // createActiveLineExtension) so it survives re-renders instead of flickering.
+    // Keep the plugin's enabled flag in sync with the toggle, and nudge a
+    // transaction so decorations recompute the moment it changes.
+    useEffect(() => {
+        showLineNumbersRef.current = showLineNumbers;
+        if (editor) {
+            editor.view.dispatch(editor.state.tr.setMeta(activeLineKey, Date.now()));
+        }
+    }, [editor, showLineNumbers]);
+
     // Corner resize: drag the whole editor taller/shorter.
     const onResizeMove = useCallback((e: MouseEvent) => {
         const d = dragRef.current;
@@ -994,9 +1029,9 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             className={cn("flex flex-col border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", className)}
             style={resizable ? { height: editorHeight } : undefined}
         >
-            <MenuBar editor={editor} />
+            <MenuBar editor={editor} showLineNumbers={showLineNumbers} onToggleLineNumbers={() => setShowLineNumbers(v => !v)} />
             <div
-                className={cn("overflow-y-auto", resizable && "flex-1 min-h-0")}
+                className={cn("overflow-y-auto", resizable && "flex-1 min-h-0", showLineNumbers && "rw-linenumbers")}
                 style={resizable ? undefined : { minHeight }}
                 onClick={() => editor?.commands.focus()}
             >

@@ -233,6 +233,46 @@ export function EditorStyles({ currentUsername }: { currentUsername?: string | n
                 color: #fbbf24;
             }
             ` : ''}
+
+            /* ── Line numbers + active-line highlight (toggle) ──────────────
+               A left gutter numbers each top-level block via a CSS counter, so
+               there's no per-keystroke JS for the numbers. The cursor's block
+               gets .rw-active-line (set from JS) which the active-line rules
+               paint. Scoped to .rw-linenumbers so it's off by default and
+               never touches editors that don't opt in. */
+            .rw-linenumbers .tiptap {
+                counter-reset: rw-line;
+                padding-left: 3.5rem;
+            }
+            .rw-linenumbers .tiptap > * {
+                position: relative;
+                counter-increment: rw-line;
+            }
+            .rw-linenumbers .tiptap > *::before {
+                content: counter(rw-line);
+                position: absolute;
+                left: -3.5rem;
+                width: 2.75rem;
+                text-align: right;
+                color: #475569;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 0.8125rem;
+                line-height: inherit;
+                font-variant-numeric: tabular-nums;
+                user-select: none;
+                pointer-events: none;
+            }
+            /* Active line: subtle band across content + gutter (box-shadow fills
+               the gutter to the left of the block), and a brighter number. */
+            .rw-linenumbers .tiptap > .rw-active-line {
+                background: rgba(96, 165, 250, 0.08);
+                box-shadow: -3.5rem 0 0 0 rgba(96, 165, 250, 0.08);
+                border-radius: 0 0.25rem 0.25rem 0;
+            }
+            .rw-linenumbers .tiptap > .rw-active-line::before {
+                color: #93c5fd;
+                font-weight: 600;
+            }
         `}</style>
     );
 }
