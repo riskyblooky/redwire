@@ -115,24 +115,50 @@ function ChangeRow({ change }: { change: FeedChange }) {
     }
 
     const diff = computeLineDiff(oldV, newV);
+
+    // Show the changes, not the whole field: keep changed lines plus a little
+    // context, and collapse long runs of unchanged lines into a marker.
+    const CONTEXT = 2;
+    const keep = diff.map((l) => l.type !== 'same');
+    diff.forEach((l, i) => {
+        if (l.type === 'same') return;
+        for (let j = Math.max(0, i - CONTEXT); j <= Math.min(diff.length - 1, i + CONTEXT); j++) keep[j] = true;
+    });
+    type DiffRow = { kind: 'line'; line: (typeof diff)[number]; i: number } | { kind: 'gap'; count: number; i: number };
+    const diffRows: DiffRow[] = [];
+    let gap = 0;
+    diff.forEach((line, i) => {
+        if (keep[i]) {
+            if (gap > 0) { diffRows.push({ kind: 'gap', count: gap, i }); gap = 0; }
+            diffRows.push({ kind: 'line', line, i });
+        } else {
+            gap++;
+        }
+    });
+    if (gap > 0) diffRows.push({ kind: 'gap', count: gap, i: diff.length });
+
     return (
         <div className="space-y-1">
             <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{change.label}</div>
             <div className="max-h-64 overflow-auto rounded-md border border-slate-800 bg-slate-950/60 p-2 font-mono text-[11px] leading-relaxed">
-                {diff.map((line, i) => (
+                {diffRows.map((row) => row.kind === 'gap' ? (
+                    <div key={`gap-${row.i}`} className="select-none px-1 py-0.5 text-center text-[10px] italic text-slate-600">
+                        ⋯ {row.count} unchanged line{row.count === 1 ? '' : 's'}
+                    </div>
+                ) : (
                     <div
-                        key={i}
+                        key={row.i}
                         className={cn(
                             'whitespace-pre-wrap px-1',
-                            line.type === 'add' && 'bg-green-500/10 text-green-300',
-                            line.type === 'remove' && 'bg-red-500/10 text-red-300',
-                            line.type === 'same' && 'text-slate-500',
+                            row.line.type === 'add' && 'bg-green-500/10 text-green-300',
+                            row.line.type === 'remove' && 'bg-red-500/10 text-red-300',
+                            row.line.type === 'same' && 'text-slate-500',
                         )}
                     >
                         <span className="mr-1 select-none opacity-50">
-                            {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}
+                            {row.line.type === 'add' ? '+' : row.line.type === 'remove' ? '-' : ' '}
                         </span>
-                        {line.text || ' '}
+                        {row.line.text || ' '}
                     </div>
                 ))}
             </div>

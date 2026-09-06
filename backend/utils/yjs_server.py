@@ -204,49 +204,68 @@ async def save_note_content(note_id: str, content: str, user_id: str):
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Note).where(Note.id == note_id))
             note = result.scalar_one_or_none()
-            if note:
-                changed = note.content != content
-                note.content = content
-                note.updated_by = user_id
-                note.updated_at = datetime.utcnow()
-                engagement_id = note.engagement_id
-                note_title = note.title
-                await db.commit()
-                logger.debug(f"Y.js persisted note {note_id}")
+            if not note:
+                return
 
-                # Debounced audit logging: only when the content actually
-                # changed and no recent "updated_note" entry exists for it.
-                if changed and engagement_id:
-                    await _maybe_log_note_update(db, engagement_id, note_id, note_title, user_id)
+            changed = (note.content or "") != content
+            engagement_id = note.engagement_id
+            note_title = note.title
+
+            # A single collaborative edit session produces a stream of ~3s
+            # autosaves. We coalesce that stream into one audit entry AND one
+            # pre-edit version snapshot per NOTE_UPDATE_LOG_DEBOUNCE window,
+            # keyed off whether a recent "updated_note" log already exists.
+            # The same decision gates both so they stay correlated — the feed's
+            # diff logic pairs a log with the snapshot taken just before it.
+            starts_session = bool(
+                changed and engagement_id and not await _recent_note_log_exists(db, note_id)
+            )
+
+            if starts_session:
+                # Snapshot the PRE-edit state (note.content is still the old
+                # value here) so the activity feed can diff session-start →
+                # current content instead of showing a bare "edited note" line.
+                # Passing the new content as update_data makes the snapshotter
+                # record the old value and mark `content` as the changed field.
+                from utils.versioning import create_version_snapshot
+                await create_version_snapshot(db, note, "note", {"content": content}, user_id)
+
+            note.content = content
+            note.updated_by = user_id
+            note.updated_at = datetime.utcnow()
+            await db.commit()
+            logger.debug(f"Y.js persisted note {note_id}")
+
+            if starts_session:
+                await _log_note_update(db, engagement_id, note_id, note_title, user_id)
     except Exception as e:
         logger.warning(f"Y.js save_note_content error: {e}")
 
 
-async def _maybe_log_note_update(db, engagement_id: str, note_id: str, note_title: str, user_id: str):
-    """Write an 'updated_note' activity log unless a recent one already exists.
+async def _recent_note_log_exists(db, note_id: str) -> bool:
+    """True if an 'updated_note' log for this note falls within the debounce
+    window — i.e. an edit session is already underway."""
+    from models.discussion import ActivityLog
+    from sqlalchemy import select
 
-    Coalesces the high-frequency content-autosave stream into at most one audit
-    entry per note per NOTE_UPDATE_LOG_DEBOUNCE window so the engagement log
-    reflects "this note was edited" without spamming every keystroke-batch.
-    """
-    try:
-        from models.discussion import ActivityLog
-        from utils.collaboration import create_activity_log
-        from sqlalchemy import select
-
-        cutoff = datetime.utcnow() - NOTE_UPDATE_LOG_DEBOUNCE
-        recent = await db.execute(
-            select(ActivityLog.id)
-            .where(
-                ActivityLog.resource_type == "note",
-                ActivityLog.resource_id == note_id,
-                ActivityLog.action == "updated_note",
-                ActivityLog.created_at >= cutoff,
-            )
-            .limit(1)
+    cutoff = datetime.utcnow() - NOTE_UPDATE_LOG_DEBOUNCE
+    recent = await db.execute(
+        select(ActivityLog.id)
+        .where(
+            ActivityLog.resource_type == "note",
+            ActivityLog.resource_id == note_id,
+            ActivityLog.action == "updated_note",
+            ActivityLog.created_at >= cutoff,
         )
-        if recent.scalar_one_or_none():
-            return  # within the debounce window — an entry already covers this edit session
+        .limit(1)
+    )
+    return recent.scalar_one_or_none() is not None
+
+
+async def _log_note_update(db, engagement_id: str, note_id: str, note_title: str, user_id: str):
+    """Write the one 'updated_note' activity log that opens an edit session."""
+    try:
+        from utils.collaboration import create_activity_log
 
         await create_activity_log(
             db,
