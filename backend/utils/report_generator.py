@@ -299,17 +299,26 @@ def _md_inline_to_rl(text: str) -> str:
     s = _escape_xml(s)
 
     # Step 3 — markdown inline conversions
-    # Inline code first (so its contents aren't re-processed)
-    s = re.sub(r'`([^`]+)`', lambda m: f'<font name="Courier">{m.group(1)}</font>', s)
-    # Bold
-    s = re.sub(r'\*\*([^*]+?)\*\*', r'<b>\1</b>', s)
-    s = re.sub(r'__([^_]+?)__', r'<b>\1</b>', s)
+    # Inline code first (so its contents aren't re-processed). Stash the emitted
+    # <font> tag like every other construct above: without this, a subsequent
+    # bold/italic pass can span-hop across the code span's contents (e.g. an
+    # underscore inside `svc_backup2` pairing with another bare underscore
+    # elsewhere), producing crossed tags that ReportLab's LIFO paraparser
+    # rejects with "saw </i> instead of expected </font>".
+    s = re.sub(r'`([^`]+)`', lambda m: _stash(f'<font name="Courier">{m.group(1)}</font>'), s)
+    # Bold / italic / sub / sup. The character classes below exclude raw < and >
+    # so an emphasis span can never straddle a tag this function already emitted
+    # (bold before italic, etc.). Legitimate content has no raw angle brackets at
+    # this point — Step 2 escaped them to &lt;/&gt; — so this only stops
+    # span-hopping across emitted markup, never truncates real text.
+    s = re.sub(r'\*\*([^*<>]+?)\*\*', r'<b>\1</b>', s)
+    s = re.sub(r'__([^_<>]+?)__', r'<b>\1</b>', s)
     # Italic (single * or _) — avoid eating bold markers we already replaced
-    s = re.sub(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', r'<i>\1</i>', s)
-    s = re.sub(r'(?<!_)_([^_\n]+?)_(?!_)', r'<i>\1</i>', s)
+    s = re.sub(r'(?<!\*)\*([^*\n<>]+?)\*(?!\*)', r'<i>\1</i>', s)
+    s = re.sub(r'(?<!_)_([^_\n<>]+?)_(?!_)', r'<i>\1</i>', s)
     # Subscript ~text~ / superscript ^text^ (markdown shorthands)
-    s = re.sub(r'~([^~\n]+?)~', r'<sub>\1</sub>', s)
-    s = re.sub(r'\^([^\^\n]+?)\^', r'<sup>\1</sup>', s)
+    s = re.sub(r'~([^~\n<>]+?)~', r'<sub>\1</sub>', s)
+    s = re.sub(r'\^([^\^\n<>]+?)\^', r'<sup>\1</sup>', s)
     # Links [text](url)
     s = re.sub(
         r'\[([^\]]+)\]\((https?://[^)\s]+)\)',

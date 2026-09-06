@@ -11,6 +11,11 @@ section becomes one release entry.
   tab tree view you could drag an entry *onto* another to nest it, but there was
   no way to un-nest a child. Dragging now reveals a "Drop here to move to the top
   level" zone, so a child can be pulled back out to the root.
+- **PDF report crash on some markdown content** — a field containing an
+  identifier with an underscore or asterisk that appeared both in an emphasis
+  span and in inline code (e.g. a service account like `svc_backup2` shown both
+  in italics and in a `code` sample) could produce overlapping tags that crashed
+  PDF generation with a 500. Inline markdown now renders such content safely.
 
 ## [1.5.5] — 2026-08-30
 
