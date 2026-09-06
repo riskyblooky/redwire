@@ -422,13 +422,18 @@ async def yjs_websocket_endpoint(
     yjs_store.start_cleanup_loop()
 
     # Send initial content as markdown so clients can bootstrap
-    # (only used when no peers are connected to sync from)
+    # (only used when no peers are connected to sync from). `peers` is the
+    # number of OTHER clients already in the room (self is already added), so
+    # the client can skip the sync wait and reveal the DB copy immediately when
+    # it's alone — and only pay the peer-sync latency when joining an occupied
+    # note, where a peer holds the authoritative Y.js doc to sync from.
     initial_content = note.content or ""
     try:
         await websocket.send_text(_json.dumps({
             "type": "initial_content",
             "content": initial_content,
             "note_id": note_id,
+            "peers": max(0, len(room.clients) - 1),
         }))
     except Exception:
         pass

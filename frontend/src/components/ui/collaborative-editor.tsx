@@ -44,9 +44,10 @@ import {
     Link as LinkIcon, Image as ImageIcon, CheckSquare, CodeXml, ChevronDown,
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    Table as TableIcon, Trash2, Plus, Minus, Workflow, Clock, Timer,
+    Table as TableIcon, Trash2, Plus, Minus, Workflow, Clock, Timer, Hash,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { activeLineKey, createActiveLineExtension } from './active-line-extension';
 
 /** `[YYYY-MM-DD HH:MM:SS] ` in local time, for note timestamps. */
 function fmtTimestamp(): string {
@@ -127,7 +128,7 @@ async function uploadAndInsertImage(view: any, file: File, pos: number, engageme
 
 // ─── Menu Bar ──────────────────────────────────────────────────────────
 
-const MenuBar = ({ editor }: { editor: any }) => {
+const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any; showLineNumbers?: boolean; onToggleLineNumbers?: () => void }) => {
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [imageDialogOpen, setImageDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
@@ -449,6 +450,18 @@ const MenuBar = ({ editor }: { editor: any }) => {
                     className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800">
                     <ImageIcon className="h-4 w-4" />
                 </Button>
+
+                {onToggleLineNumbers && (
+                    <>
+                        <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+                        <Button type="button" variant="ghost" size="icon"
+                            onClick={onToggleLineNumbers}
+                            className={cn("h-8 w-8 hover:bg-slate-800", showLineNumbers ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                            title={showLineNumbers ? 'Hide line numbers' : 'Show line numbers'}>
+                            <Hash className="h-4 w-4" />
+                        </Button>
+                    </>
+                )}
             </div>
 
             {/* Link Dialog */}
@@ -518,6 +531,8 @@ export default function CollaborativeEditor({
     const [hasSynced, setHasSynced] = useState(false);
     const [peerCount, setPeerCount] = useState(0);
     const [, setForceUpdate] = useState(0);
+    const [showLineNumbers, setShowLineNumbers] = useState(false);
+    const showLineNumbersRef = useRef(false);
     const wsRef = useRef<WebSocket | null>(null);
     const editorRef = useRef<any>(null);
 
@@ -671,20 +686,35 @@ export default function CollaborativeEditor({
                         if (data.type === 'initial_content') {
                             // Store it; only apply if no peer sync fills the doc
                             initialContentPending = data.content || '';
-                            // Give peers a brief window to sync their (authoritative)
-                            // state before falling back to the DB copy. Kept short so
-                            // the common single-user case reveals the note quickly
-                            // instead of staring at a blank editor.
-                            clearTimeout(initialContentTimer);
-                            initialContentTimer = setTimeout(() => {
+                            const seedFromDb = () => {
+                                const ed = editorRef.current;
+                                if (!ed) {
+                                    // Editor not mounted yet — retry shortly rather
+                                    // than dropping the pending DB content.
+                                    clearTimeout(initialContentTimer);
+                                    initialContentTimer = setTimeout(seedFromDb, 50);
+                                    return;
+                                }
                                 const fragment = ydoc.getXmlFragment('default');
-                                if (fragment.length === 0 && initialContentPending && editorRef.current) {
-                                    // No peer sync happened — bootstrap from DB
-                                    editorRef.current.commands.setContent(initialContentPending);
+                                if (fragment.length === 0 && initialContentPending) {
+                                    ed.commands.setContent(initialContentPending);
                                 }
                                 initialContentPending = null;
                                 setHasSynced(true);   // DB baseline settled — reveal the editor
-                            }, 300);
+                            };
+                            clearTimeout(initialContentTimer);
+                            if ((data.peers ?? 0) <= 0) {
+                                // We're alone in the room — no peer holds an
+                                // authoritative Y.js doc, so seed from the DB copy
+                                // right away instead of waiting. Removes the load
+                                // time in the common single-user case.
+                                seedFromDb();
+                            } else {
+                                // A peer is here — give them a brief window to sync
+                                // their (authoritative) state before falling back to
+                                // the DB copy, so we don't double-seed the doc.
+                                initialContentTimer = setTimeout(seedFromDb, 300);
+                            }
                         } else if (data.type === 'request_save') {
                             // Server wants us to save current content to DB
                             const ed = editorRef.current;
@@ -918,6 +948,7 @@ export default function CollaborativeEditor({
                     ];
                 },
             }),
+            createActiveLineExtension(showLineNumbersRef),
         ],
         editable: !disabled,
         immediatelyRender: false,
@@ -988,6 +1019,15 @@ export default function CollaborativeEditor({
     // Keep ref in sync
     editorRef.current = editor;
 
+    // Sync the line-numbers toggle into the active-line decoration and nudge a
+    // transaction so it recomputes immediately (see active-line-extension).
+    useEffect(() => {
+        showLineNumbersRef.current = showLineNumbers;
+        if (editor) {
+            editor.view.dispatch(editor.state.tr.setMeta(activeLineKey, Date.now()));
+        }
+    }, [editor, showLineNumbers]);
+
     // Cleanup Y.Doc + Awareness on unmount
     useEffect(() => {
         return () => {
@@ -1003,7 +1043,7 @@ export default function CollaborativeEditor({
         >
             {/* Toolbar — pinned; never scrolls with the content */}
             <div className="relative shrink-0">
-                <MenuBar editor={editor} />
+                <MenuBar editor={editor} showLineNumbers={showLineNumbers} onToggleLineNumbers={() => setShowLineNumbers(v => !v)} />
 
                 {/* Connection status + peer count */}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -1042,7 +1082,7 @@ export default function CollaborativeEditor({
 
             {/* Editor content — the only scrolling region, so the toolbar stays put */}
             <div
-                className="relative flex-1 min-h-0 overflow-y-auto"
+                className={cn("relative flex-1 min-h-0 overflow-y-auto", showLineNumbers && "rw-linenumbers")}
                 onClick={() => editor?.commands.focus()}
             >
                 {(connectionStatus === 'connecting' || (connectionStatus === 'connected' && !hasSynced)) && (
