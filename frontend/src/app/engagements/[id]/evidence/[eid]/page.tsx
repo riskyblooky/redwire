@@ -106,8 +106,8 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
     const { confirm: confirmDialog, ConfirmDialog } = useConfirmDialog();
 
     const [isEditorOpen, setIsEditorOpen] = useState(false);
-    const [isTextEditorOpen, setIsTextEditorOpen] = useState(false);
-    const [isCsvEditorOpen, setIsCsvEditorOpen] = useState(false);
+    const [isTextEditing, setIsTextEditing] = useState(false);
+    const [isCsvEditing, setIsCsvEditing] = useState(false);
     const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
     const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -203,8 +203,8 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
             if (ok !== true) return;
         }
         if (which === 'image') setIsEditorOpen(true);
-        else if (which === 'csv') setIsCsvEditorOpen(true);
-        else setIsTextEditorOpen(true);
+        else if (which === 'csv') setIsCsvEditing(true);
+        else setIsTextEditing(true);
     };
 
     const handleBack = () => {
@@ -295,7 +295,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                     Edit Image
                                 </Button>
                             )}
-                            {isText && (
+                            {isText && !isTextEditing && (
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -306,7 +306,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                     Edit Text
                                 </Button>
                             )}
-                            {isCsvFile && (
+                            {isCsvFile && !isCsvEditing && (
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -362,7 +362,20 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                             />
                                         </div>
                                     ) : isCsvFile ? (
-                                        textPreviewLoading ? (
+                                        isCsvEditing ? (
+                                            <CsvTableEditor
+                                                fileUrl={fileUrl}
+                                                mimeType={evidence.mime_type}
+                                                onSave={async (blob) => {
+                                                    await replaceFile.mutateAsync({ id: evidence.id, file: blob, filename: evidence.original_filename });
+                                                    const url = await getEvidenceDownloadUrl(eid, true);
+                                                    setFileUrl(url);
+                                                    setIsCsvEditing(false);
+                                                    toast.success('File saved successfully');
+                                                }}
+                                                onCancel={() => setIsCsvEditing(false)}
+                                            />
+                                        ) : textPreviewLoading ? (
                                             <div className="flex items-center justify-center w-full py-20 text-slate-600">
                                                 <Loader2 className="h-6 w-6 animate-spin" />
                                             </div>
@@ -390,7 +403,21 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                             </div>
                                         )
                                     ) : isText ? (
-                                        textPreviewLoading ? (
+                                        isTextEditing ? (
+                                            <TextFileEditor
+                                                fileUrl={fileUrl}
+                                                mimeType={evidence.mime_type}
+                                                engagementId={id}
+                                                onSave={async (blob) => {
+                                                    await replaceFile.mutateAsync({ id: evidence.id, file: blob, filename: evidence.original_filename });
+                                                    const url = await getEvidenceDownloadUrl(eid, true);
+                                                    setFileUrl(url);
+                                                    setIsTextEditing(false);
+                                                    toast.success('File saved successfully');
+                                                }}
+                                                onCancel={() => setIsTextEditing(false)}
+                                            />
+                                        ) : textPreviewLoading ? (
                                             <div className="flex items-center justify-center w-full py-20 text-slate-600">
                                                 <Loader2 className="h-6 w-6 animate-spin" />
                                             </div>
@@ -760,43 +787,6 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                             setFileUrl(url);
                             setIsEditorOpen(false);
                             toast.success('Image saved successfully');
-                        }}
-                    />
-                )}
-
-                {/* Text Editor Modal */}
-                {isText && fileUrl && (
-                    <TextFileEditor
-                        open={isTextEditorOpen}
-                        onClose={() => setIsTextEditorOpen(false)}
-                        fileUrl={fileUrl}
-                        filename={evidence.original_filename}
-                        mimeType={evidence.mime_type}
-                        engagementId={id}
-                        onSave={async (blob) => {
-                            await replaceFile.mutateAsync({ id: evidence.id, file: blob, filename: evidence.original_filename });
-                            const url = await getEvidenceDownloadUrl(eid, true);
-                            setFileUrl(url);
-                            setIsTextEditorOpen(false);
-                            toast.success('File saved successfully');
-                        }}
-                    />
-                )}
-
-                {/* CSV Table Editor Modal */}
-                {isCsvFile && fileUrl && (
-                    <CsvTableEditor
-                        open={isCsvEditorOpen}
-                        onClose={() => setIsCsvEditorOpen(false)}
-                        fileUrl={fileUrl}
-                        filename={evidence.original_filename}
-                        mimeType={evidence.mime_type}
-                        onSave={async (blob) => {
-                            await replaceFile.mutateAsync({ id: evidence.id, file: blob, filename: evidence.original_filename });
-                            const url = await getEvidenceDownloadUrl(eid, true);
-                            setFileUrl(url);
-                            setIsCsvEditorOpen(false);
-                            toast.success('File saved successfully');
                         }}
                     />
                 )}
