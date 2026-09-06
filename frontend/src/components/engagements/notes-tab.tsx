@@ -75,6 +75,10 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
     const canCreate = usePermission(engagementId, 'note_create');
 
     const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialNoteId || null);
+
+    // Warm the (code-split) collaborative editor chunk as soon as the notes tab
+    // opens, so selecting the first note doesn't also pay the chunk fetch.
+    useEffect(() => { import('@/components/ui/collaborative-editor'); }, []);
     const hasAutoSelected = useRef(false);
 
     // Intel linked to the selected note
@@ -747,6 +751,7 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
                                 placeholder="Start writing your notes..."
                                 disabled={!canEditNote}
                                 minHeight="0"
+                                initialPreview={selectedNote.content}
                             />
                         </div>
                     </>

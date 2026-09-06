@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { activeLineKey, createActiveLineExtension } from './active-line-extension';
+import { MarkdownPreview } from '@/components/ui/markdown-editor';
 
 /** `[YYYY-MM-DD HH:MM:SS] ` in local time, for note timestamps. */
 function fmtTimestamp(): string {
@@ -101,6 +102,10 @@ interface CollaborativeEditorProps {
     className?: string;
     /** Required for paste/drop image upload. */
     engagementId?: string;
+    /** The note's last-known content (from the list query). Shown as an instant
+     *  read-only preview behind the loading overlay so the note isn't blank
+     *  while the live editor connects. */
+    initialPreview?: string;
 }
 
 /**
@@ -522,6 +527,7 @@ export default function CollaborativeEditor({
     minHeight = 'calc(100vh - 450px)',
     className,
     engagementId,
+    initialPreview,
 }: CollaborativeEditorProps) {
     const { user: currentUser } = useAuthStore();
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
@@ -1086,10 +1092,24 @@ export default function CollaborativeEditor({
                 onClick={() => editor?.commands.focus()}
             >
                 {(connectionStatus === 'connecting' || (connectionStatus === 'connected' && !hasSynced)) && (
-                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950/60 backdrop-blur-[1px]">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                        <p className="text-xs text-slate-400">Loading note…</p>
-                    </div>
+                    initialPreview ? (
+                        // Instant content: render the last-known note text (from the
+                        // list query) while the live editor connects, with a small
+                        // syncing hint, so the note isn't blank during the round-trip.
+                        <div className="absolute inset-0 z-10 overflow-y-auto bg-slate-950">
+                            <div className="p-4 prose prose-invert max-w-none">
+                                <MarkdownPreview value={initialPreview} />
+                            </div>
+                            <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400">
+                                <Loader2 className="h-3 w-3 animate-spin" /> Syncing…
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950/60 backdrop-blur-[1px]">
+                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                            <p className="text-xs text-slate-400">Loading note…</p>
+                        </div>
+                    )
                 )}
                 <EditorContent editor={editor} />
             </div>
