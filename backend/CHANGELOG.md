@@ -8,19 +8,20 @@ section becomes one release entry.
 
 ### Added
 - **Edit text attachments in-app** — text files (`.txt`, `.md`, `.log`, …) now
-  have an "Edit Text" action that opens them in the editor and saves back over
-  the attachment, alongside an inline text preview.
+  have an "Edit Text" action that turns the preview area into the editor in place
+  (no popup) and saves back over the attachment, alongside an inline text preview.
 - **Edit CSV attachments as a table** — CSV attachments render as a
   spreadsheet-style grid (row numbers, column letters, add/delete rows &
-  columns) for both preview and editing.
+  columns) for both preview and edit-in-place.
 - **Editor line numbers + active-line highlight** — a toolbar toggle adds a
   numbered gutter to the editors (finding/test-case/note fields and the notes
   tab) and highlights the line the cursor is on.
 
 ### Improved
-- **Notes load instantly when you're the only editor** — the collaborative
-  notes editor no longer waits on a peer-sync window when nobody else is on the
-  note; it shows the content immediately and syncs in the background.
+- **Notes open without the load pause** — the collaborative notes editor shows
+  the note's content immediately (an instant preview while it connects, and no
+  peer-sync wait when you're the only one on the note) and syncs in the
+  background, instead of a ~1s "Loading note…" pause on every open.
 - **Activity feed shows what changed in a note edit** — an edited note now
   renders a diff of just the changed lines (with a little context) instead of a
   bare "edited note content" line or the whole note.
