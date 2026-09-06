@@ -116,6 +116,7 @@ import {
     PointerSensor,
     useSensor,
     useSensors,
+    useDroppable,
 } from '@dnd-kit/core';
 import {
     SortableContext,
@@ -139,6 +140,28 @@ const testCaseCategoryStyles: Record<string, { color: string; icon: any }> = {
 const SortIcon = ({ field, currentField, order }: { field: string; currentField: string; order: 'asc' | 'desc' }) => {
     if (currentField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-50" />;
     return order === 'asc' ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
+};
+
+// Dropping a test case here un-nests it (parent_id → null). Dropping onto a row
+// still re-parents under that row; this zone is the only target that means
+// "top level", so it's the way to move a child back out of its parent.
+const ROOT_DROP_ID = '__tc_root__';
+const RootDropZone = () => {
+    const { setNodeRef, isOver } = useDroppable({ id: ROOT_DROP_ID });
+    return (
+        <div
+            ref={setNodeRef}
+            className={cn(
+                "mb-2 flex items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium transition-colors",
+                isOver
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-slate-700 bg-slate-800/30 text-slate-400"
+            )}
+        >
+            <ArrowUpCircle className="h-3.5 w-3.5" />
+            Drop here to move to the top level
+        </div>
+    );
 };
 
 /** Single test case table row with tree-indent, DnD handle, category badge, status, and action menu. */
@@ -560,12 +583,19 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
         const targetId = over.id as string;
         const draggedTc = testcases.find(tc => tc.id === draggedId);
         if (!draggedTc) return;
+        // Drop onto the root zone → un-nest to the top level.
+        if (targetId === ROOT_DROP_ID) {
+            if (!draggedTc.parent_id) return; // already top-level, nothing to do
+            try { await updateTestCase.mutateAsync({ id: draggedId, parent_id: null }); toast.success('Test case moved to top level'); } catch (error: any) { toast.error(getErrorMessage(error, 'Failed to move test case')); }
+            return;
+        }
         function isDescendant(parentId: string, targetId: string): boolean {
             const children = testcases.filter(tc => tc.parent_id === parentId);
             for (const child of children) { if (child.id === targetId || isDescendant(child.id, targetId)) return true; }
             return false;
         }
         if (isDescendant(draggedId, targetId)) { toast.error('Cannot move a test case into its own child'); return; }
+        if (draggedTc.parent_id === targetId) return; // already a child of the target
         try { await updateTestCase.mutateAsync({ id: draggedId, parent_id: targetId }); toast.success('Test case moved successfully'); } catch (error: any) { toast.error(getErrorMessage(error, 'Failed to move test case')); }
     }, [testcases, updateTestCase]);
 
@@ -786,6 +816,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                     <div className="text-center py-8 text-slate-400"><CheckSquare className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>No test cases defined</p></div>
                 ) : (
                     <DndContext sensors={tcDndSensors} collisionDetection={closestCenter} onDragStart={handleTcDragStart} onDragEnd={handleTcDragEnd}>
+                        {isTreeView && activeDragId && <RootDropZone />}
                         <SortableContext items={visibleTestCases.map(tc => tc.id)} strategy={verticalListSortingStrategy}>
                             <Table>
                                 <TableHeader>

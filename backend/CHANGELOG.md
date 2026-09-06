@@ -4,6 +4,14 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.5.6] — Unreleased
+
+### Fixed
+- **Tree view: drag a sub-test-case back to the top level** — in the Test Cases
+  tab tree view you could drag an entry *onto* another to nest it, but there was
+  no way to un-nest a child. Dragging now reveals a "Drop here to move to the top
+  level" zone, so a child can be pulled back out to the root.
+
 ## [1.5.5] — 2026-08-30
 
 ### Added
