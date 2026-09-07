@@ -33,6 +33,9 @@ section becomes one release entry.
   hash-shaped credentials), matching the card view.
 
 ### Fixed
+- **Disabled plugins stay disabled after a restart** — the plugin loader now
+  reads the saved enable/disable state at boot, so a plugin an admin disabled no
+  longer re-enables itself when the containers restart or rebuild.
 - **Tree view: drag a sub-test-case back to the top level** — in the Test Cases
   tab tree view you could drag an entry *onto* another to nest it, but there was
   no way to un-nest a child. Dragging now reveals a "Drop here to move to the top

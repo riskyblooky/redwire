@@ -335,6 +335,9 @@ async def lifespan(app):
     # ── Plugin Discovery ──
     print("\n🔌 Discovering plugins...")
     plugin_registry.discover("plugins")
+    # Overlay persisted enable/disable state so an admin's toggle survives a
+    # restart/rebuild (the manifest default would otherwise re-enable it).
+    await plugin_registry.apply_persisted_states(AsyncSessionLocal)
     # Wire the event-bus enabled-gate before plugins register their
     # subscribers so the predicate is in place from the very first
     # emit(). Closes over the live registry so a runtime toggle

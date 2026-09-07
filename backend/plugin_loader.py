@@ -231,6 +231,31 @@ class PluginRegistry:
 
         return discovered
 
+    async def apply_persisted_states(self, db_factory):
+        """Overlay persisted enabled/disabled state onto the discovered
+        manifests, so an admin's toggle survives a restart/rebuild.
+
+        ``discover()`` seeds ``manifest.enabled`` from the plugin.yaml default
+        (usually True). Without this step the ``plugin_states`` table — written
+        by the toggle endpoint — is never read back at boot, so a disabled
+        plugin comes back enabled on every restart. Must run before
+        ``load_all``/``mount_routes`` so a disabled plugin is actually skipped.
+        """
+        from models.plugin import PluginState
+        from sqlalchemy import select
+        try:
+            async with db_factory() as db:
+                rows = (await db.execute(select(PluginState))).scalars().all()
+            states = {r.plugin_id: r.enabled for r in rows}
+        except Exception as e:
+            print(f"  ⚠️  Could not load persisted plugin states: {e}")
+            return
+        for plugin_id, plugin in self.plugins.items():
+            if plugin_id in states:
+                plugin.manifest.enabled = states[plugin_id]
+                if not states[plugin_id]:
+                    print(f"  ⏸️  Plugin '{plugin.manifest.name}' disabled by saved state")
+
     def load_all(self, app: FastAPI, event_bus, db_factory):
         """Import and initialize all discovered plugins.
 
