@@ -157,7 +157,6 @@ class Permission(str, enum.Enum):
 
     # Dashboard & Stats
     MANAGE_DASHBOARD_WIDGETS = "manage_dashboard_widgets"  # CRUD widget definitions + query builder
-    CUSTOMIZE_DASHBOARD = "customize_dashboard"  # User: customize own layout
     MANAGE_STATS_PAGES = "manage_stats_pages"  # Create/arrange global stats-page tabs
 
     # Platform Configuration
@@ -276,7 +275,6 @@ PERMISSION_CATEGORIES = {
     ],
     "Dashboard & Stats": [
         Permission.MANAGE_DASHBOARD_WIDGETS,
-        Permission.CUSTOMIZE_DASHBOARD,
         Permission.MANAGE_STATS_PAGES,
     ],
     "Platform Configuration": [
@@ -389,7 +387,6 @@ GLOBAL_PERMISSIONS = [
     # delegate. Wiring them in makes them grantable via the permission-group
     # admin UI, which is what a "stats curator" role needs.
     Permission.MANAGE_DASHBOARD_WIDGETS,
-    Permission.CUSTOMIZE_DASHBOARD,
     Permission.MANAGE_STATS_PAGES,
     # Platform configuration — assignable so type lists / marking profiles /
     # custom fields can be delegated instead of being hardcoded admin-only.

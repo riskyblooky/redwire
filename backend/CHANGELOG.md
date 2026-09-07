@@ -32,6 +32,9 @@ section becomes one release entry.
   platform-wide management now comes from **group permissions** (the admin
   edit-user dialog now explains this). Read-only admins keep read access to RBAC
   config but can no longer perform these writes.
+- **Removed the unused "Customize Dashboard" permission** — it was defined and
+  grantable but never enforced (personal dashboard layout is available to every
+  user regardless), so it's gone from the permission list.
 - **More admin surfaces are now delegatable** — configurable types, marking
   profiles, and custom-field definitions gained assignable permissions
   (`manage_configurable_types`, `manage_marking_profiles`, `manage_custom_fields`)
