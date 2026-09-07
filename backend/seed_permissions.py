@@ -74,8 +74,12 @@ async def seed_default_groups_and_roles():
                 "is_system": True,
                 "is_default": True,
                 "permissions": [
+                    # VIEW_ALL_ENGAGEMENTS deliberately NOT granted here: it grants
+                    # platform-wide view of every engagement's findings/assets/vault/
+                    # etc. (via the override map) plus proposed engagements. New users
+                    # see only engagements they're assigned to (need-to-know); grant
+                    # VIEW_ALL_ENGAGEMENTS via the Team Leads group or explicitly.
                     Permission.VIEW_ALL_USERS.value,
-                    Permission.VIEW_ALL_ENGAGEMENTS.value,
                     Permission.CALENDAR_VIEW.value,
                     Permission.CALENDAR_CREATE.value,
                     Permission.CALENDAR_EDIT.value,

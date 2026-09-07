@@ -7,6 +7,13 @@ section becomes one release entry.
 ## [1.5.6] — Unreleased
 
 ### Security
+- **New users no longer get platform-wide engagement visibility by default** —
+  `VIEW_ALL_ENGAGEMENTS` was removed from the built-in **Default** group (it
+  grants view of *every* engagement's findings/assets/vault/etc. and proposed
+  engagements). New users now see only the engagements they're assigned to;
+  grant `VIEW_ALL_ENGAGEMENTS` via the Team Leads group or explicitly for a
+  cross-engagement viewer. (Existing installs: remove it from the Default group
+  in Admin → Permissions to apply.)
 - **Closed several endpoints that skipped their permission check** — a permission
   audit found endpoints that returned or changed engagement data for any signed-in
   user, regardless of assignment: the finding remediation summary, per-asset
@@ -32,6 +39,11 @@ section becomes one release entry.
   `create_engagement` permission and the **proposed-engagements** views use
   `view_all_engagements`. Wordlist hash lookup/check stays open to any operator by
   design (it's a core capability, like the password-change bloom check).
+- **Admin console is permission-gated per tab** — a user with a delegated
+  management permission (e.g. custom fields, taxonomy, skills, widgets) can now
+  open the Admin area and sees only the tabs they can manage, instead of the
+  whole console being restricted to the admin roles. Admins/read-only admins
+  still see everything.
 
 ### Added
 - **Edit text attachments in-app** — text files (`.txt`, `.md`, `.log`, …) now
