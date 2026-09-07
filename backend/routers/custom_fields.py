@@ -25,6 +25,19 @@ from schemas.custom_field import (
     CustomFieldDefinitionResponse, ReorderRequest,
 )
 from auth.dependencies import get_current_user, require_roles, WRITE_ADMIN_ROLES
+from auth.permissions import require_global_permission
+from models.permission import Permission
+
+
+def require_global_perm(permission: Permission):
+    """Route dependency enforcing an assignable global permission (3-tier)
+    instead of a hardcoded admin role. ADMIN passes automatically."""
+    async def _checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        await require_global_permission(permission, current_user, db)
+    return _checker
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +96,7 @@ async def list_definitions(
     "/{entity}",
     response_model=CustomFieldDefinitionResponse,
     status_code=201,
-    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+    dependencies=[Depends(require_global_perm(Permission.MANAGE_CUSTOM_FIELDS))],
 )
 async def create_definition(
     entity: str,
@@ -141,7 +154,7 @@ async def create_definition(
 @router.put(
     "/{entity}/{field_id}",
     response_model=CustomFieldDefinitionResponse,
-    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+    dependencies=[Depends(require_global_perm(Permission.MANAGE_CUSTOM_FIELDS))],
 )
 async def update_definition(
     entity: str,
@@ -175,7 +188,7 @@ async def update_definition(
 @router.post(
     "/{entity}/reorder",
     response_model=List[CustomFieldDefinitionResponse],
-    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+    dependencies=[Depends(require_global_perm(Permission.MANAGE_CUSTOM_FIELDS))],
 )
 async def reorder_definitions(
     entity: str,
@@ -205,7 +218,7 @@ async def reorder_definitions(
 
 @router.delete(
     "/{entity}/{field_id}",
-    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+    dependencies=[Depends(require_global_perm(Permission.MANAGE_CUSTOM_FIELDS))],
 )
 async def delete_definition(
     entity: str,

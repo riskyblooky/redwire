@@ -12,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from database import get_db
 from auth.dependencies import get_current_user
+from auth.permissions import has_global_permission
+from models.permission import Permission
 from models.user import User, UserRole
 from utils.storage import storage_service
 from utils.uploads import read_upload_capped, content_disposition_attachment
@@ -993,10 +995,11 @@ async def preview_import(
     x_import_passphrase: Optional[str] = Header(default=None, alias="X-Import-Passphrase"),
 ):
     """Preview a ZIP archive: return matched & unmatched users so the admin can map them."""
-    # GHSA-f826-6226-4rfw: READ_ONLY_ADMIN dropped — import is a write path
-    # and a read-only role should never be able to trigger DB ingestion.
-    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
-        raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
+    # Import creates a new engagement + all its child rows, so gate it on the
+    # assignable CREATE_ENGAGEMENT (ADMIN bypasses; the Team Leads group grants
+    # it). READ_ONLY_ADMIN never passes — it is a write path.
+    if not await has_global_permission(current_user, Permission.CREATE_ENGAGEMENT, db):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to import an engagement")
 
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")
@@ -1121,9 +1124,9 @@ async def import_engagement(
     x_import_passphrase: Optional[str] = Header(default=None, alias="X-Import-Passphrase"),
 ):
     """Import an engagement from a ZIP archive. Accepts optional user_mapping JSON."""
-    # GHSA-f826-6226-4rfw: READ_ONLY_ADMIN dropped — see preview_import note.
-    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
-        raise HTTPException(status_code=403, detail="Admin or Team Lead role required")
+    # Import creates an engagement — gate on CREATE_ENGAGEMENT (see preview_import).
+    if not await has_global_permission(current_user, Permission.CREATE_ENGAGEMENT, db):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to import an engagement")
 
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")

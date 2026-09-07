@@ -10,6 +10,19 @@ from schemas.configurable_type import (
     ConfigurableTypeResponse, ConfigurableTypeCreate, ConfigurableTypeUpdate
 )
 from auth.dependencies import get_current_user, require_roles, WRITE_ADMIN_ROLES
+from auth.permissions import require_global_permission
+from models.permission import Permission
+
+
+def require_global_perm(permission: Permission):
+    """Route dependency enforcing an assignable global permission (3-tier)
+    instead of a hardcoded admin role. ADMIN passes automatically."""
+    async def _checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        await require_global_permission(permission, current_user, db)
+    return _checker
 
 VALID_CATEGORIES = {"asset", "testcase", "finding", "vault", "cleanup", "intel", "infra", "runbook"}
 
@@ -48,7 +61,7 @@ async def list_types(
     "/{category}",
     response_model=ConfigurableTypeResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+    dependencies=[Depends(require_global_perm(Permission.MANAGE_CONFIGURABLE_TYPES))],
 )
 async def create_type(
     category: str,
@@ -85,7 +98,7 @@ async def create_type(
 @router.put(
     "/{category}/{type_id}",
     response_model=ConfigurableTypeResponse,
-    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+    dependencies=[Depends(require_global_perm(Permission.MANAGE_CONFIGURABLE_TYPES))],
 )
 async def update_type(
     category: str,
@@ -118,7 +131,7 @@ async def update_type(
 @router.delete(
     "/{category}/{type_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+    dependencies=[Depends(require_global_perm(Permission.MANAGE_CONFIGURABLE_TYPES))],
 )
 async def delete_type(
     category: str,

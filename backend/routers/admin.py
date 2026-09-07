@@ -534,7 +534,7 @@ async def list_engagement_types(
     return result.scalars().all()
 
 @engagement_type_router.post("", response_model=ConfigurableTypeResponse, status_code=status.HTTP_201_CREATED,
-                              dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+                              dependencies=[Depends(require_global_perm(Permission.MANAGE_CONFIGURABLE_TYPES))])
 async def create_engagement_type(
     data: ConfigurableTypeCreate,
     db: AsyncSession = Depends(get_db)
@@ -563,7 +563,7 @@ async def create_engagement_type(
     return new_type
 
 @engagement_type_router.put("/{type_id}", response_model=ConfigurableTypeResponse,
-                             dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+                             dependencies=[Depends(require_global_perm(Permission.MANAGE_CONFIGURABLE_TYPES))])
 async def update_engagement_type(
     type_id: str,
     data: ConfigurableTypeUpdate,
@@ -589,7 +589,7 @@ async def update_engagement_type(
     return et
 
 @engagement_type_router.delete("/{type_id}", status_code=status.HTTP_204_NO_CONTENT,
-                                dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+                                dependencies=[Depends(require_global_perm(Permission.MANAGE_CONFIGURABLE_TYPES))])
 async def delete_engagement_type(
     type_id: str,
     db: AsyncSession = Depends(get_db)

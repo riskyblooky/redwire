@@ -160,6 +160,11 @@ class Permission(str, enum.Enum):
     CUSTOMIZE_DASHBOARD = "customize_dashboard"  # User: customize own layout
     MANAGE_STATS_PAGES = "manage_stats_pages"  # Create/arrange global stats-page tabs
 
+    # Platform Configuration
+    MANAGE_CONFIGURABLE_TYPES = "manage_configurable_types"  # Client/engagement/etc. type lists
+    MANAGE_MARKING_PROFILES = "manage_marking_profiles"  # Classification / portion-marking profiles
+    MANAGE_CUSTOM_FIELDS = "manage_custom_fields"  # Custom field definitions per entity
+
 
 class GroupPermissions(Base):
     """Stores permissions for site-wide groups."""
@@ -274,6 +279,11 @@ PERMISSION_CATEGORIES = {
         Permission.CUSTOMIZE_DASHBOARD,
         Permission.MANAGE_STATS_PAGES,
     ],
+    "Platform Configuration": [
+        Permission.MANAGE_CONFIGURABLE_TYPES,
+        Permission.MANAGE_MARKING_PROFILES,
+        Permission.MANAGE_CUSTOM_FIELDS,
+    ],
     "Notes": [
         Permission.NOTE_VIEW,
         Permission.NOTE_CREATE,
@@ -381,6 +391,11 @@ GLOBAL_PERMISSIONS = [
     Permission.MANAGE_DASHBOARD_WIDGETS,
     Permission.CUSTOMIZE_DASHBOARD,
     Permission.MANAGE_STATS_PAGES,
+    # Platform configuration — assignable so type lists / marking profiles /
+    # custom fields can be delegated instead of being hardcoded admin-only.
+    Permission.MANAGE_CONFIGURABLE_TYPES,
+    Permission.MANAGE_MARKING_PROFILES,
+    Permission.MANAGE_CUSTOM_FIELDS,
 ]
 
 ENGAGEMENT_PERMISSIONS = [

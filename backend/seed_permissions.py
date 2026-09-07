@@ -64,6 +64,8 @@ async def seed_default_groups_and_roles():
                     Permission.RUNBOOK_DELETE.value,
                     Permission.MANAGE_DASHBOARD_WIDGETS.value,
                     Permission.CUSTOMIZE_DASHBOARD.value,
+                    # Marking/classification profiles were previously lead-accessible.
+                    Permission.MANAGE_MARKING_PROFILES.value,
                 ]
             },
             {

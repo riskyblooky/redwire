@@ -47,6 +47,7 @@ from utils.collaboration import create_activity_log, build_change_summary, compu
 from utils.custom_fields import validate_custom_fields
 from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
+from auth.permissions import has_global_permission
 from models.permission import Permission
 from datetime import datetime, timedelta
 
@@ -159,14 +160,12 @@ async def get_engagements(
         on ``start_date``.
       * ``sort_by`` / ``sort_order`` — whitelisted columns only.
     """
-    # TODO: replace this hardcoded role trio with a proper permission
-    # (e.g. `engagement_view_proposed`) — see /proposed below.
-    if include_proposed and current_user.role not in [
-        UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD,
-    ]:
+    # Proposed-engagement visibility gates on the assignable VIEW_ALL_ENGAGEMENTS
+    # (ADMIN/READ_ONLY_ADMIN bypass as a read; otherwise a group grant).
+    if include_proposed and not await has_global_permission(current_user, Permission.VIEW_ALL_ENGAGEMENTS, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins and team leads can include proposed engagements",
+            detail="Insufficient permissions to include proposed engagements",
         )
 
     if sort_by not in _SORTABLE:
@@ -305,14 +304,11 @@ async def get_proposed_engagements(
     current_user: User = Depends(get_current_user),
 ):
     """Get only PROPOSED engagements. Used by the Planning page."""
-    # TODO: replace this hardcoded role trio with a proper permission
-    # (e.g. `engagement_view_proposed`). The same gate is also inlined
-    # for the `?include_proposed=true` query above and on the
-    # /engagements page's "Show Proposed" toggle on the frontend.
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+    # Gates on the assignable VIEW_ALL_ENGAGEMENTS (same as ?include_proposed above).
+    if not await has_global_permission(current_user, Permission.VIEW_ALL_ENGAGEMENTS, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins and team leads can view proposed engagements"
+            detail="Insufficient permissions to view proposed engagements"
         )
 
     query = (

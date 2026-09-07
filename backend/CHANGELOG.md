@@ -25,6 +25,13 @@ section becomes one release entry.
   platform-wide management now comes from **group permissions** (the admin
   edit-user dialog now explains this). Read-only admins keep read access to RBAC
   config but can no longer perform these writes.
+- **More admin surfaces are now delegatable** — configurable types, marking
+  profiles, and custom-field definitions gained assignable permissions
+  (`manage_configurable_types`, `manage_marking_profiles`, `manage_custom_fields`)
+  instead of being hardcoded admin-only; engagement **import** now uses the
+  `create_engagement` permission and the **proposed-engagements** views use
+  `view_all_engagements`. Wordlist hash lookup/check stays open to any operator by
+  design (it's a core capability, like the password-change bloom check).
 
 ### Added
 - **Edit text attachments in-app** — text files (`.txt`, `.md`, `.log`, …) now

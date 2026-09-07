@@ -63,6 +63,15 @@ class WordlistStatusResponse(BaseModel):
 
 
 # ── Endpoints ──
+#
+# Wordlist check / hash-lookup / status are intentionally open to ANY
+# authenticated operator (no dedicated permission). This is a core red-team
+# operator capability, not an admin privilege: cracking needs a hash the caller
+# already has access to (no escalation), and the same wordlist bloom filter
+# already runs for every user on password change. In a self-hosted platform,
+# "authenticated" is the trust boundary. A WORDLIST_USE permission granted to
+# the Default group would be pure ceremony. Wordlist *upload/delete* (managing
+# the shared dataset) stays role-restricted below. See project_rbac_three_tier.
 
 @router.post("/check-password", response_model=CheckPasswordResponse)
 async def check_password(
