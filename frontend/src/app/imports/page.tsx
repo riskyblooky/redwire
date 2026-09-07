@@ -588,6 +588,11 @@ export default function ImportsPage() {
                             ))}
                         </div>
 
+                        <p className="text-[11px] text-slate-500">
+                            The uploaded scan file is automatically saved to the engagement as an
+                            attachment (excluded from the report) so the original source is kept on record.
+                        </p>
+
                         {/* Past scans for this engagement — command + metadata, revisitable */}
                         {selectedEngagement && <ScanHistory engagementId={selectedEngagement} />}
                     </div>

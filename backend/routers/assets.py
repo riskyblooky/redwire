@@ -505,6 +505,19 @@ async def import_assets(
         details=f"Imported assets from {source}: {result.created} created, {result.skipped} skipped, {result.ports_added} ports added",
     )
 
+    # Retain the raw import file as an engagement attachment (best-effort,
+    # excluded from the report) so the source is preserved alongside the assets.
+    from utils.attachments import save_bytes_as_evidence
+    await save_bytes_as_evidence(
+        db,
+        engagement_id=engagement_id,
+        content=content,
+        original_filename=original_filename,
+        user_id=current_user.id,
+        description=f"Asset import source file ({source}, auto-saved on import)",
+        include_in_report=False,
+    )
+
     return result
 
 

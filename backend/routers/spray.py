@@ -80,6 +80,21 @@ async def import_spray_log(
     matched_hosts = distinct_hosts & existing_identifiers
     unmatched_hosts = sorted(distinct_hosts - existing_identifiers)
 
+    # Retain the raw spray log — it contains credentials, so it's saved to the
+    # engagement vault (Fernet-encrypted at rest) rather than as a plain
+    # attachment. Best-effort; the preview is returned regardless. Saved at
+    # import time because the log isn't re-uploaded at the JSON commit step.
+    from utils.attachments import save_bytes_as_vault_file
+    await save_bytes_as_vault_file(
+        db,
+        engagement_id=engagement_id,
+        content=content,
+        name=f"Spray log — {file.filename or 'netexec'}",
+        original_filename=file.filename or "spray.log",
+        user_id=current_user.id,
+        description="NetExec/CrackMapExec spray log (auto-saved on import)",
+    )
+
     return SprayImportPreview(
         protocol=parsed.protocol,
         target_host=parsed.target_host,

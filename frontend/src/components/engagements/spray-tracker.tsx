@@ -367,6 +367,10 @@ export function SprayTracker({ engagementId }: SprayTrackerProps) {
                                         </div>
                                     </div>
                                 )}
+                                <p className="mt-3 text-[11px] text-slate-500">
+                                    The log contains credentials, so it's saved to the engagement
+                                    vault (encrypted at rest) automatically on upload.
+                                </p>
                             </div>
                         )}
 

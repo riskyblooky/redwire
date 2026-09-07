@@ -477,6 +477,20 @@ async def commit_import(
     except Exception:
         pass
 
+    # Retain the raw scan file as an engagement attachment (best-effort, excluded
+    # from the report). The original file is preserved for the record alongside
+    # the parsed assets/findings.
+    from utils.attachments import save_bytes_as_evidence
+    await save_bytes_as_evidence(
+        db,
+        engagement_id=engagement_id,
+        content=content,
+        original_filename=filename,
+        user_id=current_user.id,
+        description=f"{source} scan source file (auto-saved on import)",
+        include_in_report=False,
+    )
+
     return result
 
 

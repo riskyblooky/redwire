@@ -31,6 +31,11 @@ section becomes one release entry.
 - **Vault table view keeps the crack / wordlist actions** — the row action menu
   in the vault table now offers "Check Wordlist" and "Crack Hash" (for
   hash-shaped credentials), matching the card view.
+- **Import source files are kept on record** — scanner imports and asset imports
+  now auto-save the uploaded file to the engagement as an attachment (excluded
+  from the report), and password-spray logs are auto-saved to the engagement
+  vault (encrypted at rest, since they contain credentials). The upload screens
+  note this.
 
 ### Fixed
 - **Disabled plugins stay disabled after a restart** — the plugin loader now

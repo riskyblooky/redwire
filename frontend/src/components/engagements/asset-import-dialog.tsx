@@ -218,6 +218,13 @@ export function AssetImportDialog({ open, onOpenChange, engagementId }: AssetImp
                         </div>
                     )}
 
+                    {!result && (
+                        <p className="text-[11px] text-slate-500">
+                            The uploaded file is automatically saved to the engagement as an
+                            attachment (excluded from the report) so the source is kept on record.
+                        </p>
+                    )}
+
                     {/* Format Info */}
                     {format && !result && formatInfo[format] && (
                         <div className={`flex items-start gap-3 p-3 rounded-lg border ${formatInfo[format].color}`}>
