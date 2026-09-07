@@ -541,12 +541,16 @@ async def create_engagement(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new engagement."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
+    # Assignable global CREATE_ENGAGEMENT (ADMIN bypasses inside
+    # has_global_permission; the Team Leads group grants it). Was a hardcoded
+    # role gate that made the group-grantable permission dead here.
+    from auth.permissions import has_global_permission
+    if not await has_global_permission(current_user, Permission.CREATE_ENGAGEMENT, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions to create engagements"
         )
-    
+
     data = engagement_data.model_dump()
     user_ids = data.pop("assigned_user_ids", [])
     assignments_data = data.pop("assignments", [])
@@ -1123,6 +1127,11 @@ async def get_engagement_phases(
     current_user: User = Depends(get_current_user),
 ):
     """Get phases for an engagement."""
+    # Was ungated (any authenticated user could read any engagement's phases by
+    # id). Gate on ENGAGEMENT_VIEW like the other engagement reads.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin and not await check_engagement_permission(current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions for this engagement.")
     result = await db.execute(
         select(EngagementPhase)
         .where(EngagementPhase.engagement_id == engagement_id)
@@ -1138,10 +1147,11 @@ async def generate_engagement_phases(
     current_user: User = Depends(get_current_user),
 ):
     """Generate default phases for an existing engagement that has none."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin and not await check_engagement_permission(current_user.id, engagement_id, Permission.ENGAGEMENT_EDIT.value, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins and team leads can generate engagement phases"
+            detail="Insufficient permissions to generate engagement phases"
         )
 
     # Verify engagement exists
@@ -1180,10 +1190,11 @@ async def update_engagement_phases(
     current_user: User = Depends(get_current_user),
 ):
     """Bulk-update phase dates for an engagement."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin and not await check_engagement_permission(current_user.id, engagement_id, Permission.ENGAGEMENT_EDIT.value, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins and team leads can modify engagement phases"
+            detail="Insufficient permissions to modify engagement phases"
         )
 
     for phase_update in phases_data:

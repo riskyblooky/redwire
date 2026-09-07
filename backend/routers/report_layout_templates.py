@@ -15,12 +15,16 @@ from schemas.report_layout import (
 )
 from auth.dependencies import get_current_user
 from models.permission import Permission
+from auth.permissions import has_global_permission
 
 router = APIRouter(prefix="/report-layout-templates", tags=["report-layout-templates"])
 
 
-def _check_manage_permission(user: User):
-    if user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+async def _check_manage_permission(user: User, db: AsyncSession):
+    """Gate report-layout-template management on the assignable
+    MANAGE_REPORT_LAYOUT_TEMPLATES global permission (3-tier) rather than a
+    hardcoded role. ADMIN passes automatically; READ_ONLY_ADMIN no longer writes."""
+    if not await has_global_permission(user, Permission.MANAGE_REPORT_LAYOUT_TEMPLATES, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
@@ -75,7 +79,7 @@ async def create_report_layout_template(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new report layout template. Admin/Team Lead only."""
-    _check_manage_permission(current_user)
+    await _check_manage_permission(current_user, db)
 
     template = ReportLayoutTemplate(
         name=data.name,
@@ -111,7 +115,7 @@ async def update_report_layout_template(
     current_user: User = Depends(get_current_user),
 ):
     """Update a report layout template. Admin/Team Lead only."""
-    _check_manage_permission(current_user)
+    await _check_manage_permission(current_user, db)
 
     result = await db.execute(
         select(ReportLayoutTemplate)
@@ -148,7 +152,7 @@ async def delete_report_layout_template(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a report layout template. Admin/Team Lead only."""
-    _check_manage_permission(current_user)
+    await _check_manage_permission(current_user, db)
 
     result = await db.execute(
         select(ReportLayoutTemplate)

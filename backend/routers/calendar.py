@@ -452,11 +452,13 @@ async def auto_assign_users(
     current_user: User = Depends(get_current_user)
 ):
     """Suggest the most available users for a date range."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
+    # Assignable CALENDAR_VIEW, matching the other calendar reads (was a
+    # hardcoded admin/team-lead role gate). Same roster/availability data class
+    # as /team-availability, which is already CALENDAR_VIEW.
+    if not await has_global_permission(current_user, Permission.CALENDAR_VIEW, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins and team leads can use auto-assign."
+            detail="Insufficient permissions for auto-assign."
         )
 
     start_naive = start.replace(tzinfo=None) if start.tzinfo else start

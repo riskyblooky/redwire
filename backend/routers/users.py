@@ -9,6 +9,8 @@ from database import get_db
 from models.user import User, UserRole
 from schemas.user import UserResponse, UserSummary, UserCreate, UserUpdate, UserPasswordUpdate, ALLOWED_THEMES, ALLOWED_PALETTES
 from auth.dependencies import get_current_user
+from auth.permissions import has_global_permission, require_global_permission
+from models.permission import Permission
 from auth.password import get_password_hash
 from utils.paths import ensure_within
 from utils.uploads import read_upload_capped
@@ -375,8 +377,10 @@ async def get_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get a specific user by ID (Admin only)."""
-    if current_user.role != UserRole.ADMIN and current_user.id != user_id:
+    """Get a specific user by ID. Allowed for the user themselves, or anyone
+    holding the assignable VIEW_ALL_USERS permission (ADMIN/READ_ONLY_ADMIN or a
+    group grant)."""
+    if current_user.id != user_id and not await has_global_permission(current_user, Permission.VIEW_ALL_USERS, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
@@ -403,12 +407,8 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new user (Admin only)."""
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can create users"
-        )
+    """Create a new user. Requires the assignable MANAGE_USERS permission."""
+    await require_global_permission(Permission.MANAGE_USERS, current_user, db)
     
     # Check if username/email already exists
     result = await db.execute(
@@ -482,12 +482,8 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update a user (Admin only)."""
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can update users"
-        )
+    """Update a user. Requires the assignable MANAGE_USERS permission."""
+    await require_global_permission(Permission.MANAGE_USERS, current_user, db)
     
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -514,13 +510,9 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a user (Admin only)."""
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can delete users"
-        )
-    
+    """Delete a user. Requires the assignable MANAGE_USERS permission."""
+    await require_global_permission(Permission.MANAGE_USERS, current_user, db)
+
     if user_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

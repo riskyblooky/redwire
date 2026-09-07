@@ -113,14 +113,18 @@ class EngagementRoleResponse(BaseModel):
 @router.get(
     "/list",
     response_model=List[PermissionCategoryResponse],
-    dependencies=[Depends(require_roles(ADMIN_ROLES))],
 )
 async def list_permissions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get all available permissions organized by category."""
-    
+    """Get all available permissions organized by category. Gated on
+    MANAGE_GROUPS so a delegated group-manager (not just ADMIN) can use the
+    permission-management UI, mirroring the write ops in this router. READ_ONLY_ADMIN
+    auditors keep read visibility."""
+    if current_user.role != UserRole.READ_ONLY_ADMIN:
+        await require_global_permission(Permission.MANAGE_GROUPS, current_user, db)
+
     result = []
     for category, perms in PERMISSION_CATEGORIES.items():
         perm_infos = []
@@ -144,14 +148,17 @@ async def list_permissions(
 @router.get(
     "/groups",
     response_model=List[GroupResponse],
-    dependencies=[Depends(require_roles(ADMIN_ROLES))],
 )
 async def list_groups(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all groups with their permissions."""
-    
+    """List all groups with their permissions. Gated on MANAGE_GROUPS to match
+    this router's group write ops (so a delegated manager can list them). READ_ONLY_ADMIN
+    auditors keep read visibility."""
+    if current_user.role != UserRole.READ_ONLY_ADMIN:
+        await require_global_permission(Permission.MANAGE_GROUPS, current_user, db)
+
     from sqlalchemy.orm import selectinload
     
     query = select(Group).options(
@@ -367,14 +374,17 @@ async def update_group_permissions(
 @router.get(
     "/engagement-roles",
     response_model=List[EngagementRoleResponse],
-    dependencies=[Depends(require_roles(ADMIN_ROLES))],
 )
 async def list_engagement_roles(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all engagement roles with their permissions."""
-    
+    """List all engagement roles with their permissions. Gated on
+    MANAGE_ENGAGEMENT_ROLES to match this router's role write ops. READ_ONLY_ADMIN
+    auditors keep read visibility."""
+    if current_user.role != UserRole.READ_ONLY_ADMIN:
+        await require_global_permission(Permission.MANAGE_ENGAGEMENT_ROLES, current_user, db)
+
     from sqlalchemy.orm import selectinload
     
     query = select(EngagementRole).options(selectinload(EngagementRole.permission_set))

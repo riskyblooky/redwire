@@ -6,6 +6,26 @@ section becomes one release entry.
 
 ## [1.5.6] — Unreleased
 
+### Security
+- **Closed several endpoints that skipped their permission check** — a permission
+  audit found endpoints that returned or changed engagement data for any signed-in
+  user, regardless of assignment: the finding remediation summary, per-asset
+  remediation toggle, reading/resolving discussion comments, linking test cases to
+  findings/assets, reading engagement phases, and the ATT&CK coverage/Navigator
+  exports. They now enforce the matching finding / test-case / discussion /
+  engagement permission, and the dashboard "computed metrics" are scoped to the
+  caller's engagements like the rest of the stats.
+
+### Changed
+- **Permission consistency (assignable, not role-hardcoded)** — user, group,
+  engagement-role, and registration-code management; finding/test-case templates,
+  runbooks, report themes/layouts; and engagement creation now enforce their
+  assignable permissions (grantable via a group) instead of a hardcoded admin/lead
+  role. The **Team Lead** role remains a blanket bypass for *engagement* work;
+  platform-wide management now comes from **group permissions** (the admin
+  edit-user dialog now explains this). Read-only admins keep read access to RBAC
+  config but can no longer perform these writes.
+
 ### Added
 - **Edit text attachments in-app** — text files (`.txt`, `.md`, `.log`, …) now
   have an "Edit Text" action that turns the preview area into the editor in place

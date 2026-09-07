@@ -7,6 +7,8 @@ from datetime import datetime
 from database import get_db
 
 from models.user import User, UserRole
+from models.permission import Permission
+from auth.permissions import has_global_permission
 from models.template_status import TemplateStatus
 from models.testcase_template import TestCaseTemplate
 from schemas.testcase_template import (
@@ -21,8 +23,12 @@ from auth.dependencies import get_current_user
 router = APIRouter(prefix="/testcase-templates", tags=["testcase-templates"])
 
 
-def _can_manage(user: User) -> bool:
-    return user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+async def _can_manage(user: User, db: AsyncSession) -> bool:
+    """Manage = curate the shared test-case-template library. Gated on the
+    assignable MANAGE_TESTCASE_TEMPLATES global permission (3-tier) rather than a
+    hardcoded role. ADMIN passes automatically; READ_ONLY_ADMIN no longer gets
+    write access (a write permission)."""
+    return await has_global_permission(user, Permission.MANAGE_TESTCASE_TEMPLATES, db)
 
 
 @router.get("", response_model=List[TestCaseTemplateResponse])
@@ -53,7 +59,7 @@ async def get_testcase_templates(
             TestCaseTemplate.created_by == current_user.id,
         )
     )
-    if _can_manage(current_user):
+    if await _can_manage(current_user, db):
         visibility.append(TestCaseTemplate.status == TemplateStatus.SUBMITTED)
     else:
         visibility.append(
@@ -109,7 +115,7 @@ async def _get_visible_template(
         return template
     if template.created_by == current_user.id:
         return template
-    if template.status == TemplateStatus.SUBMITTED and _can_manage(current_user):
+    if template.status == TemplateStatus.SUBMITTED and await _can_manage(current_user, db):
         return template
     raise HTTPException(status_code=404, detail="Template not found")
 
@@ -161,10 +167,10 @@ async def update_testcase_template(
         )
 
     if template.status == TemplateStatus.DRAFT:
-        if template.created_by != current_user.id and not _can_manage(current_user):
+        if template.created_by != current_user.id and not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Only the creator can edit a draft")
     else:  # PUBLISHED
-        if not _can_manage(current_user):
+        if not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     for field, value in template_data.model_dump(exclude_unset=True).items():
@@ -199,7 +205,7 @@ async def delete_testcase_template(
         if template.created_by != current_user.id and current_user.role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Only the creator can delete a draft")
     else:  # PUBLISHED
-        if not _can_manage(current_user):
+        if not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     await db.delete(template)
@@ -268,7 +274,7 @@ async def approve_testcase_template(
     current_user: User = Depends(get_current_user),
 ):
     """Approve and publish (DRAFT or SUBMITTED → PUBLISHED). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(TestCaseTemplate).where(TestCaseTemplate.id == template_id))
@@ -298,7 +304,7 @@ async def reject_testcase_template(
     current_user: User = Depends(get_current_user),
 ):
     """Reject a submission with feedback (SUBMITTED → DRAFT). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(TestCaseTemplate).where(TestCaseTemplate.id == template_id))
@@ -325,7 +331,7 @@ async def unpublish_testcase_template(
     current_user: User = Depends(get_current_user),
 ):
     """Move a published template back to draft (PUBLISHED → DRAFT). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(TestCaseTemplate).where(TestCaseTemplate.id == template_id))
@@ -363,7 +369,7 @@ async def mark_template_used(
     if tmpl is None or not (
         tmpl.status == TemplateStatus.PUBLISHED
         or tmpl.created_by == current_user.id
-        or (tmpl.status == TemplateStatus.SUBMITTED and _can_manage(current_user))
+        or (tmpl.status == TemplateStatus.SUBMITTED and await _can_manage(current_user, db))
     ):
         raise HTTPException(status_code=404, detail="Template not found")
     row = (await db.execute(

@@ -266,6 +266,14 @@ export default function AdminUsersPage() {
                                     <SelectItem value="read_only">Read Only</SelectItem>
                                 </SelectContent>
                             </Select>
+                            <p className="text-[11px] leading-relaxed text-slate-500">
+                                <span className="font-semibold text-slate-400">Team Lead</span> grants blanket
+                                access to <span className="text-slate-400">every engagement's</span> content (findings,
+                                assets, test cases, evidence, vault, notes, etc.) without an assignment — but
+                                <span className="text-slate-400"> not</span> platform-wide management (users, templates,
+                                runbooks, clients…). Those come from the user's <span className="text-slate-400">group
+                                permissions</span>. Admin bypasses everything; Read-Only Admin can view everything but not change it.
+                            </p>
                         </div>
                     </div>
                     <DialogFooter>
@@ -360,6 +368,14 @@ export default function AdminUsersPage() {
                                     <SelectItem value="read_only">Read Only</SelectItem>
                                 </SelectContent>
                             </Select>
+                            <p className="text-[11px] leading-relaxed text-slate-500">
+                                <span className="font-semibold text-slate-400">Team Lead</span> grants blanket
+                                access to <span className="text-slate-400">every engagement's</span> content (findings,
+                                assets, test cases, evidence, vault, notes, etc.) without an assignment — but
+                                <span className="text-slate-400"> not</span> platform-wide management (users, templates,
+                                runbooks, clients…). Those come from the user's <span className="text-slate-400">group
+                                permissions</span>. Admin bypasses everything; Read-Only Admin can view everything but not change it.
+                            </p>
                         </div>
                     </div>
                     <DialogFooter>

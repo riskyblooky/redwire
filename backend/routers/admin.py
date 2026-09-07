@@ -15,11 +15,45 @@ from schemas.rbac import (
     EngagementRoleResponse, EngagementRoleCreate, EngagementRoleUpdate
 )
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES, WRITE_ADMIN_ROLES
+from auth.permissions import require_global_permission
+from models.permission import Permission
 
 router = APIRouter(
     prefix="/admin",
     tags=["admin"]
 )
+
+
+def require_global_perm(permission: Permission):
+    """Route-dependency factory enforcing an assignable global permission —
+    the permission-based counterpart to ``require_roles``. Keeps these admin
+    surfaces delegable via group grants (3-tier) instead of being hardcoded to
+    the admin role. ADMIN always passes; READ_ONLY_ADMIN passes read-style
+    permissions; anyone else needs the grant via a group.
+    """
+    async def _checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        await require_global_permission(permission, current_user, db)
+    return _checker
+
+
+def require_global_perm_read(permission: Permission):
+    """Read-side variant for RBAC-config lists: the assignable manage permission
+    OR the READ_ONLY_ADMIN auditor role (view-everything). Keeps auditor
+    visibility of groups/roles/registration-codes while still letting a
+    delegated group-manager (not just ADMIN) read them. ADMIN passes inside
+    require_global_permission.
+    """
+    async def _checker(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        if current_user.role == UserRole.READ_ONLY_ADMIN:
+            return
+        await require_global_permission(permission, current_user, db)
+    return _checker
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
@@ -68,7 +102,7 @@ async def get_admin_config(
         "session_timeout_hours": REFRESH_TOKEN_EXPIRE_HOURS,
     }
 
-@router.get("/users", response_model=List[UserResponse], dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.get("/users", response_model=List[UserResponse], dependencies=[Depends(require_global_perm(Permission.VIEW_ALL_USERS))])
 async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -80,7 +114,7 @@ async def list_users(
     users = result.scalars().all()
     return users
 
-@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def create_local_user(
     user_data: "AdminUserCreate",
     db: AsyncSession = Depends(get_db),
@@ -128,7 +162,7 @@ async def create_local_user(
     return result.scalar_one()
 
 
-@router.patch("/users/{user_id}", response_model=UserResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.patch("/users/{user_id}", response_model=UserResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def update_user(
     user_id: str,
     user_update: UserUpdate,
@@ -187,7 +221,7 @@ async def update_user(
 
     return user
 
-@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def delete_user(
     user_id: str,
     current_user: User = Depends(get_current_user),
@@ -213,7 +247,7 @@ async def delete_user(
     await db.commit()
     return None
 
-@router.post("/users/{user_id}/reset-password", dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.post("/users/{user_id}/reset-password", dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def reset_password(
     user_id: str,
     db: AsyncSession = Depends(get_db)
@@ -281,13 +315,13 @@ async def reset_password(
 
 # --- Group Management ---
 
-@router.get("/groups", response_model=List[GroupResponse], dependencies=[Depends(require_roles(ADMIN_ROLES))])
+@router.get("/groups", response_model=List[GroupResponse], dependencies=[Depends(require_global_perm_read(Permission.MANAGE_GROUPS))])
 async def list_groups(db: AsyncSession = Depends(get_db)):
     """List all user groups."""
     result = await db.execute(select(Group).order_by(Group.name))
     return result.scalars().all()
 
-@router.post("/groups", response_model=GroupResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.post("/groups", response_model=GroupResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_GROUPS))])
 async def create_group(group: GroupCreate, db: AsyncSession = Depends(get_db)):
     """Create a new user group."""
     new_group = Group(**group.model_dump())
@@ -300,7 +334,7 @@ async def create_group(group: GroupCreate, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Group name must be unique")
     return new_group
 
-@router.patch("/groups/{group_id}", response_model=GroupResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.patch("/groups/{group_id}", response_model=GroupResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_GROUPS))])
 async def update_group(group_id: str, group_update: GroupUpdate, db: AsyncSession = Depends(get_db)):
     """Update a group's details."""
     result = await db.execute(select(Group).where(Group.id == group_id))
@@ -315,7 +349,7 @@ async def update_group(group_id: str, group_update: GroupUpdate, db: AsyncSessio
     await db.refresh(group)
     return group
 
-@router.delete("/groups/{group_id}", status_code=204, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.delete("/groups/{group_id}", status_code=204, dependencies=[Depends(require_global_perm(Permission.MANAGE_GROUPS))])
 async def delete_group(group_id: str, db: AsyncSession = Depends(get_db)):
     """Delete a user group."""
     result = await db.execute(select(Group).where(Group.id == group_id))
@@ -328,13 +362,13 @@ async def delete_group(group_id: str, db: AsyncSession = Depends(get_db)):
 
 # --- Engagement Role Management ---
 
-@router.get("/engagement-roles", response_model=List[EngagementRoleResponse], dependencies=[Depends(require_roles(ADMIN_ROLES))])
+@router.get("/engagement-roles", response_model=List[EngagementRoleResponse], dependencies=[Depends(require_global_perm_read(Permission.MANAGE_ENGAGEMENT_ROLES))])
 async def list_engagement_roles(db: AsyncSession = Depends(get_db)):
     """List all defined engagement roles."""
     result = await db.execute(select(EngagementRole).order_by(EngagementRole.name))
     return result.scalars().all()
 
-@router.post("/engagement-roles", response_model=EngagementRoleResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.post("/engagement-roles", response_model=EngagementRoleResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_ENGAGEMENT_ROLES))])
 async def create_engagement_role(role: EngagementRoleCreate, db: AsyncSession = Depends(get_db)):
     """Create a new engagement role."""
     new_role = EngagementRole(**role.model_dump())
@@ -347,7 +381,7 @@ async def create_engagement_role(role: EngagementRoleCreate, db: AsyncSession = 
         raise HTTPException(status_code=400, detail="Role name must be unique")
     return new_role
 
-@router.patch("/engagement-roles/{role_id}", response_model=EngagementRoleResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.patch("/engagement-roles/{role_id}", response_model=EngagementRoleResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_ENGAGEMENT_ROLES))])
 async def update_engagement_role(role_id: str, role_update: EngagementRoleUpdate, db: AsyncSession = Depends(get_db)):
     """Update an engagement role's details."""
     result = await db.execute(select(EngagementRole).where(EngagementRole.id == role_id))
@@ -372,7 +406,7 @@ from models.registration_code import RegistrationCode
 from schemas.registration_code import RegistrationCodeCreate, RegistrationCodeUpdate, RegistrationCodeResponse, RegistrationCodeUserResponse
 import uuid
 
-@router.get("/registration-codes", response_model=List[RegistrationCodeResponse], dependencies=[Depends(require_roles(ADMIN_ROLES))])
+@router.get("/registration-codes", response_model=List[RegistrationCodeResponse], dependencies=[Depends(require_global_perm_read(Permission.MANAGE_REGISTRATION_CODES))])
 async def list_registration_codes(db: AsyncSession = Depends(get_db)):
     """List all registration codes."""
     result = await db.execute(select(RegistrationCode).order_by(RegistrationCode.created_at.desc()))
@@ -390,7 +424,7 @@ def _generate_registration_code() -> str:
     return "-".join(chunks)
 
 
-@router.post("/registration-codes", response_model=RegistrationCodeResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.post("/registration-codes", response_model=RegistrationCodeResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_REGISTRATION_CODES))])
 async def create_registration_code(
     code_data: RegistrationCodeCreate,
     current_user: User = Depends(get_current_user),
@@ -428,7 +462,7 @@ async def create_registration_code(
     await db.refresh(new_code)
     return new_code
 
-@router.patch("/registration-codes/{code_id}", response_model=RegistrationCodeResponse, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.patch("/registration-codes/{code_id}", response_model=RegistrationCodeResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_REGISTRATION_CODES))])
 async def update_registration_code(
     code_id: str,
     code_update: RegistrationCodeUpdate,
@@ -447,7 +481,7 @@ async def update_registration_code(
     await db.refresh(code)
     return code
 
-@router.get("/registration-codes/{code_id}/users", response_model=List[RegistrationCodeUserResponse], dependencies=[Depends(require_roles(ADMIN_ROLES))])
+@router.get("/registration-codes/{code_id}/users", response_model=List[RegistrationCodeUserResponse], dependencies=[Depends(require_global_perm_read(Permission.MANAGE_REGISTRATION_CODES))])
 async def get_registration_code_users(
     code_id: str,
     db: AsyncSession = Depends(get_db)
@@ -463,7 +497,7 @@ async def get_registration_code_users(
     )
     return result.scalars().all()
 
-@router.delete("/registration-codes/{code_id}", status_code=204, dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))])
+@router.delete("/registration-codes/{code_id}", status_code=204, dependencies=[Depends(require_global_perm(Permission.MANAGE_REGISTRATION_CODES))])
 async def delete_registration_code(code_id: str, db: AsyncSession = Depends(get_db)):
     """Delete a registration code."""
     result = await db.execute(select(RegistrationCode).where(RegistrationCode.id == code_id))

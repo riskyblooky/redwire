@@ -6,6 +6,8 @@ import logging
 
 from database import get_db
 from models.user import User, UserRole
+from models.permission import Permission
+from auth.permissions import has_global_permission
 from models.report_theme import ReportTheme
 from schemas.report_theme import ReportThemeCreate, ReportThemeUpdate, ReportThemeResponse
 from auth.dependencies import get_current_user
@@ -15,9 +17,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/report-themes", tags=["report-themes"])
 
 
-def _check_manage_permission(user: User):
-    """Check if user has permission to manage report themes (Admin/Team Lead)."""
-    if user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+async def _check_manage_permission(user: User, db: AsyncSession):
+    """Gate report-theme management on the assignable MANAGE_REPORT_THEMES global
+    permission (3-tier) rather than a hardcoded role, so it can be delegated via a
+    group grant. ADMIN passes automatically; READ_ONLY_ADMIN no longer writes."""
+    if not await has_global_permission(user, Permission.MANAGE_REPORT_THEMES, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions to manage report themes")
 
 
@@ -73,7 +77,7 @@ async def create_report_theme(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new report theme. Admin/Team Lead only."""
-    _check_manage_permission(current_user)
+    await _check_manage_permission(current_user, db)
     _check_default_flag_permission(current_user, bool(data.is_default))
 
     # If marking as default, unset other defaults
@@ -99,7 +103,7 @@ async def update_report_theme(
     current_user: User = Depends(get_current_user),
 ):
     """Update a report theme. Admin/Team Lead only."""
-    _check_manage_permission(current_user)
+    await _check_manage_permission(current_user, db)
     update_data = data.model_dump(exclude_unset=True)
     _check_default_flag_permission(current_user, bool(update_data.get("is_default")))
 
@@ -130,7 +134,7 @@ async def delete_report_theme(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a report theme. Admin/Team Lead only."""
-    _check_manage_permission(current_user)
+    await _check_manage_permission(current_user, db)
 
     result = await db.execute(
         select(ReportTheme).where(ReportTheme.id == theme_id)

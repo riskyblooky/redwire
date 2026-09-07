@@ -10,6 +10,8 @@ from database import get_db
 import uuid
 
 from models.user import User, UserRole
+from models.permission import Permission
+from auth.permissions import has_global_permission
 from models.template_status import TemplateStatus
 from models.runbook import Runbook, RunbookItem
 from models.testcase_template import TestCaseTemplate
@@ -24,8 +26,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/runbooks", tags=["runbooks"])
 
 
-def _can_manage(user: User) -> bool:
-    return user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+async def _can_manage(user: User, db: AsyncSession) -> bool:
+    """Manage = curate the shared runbook library (approve / publish /
+    edit-published / unpublish) and see SUBMITTED runbooks. Gated on the
+    assignable RUNBOOK_EDIT global permission (3-tier) rather than a hardcoded
+    role. Deletion of a published runbook is gated separately on RUNBOOK_DELETE.
+    ADMIN passes automatically; READ_ONLY_ADMIN no longer gets write access."""
+    return await has_global_permission(user, Permission.RUNBOOK_EDIT, db)
 
 
 def _enforce_referenced_templates_published(
@@ -68,7 +75,7 @@ def _enforce_referenced_templates_published(
         )
 
 
-def _visibility_clause(current_user: User):
+async def _visibility_clause(current_user: User, db: AsyncSession):
     """SQL OR-clause matching runbooks the user is allowed to see."""
     parts = [Runbook.status == TemplateStatus.PUBLISHED]
     parts.append(
@@ -77,7 +84,7 @@ def _visibility_clause(current_user: User):
             Runbook.created_by == current_user.id,
         )
     )
-    if _can_manage(current_user):
+    if await _can_manage(current_user, db):
         parts.append(Runbook.status == TemplateStatus.SUBMITTED)
     else:
         parts.append(
@@ -98,12 +105,12 @@ async def _load_runbook(runbook_id: str, db: AsyncSession) -> Runbook | None:
     return result.scalar_one_or_none()
 
 
-def _is_visible(runbook: Runbook, current_user: User) -> bool:
+async def _is_visible(runbook: Runbook, current_user: User, db: AsyncSession) -> bool:
     if runbook.status == TemplateStatus.PUBLISHED:
         return True
     if runbook.created_by == current_user.id:
         return True
-    if runbook.status == TemplateStatus.SUBMITTED and _can_manage(current_user):
+    if runbook.status == TemplateStatus.SUBMITTED and await _can_manage(current_user, db):
         return True
     return False
 
@@ -125,7 +132,7 @@ async def _ensure_template_visible(
         return
     if template.created_by == current_user.id:
         return
-    if _can_manage(current_user):
+    if await _can_manage(current_user, db):
         return
     raise HTTPException(
         status_code=403,
@@ -148,7 +155,7 @@ async def get_runbooks(
     limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
 ):
     """List runbooks visible to the user (PUBLISHED to all; DRAFT/SUBMITTED scoped per workflow rules)."""
-    base = select(Runbook).where(_visibility_clause(current_user))
+    base = select(Runbook).where(await _visibility_clause(current_user, db))
     if runbook_type:
         base = base.where(Runbook.runbook_type == runbook_type)
     if status_filter:
@@ -193,7 +200,7 @@ async def get_runbook(
 ):
     """Get a specific runbook with its items."""
     runbook = await _load_runbook(runbook_id, db)
-    if not runbook or not _is_visible(runbook, current_user):
+    if not runbook or not await _is_visible(runbook, current_user, db):
         raise HTTPException(status_code=404, detail="Runbook not found")
     return runbook
 
@@ -269,10 +276,10 @@ async def update_runbook(
         )
 
     if runbook.status == TemplateStatus.DRAFT:
-        if runbook.created_by != current_user.id and not _can_manage(current_user):
+        if runbook.created_by != current_user.id and not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Only the creator can edit a draft")
     else:  # PUBLISHED
-        if not _can_manage(current_user):
+        if not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     if data.name is not None:
@@ -336,7 +343,7 @@ async def delete_runbook(
         if runbook.created_by != current_user.id and current_user.role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Only the creator can delete a draft")
     else:  # PUBLISHED
-        if not _can_manage(current_user):
+        if not await has_global_permission(current_user, Permission.RUNBOOK_DELETE, db):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     await db.delete(runbook)
@@ -403,7 +410,7 @@ async def approve_runbook(
     current_user: User = Depends(get_current_user),
 ):
     """Approve and publish (DRAFT or SUBMITTED → PUBLISHED). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     runbook = await _load_runbook(runbook_id, db)
@@ -434,7 +441,7 @@ async def reject_runbook(
     current_user: User = Depends(get_current_user),
 ):
     """Reject a submission with feedback (SUBMITTED → DRAFT). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(Runbook).where(Runbook.id == runbook_id))
@@ -460,7 +467,7 @@ async def unpublish_runbook(
     current_user: User = Depends(get_current_user),
 ):
     """Move a published runbook back to draft (PUBLISHED → DRAFT). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(Runbook).where(Runbook.id == runbook_id))
@@ -499,7 +506,7 @@ async def apply_runbook_to_engagement(
     from utils.collaboration import create_activity_log
 
     runbook = await _load_runbook(runbook_id, db)
-    if not runbook or not _is_visible(runbook, current_user):
+    if not runbook or not await _is_visible(runbook, current_user, db):
         raise HTTPException(status_code=404, detail="Runbook not found")
 
     # GHSA-8357-pmf3-28f8: refuse the materialization if any referenced

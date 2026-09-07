@@ -7,6 +7,8 @@ from datetime import datetime
 from database import get_db
 
 from models.user import User, UserRole
+from models.permission import Permission
+from auth.permissions import has_global_permission
 from models.template_status import TemplateStatus
 from models.finding_template import FindingTemplate
 from schemas.finding import (
@@ -22,8 +24,13 @@ from auth.dependencies import get_current_user
 router = APIRouter(prefix="/templates", tags=["templates"])
 
 
-def _can_manage(user: User) -> bool:
-    return user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+async def _can_manage(user: User, db: AsyncSession) -> bool:
+    """Manage = curate the shared finding-template library (approve / publish /
+    edit-published / delete-published). Gated on the assignable
+    MANAGE_FINDING_TEMPLATES global permission (3-tier) rather than a hardcoded
+    role, so it can be delegated via a group grant. ADMIN passes automatically;
+    READ_ONLY_ADMIN no longer gets write access (a write permission)."""
+    return await has_global_permission(user, Permission.MANAGE_FINDING_TEMPLATES, db)
 
 
 @router.get("", response_model=List[FindingTemplateResponse])
@@ -54,7 +61,7 @@ async def get_templates(
             FindingTemplate.created_by == current_user.id,
         )
     )
-    if _can_manage(current_user):
+    if await _can_manage(current_user, db):
         visibility.append(FindingTemplate.status == TemplateStatus.SUBMITTED)
     else:
         visibility.append(
@@ -110,7 +117,7 @@ async def _get_visible_template(
         return template
     if template.created_by == current_user.id:
         return template
-    if template.status == TemplateStatus.SUBMITTED and _can_manage(current_user):
+    if template.status == TemplateStatus.SUBMITTED and await _can_manage(current_user, db):
         return template
     raise HTTPException(status_code=404, detail="Template not found")
 
@@ -167,10 +174,10 @@ async def update_template(
         )
 
     if template.status == TemplateStatus.DRAFT:
-        if template.created_by != current_user.id and not _can_manage(current_user):
+        if template.created_by != current_user.id and not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Only the creator can edit a draft")
     else:  # PUBLISHED
-        if not _can_manage(current_user):
+        if not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     for field, value in template_data.model_dump(exclude_unset=True).items():
@@ -210,7 +217,7 @@ async def delete_template(
         if template.created_by != current_user.id and current_user.role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Only the creator can delete a draft")
     else:  # PUBLISHED
-        if not _can_manage(current_user):
+        if not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     await db.delete(template)
@@ -282,7 +289,7 @@ async def approve_template(
 
     Manage roles can self-publish their own drafts (skip submit) by hitting this directly.
     """
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(FindingTemplate).where(FindingTemplate.id == template_id))
@@ -312,7 +319,7 @@ async def reject_template(
     current_user: User = Depends(get_current_user),
 ):
     """Reject a submission with feedback (SUBMITTED → DRAFT). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(FindingTemplate).where(FindingTemplate.id == template_id))
@@ -339,7 +346,7 @@ async def unpublish_template(
     current_user: User = Depends(get_current_user),
 ):
     """Move a published template back to draft (PUBLISHED → DRAFT). Manage roles only."""
-    if not _can_manage(current_user):
+    if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await db.execute(select(FindingTemplate).where(FindingTemplate.id == template_id))
