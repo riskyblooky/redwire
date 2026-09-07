@@ -609,50 +609,12 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "X-Marking-Warnings", "X-Archive-Root-Digest", "X-Total-Count"],
 )
 
-# Activity Middleware to update last_active (throttled)
-from datetime import datetime, timezone
-from fastapi import Request
-from sqlalchemy import update
-from database import AsyncSessionLocal
-from models.user import User
-import time
-
-# In-memory cache: user_id -> last_update_epoch
-_last_active_cache: dict[str, float] = {}
-_LAST_ACTIVE_INTERVAL = 60  # Only update DB once per 60 seconds per user
-
-# Paths to skip — no need to track activity on these
-_SKIP_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json", "/uploads/", "/ws")
-
-@app.middleware("http")
-async def update_last_active_middleware(request: Request, call_next):
-    path = request.url.path
-    auth_header = request.headers.get("Authorization")
-
-    # Only process Bearer-authenticated API requests
-    if auth_header and auth_header.startswith("Bearer ") and not any(path.startswith(p) for p in _SKIP_PREFIXES):
-        try:
-            token = auth_header.split(" ")[1]
-            from auth.jwt import decode_token
-            payload = decode_token(token)
-            if payload and "sub" in payload:
-                user_id = payload["sub"]
-                now = time.monotonic()
-                last = _last_active_cache.get(user_id, 0)
-                if now - last >= _LAST_ACTIVE_INTERVAL:
-                    _last_active_cache[user_id] = now
-                    async with AsyncSessionLocal() as db:
-                        await db.execute(
-                            update(User)
-                            .where(User.id == user_id)
-                            .values(last_active=datetime.utcnow())
-                        )
-                        await db.commit()
-        except Exception:
-            pass  # Don't fail the request if middleware fails
-
-    response = await call_next(request)
-    return response
+# NOTE: `last_active` is intentionally NOT updated per-request anymore. Bumping
+# it on any Bearer request made an idle open tab (background polling: notifications,
+# refetch intervals, token refresh) look permanently "active/online". It is now
+# driven solely by POST /users/me/heartbeat, which the frontend sends only while
+# the tab is visible and the user has genuinely interacted recently — so the
+# online indicator reflects real activity. See routers/users.py:activity_heartbeat.
 
 
 # Include routers

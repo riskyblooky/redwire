@@ -86,6 +86,36 @@ async def get_my_global_permissions(
     global_values = {p.value for p in GLOBAL_PERMISSIONS}
     return sorted(permissions_set & global_values)
 
+
+# In-memory throttle: only write last_active once per user per interval, even if
+# multiple tabs send heartbeats. Reset on process restart (fine — it's a floor).
+_HEARTBEAT_INTERVAL = 45  # seconds
+_heartbeat_cache: dict[str, float] = {}
+
+
+@router.post("/me/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
+async def activity_heartbeat(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark the current user as actively using the app *right now*.
+
+    The frontend sends this only while the tab is visible and the user has
+    genuinely interacted recently (mouse/keyboard), so `last_active` reflects
+    real activity rather than any authenticated request (which background
+    polling would keep falsely fresh). Throttled per-user to limit writes.
+    """
+    import time as _time
+    now = _time.monotonic()
+    if now - _heartbeat_cache.get(current_user.id, 0.0) < _HEARTBEAT_INTERVAL:
+        return
+    _heartbeat_cache[current_user.id] = now
+    from sqlalchemy import update as _update
+    from datetime import datetime as _dt
+    await db.execute(_update(User).where(User.id == current_user.id).values(last_active=_dt.utcnow()))
+    await db.commit()
+
+
 @router.put("/me", response_model=UserResponse)
 async def update_current_user(
     user_data: UserUpdate,

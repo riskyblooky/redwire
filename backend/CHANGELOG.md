@@ -59,6 +59,11 @@ section becomes one release entry.
   tab) and highlights the line the cursor is on.
 
 ### Improved
+- **Accurate online/active indicators** — a user's "active" status is now driven
+  by real activity (a heartbeat sent only while the tab is visible and the user
+  has interacted recently) instead of any authenticated request. An idle tab left
+  open — or a backgrounded tab — no longer shows the user as online; they age out
+  once they stop interacting.
 - **Search & filters on the admin user list** — the Operators tab gained a search
   box (username / email / name) and a filter popover (role, status, online-now,
   group), with an active-filter count and clear-all.

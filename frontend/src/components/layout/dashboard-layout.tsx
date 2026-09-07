@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
 import { useGlobalPermissions } from '@/lib/hooks/use-permissions';
 import { ADMIN_SURFACE_PERMISSIONS } from '@/lib/admin-tabs';
+import { useActivityHeartbeat } from '@/lib/hooks/use-activity-heartbeat';
 import {
     LayoutDashboard,
     Briefcase,
@@ -104,6 +105,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     const pathname = usePathname();
     const router = useRouter();
     const { user, logout, mustChangePassword, clearMustChangePassword } = useAuthStore();
+    // Report genuine activity (visible tab + recent interaction) so the admin
+    // online indicator reflects real usage, not idle open tabs.
+    useActivityHeartbeat(!!user);
     // Persist the collapsed state across route changes. DashboardLayout
     // re-mounts on every navigation, so a plain useState(false) resets
     // the sidebar back to expanded on every click. Read the last saved
