@@ -57,6 +57,9 @@ section becomes one release entry.
   tab) and highlights the line the cursor is on.
 
 ### Improved
+- **Search & filters on the admin user list** — the Operators tab gained a search
+  box (username / email / name) and a filter popover (role, status, online-now,
+  group), with an active-filter count and clear-all.
 - **Notes open without the load pause** — the collaborative notes editor shows
   the note's content immediately (an instant preview while it connects, and no
   peer-sync wait when you're the only one on the note) and syncs in the

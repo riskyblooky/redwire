@@ -45,7 +45,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info, ListPlus } from 'lucide-react';
+import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info, ListPlus, Filter, Search, X } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -59,7 +60,7 @@ import { useGlobalPermissions } from '@/lib/hooks/use-permissions';
 import { canSeeAdminTab, ADMIN_TAB_ORDER } from '@/lib/admin-tabs';
 import { apiErrorMessage } from '@/lib/api';
 import { format, formatDistanceToNow } from 'date-fns';
-import { parseUTCDate } from '@/lib/utils';
+import { parseUTCDate, cn } from '@/lib/utils';
 import { User, UserRole } from '@/lib/hooks/use-auth';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
@@ -126,6 +127,32 @@ export default function AdminPage() {
     const resetPassword = useResetPassword();
 
     const createUser = useCreateUser();
+
+    // User table search + filters
+    const [userSearch, setUserSearch] = useState('');
+    const [roleFilter, setRoleFilter] = useState<string[]>([]);          // empty = all roles
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
+    const [onlineOnly, setOnlineOnly] = useState(false);
+    const [groupFilter, setGroupFilter] = useState<string>('all');       // group id or 'all'
+
+    const isOnline = (u: any) => !!u.last_active && new Date(u.last_active).getTime() > Date.now() - 5 * 60 * 1000;
+    const filteredUsers = (users || []).filter((u) => {
+        if (userSearch.trim()) {
+            const q = userSearch.trim().toLowerCase();
+            const hay = `${u.username || ''} ${u.email || ''} ${(u as any).full_name || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        if (roleFilter.length && !roleFilter.includes(u.role as any)) return false;
+        if (statusFilter === 'active' && !u.is_active) return false;
+        if (statusFilter === 'suspended' && u.is_active) return false;
+        if (onlineOnly && !isOnline(u)) return false;
+        if (groupFilter !== 'all' && !((u as any).groups || []).some((g: any) => g.id === groupFilter)) return false;
+        return true;
+    });
+    const activeFilterCount =
+        (roleFilter.length ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (onlineOnly ? 1 : 0) + (groupFilter !== 'all' ? 1 : 0);
+    const clearFilters = () => { setRoleFilter([]); setStatusFilter('all'); setOnlineOnly(false); setGroupFilter('all'); };
+    const toggleRole = (r: string) => setRoleFilter((prev) => prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]);
 
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [createForm, setCreateForm] = useState({
@@ -370,19 +397,93 @@ export default function AdminPage() {
 
                         <Card className="border-slate-800 bg-slate-900/50">
                             <CardHeader>
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
                                         <CardTitle className="text-white">User Management</CardTitle>
                                         <CardDescription>Manage user access and global permissions</CardDescription>
                                     </div>
-                                    <Button
-                                        onClick={() => setIsCreateDialogOpen(true)}
-                                        className="bg-primary hover:bg-primary/90 gap-2"
-                                        size="sm"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                        Add User
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative">
+                                            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                                            <Input
+                                                value={userSearch}
+                                                onChange={(e) => setUserSearch(e.target.value)}
+                                                placeholder="Search users…"
+                                                className="h-9 w-56 bg-slate-950 border-slate-700 pl-8 text-sm text-slate-200 placeholder:text-slate-500"
+                                            />
+                                            {userSearch && (
+                                                <button onClick={() => setUserSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300" title="Clear search">
+                                                    <X className="h-3.5 w-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button variant="outline" size="sm" className={cn("h-9 gap-1.5 border-slate-700", activeFilterCount > 0 ? "text-primary border-primary/40 bg-primary/5" : "text-slate-400")}>
+                                                    <Filter className="h-3.5 w-3.5" />
+                                                    Filters
+                                                    {activeFilterCount > 0 && <Badge className="ml-1 h-4 min-w-4 px-1 bg-primary/20 text-primary border-0 text-[10px]">{activeFilterCount}</Badge>}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent align="end" className="w-72 bg-slate-900 border-slate-800 text-slate-200">
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Filters</span>
+                                                        {activeFilterCount > 0 && (
+                                                            <button onClick={clearFilters} className="text-[11px] text-primary hover:underline">Clear all</button>
+                                                        )}
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Role</span>
+                                                        <div className="grid grid-cols-2 gap-1.5">
+                                                            {Object.entries(ROLE_BADGE).map(([value, meta]) => (
+                                                                <label key={value} className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+                                                                    <Checkbox checked={roleFilter.includes(value)} onCheckedChange={() => toggleRole(value)} />
+                                                                    {meta.label}
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</span>
+                                                        <div className="flex gap-1">
+                                                            {(['all', 'active', 'suspended'] as const).map((s) => (
+                                                                <Button key={s} size="sm" variant={statusFilter === s ? 'default' : 'outline'}
+                                                                    onClick={() => setStatusFilter(s)}
+                                                                    className={cn("h-7 flex-1 text-xs capitalize", statusFilter === s ? "bg-primary hover:bg-primary/90" : "border-slate-700 text-slate-400")}>
+                                                                    {s}
+                                                                </Button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <label className="flex cursor-pointer items-center justify-between text-xs text-slate-300">
+                                                        <span>Online now</span>
+                                                        <Checkbox checked={onlineOnly} onCheckedChange={(v) => setOnlineOnly(!!v)} />
+                                                    </label>
+                                                    <div className="space-y-1.5">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Group</span>
+                                                        <Select value={groupFilter} onValueChange={setGroupFilter}>
+                                                            <SelectTrigger className="h-8 bg-slate-950 border-slate-700 text-xs"><SelectValue /></SelectTrigger>
+                                                            <SelectContent className="bg-slate-900 border-slate-800 text-slate-200">
+                                                                <SelectItem value="all">All groups</SelectItem>
+                                                                {(groups || []).map((g: any) => (
+                                                                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
+                                        <Button
+                                            onClick={() => setIsCreateDialogOpen(true)}
+                                            className="bg-primary hover:bg-primary/90 gap-2"
+                                            size="sm"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                            Add User
+                                        </Button>
+                                    </div>
                                 </div>
                             </CardHeader>
                             <CardContent>
@@ -398,7 +499,7 @@ export default function AdminPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {users?.map((user) => (
+                                        {filteredUsers.map((user) => (
                                             <TableRow key={user.id} className="border-slate-800 hover:bg-slate-800/50">
                                                 <TableCell>
                                                     <div className="flex items-center gap-3">
@@ -537,6 +638,15 @@ export default function AdminPage() {
                                                 </TableCell>
                                             </TableRow>
                                         ))}
+                                        {filteredUsers.length === 0 && (
+                                            <TableRow className="border-slate-800 hover:bg-transparent">
+                                                <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500">
+                                                    {(userSearch || activeFilterCount > 0)
+                                                        ? 'No users match the current search / filters.'
+                                                        : 'No users found.'}
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
                                     </TableBody>
                                 </Table>
                             </CardContent>
