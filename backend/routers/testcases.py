@@ -643,12 +643,9 @@ async def link_finding_to_testcase(
     from models.finding import Finding
     from models.associations import FindingTestCase
     
-    # Verify test case exists
-    tc_result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
-    testcase = tc_result.scalar_one_or_none()
-    if not testcase:
-        raise HTTPException(status_code=404, detail="Test case not found")
-    
+    # Load test case + gate TESTCASE_EDIT (admins bypass).
+    testcase = await _require_testcase(testcase_id, db, current_user)
+
     # Verify finding exists
     f_result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = f_result.scalar_one_or_none()
@@ -697,9 +694,8 @@ async def unlink_finding_from_testcase(
     from models.associations import FindingTestCase
     from models.finding import Finding
     
-    # Fetch test case and finding for log context
-    tc_result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
-    testcase = tc_result.scalar_one_or_none()
+    # Gate TESTCASE_EDIT (admins bypass); also loads the test case for log context.
+    testcase = await _require_testcase(testcase_id, db, current_user)
     f_result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = f_result.scalar_one_or_none()
     
@@ -743,11 +739,8 @@ async def link_asset_to_testcase(
     from models.asset import Asset
     from models.associations import TestCaseAsset
 
-    # Verify test case exists
-    tc_result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
-    testcase = tc_result.scalar_one_or_none()
-    if not testcase:
-        raise HTTPException(status_code=404, detail="Test case not found")
+    # Load test case + gate TESTCASE_EDIT (admins bypass).
+    testcase = await _require_testcase(testcase_id, db, current_user)
 
     # Verify asset exists
     a_result = await db.execute(select(Asset).where(Asset.id == asset_id))
@@ -801,9 +794,8 @@ async def unlink_asset_from_testcase(
     from models.asset import Asset
     from models.associations import TestCaseAsset
 
-    # Fetch test case and asset for log context
-    tc_result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
-    testcase = tc_result.scalar_one_or_none()
+    # Gate TESTCASE_EDIT (admins bypass); also loads the test case for log context.
+    testcase = await _require_testcase(testcase_id, db, current_user)
     a_result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = a_result.scalar_one_or_none()
 

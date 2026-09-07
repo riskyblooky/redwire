@@ -143,6 +143,13 @@ async def get_remediation_summary(
     if not engagement:
         raise HTTPException(status_code=404, detail="Engagement not found")
 
+    # Gate the bulk read on FINDING_VIEW (admins bypass) — matches get_finding.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.FINDING_VIEW.value, db)
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="Insufficient permissions to view this engagement's findings.")
+
     # Fetch findings for engagement with assets eager-loaded
     findings_result = await db.execute(
         select(Finding)
@@ -711,6 +718,22 @@ async def toggle_asset_remediation(
     fa = result.scalar_one_or_none()
     if not fa:
         raise HTTPException(status_code=404, detail="Finding-asset link not found")
+
+    # Gate this write like update_finding: owner→FINDING_EDIT, else FINDING_EDIT_ANY.
+    parent = await db.execute(select(Finding).where(Finding.id == finding_id))
+    parent_finding = parent.scalar_one_or_none()
+    if not parent_finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    is_owner = parent_finding.created_by == current_user.id
+    if not is_admin:
+        if is_owner:
+            has_permission = await check_engagement_permission(current_user.id, parent_finding.engagement_id, Permission.FINDING_EDIT.value, db)
+        else:
+            has_permission = await check_engagement_permission(current_user.id, parent_finding.engagement_id, Permission.FINDING_EDIT_ANY.value, db)
+        if not has_permission:
+            required_perm = Permission.FINDING_EDIT.value if is_owner else Permission.FINDING_EDIT_ANY.value
+            raise HTTPException(status_code=403, detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this finding.")
 
     # Toggle
     new_val = not (fa.remediated or False)

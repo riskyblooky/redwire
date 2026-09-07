@@ -62,6 +62,13 @@ async def get_attack_coverage(
     if not engagement:
         raise HTTPException(404, "Engagement not found")
 
+    # Gate the read on FINDING_VIEW (admins bypass) — this exposes finding/testcase
+    # data, like suggest_techniques and attack_graph.get_attack_graph.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        if not await check_engagement_permission(current_user.id, engagement_id, Permission.FINDING_VIEW.value, db):
+            raise HTTPException(403, "Insufficient permissions for this engagement.")
+
     # Fetch all findings for this engagement with their techniques
     findings_result = await db.execute(
         select(Finding)
@@ -553,6 +560,12 @@ async def export_navigator_json(
     engagement = eng_result.scalar_one_or_none()
     if not engagement:
         raise HTTPException(404, "Engagement not found")
+
+    # Gate the read on FINDING_VIEW (admins bypass) — exports finding/technique data.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        if not await check_engagement_permission(current_user.id, engagement_id, Permission.FINDING_VIEW.value, db):
+            raise HTTPException(403, "Insufficient permissions for this engagement.")
 
     # Fetch coverage data
     findings_result = await db.execute(

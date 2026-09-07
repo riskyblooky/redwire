@@ -37,7 +37,7 @@ from models.spray import SprayCampaign, SprayResult
 from models.associations import EngagementAssignment
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
-from auth.rbac import apply_stats_scope
+from auth.rbac import apply_stats_scope, scope_to_assignments
 from utils.custom_fields import get_active_definitions
 
 logger = logging.getLogger(__name__)
@@ -1405,53 +1405,60 @@ async def get_computed_metrics(
 ):
     """Return pre-computed advanced metrics that can't be expressed as simple GROUP BY."""
 
+    # Scope aggregates to the caller's assignments (admins / VIEW_ALL_ENGAGEMENTS
+    # and global-mode see everything) — matches the /stats router. These are
+    # counts only (no identifiers), so strip_identifiers isn't needed.
+    is_admin_eff, allowed, _strip = await apply_stats_scope(None, db, current_user)
+    def _scope(q, col):
+        return scope_to_assignments(q, col, None, is_admin_eff, allowed)
+
     # 1. Average findings per engagement
     result = await db.execute(
-        select(func.count(Finding.id).label("total_findings"), func.count(func.distinct(Finding.engagement_id)).label("total_engagements"))
+        _scope(select(func.count(Finding.id).label("total_findings"), func.count(func.distinct(Finding.engagement_id)).label("total_engagements")), Finding.engagement_id)
     )
     row = result.one()
     findings_per_engagement = round(row.total_findings / max(row.total_engagements, 1), 1)
 
     # 2. Engagement completion rate
     result = await db.execute(
-        select(
+        _scope(select(
             func.count(case((Engagement.status == "COMPLETED", 1))).label("completed"),
             func.count(Engagement.id).label("total"),
-        )
+        ), Engagement.id)
     )
     row = result.one()
     completion_rate = round((row.completed / max(row.total, 1)) * 100, 1)
 
     # 3. Critical/High finding ratio
     result = await db.execute(
-        select(
+        _scope(select(
             func.count(case((Finding.severity.in_(["CRITICAL", "HIGH"]), 1))).label("critical_high"),
             func.count(Finding.id).label("total"),
-        )
+        ), Finding.engagement_id)
     )
     row = result.one()
     critical_high_ratio = round((row.critical_high / max(row.total, 1)) * 100, 1)
 
     # 4. Average CVSS score
     result = await db.execute(
-        select(func.avg(Finding.cvss_score).label("avg_cvss"))
-        .where(Finding.cvss_score.isnot(None))
+        _scope(select(func.avg(Finding.cvss_score).label("avg_cvss"))
+        .where(Finding.cvss_score.isnot(None)), Finding.engagement_id)
     )
     avg_cvss = round(float(result.scalar() or 0), 1)
 
     # 5. Assets per engagement
     result = await db.execute(
-        select(func.count(Asset.id).label("total_assets"), func.count(func.distinct(Asset.engagement_id)).label("total_engagements"))
+        _scope(select(func.count(Asset.id).label("total_assets"), func.count(func.distinct(Asset.engagement_id)).label("total_engagements")), Asset.engagement_id)
     )
     row = result.one()
     assets_per_engagement = round(row.total_assets / max(row.total_engagements, 1), 1)
 
     # 6. Test case pass rate
     result = await db.execute(
-        select(
+        _scope(select(
             func.count(case((TestCase.is_successful == True, 1))).label("passed"),
             func.count(case((TestCase.is_executed == True, 1))).label("executed"),
-        )
+        ), TestCase.engagement_id)
     )
     row = result.one()
     pass_rate = round((row.passed / max(row.executed, 1)) * 100, 1)

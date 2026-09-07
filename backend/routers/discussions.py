@@ -398,7 +398,17 @@ async def get_comments(
 ):
     """Get all comments for a thread."""
     from sqlalchemy.orm import selectinload
-    
+
+    # Gate on DISCUSSION_VIEW for the thread's engagement (admins bypass), like get_thread.
+    thread = (await db.execute(select(Thread).where(Thread.id == thread_id))).scalar_one_or_none()
+    if not thread:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(current_user.id, thread.engagement_id, Permission.DISCUSSION_VIEW.value, db)
+        if not has_permission:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to view this thread.")
+
     result = await db.execute(
         select(Comment)
         .options(selectinload(Comment.author), selectinload(Comment.resolver))
@@ -600,7 +610,17 @@ async def resolve_comment(
     
     if not comment.is_resolvable:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comment is not resolvable")
-    
+
+    # Gate on DISCUSSION_EDIT for the parent thread's engagement (admins bypass), like resolve_thread.
+    parent_thread = (await db.execute(select(Thread).where(Thread.id == comment.thread_id))).scalar_one_or_none()
+    if not parent_thread:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        has_permission = await check_engagement_permission(current_user.id, parent_thread.engagement_id, Permission.DISCUSSION_EDIT.value, db)
+        if not has_permission:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to resolve this comment.")
+
     comment.is_resolved = True
     comment.resolved_by = current_user.id
     comment.resolved_at = datetime.utcnow()
