@@ -7,7 +7,7 @@ import api from '@/lib/api';
 /**
  * Hook to fetch user's global (site-wide) permissions from the backend.
  */
-function useGlobalPermissionsQuery() {
+export function useGlobalPermissionsQuery() {
     const { user } = useAuthStore();
 
     return useQuery<string[]>({
@@ -19,6 +19,17 @@ function useGlobalPermissionsQuery() {
         enabled: !!user,
         staleTime: 1000 * 60 * 5, // Cache for 5 minutes
     });
+}
+
+/**
+ * Fetch the current user's raw global-permission strings (from
+ * GET /users/me/permissions). Unlike `useGlobalPermission`, this does NOT treat
+ * TEAM_LEAD as all-permissions — it returns exactly what the backend grants, so
+ * it matches the 3-tier model (TEAM_LEAD has no global perms unless a group
+ * grants them). Returns the standard TanStack Query result.
+ */
+export function useGlobalPermissions() {
+    return useGlobalPermissionsQuery();
 }
 
 /**

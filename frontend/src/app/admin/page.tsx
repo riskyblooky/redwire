@@ -55,6 +55,8 @@ import {
     DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { useAuthStore } from '@/stores/auth-store';
+import { useGlobalPermissions } from '@/lib/hooks/use-permissions';
+import { canSeeAdminTab, ADMIN_TAB_ORDER } from '@/lib/admin-tabs';
 import { apiErrorMessage } from '@/lib/api';
 import { format, formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
@@ -105,7 +107,15 @@ const ROLE_BADGE: Record<string, { label: string; className: string }> = {
 
 export default function AdminPage() {
     const searchParams = useSearchParams();
-    const defaultTab = searchParams?.get('tab') || 'users';
+    const { user } = useAuthStore();
+    const { data: myPerms = [] } = useGlobalPermissions();
+    const isAdminView = user?.role === UserRole.ADMIN || user?.role === ('read_only_admin' as any);
+    const show = (tab: string) => canSeeAdminTab(tab, isAdminView, myPerms);
+    // Land on the requested tab only if the user can see it; otherwise the first
+    // tab they can (delegated permission-holders won't have 'users').
+    const requestedTab = searchParams?.get('tab') || 'users';
+    const visibleTabs = ADMIN_TAB_ORDER.filter(show);
+    const defaultTab = visibleTabs.includes(requestedTab) ? requestedTab : (visibleTabs[0] || 'users');
     const { data: users, isLoading: usersLoading } = useAdminUsers();
     const { data: groups, isLoading: groupsLoading } = useGroups();
     const { data: adminConfig } = useAdminConfig();
@@ -255,48 +265,75 @@ export default function AdminPage() {
 
                 <Tabs defaultValue={defaultTab} className="space-y-6">
                     <TabsList className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-1 backdrop-blur-sm h-auto flex-wrap gap-0.5">
-                        <TabsTrigger value="users" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-indigo-500/10 data-[state=active]:text-indigo-400 data-[state=active]:shadow-[0_0_12px_rgba(99,102,241,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+                        {show('users') && (
+<TabsTrigger value="users" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-indigo-500/10 data-[state=active]:text-indigo-400 data-[state=active]:shadow-[0_0_12px_rgba(99,102,241,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Users className="h-3.5 w-3.5" /> Operators
                         </TabsTrigger>
-                        <TabsTrigger value="permissions" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('permissions') && (
+<TabsTrigger value="permissions" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Shield className="h-3.5 w-3.5" /> Permissions
                         </TabsTrigger>
-                        <TabsTrigger value="registration-codes" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-amber-500/10 data-[state=active]:text-amber-400 data-[state=active]:shadow-[0_0_12px_rgba(245,158,11,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('registration-codes') && (
+<TabsTrigger value="registration-codes" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-amber-500/10 data-[state=active]:text-amber-400 data-[state=active]:shadow-[0_0_12px_rgba(245,158,11,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Ticket className="h-3.5 w-3.5" /> Invite Codes
                         </TabsTrigger>
-                        <TabsTrigger value="types" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-cyan-500/10 data-[state=active]:text-cyan-400 data-[state=active]:shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('types') && (
+<TabsTrigger value="types" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-cyan-500/10 data-[state=active]:text-cyan-400 data-[state=active]:shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Layers className="h-3.5 w-3.5" /> Taxonomy
                         </TabsTrigger>
-                        <TabsTrigger value="authentication" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400 data-[state=active]:shadow-[0_0_12px_rgba(34,197,94,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('authentication') && (
+<TabsTrigger value="authentication" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400 data-[state=active]:shadow-[0_0_12px_rgba(34,197,94,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Lock className="h-3.5 w-3.5" /> Auth & Sessions
                         </TabsTrigger>
-                        <TabsTrigger value="api-tokens" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-rose-500/10 data-[state=active]:text-rose-400 data-[state=active]:shadow-[0_0_12px_rgba(244,63,94,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('api-tokens') && (
+<TabsTrigger value="api-tokens" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-rose-500/10 data-[state=active]:text-rose-400 data-[state=active]:shadow-[0_0_12px_rgba(244,63,94,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <KeyRound className="h-3.5 w-3.5" /> API Tokens
                         </TabsTrigger>
-                        <TabsTrigger value="wordlists" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-teal-500/10 data-[state=active]:text-teal-400 data-[state=active]:shadow-[0_0_12px_rgba(20,184,166,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('wordlists') && (
+<TabsTrigger value="wordlists" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-teal-500/10 data-[state=active]:text-teal-400 data-[state=active]:shadow-[0_0_12px_rgba(20,184,166,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <BookOpen className="h-3.5 w-3.5" /> Wordlists
                         </TabsTrigger>
-                        <TabsTrigger value="ai" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-violet-500/10 data-[state=active]:text-violet-400 data-[state=active]:shadow-[0_0_12px_rgba(139,92,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('ai') && (
+<TabsTrigger value="ai" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-violet-500/10 data-[state=active]:text-violet-400 data-[state=active]:shadow-[0_0_12px_rgba(139,92,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Brain className="h-3.5 w-3.5" /> AI Assistant
                         </TabsTrigger>
-                        <TabsTrigger value="skills" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-pink-500/10 data-[state=active]:text-pink-400 data-[state=active]:shadow-[0_0_12px_rgba(236,72,153,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('skills') && (
+<TabsTrigger value="skills" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-pink-500/10 data-[state=active]:text-pink-400 data-[state=active]:shadow-[0_0_12px_rgba(236,72,153,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Radar className="h-3.5 w-3.5" /> Skills
                         </TabsTrigger>
-                        <TabsTrigger value="widgets" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-fuchsia-500/10 data-[state=active]:text-fuchsia-400 data-[state=active]:shadow-[0_0_12px_rgba(217,70,239,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('widgets') && (
+<TabsTrigger value="widgets" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-fuchsia-500/10 data-[state=active]:text-fuchsia-400 data-[state=active]:shadow-[0_0_12px_rgba(217,70,239,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <LayoutGrid className="h-3.5 w-3.5" /> Widgets
                         </TabsTrigger>
-                        <TabsTrigger value="custom-fields" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-violet-500/10 data-[state=active]:text-violet-400 data-[state=active]:shadow-[0_0_12px_rgba(139,92,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('custom-fields') && (
+<TabsTrigger value="custom-fields" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-violet-500/10 data-[state=active]:text-violet-400 data-[state=active]:shadow-[0_0_12px_rgba(139,92,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <ListPlus className="h-3.5 w-3.5" /> Custom Fields
                         </TabsTrigger>
-                        <TabsTrigger value="plugins" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400 data-[state=active]:shadow-[0_0_12px_rgba(16,185,129,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('plugins') && (
+<TabsTrigger value="plugins" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400 data-[state=active]:shadow-[0_0_12px_rgba(16,185,129,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Plug className="h-3.5 w-3.5" /> Plugins
                         </TabsTrigger>
-                        <TabsTrigger value="email" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-400 data-[state=active]:shadow-[0_0_12px_rgba(59,130,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+)}
+                        {show('email') && (
+<TabsTrigger value="email" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-400 data-[state=active]:shadow-[0_0_12px_rgba(59,130,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Mail className="h-3.5 w-3.5" /> Email
                         </TabsTrigger>
+)}
                     </TabsList>
 
-                    <TabsContent value="users" className="space-y-6">
+                    {show('users') && (
+<TabsContent value="users" className="space-y-6">
                         <div className="grid gap-4 md:grid-cols-3">
                             <Card className="border-slate-800 bg-slate-900/50">
                                 <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -505,55 +542,80 @@ export default function AdminPage() {
                             </CardContent>
                         </Card>
                     </TabsContent>
+)}
 
-                    <TabsContent value="permissions" className="space-y-6">
+                    {show('permissions') && (
+<TabsContent value="permissions" className="space-y-6">
                         <StatsScopeSettings />
                         <PermissionsManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="registration-codes" className="space-y-6">
+                    {show('registration-codes') && (
+<TabsContent value="registration-codes" className="space-y-6">
                         <RegistrationCodeManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="types" className="space-y-6">
+                    {show('types') && (
+<TabsContent value="types" className="space-y-6">
                         <TypeManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="authentication" className="space-y-6">
+                    {show('authentication') && (
+<TabsContent value="authentication" className="space-y-6">
                         <AuthSettingsManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="api-tokens" className="space-y-6">
+                    {show('api-tokens') && (
+<TabsContent value="api-tokens" className="space-y-6">
                         <ApiTokenManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="wordlists" className="space-y-6">
+                    {show('wordlists') && (
+<TabsContent value="wordlists" className="space-y-6">
                         <WordlistManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="ai" className="space-y-6">
+                    {show('ai') && (
+<TabsContent value="ai" className="space-y-6">
                         <AiSettingsManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="skills" className="space-y-6">
+                    {show('skills') && (
+<TabsContent value="skills" className="space-y-6">
                         <SkillsAdminPanel />
                     </TabsContent>
+)}
 
-                    <TabsContent value="widgets" className="space-y-6">
+                    {show('widgets') && (
+<TabsContent value="widgets" className="space-y-6">
                         <WidgetManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="custom-fields" className="space-y-6">
+                    {show('custom-fields') && (
+<TabsContent value="custom-fields" className="space-y-6">
                         <CustomFieldsManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="plugins" className="space-y-6">
+                    {show('plugins') && (
+<TabsContent value="plugins" className="space-y-6">
                         <PluginManagement />
                     </TabsContent>
+)}
 
-                    <TabsContent value="email" className="space-y-6">
+                    {show('email') && (
+<TabsContent value="email" className="space-y-6">
                         <EmailSettings />
                     </TabsContent>
+)}
 
                     <TabsContent value="about" className="space-y-6">
                         <AboutPanel />
