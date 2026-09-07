@@ -9,6 +9,8 @@ import { WhatsNewModal } from '@/components/layout/whats-new-modal';
 import { PageHelpButton } from '@/components/layout/page-help-button';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
+import { useGlobalPermissions } from '@/lib/hooks/use-permissions';
+import { ADMIN_SURFACE_PERMISSIONS } from '@/lib/admin-tabs';
 import {
     LayoutDashboard,
     Briefcase,
@@ -280,9 +282,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.READ_ONLY_ADMIN;
     const isManager = user?.role === UserRole.ADMIN || user?.role === UserRole.READ_ONLY_ADMIN || user?.role === UserRole.TEAM_LEAD;
+    // The Admin link shows for admins OR anyone holding a delegatable admin-surface
+    // permission (the admin page then shows only the tabs they can manage).
+    const { data: myGlobalPerms = [] } = useGlobalPermissions();
+    const canSeeAdmin = isAdmin || myGlobalPerms.some(p => ADMIN_SURFACE_PERMISSIONS.includes(p));
 
     const filteredNavItems = navItems.filter(item => {
-        if (item.adminOnly && !isAdmin) return false;
+        if (item.adminOnly && !canSeeAdmin) return false;
         if (item.managerOnly && !isManager) return false;
         return true;
     });

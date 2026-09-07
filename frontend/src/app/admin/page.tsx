@@ -112,6 +112,9 @@ export default function AdminPage() {
     const { data: myPerms = [] } = useGlobalPermissions();
     const isAdminView = user?.role === UserRole.ADMIN || user?.role === ('read_only_admin' as any);
     const show = (tab: string) => canSeeAdminTab(tab, isAdminView, myPerms);
+    // Write controls on the Operators tab require MANAGE_USERS (a viewer with
+    // only VIEW_ALL_USERS sees the list but not the create/edit/delete actions).
+    const canManageUsers = isAdminView || myPerms.includes('manage_users');
     // Land on the requested tab only if the user can see it; otherwise the first
     // tab they can (delegated permission-holders won't have 'users').
     const requestedTab = searchParams?.get('tab') || 'users';
@@ -475,14 +478,16 @@ export default function AdminPage() {
                                                 </div>
                                             </PopoverContent>
                                         </Popover>
-                                        <Button
-                                            onClick={() => setIsCreateDialogOpen(true)}
-                                            className="bg-primary hover:bg-primary/90 gap-2"
-                                            size="sm"
-                                        >
-                                            <Plus className="h-4 w-4" />
-                                            Add User
-                                        </Button>
+                                        {canManageUsers && (
+                                            <Button
+                                                onClick={() => setIsCreateDialogOpen(true)}
+                                                className="bg-primary hover:bg-primary/90 gap-2"
+                                                size="sm"
+                                            >
+                                                <Plus className="h-4 w-4" />
+                                                Add User
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
                             </CardHeader>
@@ -596,6 +601,7 @@ export default function AdminPage() {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right">
+                                                    {canManageUsers ? (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
                                                             <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-slate-800 text-slate-400">
@@ -635,6 +641,9 @@ export default function AdminPage() {
                                                             </DropdownMenuItem>
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-600">—</span>
+                                                    )}
                                                 </TableCell>
                                             </TableRow>
                                         ))}

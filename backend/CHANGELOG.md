@@ -40,10 +40,12 @@ section becomes one release entry.
   `view_all_engagements`. Wordlist hash lookup/check stays open to any operator by
   design (it's a core capability, like the password-change bloom check).
 - **Admin console is permission-gated per tab** — a user with a delegated
-  management permission (e.g. custom fields, taxonomy, skills, widgets) can now
-  open the Admin area and sees only the tabs they can manage, instead of the
-  whole console being restricted to the admin roles. Admins/read-only admins
-  still see everything.
+  management permission (e.g. custom fields, taxonomy, skills, widgets) now sees
+  the **Admin** link in the sidebar, can open the Admin area, and sees only the
+  tabs they can manage, instead of the whole console being restricted to the
+  admin roles. Within the Operators tab, the create/edit/delete controls only
+  appear for users with `manage_users`. Admins/read-only admins still see
+  everything.
 
 ### Added
 - **Edit text attachments in-app** — text files (`.txt`, `.md`, `.log`, …) now
