@@ -439,6 +439,42 @@ const VaultItemRow = ({
         const value = data?.[field];
         if (value) copyToClipboard(value, copiedKey);
     };
+
+    // Wordlist check / hash crack — same affordances as the card view, surfaced
+    // here as row actions with toast results so table mode keeps them.
+    const checkPassword = useCheckPassword();
+    const lookupHash = useLookupHash();
+    const [checking, setChecking] = useState(false);
+    const [cracking, setCracking] = useState(false);
+    const handleCheckWordlist = async () => {
+        if (!item.has_password || checking) return;
+        setChecking(true);
+        try {
+            const data = revealed || (await revealAndGet(item.id));
+            if (!data?.password) { toast.error('Nothing to check'); return; }
+            const res = await checkPassword.mutateAsync(data.password);
+            if (res.found) toast.warning('Password found in wordlist', { description: 'This credential appears in a known wordlist.' });
+            else toast.success('Not found in the wordlist');
+        } catch { toast.error('Wordlist check failed'); }
+        finally { setChecking(false); }
+    };
+    const handleCrackHash = async () => {
+        if (!item.has_password || cracking) return;
+        setCracking(true);
+        try {
+            const data = revealed || (await revealAndGet(item.id));
+            if (!data?.password) { toast.error('Nothing to crack'); return; }
+            const res = await lookupHash.mutateAsync(data.password);
+            if (res.found) {
+                copyToClipboard(res.password, `${item.id}-cracked`);
+                toast.success(`Cracked${res.hash_type ? ` (${res.hash_type.toUpperCase()})` : ''}: ${res.password}`, { description: 'Copied to clipboard.' });
+            } else {
+                toast.info('Hash not cracked', { description: res.note || 'No match in the available wordlists.' });
+            }
+        } catch { toast.error('Hash crack failed'); }
+        finally { setCracking(false); }
+    };
+
     return (
         <div className="group flex items-center gap-3 px-4 py-2.5 bg-slate-900/40 hover:bg-slate-900/70 border border-slate-800 rounded-xl transition-colors">
             {/* Icon + Name */}
@@ -561,6 +597,16 @@ const VaultItemRow = ({
                         <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={() => setChainOpen(true)}>
                             <GitBranch className="h-4 w-4 mr-2" /> Attack Chain
                         </DropdownMenuItem>
+                        {item.item_type === 'CREDENTIAL' && item.has_password && (
+                            <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={handleCheckWordlist} disabled={checking}>
+                                {checking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />} Check Wordlist
+                            </DropdownMenuItem>
+                        )}
+                        {item.password_looks_like_hash && (
+                            <DropdownMenuItem className="text-slate-300 focus:bg-slate-800/50 focus:text-white" onClick={handleCrackHash} disabled={cracking}>
+                                {cracking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />} Crack Hash
+                            </DropdownMenuItem>
+                        )}
                         {item.item_type === 'FILE' && (
                             <DropdownMenuItem className="text-slate-300 focus:bg-slate-800" onClick={() => handleSecureDownload(item.id, item.filename || 'file')}>
                                 <Download className="h-4 w-4 mr-2" /> Download

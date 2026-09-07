@@ -28,6 +28,9 @@ section becomes one release entry.
 - **Warn before editing a locked attachment** — opening the image/text/CSV
   editor on an attachment whose parent finding is VERIFIED now warns up front
   (the chain-of-custody lock would reject the save) so you can back out early.
+- **Vault table view keeps the crack / wordlist actions** — the row action menu
+  in the vault table now offers "Check Wordlist" and "Crack Hash" (for
+  hash-shaped credentials), matching the card view.
 
 ### Fixed
 - **Tree view: drag a sub-test-case back to the top level** — in the Test Cases
