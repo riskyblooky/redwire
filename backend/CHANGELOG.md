@@ -62,6 +62,13 @@ section becomes one release entry.
   tab) and highlights the line the cursor is on.
 
 ### Improved
+- **More pages update live** — finding/test-case/asset/attachment **detail**
+  pages now refresh in place when a teammate edits the record (previously they
+  showed the teammate's presence but stale content), the Operations Analytics /
+  stats page refreshes on tracked changes instead of only on load, and the
+  Infrastructure page updates live when items change. Redundant fallback polling
+  was trimmed (admin user list 15s→30s, notifications 60s→300s) now that these
+  are WebSocket-driven.
 - **Accurate online/active indicators** — a user's "active" status is now driven
   by real activity (a heartbeat sent only while the tab is visible and the user
   has interacted recently) instead of any authenticated request. An idle tab left

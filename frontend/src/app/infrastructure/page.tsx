@@ -76,6 +76,8 @@ import {
 import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
+import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 
 // ── Constants ───────────────────────────────────────────────────
@@ -976,6 +978,19 @@ export default function InfrastructurePage() {
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(0);
     const limit = 50;
+
+    // Live updates: infra is a shared global resource — refresh when any user
+    // creates/edits/deletes an item (broadcast to dashboard/global).
+    const infraQueryClient = useQueryClient();
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        onMessage: (data) => {
+            if (data.type === 'infra_updated') {
+                infraQueryClient.invalidateQueries({ queryKey: ['infra-items'] });
+            }
+        },
+    });
 
     const { data: infraTypes = [] } = useConfigurableTypes('infra');
 

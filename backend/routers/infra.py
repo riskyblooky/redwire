@@ -12,6 +12,17 @@ import io
 from database import get_db
 from auth.dependencies import get_current_user
 from auth.permissions import require_global_permission
+from utils.collaboration import manager
+
+
+async def _notify_infra_change():
+    """Push a live 'infra changed' nudge so open Infrastructure pages refresh.
+    Infra is global (no engagement), so this goes to dashboard/global with no
+    engagement_id (delivered to every subscriber; best-effort)."""
+    try:
+        await manager.broadcast_to_resource("dashboard", "global", {"type": "infra_updated"})
+    except Exception:
+        pass
 from models.user import User, UserRole
 from models.permission import Permission
 from models.infra_item import InfraItem, InfraType, InfraStatus
@@ -172,6 +183,7 @@ async def create_infra_item(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+    await _notify_infra_change()
     return item
 
 
@@ -232,6 +244,7 @@ async def update_infra_item(
     item.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(item)
+    await _notify_infra_change()
     return item
 
 
@@ -279,6 +292,7 @@ async def delete_infra_item(
 
     await db.delete(item)
     await db.commit()
+    await _notify_infra_change()
 
 
 # ── Linking ──────────────────────────────────────────────────────

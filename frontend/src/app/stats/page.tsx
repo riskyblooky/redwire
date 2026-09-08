@@ -27,6 +27,8 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { RedWireSpinner } from '@/components/ui/redwire-spinner';
 import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useDashboardWidgets } from '@/lib/hooks/use-dashboard-widgets';
+import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useQueryClient } from '@tanstack/react-query';
 import {
     useStatsPages, useCreateStatsPage, useUpdateStatsPage, useDeleteStatsPage,
     type StatsPage,
@@ -40,6 +42,18 @@ export default function StatsPage() {
     const router = useRouter();
     const { isAuthenticated, isLoading: authLoading } = useAuthStore();
     const canManage = useGlobalPermission('manage_stats_pages');
+    const queryClient = useQueryClient();
+    // The analytics/stats views are otherwise on-mount only — a pinned tab goes
+    // stale. Refresh stats when any tracked change lands on the firehose.
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        onMessage: (data) => {
+            if (data.type === 'activity_log') {
+                queryClient.invalidateQueries({ queryKey: ['stats'] });
+            }
+        },
+    });
 
     const { data: pages = [], isLoading: pagesLoading } = useStatsPages();
     const { data: widgets = [], isLoading: widgetsLoading } = useDashboardWidgets();

@@ -29,7 +29,9 @@ export function useNotifications(limit = 20) {
             const { data } = await api.get(`/notifications?limit=${limit}`);
             return data;
         },
-        refetchInterval: 60000, // poll every 60s as fallback
+        // WS ('notification' → invalidate ['notifications'] in dashboard-layout)
+        // is the primary path; this poll is just a recovery net for missed pushes.
+        refetchInterval: 300000, // 5-min fallback
     });
 }
 

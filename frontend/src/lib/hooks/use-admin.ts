@@ -20,7 +20,11 @@ export function useAdminUsers() {
             const response = await api.get('/admin/users');
             return response.data;
         },
-        refetchInterval: 15_000,
+        // The online/last-active data can't change faster than the activity
+        // heartbeat throttle (45s), so polling faster than that is pure waste.
+        // A WS push isn't worth it here: it would broadcast frequent per-user
+        // heartbeats site-wide for an admin-only view. Poll at 30s + on focus.
+        refetchInterval: 30_000,
         refetchOnWindowFocus: true,
     });
 }

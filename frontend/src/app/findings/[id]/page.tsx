@@ -287,6 +287,17 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
         resourceId: id,
         enabled: !!finding
     });
+    // Live content updates: a teammate's edit to this finding (broadcast to the
+    // engagement firehose on dashboard/global) refreshes the record in place.
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        onMessage: (data) => {
+            if (data.type === 'activity_log' && (data.resource_type || '').toLowerCase() === 'finding' && data.resource_id === id) {
+                queryClient.invalidateQueries({ queryKey: ['findings', id] });
+            }
+        },
+    });
 
     // Check permissions for edit/delete
     const canEdit = useCanEdit(finding?.engagement_id, 'finding', finding?.created_by);

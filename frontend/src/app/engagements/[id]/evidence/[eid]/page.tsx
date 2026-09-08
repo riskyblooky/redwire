@@ -101,6 +101,17 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
     const { data: users } = useUsers();
     const queryClient = useQueryClient();
 
+    // Live content updates: a teammate's edit to this attachment refreshes it in place.
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        onMessage: (data) => {
+            if (data.type === 'activity_log' && (data.resource_type || '').toLowerCase() === 'evidence' && data.resource_id === eid) {
+                queryClient.invalidateQueries({ queryKey: ['evidence', eid] });
+            }
+        },
+    });
+
     const { data: exifData, isLoading: isLoadingExif } = useEvidenceExif(eid, evidence?.mime_type);
 
     const { confirm: confirmDialog, ConfirmDialog } = useConfirmDialog();

@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/select';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserName } from '@/components/ui/user-name';
@@ -104,10 +105,21 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     const { data: engagement } = useEngagement(asset?.engagement_id || '');
     const { data: findings = [] } = useFindings({ engagement_id: asset?.engagement_id });
 
+    const queryClient = useQueryClient();
     const { activeUsers } = useCollaboration({
         resourceType: 'asset',
         resourceId: id,
         enabled: !!asset
+    });
+    // Live content updates: a teammate's edit to this asset refreshes it in place.
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        onMessage: (data) => {
+            if (data.type === 'activity_log' && (data.resource_type || '').toLowerCase() === 'asset' && data.resource_id === id) {
+                queryClient.invalidateQueries({ queryKey: ['assets', id] });
+            }
+        },
     });
 
     const deleteAsset = useDeleteAsset();

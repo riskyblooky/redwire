@@ -40,6 +40,7 @@ import Link from 'next/link';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { MarkdownEditor, MarkdownPreview } from '@/components/ui/markdown-editor';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -110,10 +111,21 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const { data: testcase, isLoading: isLoadingTC, error, refetch } = useTestCase(id);
     const { data: engagement } = useEngagement(testcase?.engagement_id || '');
 
+    const queryClient = useQueryClient();
     const { activeUsers } = useCollaboration({
         resourceType: 'testcase',
         resourceId: id,
         enabled: !!testcase
+    });
+    // Live content updates: a teammate's edit to this test case refreshes it in place.
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        onMessage: (data) => {
+            if (data.type === 'activity_log' && (data.resource_type || '').toLowerCase() === 'testcase' && data.resource_id === id) {
+                queryClient.invalidateQueries({ queryKey: ['testcases', id] });
+            }
+        },
     });
     const updateTestCase = useUpdateTestCase();
     const deleteTestCase = useDeleteTestCase();
