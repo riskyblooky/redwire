@@ -736,188 +736,150 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         )}
                                     </div>
 
-                                    {/* Linked Findings */}
-                                    {testcase.findings && testcase.findings.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Findings</h4>
-                                            <div className="space-y-2">
-                                                {testcase.findings.map((finding) => (
-                                                    <div key={finding.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-slate-700 transition-colors group">
-                                                        <div className="flex items-center gap-2 min-w-0">
-                                                            <Badge className={cn('text-[8px] uppercase font-bold border px-1 py-0 h-4 shrink-0', severityColors[finding.severity] || severityColors.INFO)}>
-                                                                {finding.severity}
-                                                            </Badge>
-                                                            <Link href={`/findings/${finding.id}?engagementId=${testcase.engagement_id}&tab=testcases`} className="text-xs font-bold text-white group-hover:text-primary transition-colors truncate">
-                                                                {finding.title}
-                                                            </Link>
-                                                        </div>
-                                                        {canEdit && (
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-6 w-6 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                                                onClick={async () => {
-                                                                    const confirmed = await confirm({
-                                                                        title: 'Unlink Finding',
-                                                                        description: `Remove the link between this test case and "${finding.title}"?`,
-                                                                    });
-                                                                    if (confirmed) {
-                                                                        unlinkFinding.mutate({ testcaseId: id, findingId: finding.id });
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <X className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Linked Assets */}
-                                    {testcase.assets && testcase.assets.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Assets</h4>
-                                            <div className="space-y-2">
-                                                {testcase.assets.map((asset: any) => (
-                                                    <div key={asset.id}>
-                                                        <div className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group">
-                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                <Server className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                                                                <Link href={`/assets/${asset.id}?engagementId=${testcase.engagement_id}&tab=testcases`} className="text-xs font-bold text-white group-hover:text-cyan-400 transition-colors truncate">
-                                                                    {asset.name}
-                                                                </Link>
-                                                            </div>
-                                                            {canEdit && (
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    className="h-6 w-6 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                                                    onClick={async () => {
-                                                                        const confirmed = await confirm({
-                                                                            title: 'Unlink Asset',
-                                                                            description: `Remove the link between this test case and "${asset.name}"?`,
-                                                                        });
-                                                                        if (confirmed) {
-                                                                            unlinkAsset.mutate({ testcaseId: id, assetId: asset.id });
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    <X className="h-3.5 w-3.5" />
-                                                                </Button>
-                                                            )}
-                                                        </div>
-                                                        {/* Show linked ports */}
-                                                        {asset.linked_ports && asset.linked_ports.length > 0 && (
-                                                            <div className="ml-6 mt-1 flex flex-wrap gap-1">
-                                                                {asset.linked_ports.map((port: any) => (
-                                                                    <Badge
-                                                                        key={port.id}
-                                                                        variant="outline"
-                                                                        className={cn(
-                                                                            "text-[11px] px-2 py-0.5 h-5 border-none font-mono font-bold",
-                                                                            port.state === 'OPEN' ? 'bg-green-500/10 text-green-400' :
-                                                                                port.state === 'FILTERED' ? 'bg-yellow-500/10 text-yellow-400' :
-                                                                                    'bg-cyan-500/10 text-cyan-400'
-                                                                        )}
-                                                                    >
-                                                                        {port.port_number}/{port.protocol}
-                                                                    </Badge>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Linked Vault Items */}
-                                    {testcase.vault_items && testcase.vault_items.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Vault Items</h4>
-                                            <div className="space-y-2">
-                                                {testcase.vault_items.map((vi: any) => {
-                                                    const icon = vi.item_type === 'CREDENTIAL' ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" /> :
-                                                        vi.item_type === 'KEY' ? <Key className="h-3.5 w-3.5 text-primary shrink-0" /> :
-                                                            <Shield className="h-3.5 w-3.5 text-emerald-400 shrink-0" />;
-                                                    return (
-                                                        <Link href={`/engagements/${testcase.engagement_id}?tab=vault`} key={vi.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-amber-500/30 transition-colors group">
-                                                            {icon}
-                                                            <span className="text-xs font-bold text-white group-hover:text-amber-300 truncate">{vi.name}</span>
-                                                        </Link>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Linked Cleanup Artifacts */}
-                                    {testcase.cleanup_artifacts && testcase.cleanup_artifacts.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Cleanup Artifacts</h4>
-                                            <div className="space-y-2">
-                                                {testcase.cleanup_artifacts.map((ca: any) => (
-                                                    <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 cursor-pointer hover:border-lime-500/30 hover:bg-lime-500/5 transition-colors" onClick={() => setViewCleanup(ca)}>
-                                                        <div className="flex items-center gap-2">
-                                                            <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
-                                                            <span className="text-xs font-bold text-white truncate">{ca.title}</span>
-                                                        </div>
-                                                        <Badge variant="outline" className={cn(
-                                                            "text-[8px] px-1 py-0 h-4 border-none uppercase font-bold",
-                                                            ca.status === 'CLEANED' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'
-                                                        )}>
-                                                            {ca.status}
-                                                        </Badge>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Linked Notes */}
-                                    {linkedNotes.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Notes</h4>
-                                            <div className="space-y-2">
-                                                {linkedNotes.map(note => (
-                                                    <Link
-                                                        key={note.id}
-                                                        href={`/engagements/${testcase.engagement_id}?tab=notes&noteId=${note.id}`}
-                                                        className="flex items-center gap-2 p-2 rounded-lg bg-slate-950/40 border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
-                                                    >
-                                                        <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate">{note.title}</span>
+                                    <div className="space-y-2">
+                                        {/* Findings */}
+                                        {testcase.findings && testcase.findings.map((finding) => (
+                                            <div key={finding.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-slate-700 transition-colors group">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <Bug className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                                                    <Link href={`/findings/${finding.id}?engagementId=${testcase.engagement_id}&tab=testcases`} className="text-xs font-bold text-white group-hover:text-primary transition-colors truncate">
+                                                        {finding.title}
                                                     </Link>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {linkedIntel.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Intel</h4>
-                                            <div className="space-y-2">
-                                                {linkedIntel.map(item => (
-                                                    <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group cursor-pointer"
-                                                        onClick={() => setIntelDetailId(item.id)}
+                                                    <Badge className={cn('text-[8px] uppercase font-bold border px-1 py-0 h-4 shrink-0', severityColors[finding.severity] || severityColors.INFO)}>
+                                                        {finding.severity}
+                                                    </Badge>
+                                                </div>
+                                                {canEdit && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-6 w-6 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                                        onClick={async () => {
+                                                            const confirmed = await confirm({
+                                                                title: 'Unlink Finding',
+                                                                description: `Remove the link between this test case and "${finding.title}"?`,
+                                                            });
+                                                            if (confirmed) {
+                                                                unlinkFinding.mutate({ testcaseId: id, findingId: finding.id });
+                                                            }
+                                                        }}
                                                     >
-                                                        <Radar className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                                                        <div className="flex-1 min-w-0">
-                                                            <span className="text-xs font-bold text-white truncate block" title={item.title}>{item.title}</span>
-                                                            {item.cve_id && <span className="text-[9px] font-mono text-red-400">{item.cve_id}</span>}
-                                                        </div>
-                                                        {item.source_url && (
-                                                            <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-cyan-400 transition-colors" onClick={(e) => e.stopPropagation()}>
-                                                                <ExternalLink className="h-3 w-3" />
-                                                            </a>
-                                                        )}
-                                                    </div>
-                                                ))}
+                                                        <X className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                )}
                                             </div>
-                                        </div>
-                                    )}
+                                        ))}
+
+                                        {/* Assets */}
+                                        {testcase.assets && testcase.assets.map((asset: any) => (
+                                            <div key={asset.id}>
+                                                <div className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <Server className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                                                        <Link href={`/assets/${asset.id}?engagementId=${testcase.engagement_id}&tab=testcases`} className="text-xs font-bold text-white group-hover:text-cyan-400 transition-colors truncate">
+                                                            {asset.name}
+                                                        </Link>
+                                                    </div>
+                                                    {canEdit && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                                            onClick={async () => {
+                                                                const confirmed = await confirm({
+                                                                    title: 'Unlink Asset',
+                                                                    description: `Remove the link between this test case and "${asset.name}"?`,
+                                                                });
+                                                                if (confirmed) {
+                                                                    unlinkAsset.mutate({ testcaseId: id, assetId: asset.id });
+                                                                }
+                                                            }}
+                                                        >
+                                                            <X className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                {/* Show linked ports */}
+                                                {asset.linked_ports && asset.linked_ports.length > 0 && (
+                                                    <div className="ml-6 mt-1 flex flex-wrap gap-1">
+                                                        {asset.linked_ports.map((port: any) => (
+                                                            <Badge
+                                                                key={port.id}
+                                                                variant="outline"
+                                                                className={cn(
+                                                                    "text-[11px] px-2 py-0.5 h-5 border-none font-mono font-bold",
+                                                                    port.state === 'OPEN' ? 'bg-green-500/10 text-green-400' :
+                                                                        port.state === 'FILTERED' ? 'bg-yellow-500/10 text-yellow-400' :
+                                                                            'bg-cyan-500/10 text-cyan-400'
+                                                                )}
+                                                            >
+                                                                {port.port_number}/{port.protocol}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+
+                                        {/* Vault Items */}
+                                        {testcase.vault_items && testcase.vault_items.map((vi: any) => {
+                                            const icon = vi.item_type === 'CREDENTIAL' ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" /> :
+                                                vi.item_type === 'KEY' ? <Key className="h-3.5 w-3.5 text-primary shrink-0" /> :
+                                                    <Shield className="h-3.5 w-3.5 text-emerald-400 shrink-0" />;
+                                            return (
+                                                <Link href={`/engagements/${testcase.engagement_id}?tab=vault`} key={vi.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-amber-500/30 transition-colors group">
+                                                    {icon}
+                                                    <span className="text-xs font-bold text-white group-hover:text-amber-300 truncate">{vi.name}</span>
+                                                </Link>
+                                            );
+                                        })}
+
+                                        {/* Cleanup Artifacts */}
+                                        {testcase.cleanup_artifacts && testcase.cleanup_artifacts.map((ca: any) => (
+                                            <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 cursor-pointer hover:border-lime-500/30 hover:bg-lime-500/5 transition-colors" onClick={() => setViewCleanup(ca)}>
+                                                <div className="flex items-center gap-2">
+                                                    <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
+                                                    <span className="text-xs font-bold text-white truncate">{ca.title}</span>
+                                                </div>
+                                                <Badge variant="outline" className={cn(
+                                                    "text-[8px] px-1 py-0 h-4 border-none uppercase font-bold",
+                                                    ca.status === 'CLEANED' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'
+                                                )}>
+                                                    {ca.status}
+                                                </Badge>
+                                            </div>
+                                        ))}
+
+                                        {/* Notes */}
+                                        {linkedNotes.map(note => (
+                                            <Link
+                                                key={note.id}
+                                                href={`/engagements/${testcase.engagement_id}?tab=notes&noteId=${note.id}`}
+                                                className="flex items-center gap-2 p-2 rounded-lg bg-slate-950/40 border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
+                                            >
+                                                <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
+                                                <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate">{note.title}</span>
+                                            </Link>
+                                        ))}
+
+                                        {/* Intel */}
+                                        {linkedIntel.map(item => (
+                                            <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group cursor-pointer"
+                                                onClick={() => setIntelDetailId(item.id)}
+                                            >
+                                                <Radar className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-xs font-bold text-white truncate block" title={item.title}>{item.title}</span>
+                                                    {item.cve_id && <span className="text-[9px] font-mono text-red-400">{item.cve_id}</span>}
+                                                </div>
+                                                {item.source_url && (
+                                                    <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-cyan-400 transition-colors" onClick={(e) => e.stopPropagation()}>
+                                                        <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
 
                                     {intelDetailId && <IntelDetailDialog itemId={intelDetailId} onClose={() => setIntelDetailId(null)} />}
 

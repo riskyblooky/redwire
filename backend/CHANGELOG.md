@@ -76,6 +76,12 @@ section becomes one release entry.
   tab) and highlights the line the cursor is on.
 
 ### Improved
+- **Condensed the "Linked Resources" panel** — on the finding and test-case detail
+  pages and their side-sheet ("half") views, the linked items (test cases,
+  findings, assets, vault items, cleanup artifacts, notes, intel, infrastructure)
+  now flow in one tight list under a single header instead of a titled sub-section
+  per type. Each item's colored icon identifies its type, saving a lot of vertical
+  space.
 - **More pages update live** — finding/test-case/asset/attachment **detail**
   pages now refresh in place when a teammate edits the record (previously they
   showed the teammate's presence but stale content), the Operations Analytics /

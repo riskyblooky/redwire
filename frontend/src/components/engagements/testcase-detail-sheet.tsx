@@ -400,176 +400,87 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                     )}
                                 </div>
 
-                                {/* Linked Findings */}
-                                <div>
-                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                        Linked Findings {(testcase.findings?.length ?? 0) > 0 && <span className="text-slate-600 ml-1">({testcase.findings?.length})</span>}
-                                    </h4>
-                                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                                        {(testcase.findings ?? []).length > 0 ? (
-                                            (testcase.findings ?? []).map((f: any) => (
-                                                <Link
-                                                    key={f.id}
-                                                    href={`/findings/${f.id}?engagementId=${engagementId}&tab=testcases`}
-                                                    className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-red-500/30 transition-colors group"
-                                                    onClick={() => onOpenChange(false)}
-                                                >
-                                                    <Bug className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                                                    <span className="text-xs font-medium text-white group-hover:text-red-300 truncate">{f.title}</span>
-                                                    {f.severity && (
-                                                        <Badge className={cn('text-[8px] px-1 py-0 h-4 border ml-auto shrink-0 uppercase font-bold', severityBadge[f.severity] || severityBadge.INFO)}>
-                                                            {f.severity}
-                                                        </Badge>
-                                                    )}
-                                                </Link>
-                                            ))
-                                        ) : (
-                                            <div className="text-[10px] text-slate-500 italic p-3 text-center border border-dashed border-slate-800 rounded-lg">
-                                                No findings linked
+                                {/* Linked resources — the colored icon carries the type */}
+                                {((testcase.findings?.length ?? 0) + (testcase.assets?.length ?? 0) + (testcase.evidence?.length ?? 0) + (testcase.vault_items?.length ?? 0) + (testcase.cleanup_artifacts?.length ?? 0) + intelItems.length + infraItems.length) > 0 ? (
+                                    <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                                        {(testcase.findings ?? []).map((f: any) => (
+                                            <Link
+                                                key={f.id}
+                                                href={`/findings/${f.id}?engagementId=${engagementId}&tab=testcases`}
+                                                className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-red-500/30 transition-colors group"
+                                                onClick={() => onOpenChange(false)}
+                                            >
+                                                <Bug className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                                                <span className="text-xs font-medium text-white group-hover:text-red-300 truncate">{f.title}</span>
+                                                {f.severity && (
+                                                    <Badge className={cn('text-[8px] px-1 py-0 h-4 border ml-auto shrink-0 uppercase font-bold', severityBadge[f.severity] || severityBadge.INFO)}>
+                                                        {f.severity}
+                                                    </Badge>
+                                                )}
+                                            </Link>
+                                        ))}
+                                        {(testcase.assets ?? []).map((asset: any) => (
+                                            <Link
+                                                key={asset.id}
+                                                href={`/assets/${asset.id}?engagementId=${engagementId}&tab=testcases`}
+                                                className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group"
+                                                onClick={() => onOpenChange(false)}
+                                            >
+                                                <Server className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                                                <span className="text-xs font-medium text-white group-hover:text-cyan-300 truncate">{asset.name}</span>
+                                                {asset.identifier && <span className="text-[10px] text-slate-500 font-mono truncate ml-auto shrink-0">{asset.identifier}</span>}
+                                            </Link>
+                                        ))}
+                                        {(testcase.evidence ?? []).map((ev: any) => (
+                                            <div key={ev.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
+                                                <Paperclip className="h-3.5 w-3.5 text-pink-400 shrink-0" />
+                                                <span className="text-xs font-medium text-white truncate">{ev.original_filename}</span>
                                             </div>
-                                        )}
+                                        ))}
+                                        {(testcase.vault_items ?? []).map((vi: any) => (
+                                            <div key={vi.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
+                                                <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                                                <span className="text-xs font-medium text-white truncate">{vi.name}</span>
+                                            </div>
+                                        ))}
+                                        {(testcase.cleanup_artifacts ?? []).map((ca: any) => (
+                                            <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
+                                                <div className="flex items-center gap-2">
+                                                    <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
+                                                    <span className="text-xs font-medium text-white truncate">{ca.title}</span>
+                                                </div>
+                                                <Badge variant="outline" className={cn(
+                                                    'text-[8px] px-1 py-0 h-4 border-none uppercase font-bold',
+                                                    ca.status === 'CLEANED' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'
+                                                )}>
+                                                    {ca.status}
+                                                </Badge>
+                                            </div>
+                                        ))}
+                                        {intelItems.map((item: any) => (
+                                            <button
+                                                key={item.id}
+                                                onClick={() => setIntelDetailId(item.id)}
+                                                className="w-full flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-violet-500/30 transition-colors group text-left"
+                                            >
+                                                <Radar className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                                                <span className="text-xs font-medium text-white group-hover:text-violet-300 truncate">{item.title || item.value}</span>
+                                            </button>
+                                        ))}
+                                        {infraItems.map((item: any) => (
+                                            <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
+                                                <Server className="h-3.5 w-3.5 text-teal-400 shrink-0" />
+                                                <span className="text-xs font-medium text-white truncate">{item.name}</span>
+                                            </div>
+                                        ))}
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="text-[10px] text-slate-500 italic p-3 text-center border border-dashed border-slate-800 rounded-lg">
+                                        Nothing linked yet
+                                    </div>
+                                )}
 
                                 <Separator className="bg-slate-800/60" />
-
-                                {/* Linked Assets */}
-                                {testcase.assets && testcase.assets.length > 0 && (
-                                    <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Linked Assets <span className="text-slate-600 ml-1">({testcase.assets.length})</span>
-                                            </h4>
-                                            <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                                                {testcase.assets.map((asset: any) => (
-                                                    <Link
-                                                        key={asset.id}
-                                                        href={`/assets/${asset.id}?engagementId=${engagementId}&tab=testcases`}
-                                                        className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group"
-                                                        onClick={() => onOpenChange(false)}
-                                                    >
-                                                        <Server className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-white group-hover:text-cyan-300 truncate">{asset.name}</span>
-                                                        {asset.identifier && <span className="text-[10px] text-slate-500 font-mono truncate ml-auto shrink-0">{asset.identifier}</span>}
-                                                    </Link>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <Separator className="bg-slate-800/60" />
-                                    </>
-                                )}
-
-                                {/* Evidence */}
-                                {testcase.evidence && testcase.evidence.length > 0 && (
-                                    <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Evidence <span className="text-slate-600 ml-1">({testcase.evidence.length})</span>
-                                            </h4>
-                                            <div className="space-y-1.5">
-                                                {testcase.evidence.map((ev: any) => (
-                                                    <div key={ev.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                        <Paperclip className="h-3.5 w-3.5 text-pink-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-white truncate">{ev.original_filename}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <Separator className="bg-slate-800/60" />
-                                    </>
-                                )}
-
-                                {/* Vault Items */}
-                                {testcase.vault_items && testcase.vault_items.length > 0 && (
-                                    <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Vault Items <span className="text-slate-600 ml-1">({testcase.vault_items.length})</span>
-                                            </h4>
-                                            <div className="space-y-1.5">
-                                                {testcase.vault_items.map((vi: any) => (
-                                                    <div key={vi.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                        <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-white truncate">{vi.name}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <Separator className="bg-slate-800/60" />
-                                    </>
-                                )}
-
-                                {/* Cleanup Artifacts */}
-                                {testcase.cleanup_artifacts && testcase.cleanup_artifacts.length > 0 && (
-                                    <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Cleanup Artifacts <span className="text-slate-600 ml-1">({testcase.cleanup_artifacts.length})</span>
-                                            </h4>
-                                            <div className="space-y-1.5">
-                                                {testcase.cleanup_artifacts.map((ca: any) => (
-                                                    <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                        <div className="flex items-center gap-2">
-                                                            <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
-                                                            <span className="text-xs font-medium text-white truncate">{ca.title}</span>
-                                                        </div>
-                                                        <Badge variant="outline" className={cn(
-                                                            'text-[8px] px-1 py-0 h-4 border-none uppercase font-bold',
-                                                            ca.status === 'CLEANED' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'
-                                                        )}>
-                                                            {ca.status}
-                                                        </Badge>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <Separator className="bg-slate-800/60" />
-                                    </>
-                                )}
-
-                                {/* Intel */}
-                                {intelItems.length > 0 && (
-                                    <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Intel <span className="text-slate-600 ml-1">({intelItems.length})</span>
-                                            </h4>
-                                            <div className="space-y-1.5">
-                                                {intelItems.map((item: any) => (
-                                                    <button
-                                                        key={item.id}
-                                                        onClick={() => setIntelDetailId(item.id)}
-                                                        className="w-full flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-violet-500/30 transition-colors group text-left"
-                                                    >
-                                                        <Radar className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-white group-hover:text-violet-300 truncate">{item.title || item.value}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <Separator className="bg-slate-800/60" />
-                                    </>
-                                )}
-
-                                {/* Infrastructure */}
-                                {infraItems.length > 0 && (
-                                    <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Infrastructure <span className="text-slate-600 ml-1">({infraItems.length})</span>
-                                            </h4>
-                                            <div className="space-y-1.5">
-                                                {infraItems.map((item: any) => (
-                                                    <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                        <Server className="h-3.5 w-3.5 text-teal-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-white truncate">{item.name}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <Separator className="bg-slate-800/60" />
-                                    </>
-                                )}
 
                                 <CustomFieldsDisplay entity="testcase" value={testcase.custom_fields} />
 
@@ -586,23 +497,18 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 {/* Linked Notes */}
                                 {linkedNotes.length > 0 && (
                                     <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Linked Notes <span className="text-slate-600 ml-1">({linkedNotes.length})</span>
-                                            </h4>
-                                            <div className="space-y-1.5">
-                                                {linkedNotes.map((note: any) => (
-                                                    <Link
-                                                        key={note.id}
-                                                        href={`/engagements/${engagementId}?tab=notes&noteId=${note.id}`}
-                                                        className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
-                                                        onClick={() => onOpenChange(false)}
-                                                    >
-                                                        <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate">{note.title}</span>
-                                                    </Link>
-                                                ))}
-                                            </div>
+                                        <div className="space-y-1.5">
+                                            {linkedNotes.map((note: any) => (
+                                                <Link
+                                                    key={note.id}
+                                                    href={`/engagements/${engagementId}?tab=notes&noteId=${note.id}`}
+                                                    className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
+                                                    onClick={() => onOpenChange(false)}
+                                                >
+                                                    <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
+                                                    <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate">{note.title}</span>
+                                                </Link>
+                                            ))}
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>

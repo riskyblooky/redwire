@@ -918,115 +918,82 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                         )}
                                     </div>
 
-                                    {finding.testcases && finding.testcases.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Test Cases</h4>
-                                            <div className="space-y-2">
-                                                {finding.testcases.map((tc: any) => (
-                                                    <Link href={`/testcases/${tc.id}`} key={tc.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-primary/30 transition-colors group cursor-pointer hover:bg-slate-900/60">
-                                                        <div className="flex items-center gap-2 min-w-0">
-                                                            <ClipboardCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-                                                            <span className="text-xs font-bold text-white group-hover:text-primary transition-colors truncate" title={tc.title}>{tc.title}</span>
-                                                        </div>
-                                                        <Badge variant="outline" className={cn(
-                                                            "text-[8px] px-1 py-0 h-4 border-none uppercase font-bold shrink-0 ml-2",
-                                                            tc.is_executed
-                                                                ? (tc.is_successful ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400')
-                                                                : 'bg-slate-500/10 text-slate-400'
-                                                        )}>
-                                                            {tc.is_executed ? (tc.is_successful ? 'Pass' : 'Fail') : 'Pending'}
-                                                        </Badge>
-                                                    </Link>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
+                                    <div className="space-y-2">
+                                        {finding.testcases && finding.testcases.map((tc: any) => (
+                                            <Link href={`/testcases/${tc.id}`} key={tc.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-primary/30 transition-colors group cursor-pointer hover:bg-slate-900/60">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <ClipboardCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                                                    <span className="text-xs font-bold text-white group-hover:text-primary transition-colors truncate" title={tc.title}>{tc.title}</span>
+                                                </div>
+                                                <Badge variant="outline" className={cn(
+                                                    "text-[8px] px-1 py-0 h-4 border-none uppercase font-bold shrink-0 ml-2",
+                                                    tc.is_executed
+                                                        ? (tc.is_successful ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400')
+                                                        : 'bg-slate-500/10 text-slate-400'
+                                                )}>
+                                                    {tc.is_executed ? (tc.is_successful ? 'Pass' : 'Fail') : 'Pending'}
+                                                </Badge>
+                                            </Link>
+                                        ))}
 
-                                    {finding.vault_items && finding.vault_items.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Vault Items</h4>
-                                            <div className="space-y-2">
-                                                {finding.vault_items.map((vi: any) => {
-                                                    const icon = vi.item_type === 'CREDENTIAL' ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" /> :
-                                                        vi.item_type === 'KEY' ? <Key className="h-3.5 w-3.5 text-primary shrink-0" /> :
-                                                            <Shield className="h-3.5 w-3.5 text-emerald-400 shrink-0" />;
-                                                    return (
-                                                        <div key={vi.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60">
-                                                            {icon}
-                                                            <span className="text-xs font-bold text-white truncate" title={vi.name}>{vi.name}</span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
+                                        {finding.vault_items && finding.vault_items.map((vi: any) => {
+                                            const icon = vi.item_type === 'CREDENTIAL' ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" /> :
+                                                vi.item_type === 'KEY' ? <Key className="h-3.5 w-3.5 text-primary shrink-0" /> :
+                                                    <Shield className="h-3.5 w-3.5 text-emerald-400 shrink-0" />;
+                                            return (
+                                                <div key={vi.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60">
+                                                    {icon}
+                                                    <span className="text-xs font-bold text-white truncate" title={vi.name}>{vi.name}</span>
+                                                </div>
+                                            );
+                                        })}
 
-                                    {finding.cleanup_artifacts && finding.cleanup_artifacts.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Cleanup Artifacts</h4>
-                                            <div className="space-y-2">
-                                                {finding.cleanup_artifacts.map((ca: any) => (
-                                                    <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 cursor-pointer hover:border-lime-500/30 hover:bg-lime-500/5 transition-colors" onClick={() => setViewCleanup(ca)}>
-                                                        <div className="flex items-center gap-2 min-w-0">
-                                                            <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
-                                                            <span className="text-xs font-bold text-white truncate" title={ca.title}>{ca.title}</span>
-                                                        </div>
-                                                        <Badge variant="outline" className={cn(
-                                                            "text-[8px] px-1 py-0 h-4 border-none uppercase font-bold shrink-0 ml-2",
-                                                            ca.status === 'CLEANED' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'
-                                                        )}>
-                                                            {ca.status}
-                                                        </Badge>
-                                                    </div>
-                                                ))}
+                                        {finding.cleanup_artifacts && finding.cleanup_artifacts.map((ca: any) => (
+                                            <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 cursor-pointer hover:border-lime-500/30 hover:bg-lime-500/5 transition-colors" onClick={() => setViewCleanup(ca)}>
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
+                                                    <span className="text-xs font-bold text-white truncate" title={ca.title}>{ca.title}</span>
+                                                </div>
+                                                <Badge variant="outline" className={cn(
+                                                    "text-[8px] px-1 py-0 h-4 border-none uppercase font-bold shrink-0 ml-2",
+                                                    ca.status === 'CLEANED' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'
+                                                )}>
+                                                    {ca.status}
+                                                </Badge>
                                             </div>
-                                        </div>
-                                    )}
+                                        ))}
 
-                                    {linkedNotes.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Notes</h4>
-                                            <div className="space-y-2">
-                                                {linkedNotes.map(note => (
-                                                    <Link
-                                                        key={note.id}
-                                                        href={`/engagements/${finding.engagement_id}?tab=notes&noteId=${note.id}`}
-                                                        className="flex items-center gap-2 p-2 rounded-lg bg-slate-950/40 border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
-                                                    >
-                                                        <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate" title={note.title}>{note.title}</span>
-                                                    </Link>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
+                                        {linkedNotes.map(note => (
+                                            <Link
+                                                key={note.id}
+                                                href={`/engagements/${finding.engagement_id}?tab=notes&noteId=${note.id}`}
+                                                className="flex items-center gap-2 p-2 rounded-lg bg-slate-950/40 border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
+                                            >
+                                                <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
+                                                <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate" title={note.title}>{note.title}</span>
+                                            </Link>
+                                        ))}
 
-                                    {linkedIntel.length > 0 && (
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Linked Intel</h4>
-                                            <div className="space-y-2">
-                                                {linkedIntel.map(item => (
-                                                    <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group cursor-pointer"
-                                                        onClick={() => setIntelDetailId(item.id)}
-                                                    >
-                                                        <Radar className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                                                        <div className="flex-1 min-w-0">
-                                                            <span className="text-xs font-bold text-white truncate block" title={item.title}>{item.title}</span>
-                                                            {item.cve_id && <span className="text-[9px] font-mono text-red-400">{item.cve_id}</span>}
-                                                        </div>
-                                                        {/* GHSA-7f5w-xj7p-cjj4: scheme gate defends in depth against
-                                                            a legacy javascript:/data: URI that predates the backend
-                                                            Pydantic validator on IntelItemCreate/Update.source_url. */}
-                                                        {item.source_url && /^https?:\/\//i.test(item.source_url) && (
-                                                            <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-cyan-400 transition-colors" onClick={(e) => e.stopPropagation()}>
-                                                                <ExternalLink className="h-3 w-3" />
-                                                            </a>
-                                                        )}
-                                                    </div>
-                                                ))}
+                                        {linkedIntel.map(item => (
+                                            <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-950/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group cursor-pointer"
+                                                onClick={() => setIntelDetailId(item.id)}
+                                            >
+                                                <Radar className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-xs font-bold text-white truncate block" title={item.title}>{item.title}</span>
+                                                    {item.cve_id && <span className="text-[9px] font-mono text-red-400">{item.cve_id}</span>}
+                                                </div>
+                                                {/* GHSA-7f5w-xj7p-cjj4: scheme gate defends in depth against
+                                                    a legacy javascript:/data: URI that predates the backend
+                                                    Pydantic validator on IntelItemCreate/Update.source_url. */}
+                                                {item.source_url && /^https?:\/\//i.test(item.source_url) && (
+                                                    <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-cyan-400 transition-colors" onClick={(e) => e.stopPropagation()}>
+                                                        <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                )}
                                             </div>
-                                        </div>
-                                    )}
+                                        ))}
+                                    </div>
 
                                     {intelDetailId && <IntelDetailDialog itemId={intelDetailId} onClose={() => setIntelDetailId(null)} />}
 
