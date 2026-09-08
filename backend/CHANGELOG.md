@@ -76,6 +76,18 @@ section becomes one release entry.
   tab) and highlights the line the cursor is on.
 
 ### Improved
+- **Half-view side sheets now show (and edit) almost everything the full page does** —
+  the quick-look side panels for findings, test cases, and assets were missing a lot
+  of detail; they've been brought close to parity with their full pages. Findings
+  gained peer review (and the same gate blocking Verified until approvals are met —
+  previously the sheet could bypass it), discussion + remediation threads, affected
+  targets with per-asset remediation/progress/ports, evidence, steps to reproduce,
+  references, and a full CVSS vector with copy. Test cases gained execution recording
+  (pass/fail/actual result), their own notes field, discussion, and an evidence
+  gallery. Assets gained discussion, port service versions, and clickable
+  cleanup/vault links. All three now support inline quick-edit (title, status,
+  severity/type, category, tags, and the markdown fields) right from the sheet, plus
+  reviewer presence and live refresh — no need to open the full page for routine edits.
 - **Condensed the "Linked Resources" panel** — on the finding and test-case detail
   pages and their side-sheet ("half") views, the linked items (test cases,
   findings, assets, vault items, cleanup artifacts, notes, intel, infrastructure)

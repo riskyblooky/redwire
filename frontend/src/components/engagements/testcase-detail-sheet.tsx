@@ -6,27 +6,46 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { TagList } from '@/components/ui/tag-list';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import {
     Edit, Trash2, FileText, Loader2, Server, StickyNote, Bug,
-    Sparkles, Lock, User, Clock, Radar, Package, Paperclip,
-    ExternalLink, CheckCircle, XCircle, MinusCircle, Circle, CheckSquare,
-    Globe, Zap, Flag, ArrowUpCircle, Layout, Link as LinkIcon,
+    Sparkles, Lock, Key, User, Clock, Radar, Terminal,
+    ExternalLink, CheckCircle, XCircle, MinusCircle, Circle, X,
+    Globe, Zap, Flag, ArrowUpCircle, Layout, Play, Save, Plus, Layers,
+    ClipboardCheck, Link as LinkIcon,
 } from 'lucide-react';
-import { useTestCase, useDeleteTestCase, useUpdateTestCase } from '@/lib/hooks/use-testcases';
+import { useTestCase, useDeleteTestCase, useUpdateTestCase, useUnlinkFinding, useUnlinkAsset } from '@/lib/hooks/use-testcases';
+import { useEngagement } from '@/lib/hooks/use-engagements';
 import { useNotes } from '@/lib/hooks/use-notes';
 import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { useInfraByEntity } from '@/lib/hooks/use-infra';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { MarkdownPreview } from '@/components/ui/markdown-editor';
+import { MarkdownEditor, MarkdownPreview } from '@/components/ui/markdown-editor';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { ChainLinksSection } from '@/components/engagements/chain-links-section';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
+import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-modal';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
+import { EvidenceUpload } from '@/components/findings/evidence-upload';
+import { EvidenceCard } from '@/components/findings/evidence-card';
+import DiscussionSection from '@/components/discussions/discussion-section';
+import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
+import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
+import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/stores/auth-store';
+import { useTags } from '@/lib/hooks/use-findings';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
+import { buildTestcaseContext } from '@/lib/ai-entity-context';
+import { InlineTextField } from '@/components/ui/inline/inline-text-field';
+import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
+import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
+import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
+import { TagList } from '@/components/ui/tag-list';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import { Shield } from 'lucide-react';
 import {
@@ -38,6 +57,7 @@ import {
 import { toast } from 'sonner';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { UserName } from '@/components/ui/user-name';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import Link from 'next/link';
 
 // ── colour maps ──────────────────────────────────────────────────────
@@ -74,6 +94,8 @@ interface TestCaseDetailSheetProps {
 
 export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChange, nonModal }: TestCaseDetailSheetProps) {
     const router = useRouter();
+    const { user } = useAuthStore();
+    const queryClient = useQueryClient();
 
     // Radix Dialog locks body scroll even with modal={false}. Continuously clear it
     // while the non-modal panel is open using a 50ms interval to beat Radix's scheduler.
@@ -87,10 +109,29 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
         const id = setInterval(unlock, 50);
         return () => clearInterval(id);
     }, [nonModal, open]);
-    const { data: testcase, isLoading } = useTestCase(testcaseId || '');
+
+    const { data: testcase, isLoading, refetch } = useTestCase(testcaseId || '');
+    const { data: engagement } = useEngagement(testcase?.engagement_id || '');
     const { data: allNotes = [] } = useNotes(engagementId);
     const { data: intelItems = [] } = useIntelByEntity('testcase', testcaseId || '');
     const { data: infraItems = [] } = useInfraByEntity('testcase', testcaseId || '');
+
+    // Real-time presence + live content refresh (mirrors the full page).
+    const { activeUsers } = useCollaboration({
+        resourceType: 'testcase',
+        resourceId: testcaseId || '',
+        enabled: !!testcase && open,
+    });
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        enabled: !!testcase && open,
+        onMessage: (data) => {
+            if (data.type === 'activity_log' && (data.resource_type || '').toLowerCase() === 'testcase' && data.resource_id === testcaseId) {
+                queryClient.invalidateQueries({ queryKey: ['testcases', testcaseId] });
+            }
+        },
+    });
 
     const deleteTestCase = useDeleteTestCase();
     const updateTestCase = useUpdateTestCase();
@@ -99,12 +140,25 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const [intelDetailId, setIntelDetailId] = useState<string | null>(null);
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+    const [viewCleanup, setViewCleanup] = useState<any>(null);
 
-    // Link/unlink hooks
+    // Execution recording state
+    const [actualResult, setActualResult] = useState('');
+    const [isExecuting, setIsExecuting] = useState(false);
+
+    // Inline-edit data sources
+    const { data: allTags = [] } = useTags('testcase');
+    const { data: testcaseTypes = [] } = useConfigurableTypes('testcase');
+    const categoryOptions: InlineComboboxOption[] = testcaseTypes.map((t: any) => ({ value: t.name, label: t.name, color: t.color }));
+
+    const unlinkFinding = useUnlinkFinding();
+    const unlinkAsset = useUnlinkAsset();
+
+    // Link/unlink hooks (link dialog)
     const linkFinding = useLinkTestCaseToFinding();
-    const unlinkFinding = useUnlinkTestCaseFromFinding();
+    const unlinkFindingHook = useUnlinkTestCaseFromFinding();
     const linkAsset = useLinkTestCaseToAsset();
-    const unlinkAsset = useUnlinkTestCaseFromAsset();
+    const unlinkAssetHook = useUnlinkTestCaseFromAsset();
     const linkVault = useLinkTestCaseToVaultItem();
     const unlinkVault = useUnlinkTestCaseFromVaultItem();
     const linkCleanup = useLinkTestCaseToCleanup();
@@ -119,8 +173,8 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
     };
     const handleEntityUnlink = async (type: LinkResourceType, resourceId: string) => {
         if (!testcase) return;
-        if (type === 'findings') await unlinkFinding.mutateAsync({ entityId: testcase.id, resourceId });
-        if (type === 'assets') await unlinkAsset.mutateAsync({ entityId: testcase.id, resourceId });
+        if (type === 'findings') await unlinkFindingHook.mutateAsync({ entityId: testcase.id, resourceId });
+        if (type === 'assets') await unlinkAssetHook.mutateAsync({ entityId: testcase.id, resourceId });
         if (type === 'vault') await unlinkVault.mutateAsync({ entityId: testcase.id, resourceId });
         if (type === 'cleanup') await unlinkCleanup.mutateAsync({ entityId: testcase.id, resourceId });
     };
@@ -141,6 +195,41 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
 
     const catStyle = testcase ? (categoryStyles[testcase.category] || categoryStyles.OTHER) : categoryStyles.OTHER;
     const CatIcon = catStyle.icon;
+
+    // Single-field patch through the update hook (PUT is a partial patch).
+    const saveField = async (patch: Record<string, any>) => {
+        if (!testcase) return;
+        await updateTestCase.mutateAsync({ id: testcase.id, ...patch } as any);
+    };
+
+    const handleExecute = async (success: boolean | null) => {
+        if (!testcase) return;
+        try {
+            await updateTestCase.mutateAsync({
+                id: testcase.id,
+                actual_result: actualResult || (testcase.actual_result || ''),
+                is_executed: true,
+                is_successful: success,
+            });
+            setIsExecuting(false);
+            toast.success(success === true ? 'Marked as passed' : success === false ? 'Marked as failed' : 'Result recorded (no verdict)');
+            refetch();
+        } catch (error) {
+            toast.error('Failed to update test case result');
+        }
+    };
+
+    const handleSaveResult = async () => {
+        if (!testcase) return;
+        try {
+            await updateTestCase.mutateAsync({ id: testcase.id, actual_result: actualResult });
+            setIsExecuting(false);
+            toast.success('Result saved');
+            refetch();
+        } catch (error) {
+            toast.error('Failed to save result');
+        }
+    };
 
     const handleDelete = async () => {
         if (!testcase) return;
@@ -182,13 +271,30 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 <div className="flex items-start gap-3 pr-8">
                                     <div className="min-w-0 flex-1">
                                         <SheetTitle className="text-xl font-bold text-white tracking-tight leading-tight">
-                                            {testcase.title}
+                                            <InlineTextField
+                                                value={testcase.title}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ title: v })}
+                                                className="text-xl font-bold text-white tracking-tight"
+                                                placeholder="Test case title"
+                                            />
                                         </SheetTitle>
                                         <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                                            <Badge className={cn('gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase border', catStyle.color)}>
-                                                <CatIcon className="h-3 w-3" />
-                                                {testcase.category?.replace('_', ' ')}
-                                            </Badge>
+                                            {canEdit ? (
+                                                <InlineComboboxField
+                                                    value={testcase.category || ''}
+                                                    options={categoryOptions}
+                                                    canEdit={canEdit}
+                                                    onSave={(v) => saveField({ category: v })}
+                                                    placeholder="Search categories…"
+                                                    emptyLabel="no category"
+                                                />
+                                            ) : (
+                                                <Badge className={cn('gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase border', catStyle.color)}>
+                                                    <CatIcon className="h-3 w-3" />
+                                                    {testcase.category?.replace('_', ' ')}
+                                                </Badge>
+                                            )}
                                             {/* Execution status */}
                                             {testcase.is_executed ? (
                                                 <Badge className={cn('px-2 py-0.5 text-[10px] border gap-1.5',
@@ -210,13 +316,32 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                     Pending
                                                 </Badge>
                                             )}
+                                            {engagement && (
+                                                <Link href={`/engagements/${engagement.id}?tab=testcases`} className="text-xs text-primary hover:underline flex items-center gap-1" onClick={() => onOpenChange(false)}>
+                                                    <ClipboardCheck className="h-3 w-3" /> {engagement.name}
+                                                </Link>
+                                            )}
                                         </div>
-                                        <TagList tags={testcase.tags} className="mt-2" />
+                                        {canEdit ? (
+                                            <div className="mt-2">
+                                                <InlineTagsField
+                                                    tags={testcase.tags}
+                                                    allTags={allTags}
+                                                    selectedIds={(testcase.tags || []).map((t: any) => t.id)}
+                                                    canEdit={canEdit}
+                                                    onSave={(ids) => saveField({ tag_ids: ids })}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <TagList tags={testcase.tags} className="mt-2" />
+                                        )}
                                     </div>
                                 </div>
 
                                 {/* Action bar */}
                                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800/60">
+                                    {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
+                                    <VersionHistoryPanel entityType="testcase" entityId={testcase.id} currentData={testcase} />
                                     <Button
                                         size="sm" variant="outline"
                                         className="border-slate-700 text-slate-300 text-xs h-8"
@@ -224,15 +349,13 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                     >
                                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Full Page
                                     </Button>
-                                    {canEdit && (
-                                        <Button
-                                            size="sm" variant="outline"
-                                            className="border-slate-700 text-slate-300 text-xs h-8"
-                                            onClick={() => { onOpenChange(false); router.push(`/testcases/${testcase.id}/edit?engagementId=${engagementId}&tab=testcases`); }}
-                                        >
-                                            <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit
-                                        </Button>
-                                    )}
+                                    <Button
+                                        size="sm" variant="outline"
+                                        className="border-primary/30 text-primary hover:bg-primary/10 text-xs h-8"
+                                        onClick={() => { onOpenChange(false); router.push(`/findings/new?engagementId=${testcase.engagement_id}&testCaseId=${testcase.id}`); }}
+                                    >
+                                        <Bug className="h-3.5 w-3.5 mr-1.5" /> Add Finding
+                                    </Button>
                                     {canDelete && (
                                         <Button
                                             size="sm" variant="outline"
@@ -249,72 +372,198 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                             <div className="flex-1 p-5 space-y-5 overflow-y-auto">
 
                                 {/* Description */}
-                                {testcase.description && (
+                                {(testcase.description || canEdit) && (
                                     <>
                                         <div>
                                             <div className="flex items-center gap-2 mb-2">
                                                 <FileText className="h-4 w-4 text-primary" />
                                                 <h4 className="text-sm font-bold text-white">Description</h4>
                                             </div>
-                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50">
-                                                <MarkdownPreview value={testcase.description} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={testcase.description || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ description: v })}
+                                                engagementId={testcase.engagement_id}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'description', entityContext: buildTestcaseContext(testcase) }}
+                                                previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
+                                                emptyText="Double-click to add a description…"
+                                            />
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* Steps */}
-                                {testcase.steps && (
+                                {(testcase.steps || canEdit) && (
                                     <>
                                         <div>
                                             <div className="flex items-center gap-2 mb-2">
-                                                <CheckSquare className="h-4 w-4 text-emerald-400" />
-                                                <h4 className="text-sm font-bold text-white">Steps</h4>
+                                                <Terminal className="h-4 w-4 text-blue-400" />
+                                                <h4 className="text-sm font-bold text-white">Execution Steps</h4>
                                             </div>
-                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-900/40 p-3 rounded-lg border border-slate-800/60">
-                                                <MarkdownPreview value={testcase.steps} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={testcase.steps || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ steps: v })}
+                                                engagementId={testcase.engagement_id}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'steps', entityContext: buildTestcaseContext(testcase) }}
+                                                previewWrapperClassName="bg-slate-900/40 p-2 rounded-lg border border-slate-800/60 overflow-hidden"
+                                                emptyText="Double-click to add execution steps…"
+                                            />
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* Expected result */}
-                                {testcase.expected_result && (
+                                {(testcase.expected_result || canEdit) && (
                                     <>
                                         <div>
                                             <div className="flex items-center gap-2 mb-2">
                                                 <CheckCircle className="h-4 w-4 text-green-400" />
                                                 <h4 className="text-sm font-bold text-white">Expected Result</h4>
                                             </div>
-                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50">
-                                                <MarkdownPreview value={testcase.expected_result} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={testcase.expected_result || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ expected_result: v })}
+                                                engagementId={testcase.engagement_id}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'expected_result', entityContext: buildTestcaseContext(testcase) }}
+                                                previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-lg overflow-hidden"
+                                                emptyText="Double-click to add the expected result…"
+                                            />
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
-                                {/* Actual result (if executed) */}
-                                {testcase.is_executed && testcase.actual_result && (
+                                {/* Execution Result — record pass/fail/no-verdict + actual result */}
+                                <div className={cn('rounded-lg border border-l-2 p-3',
+                                    testcase.is_executed
+                                        ? (testcase.is_successful === true ? 'bg-green-500/[0.04] border-l-green-500/60 border-slate-800'
+                                            : testcase.is_successful === false ? 'bg-red-500/[0.04] border-l-red-500/60 border-slate-800'
+                                                : 'bg-slate-500/[0.04] border-l-slate-500/60 border-slate-800')
+                                        : 'bg-slate-900/40 border-l-blue-500/50 border-slate-800')}>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                                            <Play className="h-4 w-4 text-blue-400" /> Execution Result
+                                        </h4>
+                                        {testcase.is_executed && (
+                                            <Badge className={cn('text-[10px] px-2 py-0.5', testcase.is_successful === true ? 'bg-green-500/10 text-green-400 border-green-500/20' : testcase.is_successful === false ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20')}>
+                                                {testcase.is_successful === true ? 'Passed' : testcase.is_successful === false ? 'Failed' : 'No verdict'}
+                                            </Badge>
+                                        )}
+                                    </div>
+
+                                    {!testcase.is_executed && !testcase.actual_result && !isExecuting ? (
+                                        <div className="text-center py-4">
+                                            <p className="text-slate-400 mb-3 text-xs">Not executed yet.</p>
+                                            {canEdit && (
+                                                <Button onClick={() => setIsExecuting(true)} size="sm" className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:border-blue-500/50 text-xs">
+                                                    <Play className="h-3.5 w-3.5 mr-1.5 fill-current" /> Record Result
+                                                </Button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <Label className="text-slate-300 text-xs">Actual Result / Evidence</Label>
+                                            {isExecuting ? (
+                                                <MarkdownEditor
+                                                    value={actualResult}
+                                                    onChange={(val) => setActualResult(val)}
+                                                    placeholder="Describe what happened during testing…"
+                                                    minHeight="220px"
+                                                />
+                                            ) : (
+                                                <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800 min-h-[80px] overflow-hidden">
+                                                    <MarkdownPreview value={testcase.actual_result || 'No result recorded'} theme="dark" />
+                                                </div>
+                                            )}
+
+                                            {isExecuting ? (
+                                                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+                                                    <Button onClick={() => handleExecute(true)} size="sm" className="flex-1 min-w-[100px] h-9 bg-green-500/10 hover:bg-green-500/20 text-green-300 border border-green-500/30 hover:border-green-500/50 font-semibold text-xs">
+                                                        <CheckCircle className="h-4 w-4 mr-1.5" /> Pass
+                                                    </Button>
+                                                    <Button onClick={() => handleExecute(false)} size="sm" className="flex-1 min-w-[100px] h-9 bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 hover:border-red-500/50 font-semibold text-xs">
+                                                        <XCircle className="h-4 w-4 mr-1.5" /> Fail
+                                                    </Button>
+                                                    <Button onClick={() => handleExecute(null)} variant="outline" size="sm" className="h-9 px-3 bg-slate-800/40 hover:bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600 hover:text-white text-xs">
+                                                        <MinusCircle className="h-4 w-4 mr-1.5" /> No Verdict
+                                                    </Button>
+                                                    <Button onClick={handleSaveResult} variant="outline" size="sm" className="h-9 px-3 bg-blue-500/5 hover:bg-blue-500/15 text-blue-300/90 border border-blue-500/25 hover:border-blue-500/40 text-xs">
+                                                        <Save className="h-4 w-4 mr-1.5" /> Save
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" onClick={() => setIsExecuting(false)} className="h-9 text-slate-400 hover:text-white text-xs">
+                                                        Cancel
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                canEdit && (
+                                                    <div className="flex justify-end">
+                                                        <Button variant="outline" size="sm" onClick={() => { setActualResult(testcase.actual_result || ''); setIsExecuting(true); }} className="border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 text-xs h-8">
+                                                            <Edit className="h-3.5 w-3.5 mr-1.5" /> Update Result
+                                                        </Button>
+                                                    </div>
+                                                )
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <Separator className="bg-slate-800/60" />
+
+                                {/* Notes (the test case's own notes field) */}
+                                {(testcase.notes || canEdit) && (
                                     <>
                                         <div>
                                             <div className="flex items-center gap-2 mb-2">
-                                                {testcase.is_successful === true
-                                                    ? <CheckCircle className="h-4 w-4 text-green-400" />
-                                                    : testcase.is_successful === false
-                                                        ? <XCircle className="h-4 w-4 text-red-400" />
-                                                        : <MinusCircle className="h-4 w-4 text-slate-400" />}
-                                                <h4 className="text-sm font-bold text-white">Actual Result</h4>
+                                                <StickyNote className="h-4 w-4 text-teal-400" />
+                                                <h4 className="text-sm font-bold text-white">Notes</h4>
                                             </div>
-                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50">
-                                                <MarkdownPreview value={testcase.actual_result} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={testcase.notes || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ notes: v })}
+                                                engagementId={testcase.engagement_id}
+                                                fieldContext={{ resourceType: 'testcase', fieldName: 'notes', entityContext: buildTestcaseContext(testcase) }}
+                                                previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
+                                                emptyText="Double-click to add notes…"
+                                            />
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
+
+                                {/* Evidence gallery */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <Layers className="h-4 w-4 text-primary" />
+                                            <h4 className="text-sm font-bold text-white">Evidence</h4>
+                                        </div>
+                                        <Badge variant="outline" className="bg-primary/10 text-primary border-none px-1.5 h-5 text-[10px]">
+                                            {testcase.evidence?.length || 0} files
+                                        </Badge>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {canEdit && <EvidenceUpload testcaseId={testcase.id} />}
+                                        {testcase.evidence && testcase.evidence.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {testcase.evidence.map((ev: any) => (
+                                                    <EvidenceCard key={ev.id} evidence={ev} findingId={testcase.id} />
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-4 text-slate-500 border border-dashed border-slate-800 rounded-lg bg-slate-950/20">
+                                                <Plus className="h-6 w-6 mx-auto mb-1 opacity-20" />
+                                                <p className="text-[11px]">No evidence attached</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <Separator className="bg-slate-800/60" />
 
                                 {/* Classification (portion marking) */}
                                 {canEdit && (
@@ -401,56 +650,106 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 </div>
 
                                 {/* Linked resources — the colored icon carries the type */}
-                                {((testcase.findings?.length ?? 0) + (testcase.assets?.length ?? 0) + (testcase.evidence?.length ?? 0) + (testcase.vault_items?.length ?? 0) + (testcase.cleanup_artifacts?.length ?? 0) + intelItems.length + infraItems.length) > 0 ? (
+                                {((testcase.findings?.length ?? 0) + (testcase.assets?.length ?? 0) + (testcase.vault_items?.length ?? 0) + (testcase.cleanup_artifacts?.length ?? 0) + intelItems.length + infraItems.length) > 0 ? (
                                     <div className="space-y-1.5 max-h-72 overflow-y-auto">
                                         {(testcase.findings ?? []).map((f: any) => (
-                                            <Link
-                                                key={f.id}
-                                                href={`/findings/${f.id}?engagementId=${engagementId}&tab=testcases`}
-                                                className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-red-500/30 transition-colors group"
-                                                onClick={() => onOpenChange(false)}
-                                            >
+                                            <div key={f.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-red-500/30 transition-colors group">
                                                 <Bug className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                                                <span className="text-xs font-medium text-white group-hover:text-red-300 truncate">{f.title}</span>
+                                                <Link
+                                                    href={`/findings/${f.id}?engagementId=${engagementId}&tab=testcases`}
+                                                    className="text-xs font-medium text-white group-hover:text-red-300 truncate"
+                                                    onClick={() => onOpenChange(false)}
+                                                >
+                                                    {f.title}
+                                                </Link>
                                                 {f.severity && (
                                                     <Badge className={cn('text-[8px] px-1 py-0 h-4 border ml-auto shrink-0 uppercase font-bold', severityBadge[f.severity] || severityBadge.INFO)}>
                                                         {f.severity}
                                                     </Badge>
                                                 )}
-                                            </Link>
+                                                {canEdit && (
+                                                    <Button
+                                                        variant="ghost" size="icon"
+                                                        className="h-6 w-6 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                                        onClick={async () => {
+                                                            const confirmed = await confirm({ title: 'Unlink Finding', description: `Remove the link between this test case and "${f.title}"?` });
+                                                            if (confirmed) unlinkFinding.mutate({ testcaseId: testcase.id, findingId: f.id });
+                                                        }}
+                                                    >
+                                                        <X className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         ))}
                                         {(testcase.assets ?? []).map((asset: any) => (
-                                            <Link
-                                                key={asset.id}
-                                                href={`/assets/${asset.id}?engagementId=${engagementId}&tab=testcases`}
-                                                className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group"
-                                                onClick={() => onOpenChange(false)}
-                                            >
-                                                <Server className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                                                <span className="text-xs font-medium text-white group-hover:text-cyan-300 truncate">{asset.name}</span>
-                                                {asset.identifier && <span className="text-[10px] text-slate-500 font-mono truncate ml-auto shrink-0">{asset.identifier}</span>}
-                                            </Link>
-                                        ))}
-                                        {(testcase.evidence ?? []).map((ev: any) => (
-                                            <div key={ev.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                <Paperclip className="h-3.5 w-3.5 text-pink-400 shrink-0" />
-                                                <span className="text-xs font-medium text-white truncate">{ev.original_filename}</span>
+                                            <div key={asset.id}>
+                                                <div className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-cyan-500/30 transition-colors group">
+                                                    <Server className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                                                    <Link
+                                                        href={`/assets/${asset.id}?engagementId=${engagementId}&tab=testcases`}
+                                                        className="text-xs font-medium text-white group-hover:text-cyan-300 truncate"
+                                                        onClick={() => onOpenChange(false)}
+                                                    >
+                                                        {asset.name}
+                                                    </Link>
+                                                    {asset.identifier && <span className="text-[10px] text-slate-500 font-mono truncate ml-auto shrink-0">{asset.identifier}</span>}
+                                                    {canEdit && (
+                                                        <Button
+                                                            variant="ghost" size="icon"
+                                                            className="h-6 w-6 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                                            onClick={async () => {
+                                                                const confirmed = await confirm({ title: 'Unlink Asset', description: `Remove the link between this test case and "${asset.name}"?` });
+                                                                if (confirmed) unlinkAsset.mutate({ testcaseId: testcase.id, assetId: asset.id });
+                                                            }}
+                                                        >
+                                                            <X className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                {asset.linked_ports && asset.linked_ports.length > 0 && (
+                                                    <div className="ml-6 mt-1 flex flex-wrap gap-1">
+                                                        {asset.linked_ports.map((port: any) => (
+                                                            <Badge
+                                                                key={port.id}
+                                                                variant="outline"
+                                                                className={cn(
+                                                                    'text-[10px] px-1.5 py-0 h-5 border-none font-mono font-bold',
+                                                                    port.state === 'OPEN' ? 'bg-green-500/10 text-green-400' :
+                                                                        port.state === 'FILTERED' ? 'bg-yellow-500/10 text-yellow-400' :
+                                                                            'bg-cyan-500/10 text-cyan-400'
+                                                                )}
+                                                            >
+                                                                {port.port_number}/{port.protocol}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
-                                        {(testcase.vault_items ?? []).map((vi: any) => (
-                                            <div key={vi.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                                                <span className="text-xs font-medium text-white truncate">{vi.name}</span>
-                                            </div>
-                                        ))}
+                                        {(testcase.vault_items ?? []).map((vi: any) => {
+                                            const icon = vi.item_type === 'CREDENTIAL' ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" /> :
+                                                vi.item_type === 'KEY' ? <Key className="h-3.5 w-3.5 text-primary shrink-0" /> :
+                                                    <Shield className="h-3.5 w-3.5 text-emerald-400 shrink-0" />;
+                                            return (
+                                                <Link
+                                                    key={vi.id}
+                                                    href={`/engagements/${engagementId}?tab=vault`}
+                                                    className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-amber-500/30 transition-colors group"
+                                                    onClick={() => onOpenChange(false)}
+                                                >
+                                                    {icon}
+                                                    <span className="text-xs font-medium text-white group-hover:text-amber-300 truncate">{vi.name}</span>
+                                                </Link>
+                                            );
+                                        })}
                                         {(testcase.cleanup_artifacts ?? []).map((ca: any) => (
-                                            <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
-                                                <div className="flex items-center gap-2">
+                                            <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 cursor-pointer hover:border-lime-500/30 hover:bg-lime-500/5 transition-colors" onClick={() => setViewCleanup(ca)}>
+                                                <div className="flex items-center gap-2 min-w-0">
                                                     <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
                                                     <span className="text-xs font-medium text-white truncate">{ca.title}</span>
                                                 </div>
                                                 <Badge variant="outline" className={cn(
-                                                    'text-[8px] px-1 py-0 h-4 border-none uppercase font-bold',
+                                                    'text-[8px] px-1 py-0 h-4 border-none uppercase font-bold shrink-0 ml-2',
                                                     ca.status === 'CLEANED' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'
                                                 )}>
                                                     {ca.status}
@@ -464,7 +763,15 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 className="w-full flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-violet-500/30 transition-colors group text-left"
                                             >
                                                 <Radar className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                                                <span className="text-xs font-medium text-white group-hover:text-violet-300 truncate">{item.title || item.value}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-xs font-medium text-white group-hover:text-violet-300 truncate block">{item.title || item.value}</span>
+                                                    {item.cve_id && <span className="text-[9px] font-mono text-red-400">{item.cve_id}</span>}
+                                                </div>
+                                                {item.source_url && /^https?:\/\//i.test(item.source_url) && (
+                                                    <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-violet-400 transition-colors shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                        <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                )}
                                             </button>
                                         ))}
                                         {infraItems.map((item: any) => (
@@ -520,7 +827,21 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <User className="h-3 w-3" /> Created By
                                         </span>
-                                        <UserName className="text-slate-300" name={testcase.created_by_full_name} username={testcase.created_by_username} fallback={testcase.created_by?.slice(0, 8)} />
+                                        <div className="flex items-center gap-2">
+                                            <UserAvatar
+                                                user={engagement?.assigned_users?.find((u: any) => u.id === testcase.created_by)}
+                                                userId={testcase.created_by}
+                                                username={testcase.created_by_username || testcase.created_by}
+                                                className="h-5 w-5"
+                                            />
+                                            <UserName
+                                                className="text-slate-300"
+                                                user={engagement?.assigned_users?.find((u: any) => u.id === testcase.created_by)}
+                                                name={testcase.created_by_full_name}
+                                                username={testcase.created_by_username}
+                                                fallback={testcase.created_by?.slice(0, 8)}
+                                            />
+                                        </div>
                                     </div>
                                     <div className="flex items-center justify-between text-[10px]">
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
@@ -529,12 +850,29 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                         <span className="text-slate-300">{parseUTCDate(testcase.created_at).toLocaleString()}</span>
                                     </div>
                                 </div>
+
+                                <Separator className="bg-slate-800/60" />
+
+                                {/* Discussion */}
+                                <DiscussionSection
+                                    engagementId={testcase.engagement_id}
+                                    resourceType="testcase"
+                                    resourceId={testcase.id}
+                                    currentUserId={user?.id}
+                                    isAdmin={user?.role === 'admin'}
+                                    users={engagement?.assigned_users}
+                                />
                             </div>
                         </div>
                     )}
                 </SheetContent>
             </Sheet>
             {intelDetailId && <IntelDetailDialog itemId={intelDetailId} onClose={() => setIntelDetailId(null)} />}
+            <CleanupDetailModal
+                artifact={viewCleanup}
+                open={!!viewCleanup}
+                onOpenChange={(open) => !open && setViewCleanup(null)}
+            />
             {testcase && (
                 <LinkEntityDialog
                     open={linkDialogOpen}

@@ -18,14 +18,13 @@ import {
 import {
     Edit, Trash2, FileText, Loader2, Radar, Skull, EyeOff, CheckCircle,
     CheckSquare, Sparkles, StickyNote, Bug, Server, Target, User, Clock,
-    Lock, Key, Shield, Plus, X, ExternalLink, Link as LinkIcon, Globe,
+    Lock, Key, Shield, Plus, X, ExternalLink, Link as LinkIcon, Globe, Copy,
 } from 'lucide-react';
 import { useAsset, useUpdateAsset, useDeleteAsset, useAddAssetPort, useDeleteAssetPort } from '@/lib/hooks/use-assets';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useNotes } from '@/lib/hooks/use-notes';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import {
@@ -39,16 +38,19 @@ import { cn, parseUTCDate } from '@/lib/utils';
 import { UserName } from '@/components/ui/user-name';
 import Link from 'next/link';
 import { apiErrorMessage } from '@/lib/api';
-
-const assetTypeColors: Record<string, string> = {
-    IP_ADDRESS: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    DOMAIN: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-    URL: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
-    APPLICATION: 'bg-green-500/10 text-green-400 border-green-500/20',
-    SERVER: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    NETWORK: 'bg-pink-500/10 text-pink-400 border-pink-500/20',
-    OTHER: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
+import { useEngagement } from '@/lib/hooks/use-engagements';
+import { useAuthStore } from '@/stores/auth-store';
+import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useQueryClient } from '@tanstack/react-query';
+import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import DiscussionSection from '@/components/discussions/discussion-section';
+import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-modal';
+import { InlineTextField } from '@/components/ui/inline/inline-text-field';
+import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
+import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
+import { buildAssetContext } from '@/lib/ai-entity-context';
 
 const assetTypeAccentColors: Record<string, string> = {
     IP_ADDRESS: 'bg-blue-500',
@@ -105,6 +107,10 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
     const { data: asset, isLoading } = useAsset(assetId || '');
     const { data: findings = [] } = useFindings({ engagement_id: engagementId });
     const { data: allNotes = [] } = useNotes(engagementId);
+    const { data: engagement } = useEngagement(engagementId);
+    const { data: assetTypes = [] } = useConfigurableTypes('asset');
+    const { user } = useAuthStore();
+    const queryClient = useQueryClient();
 
     const updateAsset = useUpdateAsset();
     const deleteAsset = useDeleteAsset();
@@ -114,6 +120,25 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
     const canEdit = useCanEdit(engagementId, 'asset', asset?.created_by);
     const canDelete = useCanDelete(engagementId, 'asset', asset?.created_by);
     const { confirm, ConfirmDialog } = useConfirmDialog();
+
+    // Presence + live content refresh (mirrors the full asset page)
+    const { activeUsers } = useCollaboration({
+        resourceType: 'asset',
+        resourceId: assetId || '',
+        enabled: !!asset && open,
+    });
+    useCollaboration({
+        resourceType: 'dashboard',
+        resourceId: 'global',
+        enabled: open,
+        onMessage: (data: any) => {
+            if (data.type === 'activity_log' && (data.resource_type || '').toLowerCase() === 'asset' && data.resource_id === assetId) {
+                queryClient.invalidateQueries({ queryKey: ['assets', assetId] });
+            }
+        },
+    });
+
+    const [viewCleanup, setViewCleanup] = useState<any>(null);
 
     const [showAddPort, setShowAddPort] = useState(false);
     const [newPort, setNewPort] = useState({ port_number: '', protocol: 'TCP' as 'TCP' | 'UDP', service_name: '' });
@@ -176,6 +201,19 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
     const linkedNotes = asset
         ? allNotes.filter((n: any) => n.linked_assets?.some((a: any) => a.id === asset?.id))
         : [];
+
+    // Inline edit: single-field patch through the update hook (PUT is a partial patch)
+    const saveField = async (patch: Record<string, any>) => {
+        if (!asset) return;
+        await updateAsset.mutateAsync({ id: asset.id, ...patch } as any);
+    };
+
+    // asset_type is a fixed enum; options carry the friendly label + configurable-type colour
+    const assetTypeOptions: InlineComboboxOption[] = Object.keys(assetTypeLabels).map((key) => {
+        const label = assetTypeLabels[key];
+        const ct = (assetTypes as any[]).find((t) => t.name === label);
+        return { value: key, label, color: ct?.color };
+    });
 
     const handleToggleStatus = async (field: 'is_scanned' | 'is_pwned' | 'in_scope') => {
         if (!asset) return;
@@ -242,29 +280,58 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                             <SheetHeader className="p-5 pb-0">
                                 <div className="flex items-start justify-between gap-3 pr-8">
                                     <div className="min-w-0">
-                                        <SheetTitle className="text-xl font-bold text-white tracking-tight truncate">
-                                            {asset.name}
-                                        </SheetTitle>
+                                        <VisuallyHidden><SheetTitle>{asset.name}</SheetTitle></VisuallyHidden>
+                                        <InlineTextField
+                                            value={asset.name}
+                                            canEdit={canEdit}
+                                            onSave={(v) => saveField({ name: v })}
+                                            className="text-xl font-bold text-white tracking-tight"
+                                            placeholder="Asset name"
+                                        />
                                         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                                            <Badge className={cn('px-2 py-0.5 text-[10px]', assetTypeColors[asset.asset_type] || assetTypeColors.OTHER)}>
-                                                {assetTypeLabels[asset.asset_type] || asset.asset_type}
-                                            </Badge>
-                                            <code
-                                                className="text-xs font-mono text-pink-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50 cursor-pointer hover:bg-slate-700/60 transition-colors"
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(asset.identifier);
-                                                    toast.success('Copied to clipboard');
-                                                }}
-                                                title="Click to copy"
-                                            >
-                                                {asset.identifier}
-                                            </code>
+                                            <InlineComboboxField
+                                                value={asset.asset_type}
+                                                options={assetTypeOptions}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ asset_type: v })}
+                                                placeholder="Search types…"
+                                            />
+                                            <span className="inline-flex items-center gap-1">
+                                                <InlineTextField
+                                                    value={asset.identifier}
+                                                    canEdit={canEdit}
+                                                    onSave={(v) => saveField({ identifier: v })}
+                                                    className="text-xs font-mono text-pink-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50"
+                                                    placeholder="Identifier"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="p-1 rounded text-slate-500 hover:text-pink-300 hover:bg-slate-700/60 transition-colors"
+                                                    title="Copy to clipboard"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(asset.identifier);
+                                                        toast.success('Copied to clipboard', { description: asset.identifier });
+                                                    }}
+                                                >
+                                                    <Copy className="h-3 w-3" />
+                                                </button>
+                                            </span>
+                                            {engagement && (
+                                                <Link
+                                                    href={`/engagements/${engagement.id}?tab=assets`}
+                                                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                                                    onClick={() => onOpenChange(false)}
+                                                >
+                                                    <Target className="h-3 w-3" /> {engagement.name}
+                                                </Link>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* Action buttons */}
                                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800/60">
+                                    {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
                                     <Button
                                         size="sm"
                                         variant="outline"
@@ -310,16 +377,16 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                     <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Status</h4>
                                     <div className="grid grid-cols-3 gap-2">
                                         {([
-                                            { field: 'is_scanned' as const, label: 'Scanned', icon: Radar, activeColor: 'bg-blue-500/10 border-blue-500/30 text-blue-400', active: asset.is_scanned },
-                                            { field: 'is_pwned' as const, label: 'Pwned', icon: Skull, activeColor: 'bg-red-500/10 border-red-500/30 text-red-400', active: asset.is_pwned },
-                                            { field: 'in_scope' as const, label: 'In Scope', icon: asset.in_scope ? CheckCircle : EyeOff, activeColor: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400', active: asset.in_scope },
-                                        ]).map(({ field, label, icon: Icon, activeColor, active }) => (
+                                            { field: 'is_scanned' as const, label: 'Scanned', icon: Radar, activeColor: 'bg-blue-500/10 border-blue-500/30 text-blue-400', active: asset.is_scanned, sub: asset.is_scanned ? 'Scanned' : 'Not scanned' },
+                                            { field: 'is_pwned' as const, label: 'Pwned', icon: Skull, activeColor: 'bg-red-500/10 border-red-500/30 text-red-400', active: asset.is_pwned, sub: asset.is_pwned ? 'Compromised' : 'Not compromised' },
+                                            { field: 'in_scope' as const, label: 'In Scope', icon: asset.in_scope ? CheckCircle : EyeOff, activeColor: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400', active: asset.in_scope, sub: asset.in_scope ? 'Within scope' : 'Out of scope' },
+                                        ]).map(({ field, label, icon: Icon, activeColor, active, sub }) => (
                                             <button
                                                 key={field}
                                                 onClick={() => canEdit && handleToggleStatus(field)}
                                                 disabled={!canEdit}
                                                 className={cn(
-                                                    "flex flex-col items-center gap-1.5 p-3 rounded-lg border transition-all",
+                                                    "flex flex-col items-center gap-1 p-3 rounded-lg border transition-all text-center",
                                                     active ? activeColor : "bg-slate-800/30 border-slate-700/50 text-slate-500",
                                                     canEdit && "hover:brightness-125 cursor-pointer",
                                                     !canEdit && "cursor-default opacity-80"
@@ -327,6 +394,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                             >
                                                 <Icon className="h-4 w-4" />
                                                 <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+                                                <span className="text-[8px] opacity-60 leading-tight">{sub}</span>
                                             </button>
                                         ))}
                                     </div>
@@ -335,32 +403,44 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Description */}
-                                {asset.description && (
+                                {(asset.description || canEdit) && (
                                     <>
                                         <div>
                                             <div className="flex items-center gap-2 mb-2 text-white">
                                                 <FileText className="h-4 w-4 text-primary" />
                                                 <h4 className="text-sm font-bold">Description</h4>
                                             </div>
-                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50">
-                                                <MarkdownPreview value={asset.description} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={asset.description || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ description: v })}
+                                                engagementId={engagementId}
+                                                fieldContext={{ resourceType: 'asset', fieldName: 'description', entityContext: buildAssetContext(asset) }}
+                                                previewWrapperClassName="bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
+                                                emptyText="Double-click to add a description…"
+                                            />
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* Notes */}
-                                {asset.notes && (
+                                {(asset.notes || canEdit) && (
                                     <>
                                         <div>
                                             <div className="flex items-center gap-2 mb-2 text-white">
                                                 <StickyNote className="h-4 w-4 text-teal-400" />
                                                 <h4 className="text-sm font-bold">Internal Notes</h4>
                                             </div>
-                                            <div className="prose prose-invert prose-sm max-w-none bg-slate-900/40 p-3 rounded-lg border border-slate-800/60">
-                                                <MarkdownPreview value={asset.notes} theme="dark" />
-                                            </div>
+                                            <InlineMarkdownField
+                                                value={asset.notes || ''}
+                                                canEdit={canEdit}
+                                                onSave={(v) => saveField({ notes: v })}
+                                                engagementId={engagementId}
+                                                fieldContext={{ resourceType: 'asset', fieldName: 'notes', entityContext: buildAssetContext(asset) }}
+                                                previewWrapperClassName="bg-slate-900/40 p-3 rounded-lg border border-slate-800/60"
+                                                emptyText="Double-click to add internal notes…"
+                                            />
                                         </div>
                                         <Separator className="bg-slate-800/60" />
                                     </>
@@ -432,6 +512,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                             <span className="text-xs font-mono font-bold text-cyan-400">{port.port_number}</span>
                                                             <span className="text-[9px] text-slate-500 uppercase">{port.protocol}</span>
                                                             {port.service_name && <span className="text-[10px] text-slate-400 truncate">{port.service_name}</span>}
+                                                            {port.version && <span className="text-[9px] text-slate-600 truncate">{port.version}</span>}
                                                         </div>
                                                         <div className="flex items-center gap-1.5">
                                                             <Badge variant="outline" className={cn(
@@ -605,10 +686,15 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                     const VIcon = vi.item_type === 'CREDENTIAL' ? Lock : vi.item_type === 'KEY' ? Key : Shield;
                                                     const vColor = vi.item_type === 'CREDENTIAL' ? 'text-amber-400' : vi.item_type === 'KEY' ? 'text-primary' : 'text-emerald-400';
                                                     return (
-                                                        <div key={vi.id} className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
+                                                        <Link
+                                                            href={`/engagements/${engagementId}?tab=vault`}
+                                                            key={vi.id}
+                                                            className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-amber-500/30 transition-colors group"
+                                                            onClick={() => onOpenChange(false)}
+                                                        >
                                                             <VIcon className={cn("h-3.5 w-3.5 shrink-0", vColor)} />
-                                                            <span className="text-xs font-bold text-white truncate">{vi.name}</span>
-                                                        </div>
+                                                            <span className="text-xs font-bold text-white group-hover:text-amber-300 truncate">{vi.name}</span>
+                                                        </Link>
                                                     );
                                                 })}
                                             </div>
@@ -626,7 +712,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                             </h4>
                                             <div className="space-y-1.5">
                                                 {asset.cleanup_artifacts.map((ca: any) => (
-                                                    <div key={ca.id} className="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800/60">
+                                                    <div key={ca.id} onClick={() => setViewCleanup(ca)} className="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 cursor-pointer hover:border-lime-500/30 hover:bg-lime-500/5 transition-colors">
                                                         <div className="flex items-center gap-2">
                                                             <Sparkles className="h-3.5 w-3.5 text-lime-400 shrink-0" />
                                                             <span className="text-xs font-bold text-white truncate">{ca.title}</span>
@@ -679,7 +765,21 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <User className="h-3 w-3" /> Created By
                                         </span>
-                                        <UserName className="text-slate-300" name={asset.created_by_full_name} username={asset.created_by_username} fallback={asset.created_by?.slice(0, 8)} />
+                                        <div className="flex items-center gap-2">
+                                            <UserAvatar
+                                                user={engagement?.assigned_users?.find((u: any) => u.id === asset.created_by)}
+                                                userId={asset.created_by}
+                                                username={asset.created_by_username || asset.created_by}
+                                                className="h-5 w-5"
+                                            />
+                                            <UserName
+                                                className="text-slate-300"
+                                                user={engagement?.assigned_users?.find((u: any) => u.id === asset.created_by)}
+                                                name={asset.created_by_full_name}
+                                                username={asset.created_by_username}
+                                                fallback={asset.created_by?.slice(0, 8)}
+                                            />
+                                        </div>
                                     </div>
                                     <div className="flex items-center justify-between text-[10px]">
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
@@ -688,6 +788,18 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                         <span className="text-slate-300">{parseUTCDate(asset.created_at).toLocaleString()}</span>
                                     </div>
                                 </div>
+
+                                <Separator className="bg-slate-800/60" />
+
+                                {/* Discussion */}
+                                <DiscussionSection
+                                    engagementId={engagementId}
+                                    resourceType="asset"
+                                    resourceId={asset.id}
+                                    currentUserId={user?.id}
+                                    isAdmin={user?.role === 'admin'}
+                                    users={engagement?.assigned_users}
+                                />
                             </div>
                         </div>
                     )}
@@ -706,6 +818,11 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                     onUnlink={handleEntityUnlink}
                 />
             )}
+            <CleanupDetailModal
+                artifact={viewCleanup}
+                open={!!viewCleanup}
+                onOpenChange={(o) => !o && setViewCleanup(null)}
+            />
         </>
     );
 }
