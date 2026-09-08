@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timezone
+from pydantic import BaseModel, Field
 import uuid
 import os
 import json
@@ -573,6 +574,13 @@ async def update_finding(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Finding authors cannot set their own finding to VERIFIED/REMEDIATED/CLOSED. A separate reviewer must approve the status change.",
         )
+
+    # Peer-review gate: when enabled, a finding needs enough non-author approvals
+    # before it can transition to VERIFIED — enforced for everyone (leads/admins
+    # included), since the point is to gate the verify action itself.
+    if update_data.get("status") == FindingStatus.VERIFIED and finding.status != FindingStatus.VERIFIED:
+        from utils.peer_review import assert_finding_verifiable
+        await assert_finding_verifiable(db, finding)
 
     # Capture old status before applying updates (for notification)
     old_status = finding.status.value if finding.status else None
@@ -1248,3 +1256,167 @@ async def unlink_finding_from_cleanup_artifact(finding_id: str, cleanup_artifact
     await db.delete(link)
     await db.commit()
 
+
+
+# ── Peer review ──────────────────────────────────────────────────────
+
+class FindingReviewCreate(BaseModel):
+    status: str = Field(..., description="APPROVED | CHANGES_REQUESTED")
+
+
+class FindingReviewResponse(BaseModel):
+    id: str
+    finding_id: str
+    reviewer_id: str
+    reviewer_username: Optional[str] = None
+    reviewer_full_name: Optional[str] = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+async def _load_finding_for_review(finding_id: str, db: AsyncSession, current_user: User, *, write: bool):
+    """Load a finding and enforce FINDING_VIEW (any engagement viewer can review).
+    `write` uses the write role-bypass pair (no READ_ONLY_ADMIN) for submitting."""
+    finding = (await db.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    admin_roles = [UserRole.ADMIN, UserRole.TEAM_LEAD] if write else [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if current_user.role not in admin_roles:
+        if not await check_engagement_permission(current_user.id, finding.engagement_id, Permission.FINDING_VIEW.value, db):
+            raise HTTPException(status_code=403, detail="Insufficient permissions for this finding.")
+    return finding
+
+
+async def _review_to_response(db: AsyncSession, review) -> FindingReviewResponse:
+    row = (await db.execute(
+        select(User.username, User.full_name).where(User.id == review.reviewer_id)
+    )).first()
+    return FindingReviewResponse(
+        id=review.id, finding_id=review.finding_id, reviewer_id=review.reviewer_id,
+        reviewer_username=(row[0] if row else None), reviewer_full_name=(row[1] if row else None),
+        status=review.status,
+        created_at=review.created_at, updated_at=review.updated_at,
+    )
+
+
+@router.get("/{finding_id}/reviews")
+async def list_finding_reviews(
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reviews on a finding plus the peer-review policy status."""
+    from models.finding_review import FindingReview
+    from utils.peer_review import get_peer_review_config, count_finding_approvals
+    finding = await _load_finding_for_review(finding_id, db, current_user, write=False)
+
+    rows = (await db.execute(
+        select(FindingReview, User.username, User.full_name)
+        .outerjoin(User, FindingReview.reviewer_id == User.id)
+        .where(FindingReview.finding_id == finding_id)
+        .order_by(FindingReview.updated_at.desc())
+    )).all()
+    reviews = []
+    my_review = None
+    approvals = 0
+    changes_requested = 0
+    for rv, uname, ufull in rows:
+        resp = FindingReviewResponse(
+            id=rv.id, finding_id=rv.finding_id, reviewer_id=rv.reviewer_id,
+            reviewer_username=uname, reviewer_full_name=ufull, status=rv.status,
+            created_at=rv.created_at, updated_at=rv.updated_at,
+        )
+        reviews.append(resp)
+        if rv.reviewer_id == current_user.id:
+            my_review = resp
+        # Author's own review (shouldn't exist) never counts toward approvals.
+        if rv.reviewer_id != finding.created_by:
+            if rv.status == "APPROVED":
+                approvals += 1
+            elif rv.status == "CHANGES_REQUESTED":
+                changes_requested += 1
+
+    required, min_approvals = await get_peer_review_config(db)
+    return {
+        "reviews": [r.model_dump() for r in reviews],
+        "my_review": my_review.model_dump() if my_review else None,
+        "approvals": approvals,
+        "changes_requested": changes_requested,
+        "required": required,
+        "min_approvals": min_approvals,
+        "satisfied": (not required) or approvals >= min_approvals,
+        "author_id": finding.created_by,
+        "is_author": finding.created_by == current_user.id,
+    }
+
+
+@router.post("/{finding_id}/reviews", response_model=FindingReviewResponse)
+async def submit_finding_review(
+    finding_id: str,
+    body: FindingReviewCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Submit or update the current user's peer review of a finding. Authors may
+    not review their own finding (two-person rule)."""
+    from models.finding_review import FindingReview
+    status_val = (body.status or "").strip().upper()
+    if status_val not in ("APPROVED", "CHANGES_REQUESTED"):
+        raise HTTPException(status_code=400, detail="status must be APPROVED or CHANGES_REQUESTED")
+
+    finding = await _load_finding_for_review(finding_id, db, current_user, write=True)
+    if finding.created_by == current_user.id:
+        raise HTTPException(status_code=403, detail="You cannot peer-review your own finding.")
+
+    existing = (await db.execute(
+        select(FindingReview).where(
+            FindingReview.finding_id == finding_id,
+            FindingReview.reviewer_id == current_user.id,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        existing.status = status_val
+        review = existing
+    else:
+        review = FindingReview(
+            finding_id=finding_id, reviewer_id=current_user.id,
+            status=status_val,
+        )
+        db.add(review)
+    await db.commit()
+    await db.refresh(review)
+
+    try:
+        await create_activity_log(
+            db, engagement_id=finding.engagement_id, user_id=current_user.id,
+            action="reviewed_finding", resource_type="finding", resource_id=finding.id,
+            resource_name=finding.title,
+            details=f"Peer review: {status_val.replace('_', ' ').lower()} on '{finding.title}'",
+        )
+    except Exception:
+        pass
+    return await _review_to_response(db, review)
+
+
+@router.delete("/{finding_id}/reviews/mine", status_code=status.HTTP_204_NO_CONTENT)
+async def withdraw_finding_review(
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Withdraw the current user's review of a finding."""
+    from models.finding_review import FindingReview
+    existing = (await db.execute(
+        select(FindingReview).where(
+            FindingReview.finding_id == finding_id,
+            FindingReview.reviewer_id == current_user.id,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+    return None

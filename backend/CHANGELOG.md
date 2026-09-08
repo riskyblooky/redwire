@@ -51,6 +51,15 @@ section becomes one release entry.
   everything.
 
 ### Added
+- **Peer review for findings** — operators can now review a finding and record an
+  **Approve** or **Request changes** verdict from the finding's sidebar
+  (discussion stays in the finding's comment threads). A new admin policy
+  (**Admin → Permissions → Finding peer
+  review**) can require a configurable number of independent approvals before a
+  finding may be marked **Verified**. When required, the verify action is blocked
+  (for everyone, including team leads and admins) until the threshold is met; a
+  finding's author can never approve their own work. The sidebar shows approval
+  progress, who reviewed, and how many more approvals are needed.
 - **Effort / time-on-task metrics** — the Analytics page now shows estimated
   active time per work type (findings, test cases, assets, notes), derived from real
   editing activity (the visibility+interaction-gated heartbeat now records which

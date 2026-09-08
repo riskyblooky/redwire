@@ -73,6 +73,7 @@ import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialo
 import { RegistrationCodeManagement } from '@/components/admin/registration-codes';
 import { PermissionsManagement } from '@/components/admin/permissions-management';
 import { StatsScopeSettings } from '@/components/admin/stats-scope-settings';
+import { PeerReviewSettings } from '@/components/admin/peer-review-settings';
 import { TypeManagement } from '@/components/admin/type-management';
 import { AuthSettingsManagement } from '@/components/admin/auth-settings';
 import { ApiTokenManagement } from '@/components/admin/api-token-management';
@@ -666,6 +667,7 @@ export default function AdminPage() {
                     {show('permissions') && (
 <TabsContent value="permissions" className="space-y-6">
                         <StatsScopeSettings />
+                        <PeerReviewSettings />
                         <PermissionsManagement />
                     </TabsContent>
 )}

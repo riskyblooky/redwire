@@ -193,3 +193,31 @@ export function useUpdateStatsScopeMode() {
     });
 }
 
+// ── Peer review policy (findings need N non-author approvals before VERIFIED) ──
+
+export interface PeerReviewConfig {
+    required: boolean;
+    min_approvals: number;
+}
+
+export function usePeerReviewConfig() {
+    return useQuery<PeerReviewConfig>({
+        queryKey: ['admin', 'peer-review'],
+        queryFn: async () => (await api.get('/admin/settings/peer-review')).data,
+        staleTime: 60_000,
+    });
+}
+
+export function useUpdatePeerReviewConfig() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (cfg: PeerReviewConfig) =>
+            (await api.put('/admin/settings/peer-review', cfg)).data as PeerReviewConfig,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin', 'peer-review'] });
+            // Every finding's review summary depends on this policy.
+            queryClient.invalidateQueries({ queryKey: ['findings'] });
+        },
+    });
+}
+

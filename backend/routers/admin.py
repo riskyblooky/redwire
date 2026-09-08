@@ -680,6 +680,53 @@ async def update_stats_scope_mode(
         ))
     await db.commit()
 
+
+class PeerReviewConfigResponse(BaseModel):
+    required: bool
+    min_approvals: int
+
+
+class PeerReviewConfigUpdate(BaseModel):
+    required: bool
+    min_approvals: int = Field(2, ge=1, le=20)
+
+
+@router.get(
+    "/settings/peer-review",
+    response_model=PeerReviewConfigResponse,
+    dependencies=[Depends(require_roles(ADMIN_ROLES))],
+)
+async def read_peer_review_config(db: AsyncSession = Depends(get_db)):
+    from utils.peer_review import get_peer_review_config
+    required, min_approvals = await get_peer_review_config(db)
+    return PeerReviewConfigResponse(required=required, min_approvals=min_approvals)
+
+
+@router.put(
+    "/settings/peer-review",
+    response_model=PeerReviewConfigResponse,
+    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+)
+async def update_peer_review_config(
+    payload: PeerReviewConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from utils.peer_review import REQUIRED_KEY, MIN_APPROVALS_KEY
+
+    async def _set(key: str, value: str):
+        row = (await db.execute(select(AuthSetting).where(AuthSetting.key == key))).scalar_one_or_none()
+        if row:
+            row.value = value
+            row.updated_by = current_user.id
+        else:
+            db.add(AuthSetting(key=key, value=value, is_encrypted=False, updated_by=current_user.id))
+
+    await _set(REQUIRED_KEY, "true" if payload.required else "false")
+    await _set(MIN_APPROVALS_KEY, str(payload.min_approvals))
+    await db.commit()
+    return PeerReviewConfigResponse(required=payload.required, min_approvals=payload.min_approvals)
+
     from utils.collaboration import create_activity_log
     await create_activity_log(
         db=db,

@@ -58,6 +58,8 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useFinding, useUpdateFinding, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { useFindingReviews } from '@/lib/hooks/use-finding-reviews';
+import { FindingPeerReview } from '@/components/findings/finding-peer-review';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { severityRating } from '@/lib/cvss31';
 import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
@@ -142,6 +144,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
     const { data: finding, isLoading, error } = useFinding(id);
     const { data: engagement } = useEngagement(finding?.engagement_id || '');
+    const { data: reviewSummary } = useFindingReviews(id);
     const updateFinding = useUpdateFinding();
     const deleteFinding = useDeleteFinding();
     const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -334,6 +337,15 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                 setShowStatusRemediatePrompt(true);
                 return;
             }
+        }
+        // Peer-review gate: block the verify early (backend also enforces this)
+        if (newStatus === 'VERIFIED' && reviewSummary && reviewSummary.required && !reviewSummary.satisfied) {
+            const remaining = reviewSummary.min_approvals - reviewSummary.approvals;
+            toast.error(
+                `Peer review required: this finding needs ${remaining} more approval${remaining === 1 ? '' : 's'} ` +
+                `(${reviewSummary.approvals}/${reviewSummary.min_approvals}) before it can be verified.`
+            );
+            return;
         }
         // Warn before verifying a finding that still has unresolved discussion threads
         if (newStatus === 'VERIFIED' && finding && (finding.unresolved_thread_count || 0) > 0) {
@@ -746,6 +758,8 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                             </SelectContent>
                                         </Select>
                                     </div>
+
+                                    <FindingPeerReview findingId={id} />
 
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
