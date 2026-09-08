@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 
 // URL → tracked resource. Detail/edit routes like /findings/{id} (and
@@ -12,12 +12,23 @@ const RESOURCE_ROUTES: Record<string, string> = {
     testcases: 'testcase',
     assets: 'asset',
 };
-function resourceFromPath(pathname: string | null): { resource_type: string; resource_id: string } | null {
+function resourceFromUrl(
+    pathname: string | null,
+    search: URLSearchParams | null,
+): { resource_type: string; resource_id: string } | null {
     const m = /^\/(findings|testcases|assets)\/([^/?#]+)/.exec(pathname || '');
-    if (!m) return null;
-    const id = m[2];
-    if (!id || id === 'new') return null;
-    return { resource_type: RESOURCE_ROUTES[m[1]], resource_id: id };
+    if (m) {
+        const id = m[2];
+        if (!id || id === 'new') return null;
+        return { resource_type: RESOURCE_ROUTES[m[1]], resource_id: id };
+    }
+    // Notes live under the engagement page as ?tab=notes&noteId=… (synced to the
+    // URL by the notes tab), so they need the query string, not just the path.
+    if (search && search.get('tab') === 'notes') {
+        const noteId = search.get('noteId');
+        if (noteId) return { resource_type: 'note', resource_id: noteId };
+    }
+    return null;
 }
 
 /**
@@ -32,8 +43,11 @@ function resourceFromPath(pathname: string | null): { resource_type: string; res
  */
 export function useActivityHeartbeat(enabled: boolean = true) {
     const pathname = usePathname();
-    const pathRef = useRef<string | null>(pathname);
-    pathRef.current = pathname;
+    const searchParams = useSearchParams();
+    // Recompute the open resource each render and stash it, so the interval's
+    // send() closure always reads the current page (path + query).
+    const resourceRef = useRef<{ resource_type: string; resource_id: string } | null>(null);
+    resourceRef.current = resourceFromUrl(pathname, searchParams);
     const lastInteraction = useRef<number>(Date.now());
     const lastSent = useRef<number>(0);
 
@@ -53,7 +67,7 @@ export function useActivityHeartbeat(enabled: boolean = true) {
             if (now - lastInteraction.current > IDLE_MS) return;   // idle → skip
             if (now - lastSent.current < MIN_GAP) return;          // throttle
             lastSent.current = now;
-            api.post('/users/me/heartbeat', resourceFromPath(pathRef.current) || {}).catch(() => {});
+            api.post('/users/me/heartbeat', resourceRef.current || {}).catch(() => {});
         };
 
         send(); // fresh page load / mount counts as active

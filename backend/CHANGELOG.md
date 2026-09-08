@@ -52,7 +52,7 @@ section becomes one release entry.
 
 ### Added
 - **Effort / time-on-task metrics** — the Analytics page now shows estimated
-  active time per work type (findings, test cases, assets), derived from real
+  active time per work type (findings, test cases, assets, notes), derived from real
   editing activity (the visibility+interaction-gated heartbeat now records which
   record you're working on) and bucketed into sessions. Aggregated and
   anonymised — totals and contributor counts only, never per-person.
