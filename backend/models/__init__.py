@@ -31,6 +31,7 @@ from models.auth_settings import AuthSetting
 from models.ai_settings import AiSetting
 from models.api_token import ApiToken
 from models.version_history import VersionHistory
+from models.activity_ping import ActivityPing
 from models.attack_graph_layout import AttackGraphLayout
 from models.attacker_node import AttackerNode, AttackerNodeEdge
 from models.chain_link import ChainLink
@@ -114,6 +115,7 @@ __all__ = [
     "AiSetting",
     "ApiToken",
     "VersionHistory",
+    "ActivityPing",
     "ConfigurableType",
     "AttackGraphLayout",
     "AttackerNode",

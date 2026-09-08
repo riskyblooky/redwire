@@ -1,19 +1,39 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import api from '@/lib/api';
+
+// URL → tracked resource. Detail/edit routes like /findings/{id} (and
+// /findings/{id}/edit) map to the record the user is working on, so the
+// heartbeat can attribute effort to it. `new` is not a real resource.
+const RESOURCE_ROUTES: Record<string, string> = {
+    findings: 'finding',
+    testcases: 'testcase',
+    assets: 'asset',
+};
+function resourceFromPath(pathname: string | null): { resource_type: string; resource_id: string } | null {
+    const m = /^\/(findings|testcases|assets)\/([^/?#]+)/.exec(pathname || '');
+    if (!m) return null;
+    const id = m[2];
+    if (!id || id === 'new') return null;
+    return { resource_type: RESOURCE_ROUTES[m[1]], resource_id: id };
+}
 
 /**
  * Reports the user as genuinely active by POSTing /users/me/heartbeat — but only
  * while the tab is VISIBLE and the user has actually interacted (mouse/keyboard/
- * scroll/touch) recently. This is what drives `last_active` (the admin online
- * indicator); it deliberately does NOT fire from background polling, so an idle
- * tab left open ages out of "online" instead of looking active forever.
+ * scroll/touch) recently. Drives `last_active` (the admin online indicator), and
+ * when a tracked resource is open (finding/test-case/asset detail/edit) includes
+ * it so the backend records a resource-scoped effort ping (time-on-task).
  *
- * - Active user → a heartbeat roughly every MIN_GAP.
- * - No interaction for IDLE_MS, or tab hidden → heartbeats stop → user ages out.
+ * It deliberately does NOT fire from background polling, so an idle tab left open
+ * ages out of "online" and stops accruing effort time.
  */
 export function useActivityHeartbeat(enabled: boolean = true) {
+    const pathname = usePathname();
+    const pathRef = useRef<string | null>(pathname);
+    pathRef.current = pathname;
     const lastInteraction = useRef<number>(Date.now());
     const lastSent = useRef<number>(0);
 
@@ -33,7 +53,7 @@ export function useActivityHeartbeat(enabled: boolean = true) {
             if (now - lastInteraction.current > IDLE_MS) return;   // idle → skip
             if (now - lastSent.current < MIN_GAP) return;          // throttle
             lastSent.current = now;
-            api.post('/users/me/heartbeat').catch(() => {});
+            api.post('/users/me/heartbeat', resourceFromPath(pathRef.current) || {}).catch(() => {});
         };
 
         send(); // fresh page load / mount counts as active

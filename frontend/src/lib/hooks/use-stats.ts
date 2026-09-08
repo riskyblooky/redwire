@@ -108,6 +108,33 @@ function buildParams(params?: { startDate?: string; endDate?: string; engagement
     return p.toString();
 }
 
+// ─── Effort / time-on-task ───
+
+export interface TimeOnTaskRow {
+    resource_type: string;
+    total_minutes: number;
+    sessions: number;
+    contributors: number;
+    pings: number;
+}
+export interface TimeOnTask {
+    days: number;
+    by_resource_type: TimeOnTaskRow[];
+    total_minutes: number;
+}
+
+export function useTimeOnTask(engagementId?: string, days: number = 30) {
+    return useQuery<TimeOnTask>({
+        queryKey: ['stats', 'time-on-task', engagementId, days],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (engagementId && engagementId !== 'global') params.append('engagement_id', engagementId);
+            params.append('days', String(days));
+            return (await api.get(`/stats/time-on-task?${params.toString()}`)).data;
+        },
+    });
+}
+
 // ─── Existing hooks (enhanced) ───
 
 export function useOverviewStats(engagementId?: string) {

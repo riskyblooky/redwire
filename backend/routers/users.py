@@ -4,7 +4,8 @@ from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel, Field
 from database import get_db
 from models.user import User, UserRole
 from schemas.user import UserResponse, UserSummary, UserCreate, UserUpdate, UserPasswordUpdate, ALLOWED_THEMES, ALLOWED_PALETTES
@@ -92,28 +93,90 @@ async def get_my_global_permissions(
 _HEARTBEAT_INTERVAL = 45  # seconds
 _heartbeat_cache: dict[str, float] = {}
 
+# Separate throttle for the resource activity-ping (per user+resource), so
+# switching resources within the heartbeat window still records a ping.
+_PING_INTERVAL = 30  # seconds
+_ping_cache: dict[str, float] = {}
+
+# Resources whose "actively working on it" time we track for effort metrics.
+_PING_RESOURCE_TYPES = {"finding", "testcase", "asset", "note"}
+
+
+class HeartbeatBody(BaseModel):
+    """Optional resource context — set by the frontend to the record currently
+    open (finding/testcase/asset/note). Enables per-resource time-on-task."""
+    resource_type: Optional[str] = Field(None, max_length=32)
+    resource_id: Optional[str] = Field(None, max_length=64)
+
+
+async def _resolve_ping_engagement_id(db: AsyncSession, resource_type: str, resource_id: str) -> Optional[str]:
+    """Best-effort lookup of the engagement a pinged resource belongs to, so
+    pings can be aggregated per engagement. Returns None if not resolvable."""
+    try:
+        if resource_type == "finding":
+            from models.finding import Finding
+            m = Finding
+        elif resource_type == "testcase":
+            from models.testcase import TestCase
+            m = TestCase
+        elif resource_type == "asset":
+            from models.asset import Asset
+            m = Asset
+        elif resource_type == "note":
+            from models.note import Note
+            m = Note
+        else:
+            return None
+        return (await db.execute(select(m.engagement_id).where(m.id == resource_id))).scalar_one_or_none()
+    except Exception:
+        return None
+
 
 @router.post("/me/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
 async def activity_heartbeat(
+    body: Optional[HeartbeatBody] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Mark the current user as actively using the app *right now*.
+    """Mark the current user as actively using the app *right now*, and — if a
+    resource is open — record a resource-scoped activity ping.
 
     The frontend sends this only while the tab is visible and the user has
     genuinely interacted recently (mouse/keyboard), so `last_active` reflects
     real activity rather than any authenticated request (which background
-    polling would keep falsely fresh). Throttled per-user to limit writes.
+    polling would keep falsely fresh). When `body.resource_type`/`resource_id`
+    name the record the user has open, an append-only ActivityPing is written
+    (throttled per user+resource) — the substrate for time-on-task metrics.
+    Both writes are throttled and best-effort.
     """
     import time as _time
-    now = _time.monotonic()
-    if now - _heartbeat_cache.get(current_user.id, 0.0) < _HEARTBEAT_INTERVAL:
-        return
-    _heartbeat_cache[current_user.id] = now
-    from sqlalchemy import update as _update
     from datetime import datetime as _dt
-    await db.execute(_update(User).where(User.id == current_user.id).values(last_active=_dt.utcnow()))
-    await db.commit()
+    now = _time.monotonic()
+
+    # 1. Presence: bump last_active (per-user throttle).
+    if now - _heartbeat_cache.get(current_user.id, 0.0) >= _HEARTBEAT_INTERVAL:
+        _heartbeat_cache[current_user.id] = now
+        from sqlalchemy import update as _update
+        await db.execute(_update(User).where(User.id == current_user.id).values(last_active=_dt.utcnow()))
+        await db.commit()
+
+    # 2. Effort: resource-scoped ping (per user+resource throttle).
+    if body and body.resource_type in _PING_RESOURCE_TYPES and body.resource_id:
+        pkey = f"{current_user.id}:{body.resource_type}:{body.resource_id}"
+        if now - _ping_cache.get(pkey, 0.0) >= _PING_INTERVAL:
+            _ping_cache[pkey] = now
+            try:
+                from models.activity_ping import ActivityPing
+                eng_id = await _resolve_ping_engagement_id(db, body.resource_type, body.resource_id)
+                db.add(ActivityPing(
+                    user_id=current_user.id,
+                    engagement_id=eng_id,
+                    resource_type=body.resource_type,
+                    resource_id=body.resource_id,
+                ))
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
 
 @router.put("/me", response_model=UserResponse)

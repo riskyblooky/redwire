@@ -725,3 +725,78 @@ async def get_client_stats(
     clients.sort(key=lambda x: x['total_findings'], reverse=True)
 
     return {"clients": clients}
+
+
+@router.get("/time-on-task")
+async def time_on_task(
+    engagement_id: Optional[str] = None,
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Estimated effort per resource type ("time spent writing findings", etc.),
+    derived from the append-only ActivityPing stream by bucketing each user's
+    consecutive pings on a resource type into sessions (idle-timeout) and summing
+    the in-session elapsed time plus a nominal tail per session.
+
+    Aggregate + anonymised: totals per resource_type across contributors, with a
+    distinct-contributor count — never per-named-user. Engagement-scoped via the
+    standard stats scoping (admins / VIEW_ALL_ENGAGEMENTS see across engagements).
+    """
+    from collections import defaultdict
+    from models.activity_ping import ActivityPing
+
+    is_admin, allowed, _strip = await apply_stats_scope(engagement_id, db, current_user)
+    days = max(1, min(days, 365))
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    q = select(
+        ActivityPing.user_id, ActivityPing.resource_type, ActivityPing.created_at,
+    ).where(ActivityPing.created_at >= cutoff)
+    q = scope_to_assignments(q, ActivityPing.engagement_id, engagement_id, is_admin, allowed)
+    q = q.order_by(ActivityPing.user_id, ActivityPing.resource_type, ActivityPing.created_at)
+    rows = (await db.execute(q)).all()
+
+    IDLE_SECONDS = 10 * 60          # gap > 10 min → new session
+    TAIL_SECONDS = 60              # nominal work each session's final ping represents
+    MIN_CONTRIBUTORS = 1          # raise for stricter anonymity (hide thin cohorts)
+
+    series: dict = defaultdict(list)
+    for user_id, rtype, ts in rows:
+        series[(user_id, rtype)].append(ts)
+
+    per_type: dict = defaultdict(lambda: {"seconds": 0.0, "sessions": 0, "users": set(), "pings": 0})
+    for (user_id, rtype), times in series.items():
+        agg = per_type[rtype]
+        agg["users"].add(user_id)
+        agg["pings"] += len(times)
+        sessions = 1 if times else 0
+        secs = 0.0
+        for i in range(1, len(times)):
+            gap = (times[i] - times[i - 1]).total_seconds()
+            if gap <= IDLE_SECONDS:
+                secs += gap
+            else:
+                sessions += 1
+        secs += sessions * TAIL_SECONDS
+        agg["seconds"] += secs
+        agg["sessions"] += sessions
+
+    by_type = []
+    for rtype, agg in sorted(per_type.items()):
+        contributors = len(agg["users"])
+        if contributors < MIN_CONTRIBUTORS:
+            continue
+        by_type.append({
+            "resource_type": rtype,
+            "total_minutes": round(agg["seconds"] / 60.0, 1),
+            "sessions": agg["sessions"],
+            "contributors": contributors,
+            "pings": agg["pings"],
+        })
+
+    return {
+        "days": days,
+        "by_resource_type": by_type,
+        "total_minutes": round(sum(r["total_minutes"] for r in by_type), 1),
+    }

@@ -54,6 +54,7 @@ import {
     useTestCaseStats,
     useCleanupStats,
     useClientStats,
+    useTimeOnTask,
 } from '@/lib/hooks/use-stats';
 import { useEngagementContext } from '@/stores/engagement-store';
 import { useEngagements } from '@/lib/hooks/use-engagements';
@@ -187,6 +188,7 @@ export default function AnalyticsOverview() {
     const { data: tcStats, isLoading: tcLoading } = useTestCaseStats(dateRangeParams);
     const { data: cleanupStats, isLoading: cleanupLoading } = useCleanupStats(dateRangeParams);
     const { data: clientStats, isLoading: clientsLoading } = useClientStats(dateRangeParams);
+    const { data: timeOnTask, isLoading: totLoading } = useTimeOnTask(engagementId, queryParams.days);
 
     const handleCustomDateApply = () => {
         if (customStartDate && customEndDate) {
@@ -522,6 +524,48 @@ export default function AnalyticsOverview() {
                                 </CardContent>
                             </Card>
                         </div>
+
+                        {/* Effort / Time on Task */}
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-white text-sm">Effort — Time on Task</CardTitle>
+                                <CardDescription className="text-xs">
+                                    Estimated active time per work type, from real editing activity. Aggregated and anonymised — never per-person.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {totLoading ? (
+                                    <LoadingPlaceholder height={120} />
+                                ) : !timeOnTask || timeOnTask.by_resource_type.length === 0 ? (
+                                    <EmptyState message="No activity recorded yet for this period." />
+                                ) : (() => {
+                                    const rows = [...timeOnTask.by_resource_type].sort((a, b) => b.total_minutes - a.total_minutes);
+                                    const max = Math.max(...rows.map(r => r.total_minutes), 1);
+                                    const fmt = (m: number) => m >= 60 ? `${(m / 60).toFixed(1)}h` : `${Math.round(m)}m`;
+                                    const label: Record<string, string> = { finding: 'Findings', testcase: 'Test Cases', asset: 'Assets', note: 'Notes' };
+                                    return (
+                                        <div className="space-y-3">
+                                            {rows.map((r) => (
+                                                <div key={r.resource_type}>
+                                                    <div className="flex items-center justify-between text-xs mb-1">
+                                                        <span className="text-slate-300 font-medium">{label[r.resource_type] || r.resource_type}</span>
+                                                        <span className="text-slate-400">{fmt(r.total_minutes)}
+                                                            <span className="text-slate-600 ml-2">{r.contributors} {r.contributors === 1 ? 'contributor' : 'contributors'} · {r.sessions} sessions</span>
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                                                        <div className="h-full rounded-full bg-indigo-500/70" style={{ width: `${Math.max(3, (r.total_minutes / max) * 100)}%` }} />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <div className="pt-1 text-[11px] text-slate-500">
+                                                ~{fmt(timeOnTask.total_minutes)} total over the last {timeOnTask.days} days · estimated from active-editing sessions.
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </CardContent>
+                        </Card>
 
                         {/* Test Case Coverage + Cleanup */}
                         <div className="grid gap-6 lg:grid-cols-2">

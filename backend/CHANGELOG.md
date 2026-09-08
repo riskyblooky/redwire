@@ -51,6 +51,11 @@ section becomes one release entry.
   everything.
 
 ### Added
+- **Effort / time-on-task metrics** — the Analytics page now shows estimated
+  active time per work type (findings, test cases, assets), derived from real
+  editing activity (the visibility+interaction-gated heartbeat now records which
+  record you're working on) and bucketed into sessions. Aggregated and
+  anonymised — totals and contributor counts only, never per-person.
 - **Edit text attachments in-app** — text files (`.txt`, `.md`, `.log`, …) now
   have an "Edit Text" action that turns the preview area into the editor in place
   (no popup) and saves back over the attachment, alongside an inline text preview.
