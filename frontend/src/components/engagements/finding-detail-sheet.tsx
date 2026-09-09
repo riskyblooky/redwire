@@ -370,7 +370,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                 <SheetContent
                     side="right"
                     nonModal={nonModal}
-                    className="w-full sm:max-w-2xl bg-slate-950 border-slate-800 p-0 overflow-y-auto"
+                    className="w-full sm:max-w-[40vw] bg-slate-950 border-slate-800 p-0 overflow-y-auto"
                 >
                     {isLoading || !finding ? (
                         <div className="flex items-center justify-center h-full">
