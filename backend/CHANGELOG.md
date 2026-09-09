@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.5.6] — Unreleased
+## [1.5.6] — 2026-09-09
 
 ### Security
 - **New users no longer get platform-wide engagement visibility by default** —
