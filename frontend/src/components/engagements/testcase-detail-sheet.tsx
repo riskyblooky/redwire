@@ -46,6 +46,7 @@ import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-fiel
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 import { TagList } from '@/components/ui/tag-list';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import { Shield } from 'lucide-react';
 import {
@@ -374,11 +375,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 {/* Description */}
                                 {(testcase.description || canEdit) && (
                                     <>
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <FileText className="h-4 w-4 text-primary" />
-                                                <h4 className="text-sm font-bold text-white">Description</h4>
-                                            </div>
+                                        <CollapsibleSection title="Description" icon={FileText} iconColor="text-primary">
                                             <InlineMarkdownField
                                                 value={testcase.description || ''}
                                                 canEdit={canEdit}
@@ -388,7 +385,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add a description…"
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -396,11 +393,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 {/* Steps */}
                                 {(testcase.steps || canEdit) && (
                                     <>
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <Terminal className="h-4 w-4 text-blue-400" />
-                                                <h4 className="text-sm font-bold text-white">Execution Steps</h4>
-                                            </div>
+                                        <CollapsibleSection title="Execution Steps" icon={Terminal} iconColor="text-blue-400">
                                             <InlineMarkdownField
                                                 value={testcase.steps || ''}
                                                 canEdit={canEdit}
@@ -410,7 +403,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 previewWrapperClassName="bg-slate-900/40 p-2 rounded-lg border border-slate-800/60 overflow-hidden"
                                                 emptyText="Double-click to add execution steps…"
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -418,11 +411,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 {/* Expected result */}
                                 {(testcase.expected_result || canEdit) && (
                                     <>
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <CheckCircle className="h-4 w-4 text-green-400" />
-                                                <h4 className="text-sm font-bold text-white">Expected Result</h4>
-                                            </div>
+                                        <CollapsibleSection title="Expected Result" icon={CheckCircle} iconColor="text-green-400">
                                             <InlineMarkdownField
                                                 value={testcase.expected_result || ''}
                                                 canEdit={canEdit}
@@ -432,29 +421,29 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-lg overflow-hidden"
                                                 emptyText="Double-click to add the expected result…"
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* Execution Result — record pass/fail/no-verdict + actual result */}
-                                <div className={cn('rounded-lg border border-l-2 p-3',
-                                    testcase.is_executed
-                                        ? (testcase.is_successful === true ? 'bg-green-500/[0.04] border-l-green-500/60 border-slate-800'
-                                            : testcase.is_successful === false ? 'bg-red-500/[0.04] border-l-red-500/60 border-slate-800'
-                                                : 'bg-slate-500/[0.04] border-l-slate-500/60 border-slate-800')
-                                        : 'bg-slate-900/40 border-l-blue-500/50 border-slate-800')}>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                                            <Play className="h-4 w-4 text-blue-400" /> Execution Result
-                                        </h4>
-                                        {testcase.is_executed && (
-                                            <Badge className={cn('text-[10px] px-2 py-0.5', testcase.is_successful === true ? 'bg-green-500/10 text-green-400 border-green-500/20' : testcase.is_successful === false ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20')}>
-                                                {testcase.is_successful === true ? 'Passed' : testcase.is_successful === false ? 'Failed' : 'No verdict'}
-                                            </Badge>
-                                        )}
-                                    </div>
-
+                                <CollapsibleSection
+                                    title="Execution Result"
+                                    icon={Play}
+                                    iconColor="text-blue-400"
+                                    right={testcase.is_executed && (
+                                        <Badge className={cn('text-[10px] px-2 py-0.5', testcase.is_successful === true ? 'bg-green-500/10 text-green-400 border-green-500/20' : testcase.is_successful === false ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20')}>
+                                            {testcase.is_successful === true ? 'Passed' : testcase.is_successful === false ? 'Failed' : 'No verdict'}
+                                        </Badge>
+                                    )}
+                                    className={cn('rounded-lg border border-l-2 p-3',
+                                        testcase.is_executed
+                                            ? (testcase.is_successful === true ? 'bg-green-500/[0.04] border-l-green-500/60 border-slate-800'
+                                                : testcase.is_successful === false ? 'bg-red-500/[0.04] border-l-red-500/60 border-slate-800'
+                                                    : 'bg-slate-500/[0.04] border-l-slate-500/60 border-slate-800')
+                                            : 'bg-slate-900/40 border-l-blue-500/50 border-slate-800')}
+                                    contentClassName="mt-3"
+                                >
                                     {!testcase.is_executed && !testcase.actual_result && !isExecuting ? (
                                         <div className="text-center py-4">
                                             <p className="text-slate-400 mb-3 text-xs">Not executed yet.</p>
@@ -509,18 +498,14 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                             )}
                                         </div>
                                     )}
-                                </div>
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Notes (the test case's own notes field) */}
                                 {(testcase.notes || canEdit) && (
                                     <>
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <StickyNote className="h-4 w-4 text-teal-400" />
-                                                <h4 className="text-sm font-bold text-white">Notes</h4>
-                                            </div>
+                                        <CollapsibleSection title="Notes" icon={StickyNote} iconColor="text-teal-400">
                                             <InlineMarkdownField
                                                 value={testcase.notes || ''}
                                                 canEdit={canEdit}
@@ -530,46 +515,41 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add notes…"
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* Evidence gallery */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <Layers className="h-4 w-4 text-primary" />
-                                            <h4 className="text-sm font-bold text-white">Evidence</h4>
+                                <CollapsibleSection
+                                    title="Evidence"
+                                    icon={Layers}
+                                    iconColor="text-primary"
+                                    defaultOpen={false}
+                                    right={<Badge variant="outline" className="bg-primary/10 text-primary border-none px-1.5 h-5 text-[10px]">{testcase.evidence?.length || 0} files</Badge>}
+                                    contentClassName="space-y-3"
+                                >
+                                    {canEdit && <EvidenceUpload testcaseId={testcase.id} />}
+                                    {testcase.evidence && testcase.evidence.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {testcase.evidence.map((ev: any) => (
+                                                <EvidenceCard key={ev.id} evidence={ev} findingId={testcase.id} />
+                                            ))}
                                         </div>
-                                        <Badge variant="outline" className="bg-primary/10 text-primary border-none px-1.5 h-5 text-[10px]">
-                                            {testcase.evidence?.length || 0} files
-                                        </Badge>
-                                    </div>
-                                    <div className="space-y-3">
-                                        {canEdit && <EvidenceUpload testcaseId={testcase.id} />}
-                                        {testcase.evidence && testcase.evidence.length > 0 ? (
-                                            <div className="space-y-2">
-                                                {testcase.evidence.map((ev: any) => (
-                                                    <EvidenceCard key={ev.id} evidence={ev} findingId={testcase.id} />
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center py-4 text-slate-500 border border-dashed border-slate-800 rounded-lg bg-slate-950/20">
-                                                <Plus className="h-6 w-6 mx-auto mb-1 opacity-20" />
-                                                <p className="text-[11px]">No evidence attached</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                                    ) : (
+                                        <div className="text-center py-4 text-slate-500 border border-dashed border-slate-800 rounded-lg bg-slate-950/20">
+                                            <Plus className="h-6 w-6 mx-auto mb-1 opacity-20" />
+                                            <p className="text-[11px]">No evidence attached</p>
+                                        </div>
+                                    )}
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Classification (portion marking) */}
                                 {canEdit && (
                                     <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Classification Marking</h4>
+                                        <CollapsibleSection title="Classification Marking" icon={Shield} iconColor="text-slate-400">
                                             <EntityClassificationField
                                                 engagementId={testcase.engagement_id}
                                                 level={testcase.classification_level || null}
@@ -584,7 +564,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                     }
                                                 }}
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -592,13 +572,14 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 {/* ATT&CK Techniques */}
                                 {(canEdit || (testcase.attack_technique_ids?.length ?? 0) > 0) && (
                                     <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                ATT&amp;CK Techniques
-                                                {(testcase.attack_technique_ids?.length ?? 0) > 0 && (
-                                                    <span className="text-slate-600 ml-1">({testcase.attack_technique_ids?.length})</span>
-                                                )}
-                                            </h4>
+                                        <CollapsibleSection
+                                            title="ATT&CK Techniques"
+                                            icon={Shield}
+                                            iconColor="text-purple-400"
+                                            right={(testcase.attack_technique_ids?.length ?? 0) > 0 ? (
+                                                <span className="text-[10px] text-slate-600">({testcase.attack_technique_ids?.length})</span>
+                                            ) : undefined}
+                                        >
                                             {canEdit ? (
                                                 <TechniquePicker
                                                     value={testcase.attack_technique_ids || []}
@@ -628,15 +609,17 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                     })}
                                                 </div>
                                             )}
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
-                                {/* Linked Resources header */}
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Linked Resources</h4>
-                                    {canEdit && (
+                                {/* Linked Resources — the colored icon carries the type */}
+                                <CollapsibleSection
+                                    title="Linked Resources"
+                                    icon={LinkIcon}
+                                    iconColor="text-indigo-400"
+                                    right={canEdit && (
                                         <Button
                                             variant="ghost"
                                             size="sm"
@@ -647,9 +630,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                             + Link
                                         </Button>
                                     )}
-                                </div>
-
-                                {/* Linked resources — the colored icon carries the type */}
+                                >
                                 {((testcase.findings?.length ?? 0) + (testcase.assets?.length ?? 0) + (testcase.vault_items?.length ?? 0) + (testcase.cleanup_artifacts?.length ?? 0) + intelItems.length + infraItems.length) > 0 ? (
                                     <div className="space-y-1.5 max-h-72 overflow-y-auto">
                                         {(testcase.findings ?? []).map((f: any) => (
@@ -786,6 +767,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                         Nothing linked yet
                                     </div>
                                 )}
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 
@@ -822,7 +804,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 )}
 
                                 {/* Metadata */}
-                                <div className="space-y-3">
+                                <CollapsibleSection title="Metadata" icon={Clock} iconColor="text-slate-400" contentClassName="space-y-3">
                                     <div className="flex items-center justify-between text-[10px]">
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <User className="h-3 w-3" /> Created By
@@ -849,7 +831,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                         </span>
                                         <span className="text-slate-300">{parseUTCDate(testcase.created_at).toLocaleString()}</span>
                                     </div>
-                                </div>
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 

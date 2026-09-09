@@ -26,6 +26,7 @@ import { useNotes } from '@/lib/hooks/use-notes';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import {
     useLinkAssetToFinding, useUnlinkAssetFromFinding,
@@ -373,8 +374,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                             <div className="flex-1 p-5 space-y-5 overflow-y-auto">
 
                                 {/* Status Toggles */}
-                                <div className="space-y-2">
-                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Status</h4>
+                                <CollapsibleSection title="Status" icon={Shield} iconColor="text-emerald-400">
                                     <div className="grid grid-cols-3 gap-2">
                                         {([
                                             { field: 'is_scanned' as const, label: 'Scanned', icon: Radar, activeColor: 'bg-blue-500/10 border-blue-500/30 text-blue-400', active: asset.is_scanned, sub: asset.is_scanned ? 'Scanned' : 'Not scanned' },
@@ -398,18 +398,14 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                             </button>
                                         ))}
                                     </div>
-                                </div>
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Description */}
                                 {(asset.description || canEdit) && (
                                     <>
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2 text-white">
-                                                <FileText className="h-4 w-4 text-primary" />
-                                                <h4 className="text-sm font-bold">Description</h4>
-                                            </div>
+                                        <CollapsibleSection title="Description" icon={FileText} iconColor="text-primary">
                                             <InlineMarkdownField
                                                 value={asset.description || ''}
                                                 canEdit={canEdit}
@@ -419,7 +415,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                 previewWrapperClassName="bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add a description…"
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -427,11 +423,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                 {/* Notes */}
                                 {(asset.notes || canEdit) && (
                                     <>
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2 text-white">
-                                                <StickyNote className="h-4 w-4 text-teal-400" />
-                                                <h4 className="text-sm font-bold">Internal Notes</h4>
-                                            </div>
+                                        <CollapsibleSection title="Internal Notes" icon={StickyNote} iconColor="text-teal-400">
                                             <InlineMarkdownField
                                                 value={asset.notes || ''}
                                                 canEdit={canEdit}
@@ -441,28 +433,26 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                 previewWrapperClassName="bg-slate-900/40 p-3 rounded-lg border border-slate-800/60"
                                                 emptyText="Double-click to add internal notes…"
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* Ports */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                            Ports {(asset.ports?.length ?? 0) > 0 && <span className="text-slate-600 ml-1">({asset.ports?.length})</span>}
-                                        </h4>
-                                        {canEdit && (
-                                            <button
-                                                onClick={() => setShowAddPort(!showAddPort)}
-                                                className="text-[10px] text-primary hover:text-primary/80 transition-colors flex items-center gap-0.5"
-                                            >
-                                                {showAddPort ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                                                {showAddPort ? 'Cancel' : 'Add'}
-                                            </button>
-                                        )}
-                                    </div>
-
+                                <CollapsibleSection
+                                    title={`Ports${(asset.ports?.length ?? 0) > 0 ? ` (${asset.ports?.length})` : ''}`}
+                                    icon={Server}
+                                    iconColor="text-cyan-400"
+                                    right={canEdit && (
+                                        <button
+                                            onClick={() => setShowAddPort(!showAddPort)}
+                                            className="text-[10px] text-primary hover:text-primary/80 transition-colors flex items-center gap-0.5"
+                                        >
+                                            {showAddPort ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                                            {showAddPort ? 'Cancel' : 'Add'}
+                                        </button>
+                                    )}
+                                >
                                     {showAddPort && (
                                         <div className="mb-3 p-3 rounded-lg bg-slate-900/40 border border-slate-800/60 space-y-2">
                                             <div className="flex gap-2">
@@ -550,20 +540,18 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                             </div>
                                         )}
                                     </div>
-                                </div>
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* ServiceNow CMDB */}
                                 {(snowLoading || (snowData && snowData.results?.length > 0)) && (
                                     <>
-                                        <div>
-                                            <div className="flex items-center justify-between mb-2">
-                                                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                                                    <Globe className="h-3 w-3" /> ServiceNow CMDB
-                                                    {snowData?.results?.length > 0 && <span className="text-slate-600 ml-1">({snowData.results.length})</span>}
-                                                </h4>
-                                            </div>
+                                        <CollapsibleSection
+                                            title={`ServiceNow CMDB${snowData?.results?.length > 0 ? ` (${snowData.results.length})` : ''}`}
+                                            icon={Globe}
+                                            iconColor="text-orange-400"
+                                        >
                                             {snowLoading ? (
                                                 <div className="flex items-center justify-center py-4">
                                                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -597,15 +585,18 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                     ))}
                                                 </div>
                                             )}
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
-                                {/* Linked Resources header */}
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Linked Resources</h4>
-                                    {canEdit && (
+                                {/* Linked Resources */}
+                                <CollapsibleSection
+                                    title="Linked Resources"
+                                    icon={LinkIcon}
+                                    iconColor="text-indigo-400"
+                                    contentClassName="space-y-3"
+                                    right={canEdit && (
                                         <Button
                                             variant="ghost"
                                             size="sm"
@@ -616,7 +607,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                             + Link
                                         </Button>
                                     )}
-                                </div>
+                                >
 
                                 {/* Associated Findings */}
                                 <div>
@@ -730,16 +721,17 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                     </>
                                 )}
 
+                                </CollapsibleSection>
+
+                                <Separator className="bg-slate-800/60" />
+
                                 <CustomFieldsDisplay entity="asset" value={asset.custom_fields} />
 
                                 {/* Linked Notes */}
                                 {linkedNotes.length > 0 && (
                                     <>
                                         <Separator className="bg-slate-800/60" />
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                Linked Notes <span className="text-slate-600 ml-1">({linkedNotes.length})</span>
-                                            </h4>
+                                        <CollapsibleSection title={`Linked Notes (${linkedNotes.length})`} icon={StickyNote} iconColor="text-teal-400">
                                             <div className="space-y-1.5">
                                                 {linkedNotes.map((note: any) => (
                                                     <Link
@@ -753,14 +745,14 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                     </Link>
                                                 ))}
                                             </div>
-                                        </div>
+                                        </CollapsibleSection>
                                     </>
                                 )}
 
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Metadata */}
-                                <div className="space-y-3">
+                                <CollapsibleSection title="Metadata" icon={Clock} iconColor="text-slate-400" contentClassName="space-y-3">
                                     <div className="flex items-center justify-between text-[10px]">
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <User className="h-3 w-3" /> Created By
@@ -787,7 +779,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                         </span>
                                         <span className="text-slate-300">{parseUTCDate(asset.created_at).toLocaleString()}</span>
                                     </div>
-                                </div>
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 

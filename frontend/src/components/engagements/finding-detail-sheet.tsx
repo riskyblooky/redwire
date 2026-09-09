@@ -49,6 +49,7 @@ import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inlin
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 import { InlineTextField } from '@/components/ui/inline/inline-text-field';
 import { InlineCvssField } from '@/components/ui/inline/inline-cvss-field';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { EvidenceUpload } from '@/components/findings/evidence-upload';
 import { EvidenceCard } from '@/components/findings/evidence-card';
@@ -111,22 +112,6 @@ const statusOptions: { value: string; label: string; Icon: React.ComponentType<{
     { value: 'REMEDIATED', label: 'Remediated', Icon: Wrench, iconClass: 'text-emerald-400' },
     { value: 'CLOSED', label: 'Closed', Icon: Lock, iconClass: 'text-slate-400' },
 ];
-
-// ── sub-section ──────────────────────────────────────────────────────
-
-function Section({ title, icon: Icon, iconColor, children }: {
-    title: string; icon: any; iconColor: string; children: React.ReactNode;
-}) {
-    return (
-        <div>
-            <div className="flex items-center gap-2 mb-2">
-                <Icon className={cn('h-4 w-4', iconColor)} />
-                <h4 className="text-sm font-bold text-white">{title}</h4>
-            </div>
-            {children}
-        </div>
-    );
-}
 
 // ── props ────────────────────────────────────────────────────────────
 
@@ -533,7 +518,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {/* Description */}
                                 {(finding.description || canEdit) && (
                                     <>
-                                        <Section title="Description" icon={FileText} iconColor="text-primary">
+                                        <CollapsibleSection title="Description" icon={FileText} iconColor="text-primary">
                                             <InlineMarkdownField
                                                 value={finding.description || ''}
                                                 canEdit={canEdit}
@@ -543,7 +528,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add a description…"
                                             />
-                                        </Section>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -551,7 +536,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {/* Impact */}
                                 {(finding.impact || canEdit) && (
                                     <>
-                                        <Section title="Impact" icon={AlertTriangle} iconColor="text-orange-400">
+                                        <CollapsibleSection title="Impact" icon={AlertTriangle} iconColor="text-orange-400">
                                             <InlineMarkdownField
                                                 value={finding.impact || ''}
                                                 canEdit={canEdit}
@@ -561,7 +546,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add potential impact…"
                                             />
-                                        </Section>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -569,7 +554,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {/* Steps to Reproduce */}
                                 {(finding.steps_to_reproduce || canEdit) && (
                                     <>
-                                        <Section title="Steps to Reproduce" icon={FileText} iconColor="text-blue-400">
+                                        <CollapsibleSection title="Steps to Reproduce" icon={FileText} iconColor="text-blue-400">
                                             <InlineMarkdownField
                                                 value={finding.steps_to_reproduce || ''}
                                                 canEdit={canEdit}
@@ -579,7 +564,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 previewWrapperClassName="bg-slate-950 p-2 rounded-lg border border-slate-800 shadow-inner overflow-hidden"
                                                 emptyText="Double-click to add reproduction steps…"
                                             />
-                                        </Section>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -587,7 +572,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {/* Technical Details */}
                                 {(finding.technical_details || canEdit) && (
                                     <>
-                                        <Section title="Technical Details" icon={Bug} iconColor="text-red-400">
+                                        <CollapsibleSection title="Technical Details" icon={Bug} iconColor="text-red-400">
                                             <InlineMarkdownField
                                                 value={finding.technical_details || ''}
                                                 canEdit={canEdit}
@@ -597,7 +582,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 previewWrapperClassName="bg-slate-900/40 p-3 rounded-lg border border-slate-800/60 overflow-hidden"
                                                 emptyText="Double-click to add technical details…"
                                             />
-                                        </Section>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -605,7 +590,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {/* Remediation */}
                                 {(finding.mitigations || canEdit) && (
                                     <>
-                                        <Section title="Remediation" icon={ShieldAlert} iconColor="text-emerald-400">
+                                        <CollapsibleSection title="Remediation" icon={ShieldAlert} iconColor="text-emerald-400">
                                             <InlineMarkdownField
                                                 value={finding.mitigations || ''}
                                                 canEdit={canEdit}
@@ -615,7 +600,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-lg overflow-hidden"
                                                 emptyText="Double-click to add remediation guidance…"
                                             />
-                                        </Section>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -623,7 +608,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {/* External References */}
                                 {(finding.references || canEdit) && (
                                     <>
-                                        <Section title="External References" icon={ExternalLink} iconColor="text-slate-400">
+                                        <CollapsibleSection title="External References" icon={ExternalLink} iconColor="text-slate-400">
                                             <InlineMarkdownField
                                                 value={finding.references || ''}
                                                 canEdit={canEdit}
@@ -633,14 +618,13 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 previewWrapperClassName="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden"
                                                 emptyText="Double-click to add external references…"
                                             />
-                                        </Section>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* CVSS */}
-                                <div>
-                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Risk Assessment</h4>
+                                <CollapsibleSection title="Risk Assessment" icon={AlertTriangle} iconColor="text-amber-400">
                                     <InlineCvssField
                                         vector={finding.cvss_vector}
                                         canEdit={canEdit}
@@ -670,7 +654,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                             )}
                                         </div>
                                     </InlineCvssField>
-                                </div>
+                                </CollapsibleSection>
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Peer Review */}
@@ -678,18 +662,19 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Affected Targets */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Affected Targets</h4>
-                                        {assetCount > 0 && (
-                                            <span className={cn(
-                                                'text-[10px] font-bold tabular-nums',
-                                                remediatedPct === 100 ? 'text-green-400' : remediatedPct > 0 ? 'text-amber-400' : 'text-slate-500'
-                                            )}>
-                                                {remediatedCount}/{assetCount} remediated
-                                            </span>
-                                        )}
-                                    </div>
+                                <CollapsibleSection
+                                    title="Affected Targets"
+                                    icon={Target}
+                                    iconColor="text-cyan-400"
+                                    right={assetCount > 0 ? (
+                                        <span className={cn(
+                                            'text-[10px] font-bold tabular-nums',
+                                            remediatedPct === 100 ? 'text-green-400' : remediatedPct > 0 ? 'text-amber-400' : 'text-slate-500'
+                                        )}>
+                                            {remediatedCount}/{assetCount} remediated
+                                        </span>
+                                    ) : undefined}
+                                >
                                     {assetCount > 0 && (
                                         <Progress
                                             value={remediatedPct}
@@ -755,14 +740,13 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                             </div>
                                         )}
                                     </div>
-                                </div>
+                                </CollapsibleSection>
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Classification (portion marking) */}
                                 {canEdit && (
                                     <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Classification Marking</h4>
+                                        <CollapsibleSection title="Classification Marking" icon={Shield} iconColor="text-slate-400">
                                             <EntityClassificationField
                                                 engagementId={finding.engagement_id}
                                                 level={finding.classification_level || null}
@@ -777,7 +761,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                     }
                                                 }}
                                             />
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
@@ -785,13 +769,14 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {/* ATT&CK Techniques */}
                                 {(canEdit || (finding.attack_technique_ids?.length ?? 0) > 0) && (
                                     <>
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                                                ATT&amp;CK Techniques
-                                                {(finding.attack_technique_ids?.length ?? 0) > 0 && (
-                                                    <span className="text-slate-600 ml-1">({finding.attack_technique_ids?.length})</span>
-                                                )}
-                                            </h4>
+                                        <CollapsibleSection
+                                            title="ATT&CK Techniques"
+                                            icon={Shield}
+                                            iconColor="text-purple-400"
+                                            right={(finding.attack_technique_ids?.length ?? 0) > 0 ? (
+                                                <span className="text-[10px] font-bold tabular-nums text-slate-500">{finding.attack_technique_ids?.length}</span>
+                                            ) : undefined}
+                                        >
                                             {canEdit ? (
                                                 <TechniquePicker
                                                     value={finding.attack_technique_ids || []}
@@ -821,15 +806,17 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                     })}
                                                 </div>
                                             )}
-                                        </div>
+                                        </CollapsibleSection>
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
-                                {/* Linked Resources header */}
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Linked Resources</h4>
-                                    {canEdit && (
+                                {/* Linked Resources — the colored icon carries the type */}
+                                <CollapsibleSection
+                                    title="Linked Resources"
+                                    icon={LinkIcon}
+                                    iconColor="text-indigo-400"
+                                    right={canEdit ? (
                                         <Button
                                             variant="ghost"
                                             size="sm"
@@ -839,11 +826,9 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                             <LinkIcon className="h-3 w-3" />
                                             + Link
                                         </Button>
-                                    )}
-                                </div>
-
-                                {/* Linked resources — the colored icon carries the type */}
-                                {((finding.assets?.length ?? 0) + (finding.testcases?.length ?? 0) + (finding.vault_items?.length ?? 0) + (finding.cleanup_artifacts?.length ?? 0) + intelItems.length + infraItems.length) > 0 ? (
+                                    ) : undefined}
+                                >
+                                    {((finding.assets?.length ?? 0) + (finding.testcases?.length ?? 0) + (finding.vault_items?.length ?? 0) + (finding.cleanup_artifacts?.length ?? 0) + intelItems.length + infraItems.length) > 0 ? (
                                     <div className="space-y-1.5 max-h-72 overflow-y-auto">
                                         {(finding.assets ?? []).map((asset: any) => (
                                             <Link
@@ -933,11 +918,12 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                             </div>
                                         ))}
                                     </div>
-                                ) : (
-                                    <div className="text-[10px] text-slate-500 italic p-3 text-center border border-dashed border-slate-800 rounded-lg">
-                                        Nothing linked yet
-                                    </div>
-                                )}
+                                    ) : (
+                                        <div className="text-[10px] text-slate-500 italic p-3 text-center border border-dashed border-slate-800 rounded-lg">
+                                            Nothing linked yet
+                                        </div>
+                                    )}
+                                </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
 
@@ -973,16 +959,18 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                     </>
                                 )}
 
-                                {/* Evidence */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                                            <Layers className="h-3.5 w-3.5 text-primary" /> Evidence
-                                        </h4>
+                                {/* Evidence — collapsed by default (matches full page) */}
+                                <CollapsibleSection
+                                    title="Evidence"
+                                    icon={Layers}
+                                    iconColor="text-primary"
+                                    defaultOpen={false}
+                                    right={(
                                         <Badge variant="outline" className="bg-primary/10 text-primary border-none px-1.5 h-5 text-[10px]">
                                             {finding.evidence?.length || 0} files
                                         </Badge>
-                                    </div>
+                                    )}
+                                >
                                     <div className="space-y-3">
                                         {canEdit && <EvidenceUpload findingId={finding.id} />}
                                         {finding.evidence && finding.evidence.length > 0 ? (
@@ -998,11 +986,11 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                             </div>
                                         )}
                                     </div>
-                                </div>
+                                </CollapsibleSection>
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Metadata */}
-                                <div className="space-y-3">
+                                <CollapsibleSection title="Metadata" icon={User} iconColor="text-slate-400" contentClassName="space-y-3">
                                     <div className="flex items-center justify-between text-[10px]">
                                         <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
                                             <User className="h-3 w-3" /> Reporter
@@ -1037,7 +1025,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                             <span className="text-slate-300">{parseUTCDate(finding.updated_at).toLocaleString()}</span>
                                         </div>
                                     )}
-                                </div>
+                                </CollapsibleSection>
                                 <Separator className="bg-slate-800/60" />
 
                                 {/* Discussion */}

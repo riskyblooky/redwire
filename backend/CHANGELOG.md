@@ -88,6 +88,8 @@ section becomes one release entry.
   cleanup/vault links. All three now support inline quick-edit (title, status,
   severity/type, category, tags, and the markdown fields) right from the sheet, plus
   reviewer presence and live refresh — no need to open the full page for routine edits.
+  Each section in these sheets is collapsible (defaults matching the full page), so
+  the narrow panel stays manageable.
 - **Condensed the "Linked Resources" panel** — on the finding and test-case detail
   pages and their side-sheet ("half") views, the linked items (test cases,
   findings, assets, vault items, cleanup artifacts, notes, intel, infrastructure)
