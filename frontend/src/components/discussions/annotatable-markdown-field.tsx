@@ -19,6 +19,7 @@ import {
 import { useAnchoredComments } from './anchored-comments-context';
 import { CommentThreadList } from './comment-thread-list';
 import { CommentHoverCard } from './comment-hover-card';
+import { nextThreadTitle } from './field-labels';
 
 export interface AnnotatableMarkdownFieldProps {
     value: string;
@@ -45,12 +46,6 @@ const toLite = (t: Thread): AnchoredThreadLite => ({
     },
     resolved: t.is_resolved,
 });
-
-const titleFor = (q: string) => {
-    const t = (q || '').trim().replace(/\s+/g, ' ');
-    if (!t) return 'Comment';
-    return t.length > 60 ? `${t.slice(0, 57)}…` : t;
-};
 
 /**
  * Markdown field with anchored peer-review comments. In view mode it reads as
@@ -154,7 +149,7 @@ export function AnnotatableMarkdownField({
             const a = anchorFromRange(editor.state.doc, composer.from, composer.to);
             const thread = await createThread.mutateAsync({
                 engagement_id: engagementId, resource_type: resourceType, resource_id: resourceId,
-                title: titleFor(a.quote),
+                title: nextThreadTitle(resourceType, field, fieldThreads.map((t) => t.title)),
                 anchor: { field, quote: a.quote, prefix: a.prefix, suffix: a.suffix, occurrence: a.occurrence },
             });
             await createComment.mutateAsync({ thread_id: thread.id, content: body });

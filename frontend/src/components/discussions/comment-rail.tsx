@@ -4,23 +4,8 @@ import { useMemo } from 'react';
 import { useThreads, type ResourceType } from '@/lib/hooks/use-discussions';
 import { CommentThread } from './comment-thread-list';
 import { useAnchoredComments } from './anchored-comments-context';
+import { fieldLabel } from './field-labels';
 import { MessagesSquare } from 'lucide-react';
-
-const FINDING_FIELD_LABELS: Record<string, string> = {
-    description: 'Executive Summary',
-    impact: 'Potential Impact',
-    steps_to_reproduce: 'Steps to Reproduce',
-    technical_details: 'Technical Details',
-    mitigations: 'Mitigation & Remediation',
-    references: 'External References',
-};
-
-const TESTCASE_FIELD_LABELS: Record<string, string> = {
-    description: 'Description',
-    steps: 'Execution Steps',
-    expected_result: 'Expected Result',
-    notes: 'Notes',
-};
 
 /**
  * Page-level list of all anchored peer-review comments on a resource, grouped by
@@ -30,7 +15,6 @@ const TESTCASE_FIELD_LABELS: Record<string, string> = {
 export function CommentRail({ engagementId, resourceType, resourceId }: { engagementId: string; resourceType: ResourceType; resourceId: string }) {
     const { data: allThreads = [] } = useThreads({ engagement_id: engagementId, resource_type: resourceType, resource_id: resourceId });
     const anchored = useAnchoredComments();
-    const labels = resourceType === 'testcase' ? TESTCASE_FIELD_LABELS : FINDING_FIELD_LABELS;
 
     const groups = useMemo(() => {
         const byField = new Map<string, typeof allThreads>();
@@ -59,7 +43,7 @@ export function CommentRail({ engagementId, resourceType, resourceId }: { engage
                 {groups.map(([fieldName, threads]) => (
                     <div key={fieldName}>
                         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-                            {labels[fieldName] || fieldName}
+                            {fieldLabel(resourceType, fieldName)}
                         </div>
                         <div className="space-y-1.5">
                             {threads.map((t) => (
