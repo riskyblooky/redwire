@@ -15,7 +15,7 @@
 import { useParams } from '@/lib/hooks/use-params';
 import { buildTestcaseContext } from '@/lib/ai-entity-context';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import { AnnotationSurface, type AnnotationSurfaceHandle } from '@/components/discussions/annotation-surface';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { useCustomFieldDefs } from '@/lib/hooks/use-custom-fields';
@@ -71,6 +72,8 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
     const { data: categories = [] } = useConfigurableTypes('testcase');
     const { data: tags = [], isLoading: isLoadingTags } = useTags('testcase');
     const updateTestCase = useUpdateTestCase();
+    // Anchored-comment surfaces, keyed by field — refreshed only on a real save.
+    const surfaceRefs = useRef<Record<string, AnnotationSurfaceHandle | null>>({});
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
     // Live presence — same channel as the view page so editors and
@@ -188,6 +191,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                 classification_suffix: formData.classification_suffix || null,
             });
             setIsDirty(false);
+            await Promise.all(Object.values(surfaceRefs.current).map((h) => h?.refreshAnchors()));
             router.push(`/testcases/${id}`);
         } catch (error: any) {
             console.error('Failed to update test case:', error);
@@ -337,7 +341,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Description *</Label>
-                                                <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.description} onChange={(val) => handleChange('description', val)} canEdit ref={(h) => { surfaceRefs.current['description'] = h; }} resourceType="testcase" resourceId={id} field="description" minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -349,12 +353,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                         <CardContent className="space-y-6 pt-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Steps</Label>
-                                                <MarkdownEditor value={formData.steps} onChange={(val) => handleChange('steps', val)} minHeight="300px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.steps} onChange={(val) => handleChange('steps', val)} canEdit ref={(h) => { surfaceRefs.current['steps'] = h; }} resourceType="testcase" resourceId={id} field="steps" minHeight="300px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Expected Result</Label>
-                                                <MarkdownEditor value={formData.expected_result} onChange={(val) => handleChange('expected_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.expected_result} onChange={(val) => handleChange('expected_result', val)} canEdit ref={(h) => { surfaceRefs.current['expected_result'] = h; }} resourceType="testcase" resourceId={id} field="expected_result" minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-3 border-t border-slate-800 pt-5">
@@ -391,7 +395,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Notes</Label>
-                                                <MarkdownEditor value={formData.notes} onChange={(val) => handleChange('notes', val)} minHeight="120px" fieldContext={{ resourceType: 'testcase', fieldName: 'Notes', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.notes} onChange={(val) => handleChange('notes', val)} canEdit ref={(h) => { surfaceRefs.current['notes'] = h; }} resourceType="testcase" resourceId={id} field="notes" minHeight="120px" fieldContext={{ resourceType: 'testcase', fieldName: 'Notes', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>

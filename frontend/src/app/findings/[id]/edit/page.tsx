@@ -17,7 +17,7 @@
 import { useParams } from '@/lib/hooks/use-params';
 import { buildFindingContext } from '@/lib/ai-entity-context';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import { AnnotationSurface, type AnnotationSurfaceHandle } from '@/components/discussions/annotation-surface';
 import {
     Select,
     SelectContent,
@@ -93,6 +93,10 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     const { data: engagements = [] } = useEngagements();
     const { data: tags = [], isLoading: isLoadingTags } = useTags('finding');
     const updateFinding = useUpdateFinding();
+    // Anchored-comment surfaces, keyed by field, so we can refresh their anchors
+    // once the form is actually saved (never on blur/cancel — that would rewrite
+    // an anchor to match discarded text).
+    const surfaceRefs = useRef<Record<string, AnnotationSurfaceHandle | null>>({});
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const { data: cfDefs = [] } = useCustomFieldDefs('finding');
     const hasCustomFields = cfDefs.length > 0;
@@ -365,6 +369,9 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                 ...payload,
             });
             setIsDirty(false);
+            // Persist any anchors the saved text moved (awaited so the writes land
+            // before we navigate away).
+            await Promise.all(Object.values(surfaceRefs.current).map((h) => h?.refreshAnchors()));
             const query = returnEngagementId ? `?engagementId=${returnEngagementId}&tab=${returnTab}` : '';
             router.push(`/findings/${id}${query}`);
         } catch (error: any) {
@@ -495,11 +502,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                             />
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Description *</Label>
-                                                <MarkdownEditor value={formData.description} onChange={(val) => handleChange('description', val)} minHeight="400px" fieldContext={{ resourceType: 'finding', fieldName: 'Description', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.description} onChange={(val) => handleChange('description', val)} canEdit ref={(h) => { surfaceRefs.current['description'] = h; }} resourceType="finding" resourceId={id} field="description" minHeight="400px" fieldContext={{ resourceType: 'finding', fieldName: 'Description', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Impact</Label>
-                                                <MarkdownEditor value={formData.impact} onChange={(val) => handleChange('impact', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Impact', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.impact} onChange={(val) => handleChange('impact', val)} canEdit ref={(h) => { surfaceRefs.current['impact'] = h; }} resourceType="finding" resourceId={id} field="impact" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Impact', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -510,11 +517,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                         <CardContent className="pt-6 space-y-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Steps to Reproduce</Label>
-                                                <MarkdownEditor value={formData.steps_to_reproduce} onChange={(val) => handleChange('steps_to_reproduce', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.steps_to_reproduce} onChange={(val) => handleChange('steps_to_reproduce', val)} canEdit ref={(h) => { surfaceRefs.current['steps_to_reproduce'] = h; }} resourceType="finding" resourceId={id} field="steps_to_reproduce" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Technical Details</Label>
-                                                <MarkdownEditor value={formData.technical_details} onChange={(val) => handleChange('technical_details', val)} minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.technical_details} onChange={(val) => handleChange('technical_details', val)} canEdit ref={(h) => { surfaceRefs.current['technical_details'] = h; }} resourceType="finding" resourceId={id} field="technical_details" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -525,11 +532,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                         <CardContent className="pt-6 space-y-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Mitigations</Label>
-                                                <MarkdownEditor value={formData.mitigations} onChange={(val) => handleChange('mitigations', val)} minHeight="250px" fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.mitigations} onChange={(val) => handleChange('mitigations', val)} canEdit ref={(h) => { surfaceRefs.current['mitigations'] = h; }} resourceType="finding" resourceId={id} field="mitigations" minHeight="250px" fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">References</Label>
-                                                <MarkdownEditor value={formData.references} onChange={(val) => handleChange('references', val)} minHeight="200px" fieldContext={{ resourceType: 'finding', fieldName: 'References', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface value={formData.references} onChange={(val) => handleChange('references', val)} canEdit ref={(h) => { surfaceRefs.current['references'] = h; }} resourceType="finding" resourceId={id} field="references" minHeight="200px" fieldContext={{ resourceType: 'finding', fieldName: 'References', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
