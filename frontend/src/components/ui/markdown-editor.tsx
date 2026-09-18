@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import { useAuthStore } from '@/stores/auth-store';
 import { processMentionsInMarkdown } from '@/lib/mention-utils';
 import { EditorFieldContext } from '@/lib/types';
+import type { Editor } from '@tiptap/react';
+import type { AnchoredThreadLite } from './comment-highlight-extension';
 
 import "@uiw/react-markdown-preview/markdown.css";
 
@@ -29,9 +31,15 @@ interface MarkdownEditorProps {
     engagementId?: string;
     /** Fixed-height, user-resizable editor (corner + AI-split handles). */
     resizable?: boolean;
+    /** Anchored peer-review comments — passed through to the editor. */
+    commentThreads?: AnchoredThreadLite[];
+    activeCommentId?: string | null;
+    onEditorReady?: (editor: Editor) => void;
+    onCommentClick?: (threadId: string) => void;
+    onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
 }
 
-export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: MarkdownEditorProps) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -54,6 +62,11 @@ export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeig
             fieldContext={fieldContext}
             engagementId={engagementId}
             resizable={resizable}
+            commentThreads={commentThreads}
+            activeCommentId={activeCommentId}
+            onEditorReady={onEditorReady}
+            onCommentClick={onCommentClick}
+            onCommentHover={onCommentHover}
         />
     );
 }

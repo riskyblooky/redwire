@@ -1,8 +1,13 @@
 'use client';
 
-import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
+import { useEditor, EditorContent, ReactRenderer, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { activeLineKey, createActiveLineExtension } from './active-line-extension';
+import {
+    createCommentHighlightExtension,
+    rebuildCommentHighlights,
+    type AnchoredThreadLite,
+} from './comment-highlight-extension';
 import { Markdown } from 'tiptap-markdown';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
@@ -164,6 +169,19 @@ interface TiptapEditorProps {
      *  block the cursor is in. Users can toggle it from the toolbar; this only
      *  sets the initial state. */
     lineNumbers?: boolean;
+    /** Anchored peer-review comments. When provided (even as an empty array),
+     *  the comment-highlight decoration plugin is enabled: each thread's stored
+     *  quote is relocated in the doc and painted as a highlight. Decorations
+     *  only — never mutates the markdown. Absent → feature fully inert. */
+    commentThreads?: AnchoredThreadLite[];
+    /** Thread id to render as the "active" highlight (stronger styling). */
+    activeCommentId?: string | null;
+    /** Called once the editor instance exists (for selection tracking, etc.). */
+    onEditorReady?: (editor: Editor) => void;
+    /** Clicking a comment highlight → its thread id. */
+    onCommentClick?: (threadId: string) => void;
+    /** Hovering a comment highlight → its thread id + bounding rect (null on out). */
+    onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
 }
 
 const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any; showLineNumbers?: boolean; onToggleLineNumbers?: () => void }) => {
@@ -784,11 +802,25 @@ function parseInitialEditorHeight(minHeight?: string): number {
     return m ? Math.max(220, parseInt(m[1], 10)) : 360;
 }
 
-export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true, lineNumbers = false }: TiptapEditorProps) {
+export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: TiptapEditorProps) {
     const [, setForceUpdate] = useState(0);
     const [showLineNumbers, setShowLineNumbers] = useState(lineNumbers);
     const showLineNumbersRef = useRef(lineNumbers);
     const currentUsername = useAuthStore((s) => s.user?.username);
+
+    // Anchored peer-review comments (see comment-highlight-extension). Enabled
+    // once, at mount, when the caller passes commentThreads. Refs keep the
+    // decoration plugin and DOM handlers reading the latest values without
+    // re-creating the editor.
+    const commentsEnabledRef = useRef(commentThreads !== undefined);
+    const commentThreadsRef = useRef<AnchoredThreadLite[]>(commentThreads ?? []);
+    const activeCommentRef = useRef<string | null>(activeCommentId ?? null);
+    const onCommentClickRef = useRef(onCommentClick);
+    const onCommentHoverRef = useRef(onCommentHover);
+    commentThreadsRef.current = commentThreads ?? [];
+    activeCommentRef.current = activeCommentId ?? null;
+    onCommentClickRef.current = onCommentClick;
+    onCommentHoverRef.current = onCommentHover;
 
     // Whole-editor height (corner resize handle). The AI assistant docked below
     // owns its own split. Seeded from minHeight so each editor opens at its
@@ -900,6 +932,12 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                 },
             }),
             createActiveLineExtension(showLineNumbersRef),
+            ...(commentsEnabledRef.current
+                ? [createCommentHighlightExtension({
+                    getThreads: () => commentThreadsRef.current,
+                    getActiveId: () => activeCommentRef.current,
+                })]
+                : []),
         ],
         content: value,
         editable: !disabled,
@@ -916,6 +954,26 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
         editorProps: {
             attributes: {
                 class: 'prose prose-invert max-w-none focus:outline-hidden p-4 min-h-[inherit]',
+            },
+            // Anchored-comment highlights: forward click/hover on a highlight span
+            // to the caller. Inert unless comments are enabled. Returns false so
+            // normal editor behaviour (cursor placement, etc.) is preserved.
+            handleDOMEvents: {
+                click: (_view, event) => {
+                    const el = (event.target as HTMLElement)?.closest?.('.rw-comment-highlight[data-thread-id]') as HTMLElement | null;
+                    if (el) onCommentClickRef.current?.(el.getAttribute('data-thread-id') || '');
+                    return false;
+                },
+                mouseover: (_view, event) => {
+                    const el = (event.target as HTMLElement)?.closest?.('.rw-comment-highlight[data-thread-id]') as HTMLElement | null;
+                    if (el) onCommentHoverRef.current?.(el.getAttribute('data-thread-id'), el.getBoundingClientRect());
+                    return false;
+                },
+                mouseout: (_view, event) => {
+                    const el = (event.target as HTMLElement)?.closest?.('.rw-comment-highlight[data-thread-id]');
+                    if (el) onCommentHoverRef.current?.(null);
+                    return false;
+                },
             },
             // Drag-and-drop image upload. We swallow the drop event when files
             // are present, upload via /markdown-images, then insert nodes.
@@ -1000,6 +1058,18 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             editor.view.dispatch(editor.state.tr.setMeta(activeLineKey, Date.now()));
         }
     }, [editor, showLineNumbers]);
+
+    // Hand the editor instance to the caller once (selection tracking, etc.).
+    useEffect(() => {
+        if (editor && onEditorReady) onEditorReady(editor);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editor]);
+
+    // Recompute comment highlights when the thread list or active id changes.
+    useEffect(() => {
+        if (editor && commentsEnabledRef.current) rebuildCommentHighlights(editor);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editor, commentThreads, activeCommentId]);
 
     // Corner resize: drag the whole editor taller/shorter.
     const onResizeMove = useCallback((e: MouseEvent) => {

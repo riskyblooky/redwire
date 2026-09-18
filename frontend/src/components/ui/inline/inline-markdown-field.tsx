@@ -7,6 +7,8 @@ import { Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { EditorFieldContext } from '@/lib/types';
+import { AnnotatableMarkdownField } from '@/components/discussions/annotatable-markdown-field';
+import type { ResourceType } from '@/lib/hooks/use-discussions';
 
 interface InlineMarkdownFieldProps {
     value: string;
@@ -21,6 +23,12 @@ interface InlineMarkdownFieldProps {
     emptyText?: string;
     placeholder?: string;
     minHeight?: string;
+    /** Opt-in: enable anchored peer-review comments on this field. Requires
+     *  resourceType/resourceId/field/engagementId. Absent → plain behaviour. */
+    annotatable?: boolean;
+    resourceType?: ResourceType;
+    resourceId?: string;
+    field?: string;
 }
 
 /**
@@ -29,7 +37,32 @@ interface InlineMarkdownFieldProps {
  * Esc cancels, ⌘/Ctrl+Enter saves. Saves a single field via the caller's
  * onSave; on failure it stays in edit mode so the draft isn't lost.
  */
-export function InlineMarkdownField({
+export function InlineMarkdownField(props: InlineMarkdownFieldProps) {
+    // Anchored peer-review comments are a self-contained superset; delegate to it
+    // when the caller opts in. Kept as a separate component (not an early return
+    // inside the body) so the plain path's hooks are never conditional.
+    if (props.annotatable && props.resourceType && props.resourceId && props.field && props.engagementId) {
+        return (
+            <AnnotatableMarkdownField
+                value={props.value}
+                onSave={props.onSave}
+                canEdit={props.canEdit}
+                engagementId={props.engagementId}
+                resourceType={props.resourceType}
+                resourceId={props.resourceId}
+                field={props.field}
+                fieldContext={props.fieldContext}
+                previewWrapperClassName={props.previewWrapperClassName}
+                emptyText={props.emptyText}
+                placeholder={props.placeholder}
+                minHeight={props.minHeight}
+            />
+        );
+    }
+    return <PlainInlineMarkdownField {...props} />;
+}
+
+function PlainInlineMarkdownField({
     value,
     onSave,
     canEdit = false,

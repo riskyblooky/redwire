@@ -273,6 +273,33 @@ export function EditorStyles({ currentUsername }: { currentUsername?: string | n
                 color: #93c5fd;
                 font-weight: 600;
             }
+            /* Anchored peer-review comment highlights (ProseMirror decorations,
+               not stored marks). Amber marker distinct from the <mark> Highlight
+               extension; muted when resolved; stronger + a brief pulse when
+               active (selected in the rail or just clicked). */
+            .tiptap .rw-comment-highlight {
+                background: rgba(245, 158, 11, 0.16);
+                border-bottom: 2px solid rgba(245, 158, 11, 0.7);
+                border-radius: 0.125rem;
+                cursor: pointer;
+                transition: background 0.15s ease;
+            }
+            .tiptap .rw-comment-highlight:hover {
+                background: rgba(245, 158, 11, 0.28);
+            }
+            .tiptap .rw-comment-highlight.rw-comment-resolved {
+                background: rgba(100, 116, 139, 0.14);
+                border-bottom-color: rgba(100, 116, 139, 0.5);
+            }
+            .tiptap .rw-comment-highlight.rw-comment-active {
+                background: rgba(245, 158, 11, 0.34);
+                border-bottom-color: rgba(245, 158, 11, 1);
+                animation: rwCommentPulse 1s ease;
+            }
+            @keyframes rwCommentPulse {
+                0% { background: rgba(245, 158, 11, 0.6); }
+                100% { background: rgba(245, 158, 11, 0.34); }
+            }
         `}</style>
     );
 }

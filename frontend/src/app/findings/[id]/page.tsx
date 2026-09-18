@@ -79,6 +79,8 @@ import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
 import DiscussionSection from '@/components/discussions/discussion-section';
+import { AnchoredCommentsProvider } from '@/components/discussions/anchored-comments-context';
+import { CommentRail } from '@/components/discussions/comment-rail';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserName } from '@/components/ui/user-name';
@@ -405,6 +407,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
     return (
         <DashboardLayout>
+            <AnchoredCommentsProvider>
             <div className="p-6 space-y-6">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -513,6 +516,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                 value={finding.description || ''}
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ description: v })}
+                                                annotatable
+                                                resourceType="finding"
+                                                resourceId={finding.id}
+                                                field="description"
                                                 engagementId={finding.engagement_id}
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'description', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="prose prose-invert max-w-none prose-slate"
@@ -542,6 +549,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         value={finding.impact || ''}
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ impact: v })}
+                                                        annotatable
+                                                        resourceType="finding"
+                                                        resourceId={finding.id}
+                                                        field="impact"
                                                         engagementId={finding.engagement_id}
                                                         fieldContext={{ resourceType: 'finding', fieldName: 'impact', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
@@ -557,6 +568,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         value={finding.steps_to_reproduce || ''}
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ steps_to_reproduce: v })}
+                                                        annotatable
+                                                        resourceType="finding"
+                                                        resourceId={finding.id}
+                                                        field="steps_to_reproduce"
                                                         engagementId={finding.engagement_id}
                                                         fieldContext={{ resourceType: 'finding', fieldName: 'steps_to_reproduce', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
@@ -572,6 +587,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         value={finding.technical_details || ''}
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ technical_details: v })}
+                                                        annotatable
+                                                        resourceType="finding"
+                                                        resourceId={finding.id}
+                                                        field="technical_details"
                                                         engagementId={finding.engagement_id}
                                                         fieldContext={{ resourceType: 'finding', fieldName: 'technical_details', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
@@ -597,6 +616,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                 value={finding.mitigations || ''}
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ mitigations: v })}
+                                                annotatable
+                                                resourceType="finding"
+                                                resourceId={finding.id}
+                                                field="mitigations"
                                                 engagementId={finding.engagement_id}
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'mitigations', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden"
@@ -618,6 +641,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                         value={finding.references || ''}
                                                         canEdit={canEdit}
                                                         onSave={(v) => saveField({ references: v })}
+                                                        annotatable
+                                                        resourceType="finding"
+                                                        resourceId={finding.id}
+                                                        field="references"
                                                         engagementId={finding.engagement_id}
                                                         fieldContext={{ resourceType: 'finding', fieldName: 'references', entityContext: buildFindingContext(finding) }}
                                                         previewWrapperClassName="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden"
@@ -1034,6 +1061,9 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                     </div>
                 </div>
 
+                {/* Anchored peer-review comments (highlights on the fields above) */}
+                <CommentRail engagementId={finding.engagement_id} resourceType="finding" resourceId={id} />
+
                 {/* Discussions - Full Width */}
                 <DiscussionSection
                     engagementId={finding.engagement_id}
@@ -1151,6 +1181,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            </AnchoredCommentsProvider>
         </DashboardLayout >
     );
 }
