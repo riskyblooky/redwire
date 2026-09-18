@@ -189,9 +189,11 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
         }
     };
 
+    const showRail = fieldThreads.length > 0;
+
     return (
         <div className={cn('rounded-lg border border-slate-700 bg-slate-950/30 p-2', outerClassName)}>
-            <div className="grid gap-2 lg:grid-cols-[1fr_17rem]">
+            <div className={cn('grid gap-2', showRail && 'lg:grid-cols-[1fr_17rem]')}>
                 <div className="min-w-0">
                     <div className="rounded-lg border border-slate-800 overflow-hidden">
                         <MarkdownEditor
@@ -216,19 +218,20 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                     {footer}
                 </div>
 
-                <div className="lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                        <MessageSquare className="h-3 w-3" /> Comments
+                {showRail && (
+                    <div className="lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                            <MessageSquare className="h-3 w-3" /> Comments
+                        </div>
+                        <CommentThreadList
+                            threads={fieldThreads}
+                            activeId={activeId}
+                            orphanedIds={orphanedIds}
+                            showQuote
+                            onActivate={setActiveId}
+                        />
                     </div>
-                    <CommentThreadList
-                        threads={fieldThreads}
-                        activeId={activeId}
-                        orphanedIds={orphanedIds}
-                        showQuote
-                        onActivate={setActiveId}
-                        emptyText="Select text on the left, then Add comment."
-                    />
-                </div>
+                )}
             </div>
 
             {selBtn && (
