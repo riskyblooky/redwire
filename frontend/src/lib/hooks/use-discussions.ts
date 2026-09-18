@@ -3,6 +3,20 @@ import api from '../api';
 
 export type ResourceType = 'engagement' | 'finding' | 'asset' | 'testcase' | 'evidence' | 'cleanup_artifact' | 'finding_remediation';
 
+// Anchored peer-review comment: points a thread at a span of text inside one
+// field of the resource. See docs/anchored-comments-peer-review.md.
+export interface ThreadAnchor {
+    field: string;
+    quote: string;
+    prefix?: string | null;
+    suffix?: string | null;
+    occurrence?: number;
+}
+
+export interface ThreadAnchorOut extends ThreadAnchor {
+    status?: 'active' | 'orphaned' | null;
+}
+
 export interface Thread {
     id: string;
     engagement_id: string;
@@ -13,6 +27,7 @@ export interface Thread {
     created_at: string;
     is_resolved: boolean;
     comment_count: number;
+    anchor?: ThreadAnchorOut | null;
 }
 
 export interface ThreadCreate {
@@ -20,6 +35,7 @@ export interface ThreadCreate {
     resource_type: ResourceType;
     resource_id?: string | null;
     title: string;
+    anchor?: ThreadAnchor | null;
 }
 
 // - [ ] Implement sorting for resource lists
@@ -106,7 +122,7 @@ export function useUpdateThread() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ id, ...updates }: { id: string; title?: string; is_resolved?: boolean }) => {
+        mutationFn: async ({ id, ...updates }: { id: string; title?: string; is_resolved?: boolean; anchor?: ThreadAnchor }) => {
             const { data } = await api.put<Thread>(`/discussions/threads/${id}`, updates);
             return data;
         },
