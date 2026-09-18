@@ -165,6 +165,10 @@ interface TiptapEditorProps {
      *  rebalances the split between the text area and the AI panel without
      *  changing the total height. Used by the inline editor. */
     resizable?: boolean;
+    /** Fill the parent's height (flex-1) instead of a fixed/resizable height.
+     *  The host controls the box height; the content area scrolls. Used by the
+     *  annotation surface so the editor grows to match a taller comments column. */
+    fillHeight?: boolean;
     /** Show a left gutter numbering each top-level block, and highlight the
      *  block the cursor is in. Users can toggle it from the toolbar; this only
      *  sets the initial state. */
@@ -802,7 +806,7 @@ function parseInitialEditorHeight(minHeight?: string): number {
     return m ? Math.max(220, parseInt(m[1], 10)) : 360;
 }
 
-export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: TiptapEditorProps) {
+export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true, fillHeight = false, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: TiptapEditorProps) {
     const [, setForceUpdate] = useState(0);
     const [showLineNumbers, setShowLineNumbers] = useState(lineNumbers);
     const showLineNumbersRef = useRef(lineNumbers);
@@ -1096,13 +1100,13 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     return (
         <div
             id={id}
-            className={cn("flex flex-col border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", className)}
-            style={resizable ? { height: editorHeight } : undefined}
+            className={cn("flex flex-col border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", fillHeight && "h-full", className)}
+            style={resizable && !fillHeight ? { height: editorHeight } : undefined}
         >
             <MenuBar editor={editor} showLineNumbers={showLineNumbers} onToggleLineNumbers={() => setShowLineNumbers(v => !v)} />
             <div
-                className={cn("overflow-y-auto", resizable && "flex-1 min-h-0", showLineNumbers && "rw-linenumbers")}
-                style={resizable ? undefined : { minHeight }}
+                className={cn("overflow-y-auto", (resizable || fillHeight) && "flex-1 min-h-0", showLineNumbers && "rw-linenumbers")}
+                style={(resizable || fillHeight) ? undefined : { minHeight }}
                 onClick={() => editor?.commands.focus()}
             >
                 <EditorContent editor={editor} />
@@ -1113,11 +1117,11 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             <AiAssistantPanel
                 editor={editor}
                 fieldContext={fieldContext}
-                maxHeight={resizable ? editorHeight - 150 : undefined}
+                maxHeight={resizable && !fillHeight ? editorHeight - 150 : undefined}
             />
 
             {/* Corner grab handle: drag to resize the whole editor vertically. */}
-            {resizable && (
+            {resizable && !fillHeight && (
                 <div
                     onMouseDown={startResize}
                     title="Drag to resize the editor"

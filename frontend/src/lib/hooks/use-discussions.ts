@@ -55,6 +55,7 @@ export interface Comment {
     resolved_by: string | null;
     resolved_at: string | null;
     author_name: string | null;
+    author_profile_photo?: string | null;
     resolver_name: string | null;
 }
 

@@ -193,9 +193,12 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
 
     return (
         <div className={cn('rounded-lg border border-slate-700 bg-slate-950/30 p-2', outerClassName)}>
-            <div className={cn('grid gap-2', showRail && 'lg:grid-cols-[1fr_17rem]')}>
-                <div className="min-w-0">
-                    <div className="rounded-lg border border-slate-800 overflow-hidden">
+            <div className={cn('grid gap-2 items-stretch', showRail && 'lg:grid-cols-[1fr_17rem]')}>
+                {/* When the rail is shown, the editor fills the column so it grows
+                    to match a taller comments column, and the footer stays pinned
+                    at the bottom. Without the rail, keep the normal resizable box. */}
+                <div className={cn('min-w-0', showRail && 'flex flex-col')}>
+                    <div className={cn('rounded-lg border border-slate-800 overflow-hidden', showRail && 'flex-1 min-h-[300px]')}>
                         <MarkdownEditor
                             value={value}
                             onChange={onChange}
@@ -203,7 +206,9 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                             fieldContext={fieldContext}
                             placeholder={placeholder}
                             minHeight={minHeight}
-                            resizable
+                            resizable={!showRail}
+                            fillHeight={showRail}
+                            className={showRail ? 'h-full' : undefined}
                             disabled={!canEdit}
                             commentThreads={lite}
                             activeCommentId={activeId}

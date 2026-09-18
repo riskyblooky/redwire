@@ -136,8 +136,8 @@ function buildDecorationSet(doc: PMNode, threads: AnchoredThreadLite[], activeId
     const decos: Decoration[] = [];
     for (const r of computeAnchorRanges(doc, threads)) {
         if (r.orphaned) continue;
+        if (r.resolved) continue; // resolved threads drop their highlight
         const cls = ['rw-comment-highlight'];
-        if (r.resolved) cls.push('rw-comment-resolved');
         if (activeId && r.id === activeId) cls.push('rw-comment-active');
         decos.push(
             Decoration.inline(r.from, r.to, {

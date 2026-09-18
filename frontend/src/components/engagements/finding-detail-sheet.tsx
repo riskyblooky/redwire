@@ -1042,6 +1042,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                     currentUserId={user?.id}
                                     isAdmin={user?.role === 'admin'}
                                     users={engagement?.assigned_users}
+                                    title="Peer-review comments"
                                 />
 
                                 {/* Remediation Threads */}

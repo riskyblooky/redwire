@@ -847,6 +847,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                     currentUserId={user?.id}
                                     isAdmin={user?.role === 'admin'}
                                     users={engagement?.assigned_users}
+                                    title="Peer-review comments"
                                 />
                             </div>
                         </div>

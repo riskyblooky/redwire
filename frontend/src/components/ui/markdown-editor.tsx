@@ -31,6 +31,8 @@ interface MarkdownEditorProps {
     engagementId?: string;
     /** Fixed-height, user-resizable editor (corner + AI-split handles). */
     resizable?: boolean;
+    /** Fill the parent's height instead of a fixed height (content scrolls). */
+    fillHeight?: boolean;
     /** Anchored peer-review comments — passed through to the editor. */
     commentThreads?: AnchoredThreadLite[];
     activeCommentId?: string | null;
@@ -39,7 +41,7 @@ interface MarkdownEditorProps {
     onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
 }
 
-export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable, fillHeight, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: MarkdownEditorProps) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -62,6 +64,7 @@ export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeig
             fieldContext={fieldContext}
             engagementId={engagementId}
             resizable={resizable}
+            fillHeight={fillHeight}
             commentThreads={commentThreads}
             activeCommentId={activeCommentId}
             onEditorReady={onEditorReady}

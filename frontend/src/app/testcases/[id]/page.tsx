@@ -70,7 +70,6 @@ import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { InlineTextField } from '@/components/ui/inline/inline-text-field';
 import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
 import { AnchoredCommentsProvider } from '@/components/discussions/anchored-comments-context';
-import { CommentRail } from '@/components/discussions/comment-rail';
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 
@@ -927,10 +926,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                     </div>
                 </div>
 
-                {/* Peer-review comments rollup */}
-                <CommentRail engagementId={testcase.engagement_id} resourceType="testcase" resourceId={id} />
-
-                {/* Discussions - Full Width */}
+                {/* Peer-review comments (anchored + general threads) - Full Width */}
                 <DiscussionSection
                     engagementId={testcase.engagement_id}
                     resourceType="testcase"
@@ -938,6 +934,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                     currentUserId={user?.id}
                     isAdmin={user?.role === 'admin'}
                     users={engagement?.assigned_users}
+                    title="Peer-review comments"
                 />
             </div>
             <ConfirmDialog />

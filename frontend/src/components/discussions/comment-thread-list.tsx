@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn, parseUTCDate } from '@/lib/utils';
 import {
     useComments,
@@ -10,8 +10,9 @@ import {
 } from '@/lib/hooks/use-discussions';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import {
-    MessageSquare, Check, CornerDownRight, Loader2, ChevronRight, Quote as QuoteIcon,
+    MessageSquare, Check, CheckCircle2, CornerDownRight, Loader2, ChevronRight, Quote as QuoteIcon,
 } from 'lucide-react';
 
 function ago(iso: string): string {
@@ -42,6 +43,10 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
     const [reply, setReply] = useState('');
     const [open, setOpen] = useState(false);
 
+    // Clicking the highlight (or a rail item) activates this thread — expand it
+    // so the comment is immediately readable.
+    useEffect(() => { if (active) setOpen(true); }, [active]);
+
     const submit = async () => {
         const body = reply.trim();
         if (!body || createComment.isPending) return;
@@ -61,23 +66,25 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
             <button
                 type="button"
                 onClick={() => { setOpen((o) => !o); onActivate?.(thread.id); }}
-                className="w-full text-left p-2.5 flex items-start gap-2"
+                className="w-full text-left p-2.5 flex items-center gap-2"
             >
-                <ChevronRight className={cn('h-3.5 w-3.5 text-slate-500 shrink-0 mt-0.5 transition-transform', open && 'rotate-90')} />
-                <div className="min-w-0 flex-1">
-                    {showQuote && thread.anchor?.quote && (
-                        <span className="flex items-start gap-1 text-[11px] text-amber-300/90 mb-1">
-                            <QuoteIcon className="h-3 w-3 shrink-0 mt-0.5 text-amber-500/70" />
-                            <span className="line-clamp-2 italic">{thread.anchor.quote}</span>
-                        </span>
+                <ChevronRight className={cn('h-3.5 w-3.5 text-slate-500 shrink-0 transition-transform', open && 'rotate-90')} />
+                <span className="min-w-0 flex-1 flex items-center gap-1 text-[11px]">
+                    {showQuote && thread.anchor?.quote ? (
+                        <>
+                            <QuoteIcon className="h-3 w-3 shrink-0 text-amber-500/70" />
+                            <span className="truncate italic text-amber-300/90">{thread.anchor.quote}</span>
+                        </>
+                    ) : (
+                        <span className="truncate font-medium text-slate-300">{thread.title}</span>
                     )}
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                        <MessageSquare className="h-3 w-3 text-slate-500" />
-                        <span className="tabular-nums">{thread.comment_count}</span>
-                        {orphaned && <span className="text-[10px] font-semibold text-orange-400/90 uppercase tracking-wide">Outdated</span>}
-                        {thread.is_resolved && <span className="text-[10px] font-semibold text-emerald-400/90 uppercase tracking-wide">Resolved</span>}
-                    </div>
-                </div>
+                </span>
+                <span className="flex items-center gap-1.5 shrink-0 text-[11px] text-slate-400">
+                    <MessageSquare className="h-3 w-3 text-slate-500" />
+                    <span className="tabular-nums">{thread.comment_count}</span>
+                    {orphaned && <span className="text-[10px] font-semibold text-orange-400/90 uppercase tracking-wide">Outdated</span>}
+                    {thread.is_resolved && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" aria-label="Resolved" />}
+                </span>
             </button>
 
             {open && (
@@ -86,7 +93,15 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
                         {comments.map((c) => (
                             <div key={c.id} className="rounded-md bg-slate-900/50 border border-slate-800/50 p-2">
                                 <div className="flex items-center justify-between gap-2 mb-0.5">
-                                    <span className="text-[11px] font-semibold text-slate-300 truncate">{c.author_name || 'Unknown'}</span>
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                        <UserAvatar
+                                            userId={c.created_by}
+                                            username={c.author_name}
+                                            user={c.author_profile_photo ? { id: c.created_by, full_name: c.author_name, profile_photo: c.author_profile_photo } as any : undefined}
+                                            className="h-4 w-4 text-[8px]"
+                                        />
+                                        <span className="text-[11px] font-semibold text-slate-300 truncate">{c.author_name || 'Unknown'}</span>
+                                    </span>
                                     <span className="text-[10px] text-slate-500 tabular-nums shrink-0">{ago(c.created_at)}</span>
                                 </div>
                                 <p className="text-[11px] text-slate-400 whitespace-pre-wrap break-words leading-snug">{c.content}</p>

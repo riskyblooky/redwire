@@ -80,7 +80,6 @@ import { PresenceIndicator } from '@/components/collaboration/presence-indicator
 import { cn, parseUTCDate } from '@/lib/utils';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { AnchoredCommentsProvider } from '@/components/discussions/anchored-comments-context';
-import { CommentRail } from '@/components/discussions/comment-rail';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserName } from '@/components/ui/user-name';
@@ -1061,10 +1060,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                     </div>
                 </div>
 
-                {/* Anchored peer-review comments (highlights on the fields above) */}
-                <CommentRail engagementId={finding.engagement_id} resourceType="finding" resourceId={id} />
-
-                {/* Discussions - Full Width */}
+                {/* Peer-review comments (anchored + general threads) - Full Width */}
                 <DiscussionSection
                     engagementId={finding.engagement_id}
                     resourceType="finding"
@@ -1072,6 +1068,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                     currentUserId={user?.id}
                     isAdmin={user?.role === 'admin'}
                     users={engagement?.assigned_users}
+                    title="Peer-review comments"
                 />
 
                 {/* Remediation Threads - Full Width */}
