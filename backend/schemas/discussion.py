@@ -4,16 +4,30 @@ from typing import Optional, List
 from models.discussion import ResourceType
 from schemas._field_limits import TITLE, UUID_FIELD
 
+# Anchor for peer-review "highlight" comments — points a thread at a span of text
+# inside one field of the resource. See docs/anchored-comments-peer-review.md.
+class ThreadAnchor(BaseModel):
+    field: str = Field(..., max_length=64)          # e.g. "description", "steps"
+    quote: str = Field(..., max_length=2048)        # highlighted text
+    prefix: Optional[str] = Field(None, max_length=128)  # context before the quote
+    suffix: Optional[str] = Field(None, max_length=128)  # context after the quote
+    occurrence: int = Field(0, ge=0)                # index among identical quotes
+
+class ThreadAnchorOut(ThreadAnchor):
+    status: Optional[str] = None                    # "active" | "orphaned"
+
 # Thread Schemas
 class ThreadCreate(BaseModel):
     engagement_id: str = Field(..., max_length=UUID_FIELD)
     resource_type: ResourceType
     resource_id: Optional[str] = Field(None, max_length=UUID_FIELD)
     title: str = Field(..., max_length=TITLE)
+    anchor: Optional[ThreadAnchor] = None
 
 class ThreadUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=TITLE)
     is_resolved: Optional[bool] = None
+    anchor: Optional[ThreadAnchor] = None           # auto-refresh on save (§7.4)
 
 class ThreadResponse(BaseModel):
     id: str
@@ -25,6 +39,7 @@ class ThreadResponse(BaseModel):
     created_at: datetime
     is_resolved: bool
     comment_count: Optional[int] = 0
+    anchor: Optional[ThreadAnchorOut] = None
 
     class Config:
         from_attributes = True

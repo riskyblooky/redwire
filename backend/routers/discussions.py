@@ -36,6 +36,52 @@ async def _broadcast_discussion_update(engagement_id: str, thread_id: str, actio
     except Exception as e:
         _logger.warning(f"Failed to broadcast discussion_update: {e}")
 
+
+# Legal anchor fields per resource type (peer-review highlight comments).
+# See docs/anchored-comments-peer-review.md §1.
+_ANCHOR_FIELDS = {
+    "finding": {"description", "impact", "technical_details", "steps_to_reproduce", "mitigations", "references"},
+    "testcase": {"description", "steps", "expected_result"},
+}
+
+
+def _thread_to_response(thread: Thread, comment_count: int = 0) -> ThreadResponse:
+    """Build a ThreadResponse, assembling the nested anchor from flat columns."""
+    anchor = None
+    if thread.anchor_field:
+        anchor = {
+            "field": thread.anchor_field,
+            "quote": thread.anchor_quote or "",
+            "prefix": thread.anchor_prefix,
+            "suffix": thread.anchor_suffix,
+            "occurrence": thread.anchor_occurrence or 0,
+            "status": thread.anchor_status or "active",
+        }
+    return ThreadResponse(
+        id=thread.id,
+        engagement_id=thread.engagement_id,
+        resource_type=thread.resource_type,
+        resource_id=thread.resource_id,
+        title=thread.title,
+        created_by=thread.created_by,
+        created_at=thread.created_at,
+        is_resolved=thread.is_resolved,
+        comment_count=comment_count or 0,
+        anchor=anchor,
+    )
+
+
+def _validate_anchor_field(resource_type: str, anchor) -> None:
+    """Reject an anchor whose field isn't a real text field of the resource."""
+    if anchor is None:
+        return
+    allowed = _ANCHOR_FIELDS.get((resource_type or "").lower())
+    if allowed is not None and anchor.field not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{anchor.field}' is not an annotatable field for {resource_type}.",
+        )
+
 # ============ THREADS ============
 
 @router.get("/threads", response_model=List[ThreadResponse])
@@ -84,10 +130,8 @@ async def get_threads(
     
     threads_with_counts = []
     for thread, comment_count in result.all():
-        thread_dict = ThreadResponse.model_validate(thread).model_dump()
-        thread_dict["comment_count"] = comment_count or 0
-        threads_with_counts.append(ThreadResponse(**thread_dict))
-    
+        threads_with_counts.append(_thread_to_response(thread, comment_count or 0))
+
     return threads_with_counts
 
 @router.get("/threads/{thread_id}", response_model=ThreadResponse)
@@ -119,10 +163,8 @@ async def get_thread(
         select(func.count(Comment.id)).where(Comment.thread_id == thread_id)
     )
     comment_count = count_result.scalar()
-    
-    thread_dict = ThreadResponse.model_validate(thread).model_dump()
-    thread_dict["comment_count"] = comment_count or 0
-    return ThreadResponse(**thread_dict)
+
+    return _thread_to_response(thread, comment_count or 0)
 
 @router.post("/threads", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED)
 async def create_thread(
@@ -171,6 +213,10 @@ async def create_thread(
                 detail=f"{rt.capitalize()} belongs to a different engagement",
             )
 
+    # Peer-review highlight anchor (optional): validate the field belongs to the
+    # resource type before persisting.
+    _validate_anchor_field(rt, thread_data.anchor)
+
     new_thread = Thread(
         engagement_id=thread_data.engagement_id,
         resource_type=thread_data.resource_type.value,  # Use .value to get lowercase string
@@ -178,6 +224,14 @@ async def create_thread(
         title=thread_data.title,
         created_by=current_user.id
     )
+    if thread_data.anchor:
+        a = thread_data.anchor
+        new_thread.anchor_field = a.field
+        new_thread.anchor_quote = a.quote
+        new_thread.anchor_prefix = a.prefix
+        new_thread.anchor_suffix = a.suffix
+        new_thread.anchor_occurrence = a.occurrence
+        new_thread.anchor_status = "active"
     db.add(new_thread)
     await db.commit()
     await db.refresh(new_thread)
@@ -244,34 +298,47 @@ async def update_thread(
                 )
 
     update_data = thread_data.model_dump(exclude_unset=True)
+    anchor = update_data.pop("anchor", None)
+    # An anchor-only update is the client's silent auto-refresh on save (§7.4):
+    # don't spam the activity log or broadcast for it.
+    anchor_only = anchor is not None and not update_data
     for field, value in update_data.items():
         setattr(thread, field, value)
-    
+    if anchor is not None:
+        _validate_anchor_field(thread.resource_type, thread_data.anchor)
+        thread.anchor_field = anchor.get("field")
+        thread.anchor_quote = anchor.get("quote")
+        thread.anchor_prefix = anchor.get("prefix")
+        thread.anchor_suffix = anchor.get("suffix")
+        thread.anchor_occurrence = anchor.get("occurrence") or 0
+        thread.anchor_status = "active"
+
     await db.commit()
     await db.refresh(thread)
-    
+
     # Build response first
     response = await get_thread(thread_id, db, current_user)
 
-    # Fire-and-forget: activity log
-    try:
-        await create_activity_log(
-            db,
-            engagement_id=thread.engagement_id,
-            user_id=current_user.id,
-            action="updated_thread",
-            resource_type=ResourceType.THREAD,
-            resource_id=thread.id,
-            resource_name=thread.title,
-            details=f"Updated thread: {thread.title}"
-        )
-    except Exception:
+    if not anchor_only:
+        # Fire-and-forget: activity log
         try:
-            await db.rollback()
+            await create_activity_log(
+                db,
+                engagement_id=thread.engagement_id,
+                user_id=current_user.id,
+                action="updated_thread",
+                resource_type=ResourceType.THREAD,
+                resource_id=thread.id,
+                resource_name=thread.title,
+                details=f"Updated thread: {thread.title}"
+            )
         except Exception:
-            pass
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
-    await _broadcast_discussion_update(thread.engagement_id, thread.id, "updated_thread")
+        await _broadcast_discussion_update(thread.engagement_id, thread.id, "updated_thread")
     return response
 
 @router.put("/threads/{thread_id}/resolve", response_model=ThreadResponse)

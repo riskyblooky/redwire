@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean, Integer, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -30,7 +30,20 @@ class Thread(Base):
     created_by = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_resolved = Column(Boolean, default=False)
-    
+
+    # Anchored peer-review comments: when set, this thread points at a span of
+    # text inside a specific field of the resource (e.g. a finding's
+    # `description`). Highlights are rendered from these via ProseMirror
+    # decorations in "annotation mode" — see docs/anchored-comments-peer-review.md.
+    # A thread is "anchored" iff anchor_field is not NULL; legacy threads keep
+    # NULL and behave exactly as before.
+    anchor_field = Column(String(64), nullable=True)       # which field, e.g. "description"
+    anchor_quote = Column(Text, nullable=True)             # the highlighted text at creation
+    anchor_prefix = Column(String(128), nullable=True)     # context immediately before the quote
+    anchor_suffix = Column(String(128), nullable=True)     # context immediately after
+    anchor_occurrence = Column(Integer, nullable=True)     # 0-based index among identical quotes (tiebreaker)
+    anchor_status = Column(String(16), nullable=True)      # "active" | "orphaned"
+
     # Relationships
     engagement = relationship("Engagement", back_populates="threads", foreign_keys="Thread.engagement_id")
     author = relationship("User", foreign_keys="Thread.created_by")
