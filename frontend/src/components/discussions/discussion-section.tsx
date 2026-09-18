@@ -7,8 +7,8 @@ import { useThreads, ResourceType } from '@/lib/hooks/use-discussions';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Loader2, MessageSquare, ChevronRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import ThreadCard from './thread-card';
 import NewThreadDialog from './new-thread-dialog';
 
@@ -92,10 +92,16 @@ export default function DiscussionSection({
             <CardHeader>
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                            <MessageSquare className="h-5 w-5 text-primary" />
+                        <button
+                            type="button"
+                            onClick={() => setIsCollapsed(!isCollapsed)}
+                            className="flex items-center gap-2 mb-2 text-left w-full"
+                            aria-expanded={!isCollapsed}
+                        >
+                            <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', !isCollapsed && 'rotate-90')} />
+                            <MessageSquare className="h-5 w-5 text-primary shrink-0" />
                             <CardTitle className="text-white">{title}</CardTitle>
-                        </div>
+                        </button>
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                             <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-xs">
                                 {threads.length} {threads.length === 1 ? 'thread' : 'threads'}
@@ -117,18 +123,6 @@ export default function DiscussionSection({
                             resourceType={resourceType}
                             resourceId={resourceId}
                         />
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setIsCollapsed(!isCollapsed)}
-                            className="h-8 w-8 text-slate-400 hover:text-white"
-                        >
-                            {isCollapsed ? (
-                                <ChevronDown className="h-4 w-4" />
-                            ) : (
-                                <ChevronUp className="h-4 w-4" />
-                            )}
-                        </Button>
                     </div>
                 </div>
             </CardHeader>
