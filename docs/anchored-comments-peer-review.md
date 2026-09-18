@@ -38,7 +38,7 @@ Status: design + plan. Targets a post-1.5.6 cycle.
 | Resource  | Fields |
 |-----------|--------|
 | Finding   | `description`, `impact`, `technical_details`, `steps_to_reproduce`, `mitigations`, `references` |
-| Test case | `description`, `steps`, `expected_result` |
+| Test case | `description`, `steps`, `expected_result`, `notes` |
 
 Rendered by `InlineMarkdownField` → `MarkdownEditor` (TipTap) in edit,
 `MarkdownPreview` (`@uiw/react-markdown-preview`) in view.

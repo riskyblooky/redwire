@@ -381,6 +381,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ description: v })}
                                                 engagementId={testcase.engagement_id}
+                                                annotatable resourceType="testcase" resourceId={testcase.id} field="description"
                                                 fieldContext={{ resourceType: 'testcase', fieldName: 'description', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add a description…"
@@ -399,6 +400,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ steps: v })}
                                                 engagementId={testcase.engagement_id}
+                                                annotatable resourceType="testcase" resourceId={testcase.id} field="steps"
                                                 fieldContext={{ resourceType: 'testcase', fieldName: 'steps', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="bg-slate-900/40 p-2 rounded-lg border border-slate-800/60 overflow-hidden"
                                                 emptyText="Double-click to add execution steps…"
@@ -417,6 +419,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ expected_result: v })}
                                                 engagementId={testcase.engagement_id}
+                                                annotatable resourceType="testcase" resourceId={testcase.id} field="expected_result"
                                                 fieldContext={{ resourceType: 'testcase', fieldName: 'expected_result', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-lg overflow-hidden"
                                                 emptyText="Double-click to add the expected result…"
@@ -511,6 +514,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ notes: v })}
                                                 engagementId={testcase.engagement_id}
+                                                annotatable resourceType="testcase" resourceId={testcase.id} field="notes"
                                                 fieldContext={{ resourceType: 'testcase', fieldName: 'notes', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add notes…"

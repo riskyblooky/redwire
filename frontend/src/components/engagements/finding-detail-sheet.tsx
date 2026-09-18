@@ -524,6 +524,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ description: v })}
                                                 engagementId={finding.engagement_id}
+                                                annotatable resourceType="finding" resourceId={fid} field="description"
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'description', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add a description…"
@@ -542,6 +543,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ impact: v })}
                                                 engagementId={finding.engagement_id}
+                                                annotatable resourceType="finding" resourceId={fid} field="impact"
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'impact', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add potential impact…"
@@ -560,6 +562,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ steps_to_reproduce: v })}
                                                 engagementId={finding.engagement_id}
+                                                annotatable resourceType="finding" resourceId={fid} field="steps_to_reproduce"
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'steps_to_reproduce', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="bg-slate-950 p-2 rounded-lg border border-slate-800 shadow-inner overflow-hidden"
                                                 emptyText="Double-click to add reproduction steps…"
@@ -578,6 +581,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ technical_details: v })}
                                                 engagementId={finding.engagement_id}
+                                                annotatable resourceType="finding" resourceId={fid} field="technical_details"
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'technical_details', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="bg-slate-900/40 p-3 rounded-lg border border-slate-800/60 overflow-hidden"
                                                 emptyText="Double-click to add technical details…"
@@ -596,6 +600,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ mitigations: v })}
                                                 engagementId={finding.engagement_id}
+                                                annotatable resourceType="finding" resourceId={fid} field="mitigations"
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'mitigations', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-lg overflow-hidden"
                                                 emptyText="Double-click to add remediation guidance…"
@@ -614,6 +619,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ references: v })}
                                                 engagementId={finding.engagement_id}
+                                                annotatable resourceType="finding" resourceId={fid} field="references"
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'references', entityContext: buildFindingContext(finding) }}
                                                 previewWrapperClassName="bg-slate-950/40 p-2 rounded-lg border border-slate-800/40 overflow-hidden"
                                                 emptyText="Double-click to add external references…"

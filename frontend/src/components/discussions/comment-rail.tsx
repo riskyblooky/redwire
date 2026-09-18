@@ -19,6 +19,7 @@ const TESTCASE_FIELD_LABELS: Record<string, string> = {
     description: 'Description',
     steps: 'Execution Steps',
     expected_result: 'Expected Result',
+    notes: 'Notes',
 };
 
 /**

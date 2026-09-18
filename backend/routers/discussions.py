@@ -41,7 +41,7 @@ async def _broadcast_discussion_update(engagement_id: str, thread_id: str, actio
 # See docs/anchored-comments-peer-review.md §1.
 _ANCHOR_FIELDS = {
     "finding": {"description", "impact", "technical_details", "steps_to_reproduce", "mitigations", "references"},
-    "testcase": {"description", "steps", "expected_result"},
+    "testcase": {"description", "steps", "expected_result", "notes"},
 }
 
 

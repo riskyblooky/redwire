@@ -69,6 +69,8 @@ import { useTags } from '@/lib/hooks/use-findings';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { InlineTextField } from '@/components/ui/inline/inline-text-field';
 import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
+import { AnchoredCommentsProvider } from '@/components/discussions/anchored-comments-context';
+import { CommentRail } from '@/components/discussions/comment-rail';
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 
@@ -263,6 +265,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
 
     return (
         <DashboardLayout>
+            <AnchoredCommentsProvider>
             <div className="p-6 space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -380,6 +383,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ description: v })}
                                                 engagementId={testcase.engagement_id}
+                                                annotatable resourceType="testcase" resourceId={testcase.id} field="description"
                                                 fieldContext={{ resourceType: 'testcase', fieldName: 'description', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
                                                 emptyText="Double-click to add a description…"
@@ -402,6 +406,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ steps: v })}
                                                 engagementId={testcase.engagement_id}
+                                                annotatable resourceType="testcase" resourceId={testcase.id} field="steps"
                                                 fieldContext={{ resourceType: 'testcase', fieldName: 'steps', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="bg-slate-950 p-2 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
                                                 emptyText="Double-click to add execution steps…"
@@ -424,6 +429,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ expected_result: v })}
                                                 engagementId={testcase.engagement_id}
+                                                annotatable resourceType="testcase" resourceId={testcase.id} field="expected_result"
                                                 fieldContext={{ resourceType: 'testcase', fieldName: 'expected_result', entityContext: buildTestcaseContext(testcase) }}
                                                 previewWrapperClassName="bg-green-500/5 border border-green-500/20 p-2 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.03)] overflow-hidden"
                                                 emptyText="Double-click to add the expected result…"
@@ -572,6 +578,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             canEdit={canEdit}
                                             onSave={(v) => saveField({ notes: v })}
                                             engagementId={testcase.engagement_id}
+                                            annotatable resourceType="testcase" resourceId={testcase.id} field="notes"
                                             fieldContext={{ resourceType: 'testcase', fieldName: 'notes', entityContext: buildTestcaseContext(testcase) }}
                                             previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"
                                             emptyText="Double-click to add notes…"
@@ -920,6 +927,9 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                     </div>
                 </div>
 
+                {/* Peer-review comments rollup */}
+                <CommentRail engagementId={testcase.engagement_id} resourceType="testcase" resourceId={id} />
+
                 {/* Discussions - Full Width */}
                 <DiscussionSection
                     engagementId={testcase.engagement_id}
@@ -955,6 +965,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
             onLink={handleEntityLink}
             onUnlink={handleEntityUnlink}
         />
+            </AnchoredCommentsProvider>
         </DashboardLayout>
     );
 }
