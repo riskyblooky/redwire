@@ -46,6 +46,7 @@ import {
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Table as TableIcon, Trash2, Plus, Minus, Workflow, TextSelect, ListChecks, ChevronsUpDown, Hash,
+    MoreHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -193,6 +194,19 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
     const [imageDialogOpen, setImageDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
     const [imageUrl, setImageUrl] = useState('');
+    // Lesser-used controls live on a second row, hidden by default. The choice
+    // persists so a user who wants the full toolbar keeps it.
+    const [showMore, setShowMore] = useState(false);
+    useEffect(() => {
+        try { if (localStorage.getItem('rw-editor-toolbar-more') === '1') setShowMore(true); } catch { /* ignore */ }
+    }, []);
+    const toggleMore = () => {
+        setShowMore((v) => {
+            const next = !v;
+            try { localStorage.setItem('rw-editor-toolbar-more', next ? '1' : '0'); } catch { /* ignore */ }
+            return next;
+        });
+    };
 
     if (!editor) {
         return null;
@@ -238,7 +252,9 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
 
     return (
         <>
-            <div className="flex flex-wrap items-center gap-1 p-2 border-b border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+            <div className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                {/* Primary row — common controls (always visible) */}
+                <div className="flex flex-wrap items-center gap-1 p-2">
                 {/* History */}
                 <Button
                     type="button"
@@ -319,182 +335,11 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
                     type="button"
                     variant="ghost"
                     size="icon"
-                    title="Underline (Ctrl+U)"
-                    onClick={() => editor.chain().focus().toggleUnderline().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('underline') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                >
-                    <UnderlineIcon className="h-4 w-4" />
-                </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="Strikethrough"
-                    onClick={() => editor.chain().focus().toggleStrike().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('strike') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                >
-                    <Strikethrough className="h-4 w-4" />
-                </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
                     title="Inline code"
                     onClick={() => editor.chain().focus().toggleCode().run()}
                     className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('code') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
                     <Code className="h-4 w-4" />
-                </Button>
-
-                <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
-
-                {/* Highlight + colour */}
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('highlight') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                            title="Highlight"
-                        >
-                            <Highlighter className="h-4 w-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="bg-slate-900 border-slate-800 p-2 min-w-0">
-                        <div className="flex flex-wrap gap-1.5 max-w-[160px]">
-                            {['#fde68a', '#fca5a5', '#86efac', '#93c5fd', '#c4b5fd', '#fdba74', '#f9a8d4'].map(c => (
-                                <button
-                                    key={c}
-                                    type="button"
-                                    onClick={() => editor.chain().focus().toggleHighlight({ color: c }).run()}
-                                    className="h-5 w-5 rounded border border-slate-700 hover:scale-110 transition-transform"
-                                    style={{ backgroundColor: c }}
-                                />
-                            ))}
-                            <button
-                                type="button"
-                                onClick={() => editor.chain().focus().unsetHighlight().run()}
-                                className="h-5 w-5 rounded border border-slate-700 bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] hover:bg-slate-700"
-                                title="Clear"
-                            >
-                                ×
-                            </button>
-                        </div>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-slate-400 hover:bg-slate-800"
-                            title="Text colour"
-                        >
-                            <Palette className="h-4 w-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="bg-slate-900 border-slate-800 p-2 min-w-0">
-                        <div className="flex flex-wrap gap-1.5 max-w-[160px]">
-                            {['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#ffffff', '#94a3b8'].map(c => (
-                                <button
-                                    key={c}
-                                    type="button"
-                                    onClick={() => editor.chain().focus().setColor(c).run()}
-                                    className="h-5 w-5 rounded border border-slate-700 hover:scale-110 transition-transform"
-                                    style={{ backgroundColor: c }}
-                                />
-                            ))}
-                            <button
-                                type="button"
-                                onClick={() => editor.chain().focus().unsetColor().run()}
-                                className="h-5 w-5 rounded border border-slate-700 bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] hover:bg-slate-700"
-                                title="Clear"
-                            >
-                                ×
-                            </button>
-                        </div>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-
-                {/* Subscript / superscript */}
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => editor.chain().focus().toggleSubscript().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('subscript') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Subscript"
-                >
-                    <SubIcon className="h-4 w-4" />
-                </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => editor.chain().focus().toggleSuperscript().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('superscript') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Superscript"
-                >
-                    <SupIcon className="h-4 w-4" />
-                </Button>
-
-                <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
-
-                {/* Text alignment */}
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => editor.chain().focus().setTextAlign('left').run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'left' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Align left"
-                >
-                    <AlignLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => editor.chain().focus().setTextAlign('center').run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'center' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Align center"
-                >
-                    <AlignCenter className="h-4 w-4" />
-                </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => editor.chain().focus().setTextAlign('right').run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'right' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Align right"
-                >
-                    <AlignRight className="h-4 w-4" />
-                </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => editor.chain().focus().setTextAlign('justify').run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'justify' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Justify"
-                >
-                    <AlignJustify className="h-4 w-4" />
-                </Button>
-
-                <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
-
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="Insert / edit link"
-                    onClick={toggleLink}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('link') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                >
-                    <LinkIcon className="h-4 w-4" />
                 </Button>
 
                 <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
@@ -519,16 +364,6 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
                 >
                     <ListOrdered className="h-4 w-4" />
                 </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="Task list"
-                    onClick={() => editor.chain().focus().toggleTaskList().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('taskList') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                >
-                    <CheckSquare className="h-4 w-4" />
-                </Button>
 
                 <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
 
@@ -536,12 +371,15 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
                     type="button"
                     variant="ghost"
                     size="icon"
-                    title="Blockquote"
-                    onClick={() => editor.chain().focus().toggleBlockquote().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('blockquote') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    title="Insert / edit link"
+                    onClick={toggleLink}
+                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('link') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
                 >
-                    <Quote className="h-4 w-4" />
+                    <LinkIcon className="h-4 w-4" />
                 </Button>
+
+                <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+
                 <Button
                     type="button"
                     variant="ghost"
@@ -552,83 +390,6 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
                 >
                     <CodeXml className="h-4 w-4" />
                 </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => editor.chain().focus().insertMermaid().run()}
-                    className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('mermaid') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                    title="Insert Mermaid diagram"
-                >
-                    <Workflow className="h-4 w-4" />
-                </Button>
-
-                <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
-
-                {/* Tables */}
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('table') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
-                            title="Table"
-                        >
-                            <TableIcon className="h-4 w-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="bg-slate-900 border-slate-800 text-slate-300">
-                        <DropdownMenuItem
-                            onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-                            className="cursor-pointer focus:bg-slate-800 focus:text-white"
-                        >
-                            <Plus className="h-3.5 w-3.5 mr-2" /> Insert table (3×3)
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            onClick={() => editor.chain().focus().addColumnAfter().run()}
-                            disabled={!editor.isActive('table')}
-                            className="cursor-pointer focus:bg-slate-800 focus:text-white"
-                        >
-                            <Plus className="h-3.5 w-3.5 mr-2" /> Column after
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            onClick={() => editor.chain().focus().deleteColumn().run()}
-                            disabled={!editor.isActive('table')}
-                            className="cursor-pointer focus:bg-slate-800 focus:text-white"
-                        >
-                            <Minus className="h-3.5 w-3.5 mr-2" /> Delete column
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            onClick={() => editor.chain().focus().addRowAfter().run()}
-                            disabled={!editor.isActive('table')}
-                            className="cursor-pointer focus:bg-slate-800 focus:text-white"
-                        >
-                            <Plus className="h-3.5 w-3.5 mr-2" /> Row after
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            onClick={() => editor.chain().focus().deleteRow().run()}
-                            disabled={!editor.isActive('table')}
-                            className="cursor-pointer focus:bg-slate-800 focus:text-white"
-                        >
-                            <Minus className="h-3.5 w-3.5 mr-2" /> Delete row
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            onClick={() => editor.chain().focus().toggleHeaderRow().run()}
-                            disabled={!editor.isActive('table')}
-                            className="cursor-pointer focus:bg-slate-800 focus:text-white"
-                        >
-                            Toggle header row
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            onClick={() => editor.chain().focus().deleteTable().run()}
-                            disabled={!editor.isActive('table')}
-                            className="cursor-pointer focus:bg-slate-800 focus:text-white text-red-400"
-                        >
-                            <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete table
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
 
                 <Button
                     type="button"
@@ -639,6 +400,21 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
                     className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800"
                 >
                     <ImageIcon className="h-4 w-4" />
+                </Button>
+
+                <div className="flex-1" />
+
+                {/* More — reveal the lesser-used controls */}
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    title={showMore ? 'Fewer controls' : 'More formatting'}
+                    onClick={toggleMore}
+                    className={cn("h-8 px-2 gap-1 hover:bg-slate-800", showMore ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                >
+                    <MoreHorizontal className="h-4 w-4" />
+                    <span className="text-[11px] font-medium">{showMore ? 'Less' : 'More'}</span>
                 </Button>
 
                 {onToggleLineNumbers && (
@@ -655,6 +431,274 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
                             <Hash className="h-4 w-4" />
                         </Button>
                     </>
+                )}
+                </div>
+
+                {/* Secondary row — lesser-used controls (toggle with More) */}
+                {showMore && (
+                <div className="flex flex-wrap items-center gap-1 px-2 pb-2 border-t border-slate-800/60">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Underline (Ctrl+U)"
+                        onClick={() => editor.chain().focus().toggleUnderline().run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('underline') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    >
+                        <UnderlineIcon className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Strikethrough"
+                        onClick={() => editor.chain().focus().toggleStrike().run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('strike') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    >
+                        <Strikethrough className="h-4 w-4" />
+                    </Button>
+
+                    <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+
+                    {/* Highlight + colour */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('highlight') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                                title="Highlight"
+                            >
+                                <Highlighter className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="bg-slate-900 border-slate-800 p-2 min-w-0">
+                            <div className="flex flex-wrap gap-1.5 max-w-[160px]">
+                                {['#fde68a', '#fca5a5', '#86efac', '#93c5fd', '#c4b5fd', '#fdba74', '#f9a8d4'].map(c => (
+                                    <button
+                                        key={c}
+                                        type="button"
+                                        onClick={() => editor.chain().focus().toggleHighlight({ color: c }).run()}
+                                        className="h-5 w-5 rounded border border-slate-700 hover:scale-110 transition-transform"
+                                        style={{ backgroundColor: c }}
+                                    />
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => editor.chain().focus().unsetHighlight().run()}
+                                    className="h-5 w-5 rounded border border-slate-700 bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] hover:bg-slate-700"
+                                    title="Clear"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-slate-400 hover:bg-slate-800"
+                                title="Text colour"
+                            >
+                                <Palette className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="bg-slate-900 border-slate-800 p-2 min-w-0">
+                            <div className="flex flex-wrap gap-1.5 max-w-[160px]">
+                                {['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#ffffff', '#94a3b8'].map(c => (
+                                    <button
+                                        key={c}
+                                        type="button"
+                                        onClick={() => editor.chain().focus().setColor(c).run()}
+                                        className="h-5 w-5 rounded border border-slate-700 hover:scale-110 transition-transform"
+                                        style={{ backgroundColor: c }}
+                                    />
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => editor.chain().focus().unsetColor().run()}
+                                    className="h-5 w-5 rounded border border-slate-700 bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] hover:bg-slate-700"
+                                    title="Clear"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Subscript / superscript */}
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => editor.chain().focus().toggleSubscript().run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('subscript') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        title="Subscript"
+                    >
+                        <SubIcon className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => editor.chain().focus().toggleSuperscript().run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('superscript') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        title="Superscript"
+                    >
+                        <SupIcon className="h-4 w-4" />
+                    </Button>
+
+                    <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+
+                    {/* Text alignment */}
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => editor.chain().focus().setTextAlign('left').run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'left' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        title="Align left"
+                    >
+                        <AlignLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => editor.chain().focus().setTextAlign('center').run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'center' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        title="Align center"
+                    >
+                        <AlignCenter className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => editor.chain().focus().setTextAlign('right').run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'right' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        title="Align right"
+                    >
+                        <AlignRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive({ textAlign: 'justify' }) ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        title="Justify"
+                    >
+                        <AlignJustify className="h-4 w-4" />
+                    </Button>
+
+                    <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Task list"
+                        onClick={() => editor.chain().focus().toggleTaskList().run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('taskList') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    >
+                        <CheckSquare className="h-4 w-4" />
+                    </Button>
+
+                    <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title="Blockquote"
+                        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('blockquote') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                    >
+                        <Quote className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => editor.chain().focus().insertMermaid().run()}
+                        className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('mermaid') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                        title="Insert Mermaid diagram"
+                    >
+                        <Workflow className="h-4 w-4" />
+                    </Button>
+
+                    <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+
+                    {/* Tables */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className={cn("h-8 w-8 hover:bg-slate-800", editor.isActive('table') ? 'text-blue-400 bg-slate-800' : 'text-slate-400')}
+                                title="Table"
+                            >
+                                <TableIcon className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="bg-slate-900 border-slate-800 text-slate-300">
+                            <DropdownMenuItem
+                                onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+                                className="cursor-pointer focus:bg-slate-800 focus:text-white"
+                            >
+                                <Plus className="h-3.5 w-3.5 mr-2" /> Insert table (3×3)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => editor.chain().focus().addColumnAfter().run()}
+                                disabled={!editor.isActive('table')}
+                                className="cursor-pointer focus:bg-slate-800 focus:text-white"
+                            >
+                                <Plus className="h-3.5 w-3.5 mr-2" /> Column after
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => editor.chain().focus().deleteColumn().run()}
+                                disabled={!editor.isActive('table')}
+                                className="cursor-pointer focus:bg-slate-800 focus:text-white"
+                            >
+                                <Minus className="h-3.5 w-3.5 mr-2" /> Delete column
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => editor.chain().focus().addRowAfter().run()}
+                                disabled={!editor.isActive('table')}
+                                className="cursor-pointer focus:bg-slate-800 focus:text-white"
+                            >
+                                <Plus className="h-3.5 w-3.5 mr-2" /> Row after
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => editor.chain().focus().deleteRow().run()}
+                                disabled={!editor.isActive('table')}
+                                className="cursor-pointer focus:bg-slate-800 focus:text-white"
+                            >
+                                <Minus className="h-3.5 w-3.5 mr-2" /> Delete row
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => editor.chain().focus().toggleHeaderRow().run()}
+                                disabled={!editor.isActive('table')}
+                                className="cursor-pointer focus:bg-slate-800 focus:text-white"
+                            >
+                                Toggle header row
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => editor.chain().focus().deleteTable().run()}
+                                disabled={!editor.isActive('table')}
+                                className="cursor-pointer focus:bg-slate-800 focus:text-white text-red-400"
+                            >
+                                <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete table
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
                 )}
             </div>
 
