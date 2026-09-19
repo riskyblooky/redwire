@@ -98,6 +98,10 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
     // so the comment is immediately readable.
     useEffect(() => { if (active) setOpen(true); }, [active]);
 
+    // Thread creator, for the collapsed-header avatar. The Thread payload only
+    // carries the creator's id, so resolve name/photo from their comment.
+    const creator = comments.find((c) => c.created_by === thread.created_by) ?? comments[0];
+
     const submit = async () => {
         const body = reply.trim();
         if (!body || createComment.isPending) return;
@@ -130,6 +134,12 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
                 className="w-full text-left p-2.5 flex items-center gap-2"
             >
                 <ChevronRight className={cn('h-3.5 w-3.5 text-slate-500 shrink-0 transition-transform', open && 'rotate-90')} />
+                <UserAvatar
+                    userId={creator?.created_by || thread.created_by}
+                    username={creator?.author_name}
+                    user={creator?.author_profile_photo ? { id: creator.created_by, full_name: creator.author_name, profile_photo: creator.author_profile_photo } as any : undefined}
+                    className="h-4 w-4 text-[8px] shrink-0"
+                />
                 <span className="min-w-0 flex-1 flex items-center gap-1 text-[11px]">
                     {showQuote && thread.anchor?.quote ? (
                         <>
