@@ -57,6 +57,7 @@ import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { MoveTestCaseDialog } from '@/components/ui/move-testcase-dialog';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
+import { TagList } from '@/components/ui/tag-list';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { displayNameFrom } from '@/lib/display-name';
 import { formatDistanceToNow } from 'date-fns';
@@ -316,13 +317,18 @@ const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, i
                         </RadixTooltip>
                     </RadixTooltipProvider>
                 </TableCell>}
+                {col('tags') && <TableCell>
+                    {(testcase.tags && testcase.tags.length > 0)
+                        ? <TagList tags={testcase.tags} max={3} />
+                        : <span className="text-slate-600 text-sm">—</span>}
+                </TableCell>}
                 {col('links') && <TableCell>
                     <div className="flex items-center gap-3">
                         <LinkTooltip icon={<Bug className="h-3.5 w-3.5" />} count={testcase.findings?.length || 0} items={(testcase.findings || []).map((f: any) => ({ name: f.title, href: `/findings/${f.id}?engagementId=${engagementId}` }))} label="Findings" colorClass="text-primary" />
                         <LinkTooltip icon={<Server className="h-3.5 w-3.5" />} count={testcase.assets?.length || 0} items={(testcase.assets || []).map((a: any) => ({ name: a.name, href: `/assets/${a.id}?engagementId=${engagementId}` }))} label="Assets" colorClass="text-cyan-400" />
                         <LinkTooltip icon={<Lock className="h-3.5 w-3.5" />} count={testcase.vault_items?.length || 0} items={(testcase.vault_items || []).map((v: any) => ({ name: v.name }))} label="Vault Items" colorClass="text-amber-400" />
                         <LinkTooltip icon={<Sparkles className="h-3.5 w-3.5" />} count={testcase.cleanup_artifacts?.length || 0} items={(testcase.cleanup_artifacts || []).map((c: any) => ({ name: c.title }))} label="Cleanup Artifacts" colorClass="text-lime-400" />
-                        <LinkTooltip icon={<Paperclip className="h-3.5 w-3.5" />} count={testcase.evidence?.length || 0} items={(testcase.evidence || []).map((e: any) => ({ name: e.original_filename }))} label="Evidence" colorClass="text-pink-400" />
+                        <LinkTooltip icon={<Paperclip className="h-3.5 w-3.5" />} count={testcase.evidence?.length || 0} items={(testcase.evidence || []).map((e: any) => ({ name: e.original_filename, href: `/engagements/${engagementId}/evidence/${e.id}` }))} label="Evidence" colorClass="text-pink-400" />
                         <LinkTooltip icon={<StickyNote className="h-3.5 w-3.5" />} count={noteItems.length} items={noteItems.map((n: any) => ({ name: n.title, href: `/engagements/${engagementId}?tab=notes&noteId=${n.id}` }))} label="Notes" colorClass="text-teal-400" />
                         <LinkTooltip icon={<Radar className="h-3.5 w-3.5" />} count={testcaseIntelItems.length} items={testcaseIntelItems.map((i: any) => ({ name: i.title, onClick: () => setIntelDetailId(i.id) }))} label="Intel" colorClass="text-cyan-400" />
                         <LinkTooltip icon={<Server className="h-3.5 w-3.5" />} count={testcaseInfraItems.length} items={testcaseInfraItems.map((i: any) => ({ name: i.name }))} label="Infrastructure" colorClass="text-teal-400" />
@@ -420,6 +426,7 @@ const TESTCASES_COLUMNS: ColumnDef[] = [
     { key: 'discussions', label: 'Discussions' },
     { key: 'createdBy',   label: 'Created By' },
     { key: 'created',     label: 'Created' },
+    { key: 'tags',        label: 'Tags',        defaultHidden: true },
     { key: 'links',       label: 'Links' },
     { key: 'actions',     label: 'Actions',     required: true },
 ];
@@ -830,6 +837,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                                         {col('discussions') && <TableHead className="text-slate-400 cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort('unresolved_thread_count')}><span className="flex items-center">Discussions <SortIcon field="unresolved_thread_count" currentField={sortField} order={sortOrder} /></span></TableHead>}
                                         {col('createdBy') && <TableHead className="text-slate-400 cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort('created_by_username')}><span className="flex items-center">Created By <SortIcon field="created_by_username" currentField={sortField} order={sortOrder} /></span></TableHead>}
                                         {col('created') && <TableHead className="text-slate-400 cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort('created_at')}><span className="flex items-center">Created <SortIcon field="created_at" currentField={sortField} order={sortOrder} /></span></TableHead>}
+                                        {col('tags') && <TableHead className="text-slate-400">Tags</TableHead>}
                                         {col('links') && <TableHead className="text-slate-400">Links</TableHead>}
                                         <CustomFieldListHeads entity="testcase" isVisible={col} sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                                         <TableHead className="text-slate-400 text-right">Actions</TableHead>

@@ -38,6 +38,7 @@ import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialo
 import { useEngagementIntelInfraLinks } from '@/lib/hooks/use-intel';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
+import { TagList } from '@/components/ui/tag-list';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { displayNameFrom } from '@/lib/display-name';
 import { relevanceComparator } from '@/lib/search-relevance';
@@ -237,13 +238,18 @@ const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLin
                         </RadixTooltip>
                     </RadixTooltipProvider>
                 </TableCell>}
+                {col('tags') && <TableCell>
+                    {(finding.tags && finding.tags.length > 0)
+                        ? <TagList tags={finding.tags} max={3} />
+                        : <span className="text-slate-600 text-sm">—</span>}
+                </TableCell>}
                 {col('links') && <TableCell>
                     <div className="flex items-center gap-3">
                         <LinkTooltip icon={<Server className="h-3.5 w-3.5" />} count={(finding.assets || []).length} items={(finding.assets || []).map((a: any) => ({ name: a.name, href: `/assets/${a.id}?engagementId=${engagementId}` }))} label="Assets" colorClass="text-cyan-400" />
                         <LinkTooltip icon={<CheckSquare className="h-3.5 w-3.5" />} count={(finding.testcases || []).length} items={(finding.testcases || []).map((tc: any) => ({ name: tc.title, href: `/testcases/${tc.id}?engagementId=${engagementId}` }))} label="Test Cases" colorClass="text-emerald-400" />
                         <LinkTooltip icon={<Lock className="h-3.5 w-3.5" />} count={(finding.vault_items || []).length} items={(finding.vault_items || []).map((v: any) => ({ name: v.name }))} label="Vault Items" colorClass="text-amber-400" />
                         <LinkTooltip icon={<Sparkles className="h-3.5 w-3.5" />} count={(finding.cleanup_artifacts || []).length} items={(finding.cleanup_artifacts || []).map((c: any) => ({ name: c.title || c.name || 'Cleanup artifact' }))} label="Cleanup Artifacts" colorClass="text-lime-400" />
-                        <LinkTooltip icon={<Paperclip className="h-3.5 w-3.5" />} count={(finding.evidence || []).length} items={(finding.evidence || []).map((e: any) => ({ name: e.original_filename }))} label="Evidence" colorClass="text-pink-400" />
+                        <LinkTooltip icon={<Paperclip className="h-3.5 w-3.5" />} count={(finding.evidence || []).length} items={(finding.evidence || []).map((e: any) => ({ name: e.original_filename, href: `/engagements/${engagementId}/evidence/${e.id}` }))} label="Evidence" colorClass="text-pink-400" />
                         <LinkTooltip icon={<StickyNote className="h-3.5 w-3.5" />} count={noteItems.length} items={noteItems.map((n: any) => ({ name: n.title, href: `/engagements/${engagementId}?tab=notes&noteId=${n.id}` }))} label="Notes" colorClass="text-teal-400" />
                         <LinkTooltip icon={<Radar className="h-3.5 w-3.5" />} count={findingIntelItems.length} items={findingIntelItems.map((i: any) => ({ name: i.title || i.value, onClick: () => setIntelDetailId(i.id) }))} label="Intel" colorClass="text-violet-400" />
                         <LinkTooltip icon={<Server className="h-3.5 w-3.5" />} count={findingInfraItems.length} items={findingInfraItems.map((i: any) => ({ name: i.name }))} label="Infrastructure" colorClass="text-teal-400" />
@@ -359,6 +365,7 @@ const FINDINGS_COLUMNS: ColumnDef[] = [
     { key: 'discussions', label: 'Discussions' },
     { key: 'createdBy',   label: 'Created By' },
     { key: 'created',     label: 'Created' },
+    { key: 'tags',        label: 'Tags',        defaultHidden: true },
     { key: 'links',       label: 'Links' },
     { key: 'actions',     label: 'Actions',     required: true },
 ];
@@ -662,6 +669,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                                 {col('discussions') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('unresolved_thread_count')}><div className="flex items-center">Discussions <SortIcon field="unresolved_thread_count" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                 {col('createdBy') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('created_by_username')}><div className="flex items-center">Created By <SortIcon field="created_by_username" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                 {col('created') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('created_at')}><div className="flex items-center">Created <SortIcon field="created_at" currentField={sortField} order={sortOrder} /></div></TableHead>}
+                                {col('tags') && <TableHead className="text-slate-400">Tags</TableHead>}
                                 {col('links') && <TableHead className="text-slate-400">Links</TableHead>}
                                 <CustomFieldListHeads entity="finding" isVisible={col} sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
                                 <TableHead className="text-right text-slate-400">Actions</TableHead>
