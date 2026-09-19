@@ -4,6 +4,51 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.5.7] — Unreleased
+
+### Added
+- **Anchored peer-review comments** — highlight a span of text inside a finding or
+  test-case field and attach a review thread to it, Google-Docs style. Double-click
+  a field (or its comment-count chip) to open annotation mode: an editor with the
+  review highlights beside a comments panel. Select text → **Add comment** anchors a
+  thread to that span; highlights track edits live and re-anchor on save, and a
+  comment whose text is later deleted is flagged **Outdated** rather than lost.
+  Works on every text field of findings and test cases, on the detail pages, the
+  side sheets, and the full edit pages. Reviewers who can view a finding can comment
+  even without edit rights. Available across the app since it's built into the
+  shared editor.
+- **Peer review ties into comments** — leaving an anchored comment on a finding
+  automatically records your peer review as *changes requested* (the author is
+  skipped). Anchored review threads are titled `<Field> Review #N`.
+
+### Improved
+- **Annotation editor UX** — the comments panel is resizable (drag its edge) and
+  collapsible; the editor keeps its own vertical resize grip; the "Add comment"
+  button and composer now sit over the editor near your selection instead of
+  drifting off-screen. Comments render Markdown, show the author's avatar (hover for
+  the name), and a header toggle hides resolved threads (resolved threads also drop
+  their highlight). Thread/comment delete controls were added to the panel.
+- **Cleaner discussion section** — the resource's discussion area is now titled
+  **Peer-review comments**, collapses from its title, keeps the anchored ("highlight")
+  threads hidden behind a toggle to stay focused on general discussion, and shows the
+  anchored field + quote for context. Thread/comment counts moved onto the title row.
+- **Two-row editor toolbar** — the formatting toolbar no longer wraps: everyday
+  controls stay on the primary row and the lesser-used ones (underline, highlight,
+  colour, sub/superscript, alignment, task list, blockquote, Mermaid, table) move
+  behind a **More** toggle (remembered per user). Applies everywhere the editor is used.
+- **Collapsible right pane** on the finding and test-case detail pages — collapse the
+  Risk Assessment / Test Details sidebar to give the main content full width (a slim
+  "Details" tab brings it back; remembered per view). The Execution Result section on
+  the test-case page is now collapsible too.
+- **Tighter, more consistent detail pages** — reduced the heavy section padding and
+  normalized section-title sizing on the finding/test-case view pages, and gave the
+  finding's Executive Summary the same boxed style as Technical Analysis.
+
+### Fixed
+- **Edit pages: sticky tabs & sidebar** — on the finding/test-case edit pages the tab
+  bar now stays pinned below the header while the sections scroll, and the right
+  sidebar pins at the correct offset instead of sliding under the header.
+
 ## [1.5.6] — 2026-09-09
 
 ### Security
