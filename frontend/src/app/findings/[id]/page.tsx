@@ -95,6 +95,7 @@ import { LinkEntityDialog, LinkedIdMap } from '@/components/ui/link-entity-dialo
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { ChainLinksSection } from '@/components/engagements/chain-links-section';
+import { AttackGraph } from '@/components/engagements/attack-graph';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import {
     useLinkFindingToTestCase, useUnlinkFindingFromTestCase,
@@ -152,6 +153,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const [viewCleanup, setViewCleanup] = useState<any>(null);
     const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
+    const [isAttackGraphCollapsed, setIsAttackGraphCollapsed] = useState(true);
     // Per-section collapse (main content sections). Default expanded.
     const [collapsedSec, setCollapsedSec] = useState<Record<string, boolean>>({});
     const toggleSec = (k: string) => setCollapsedSec(s => ({ ...s, [k]: !s[k] }));
@@ -700,6 +702,30 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                             <p className="text-xs">No evidence attached</p>
                                         </div>
                                     )}
+                                </CardContent>
+                            )}
+                        </Card>
+
+                        {/* Attack Graph — this finding's chain (same graph the reports use) */}
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                            <CardHeader
+                                className="pb-3 border-b border-slate-800/60 cursor-pointer select-none hover:bg-slate-800/30 transition-colors"
+                                onClick={() => setIsAttackGraphCollapsed(!isAttackGraphCollapsed)}
+                            >
+                                <CardTitle className="text-white text-lg flex items-center gap-2">
+                                    {isAttackGraphCollapsed ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                                    <Share2 className="h-4 w-4 text-primary" />
+                                    Attack Graph
+                                </CardTitle>
+                            </CardHeader>
+                            {!isAttackGraphCollapsed && (
+                                <CardContent className="pt-4">
+                                    <AttackGraph
+                                        engagementId={finding.engagement_id}
+                                        focusEntity={{ type: 'finding', id: finding.id }}
+                                        canEdit={canEdit}
+                                        heightClass="h-[460px]"
+                                    />
                                 </CardContent>
                             )}
                         </Card>

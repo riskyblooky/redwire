@@ -29,7 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { TagList } from '@/components/ui/tag-list';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Edit, Trash2, CheckSquare, Loader2, Play, CheckCircle2, XCircle, MinusCircle, Save, Zap, Flag, Layout, Circle, ArrowUpCircle, Globe, Radar, Calendar, Bug, X, Lock, Key, Shield, Sparkles, StickyNote, FileText, Terminal, User, Clock, ClipboardCheck, Target, Server, Layers, Plus, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, CheckSquare, Loader2, Play, CheckCircle2, XCircle, MinusCircle, Save, Zap, Flag, Layout, Circle, ArrowUpCircle, Globe, Radar, Calendar, Bug, X, Lock, Key, Shield, Sparkles, StickyNote, FileText, Terminal, User, Clock, ClipboardCheck, Target, Server, Layers, Plus, ExternalLink, ChevronDown, ChevronRight, Share2 } from 'lucide-react';
 import { EvidenceUpload } from '@/components/findings/evidence-upload';
 import { EvidenceCard } from '@/components/findings/evidence-card';
 import { useTestCase, useUpdateTestCase, useDeleteTestCase, useUnlinkFinding, useUnlinkAsset } from '@/lib/hooks/use-testcases';
@@ -57,6 +57,7 @@ import { LinkEntityDialog, LinkedIdMap } from '@/components/ui/link-entity-dialo
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { ChainLinksSection } from '@/components/engagements/chain-links-section';
+import { AttackGraph } from '@/components/engagements/attack-graph';
 import { TECHNIQUE_MAP } from '@/lib/attack-data';
 import {
     useLinkTestCaseToFinding, useUnlinkTestCaseFromFinding,
@@ -137,6 +138,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const [viewCleanup, setViewCleanup] = useState<any>(null);
     const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
     const [isNotesCollapsed, setIsNotesCollapsed] = useState(true);
+    const [isAttackGraphCollapsed, setIsAttackGraphCollapsed] = useState(true);
     const [isExecCollapsed, setIsExecCollapsed] = useState(false);
     // Per-section collapse (main content sections). Default expanded.
     const [rightCollapsed, setRightCollapsed] = useRightPaneCollapsed('testcase-detail-right-pane');
@@ -632,6 +634,30 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                             <p className="text-xs">No evidence attached</p>
                                         </div>
                                     )}
+                                </CardContent>
+                            )}
+                        </Card>
+
+                        {/* Attack Graph — this test case's chain (same graph the reports use) */}
+                        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
+                            <CardHeader
+                                className="pb-3 border-b border-slate-800/60 cursor-pointer select-none hover:bg-slate-800/30 transition-colors"
+                                onClick={() => setIsAttackGraphCollapsed(!isAttackGraphCollapsed)}
+                            >
+                                <CardTitle className="text-white text-lg flex items-center gap-2">
+                                    {isAttackGraphCollapsed ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                                    <Share2 className="h-4 w-4 text-primary" />
+                                    Attack Graph
+                                </CardTitle>
+                            </CardHeader>
+                            {!isAttackGraphCollapsed && (
+                                <CardContent className="pt-4">
+                                    <AttackGraph
+                                        engagementId={testcase.engagement_id}
+                                        focusEntity={{ type: 'testcase', id: testcase.id }}
+                                        canEdit={canEdit}
+                                        heightClass="h-[460px]"
+                                    />
                                 </CardContent>
                             )}
                         </Card>

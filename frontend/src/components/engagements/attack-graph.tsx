@@ -23,7 +23,7 @@ import '@xyflow/react/dist/style.css';
 import Dagre from '@dagrejs/dagre';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
-import { parseUTCDate } from '@/lib/utils';
+import { parseUTCDate, cn } from '@/lib/utils';
 import {
     Monitor, AlertTriangle, ClipboardCheck, Sparkles,
     Loader2, Maximize2, Minimize2, LayoutDashboard, X, Eye, EyeOff, RefreshCw,
@@ -578,9 +578,11 @@ function DetailPanel({ node, onClose, onDeleteAttacker, onConnectAttacker, onDel
 }
 
 // ── Inner Graph (needs ReactFlowProvider above) ──
-function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFullscreen, onRefresh, isRefreshing, layouts, onRefreshLayouts }: {
+function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true, isFullscreen, onToggleFullscreen, onRefresh, isRefreshing, layouts, onRefreshLayouts }: {
     graphData: GraphData;
     engagementId: string;
+    focusEntity?: { type: string; id: string };
+    canEdit?: boolean;
     isFullscreen: boolean;
     onToggleFullscreen: () => void;
     onRefresh: () => void;
@@ -672,6 +674,20 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
         return components;
     }, [graphData, linkedNodeIds]);
 
+    // Focus mode (finding/test-case view pages): the node to center the graph on.
+    const focusNodeId = focusEntity ? `${focusEntity.type}-${focusEntity.id}` : null;
+    // The set of node ids in the connected component containing a given node.
+    const componentContaining = useCallback((nodeId: string | null): Set<string> | null => {
+        if (!nodeId) return null;
+        return chains.find(c => c.nodeIds.has(nodeId))?.nodeIds ?? null;
+    }, [chains]);
+
+    // Findings available for the reporting-page selector (chain = a finding's component).
+    const findingOptions = useMemo(
+        () => graphData.nodes.filter(n => n.type === 'finding').map(n => ({ id: n.id, label: n.data.label })),
+        [graphData],
+    );
+
     // Ref to hold positions for ALL nodes (not just currently visible ones)
     const allPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
 
@@ -681,8 +697,9 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
 
         const pinnedPos = graphData.pinned_positions;
 
-        // Step 1: Compute positions for ALL linked nodes (full graph layout)
-        let allLinkedNodes = graphData.nodes.filter(n => showUnlinked || linkedNodeIds.has(n.id));
+        // Step 1: Compute positions for ALL linked nodes (full graph layout).
+        // In focus mode always include the focused node, even if it has no edges yet.
+        let allLinkedNodes = graphData.nodes.filter(n => showUnlinked || linkedNodeIds.has(n.id) || n.id === focusNodeId);
         let allLinkedEdges = graphData.edges;
         if (!showUnlinked) {
             const allLinkedNodeIds = new Set(allLinkedNodes.map(n => n.id));
@@ -740,16 +757,21 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
             allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y };
         });
 
-        // Step 2: Filter to selected chain for display
+        // Step 2: Filter to the focused entity's chain (view pages) or the
+        // selected finding's chain (reporting dropdown) for display.
         let displayNodes = positionedAllNodes;
         let displayEdges = allRfEdges;
 
-        if (selectedChain !== 'all') {
-            const chain = chains.find(c => c.id === selectedChain);
-            if (chain) {
-                displayNodes = displayNodes.filter(n => chain.nodeIds.has(n.id));
-                displayEdges = displayEdges.filter(e => chain.nodeIds.has(e.source) && chain.nodeIds.has(e.target));
-            }
+        let restrictIds: Set<string> | null = null;
+        if (focusNodeId) {
+            restrictIds = componentContaining(focusNodeId) ?? new Set([focusNodeId]);
+        } else if (selectedChain !== 'all') {
+            // selectedChain is a finding node id → show its connected component.
+            restrictIds = componentContaining(selectedChain);
+        }
+        if (restrictIds) {
+            displayNodes = displayNodes.filter(n => restrictIds!.has(n.id));
+            displayEdges = displayEdges.filter(e => restrictIds!.has(e.source) && restrictIds!.has(e.target));
         }
 
         if (displayNodes.length === 0) {
@@ -772,7 +794,7 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
                 reactFlowInstance.fitView({ padding: 0.2 });
             }, 50);
         }
-    }, [graphData, showUnlinked, selectedChain, chains, linkedNodeIds, setNodes, setEdges, reactFlowInstance]);
+    }, [graphData, showUnlinked, selectedChain, chains, linkedNodeIds, focusNodeId, componentContaining, setNodes, setEdges, reactFlowInstance]);
 
     const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
         setSelectedNode(node as Node<GraphNodeData>);
@@ -804,6 +826,7 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
 
     // Handle drawn edges from attacker nodes
     const onConnect = useCallback(async (connection: Connection) => {
+        if (!canEdit) return;
         if (!connection.source || !connection.target) return;
         // Only persist edges from attacker nodes
         if (connection.source.startsWith('attacker-')) {
@@ -830,7 +853,7 @@ function AttackGraphInner({ graphData, engagementId, isFullscreen, onToggleFulls
                 toast.error('Failed to create edge');
             }
         }
-    }, [engagementId, onRefresh]);
+    }, [engagementId, onRefresh, canEdit]);
 
     const resetLayout = useCallback(async () => {
         // Unpin from server
@@ -1193,17 +1216,18 @@ ${edgeCells.join('\n')}
                         {/* Divider */}
                         <div className="w-px h-5 bg-slate-700 mx-0.5" />
 
-                        {/* Chain dropdown */}
-                        {chains.length >= 1 && (
+                        {/* Finding chain selector — pick a finding to see its chain.
+                            Hidden in focus mode (view pages already scope to one entity). */}
+                        {!focusEntity && findingOptions.length >= 1 && (
                             <Select value={selectedChain} onValueChange={setSelectedChain}>
-                                <SelectTrigger className="h-7 w-[180px] text-xs border-slate-700 bg-slate-900/90 text-slate-300 backdrop-blur-xl">
-                                    <SelectValue placeholder="All Chains" />
+                                <SelectTrigger className="h-7 w-[200px] text-xs border-slate-700 bg-slate-900/90 text-slate-300 backdrop-blur-xl">
+                                    <SelectValue placeholder="All findings" />
                                 </SelectTrigger>
                                 <SelectContent className="bg-slate-900 border-slate-700" container={containerRef.current ?? undefined}>
-                                    <SelectItem value="all" className="text-xs text-slate-300">All Chains ({chains.length})</SelectItem>
-                                    {chains.map((chain) => (
-                                        <SelectItem key={chain.id} value={chain.id} className="text-xs text-slate-300">
-                                            {chain.name} ({chain.nodeIds.size})
+                                    <SelectItem value="all" className="text-xs text-slate-300">All findings ({findingOptions.length})</SelectItem>
+                                    {findingOptions.map((f) => (
+                                        <SelectItem key={f.id} value={f.id} className="text-xs text-slate-300">
+                                            {f.label}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -1306,9 +1330,17 @@ ${edgeCells.join('\n')}
 // ── Main Component ──
 interface AttackGraphProps {
     engagementId: string;
+    /** When set, the graph opens focused on this entity's chain (its connected
+     *  component) and the chain selector is hidden. Used on the finding/test-case
+     *  view pages. */
+    focusEntity?: { type: string; id: string };
+    /** Gate editing (create/delete chain edges, attackers, layout). Defaults true. */
+    canEdit?: boolean;
+    /** Height utility class for the non-fullscreen container (default h-[600px]). */
+    heightClass?: string;
 }
 
-export function AttackGraph({ engagementId }: AttackGraphProps) {
+export function AttackGraph({ engagementId, focusEntity, canEdit = true, heightClass }: AttackGraphProps) {
     const { data: graphData, isLoading, error, refetch, isFetching } = useQuery<GraphData>({
         queryKey: ['attack-graph', engagementId],
         queryFn: async () => {
@@ -1381,6 +1413,8 @@ export function AttackGraph({ engagementId }: AttackGraphProps) {
             <AttackGraphInner
                 graphData={graphData}
                 engagementId={engagementId}
+                focusEntity={focusEntity}
+                canEdit={canEdit}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
                 onRefresh={() => refetch()}
@@ -1401,7 +1435,7 @@ export function AttackGraph({ engagementId }: AttackGraphProps) {
     }
 
     return (
-        <div className="relative h-[600px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+        <div className={cn("relative bg-slate-950 rounded-xl border border-slate-800 overflow-hidden", heightClass || "h-[600px]")}>
             {graphContent}
         </div>
     );
