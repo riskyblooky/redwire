@@ -24,9 +24,9 @@ export function fieldLabel(resourceType: ResourceType, field: string): string {
 
 /**
  * Title for a new anchored thread: the field label plus a rolling number, e.g.
- * "Steps to Reproduce #3". The number is one past the highest "#N" already used
- * among the given field's threads, so it keeps climbing and never collides with
- * a live thread.
+ * "Steps to Reproduce Review #3". The number is one past the highest "#N" already
+ * used among the given field's threads, so it keeps climbing and never collides
+ * with a live thread.
  */
 export function nextThreadTitle(resourceType: ResourceType, field: string, existingTitles: string[]): string {
     let max = 0;
@@ -34,5 +34,5 @@ export function nextThreadTitle(resourceType: ResourceType, field: string, exist
         const m = /#(\d+)\s*$/.exec(title || '');
         if (m) max = Math.max(max, parseInt(m[1], 10));
     }
-    return `${fieldLabel(resourceType, field)} #${max + 1}`;
+    return `${fieldLabel(resourceType, field)} Review #${max + 1}`;
 }
