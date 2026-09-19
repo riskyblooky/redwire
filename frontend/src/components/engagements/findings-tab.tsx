@@ -27,6 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useFindings, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { ResultCount } from '@/components/ui/result-count';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { Tag as TagIcon } from 'lucide-react';
@@ -494,6 +495,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                         <Input placeholder="Search findings..." className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
+                    {!isLoading && <ResultCount count={sortedFindings.length} total={findings.length} noun="finding" className="mr-1" />}
                     <Button
                         size="icon" variant="ghost"
                         className={cn("h-9 w-9", hasActiveFilters ? "text-primary bg-primary/10" : "text-slate-400 hover:text-white")}

@@ -85,6 +85,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ResultCount } from '@/components/ui/result-count';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -1538,6 +1539,7 @@ export default function TemplatesPage() {
                                                 className="pl-9 w-64 bg-slate-800/50 border-slate-700"
                                             />
                                         </div>
+                                        <ResultCount count={filteredRLT.length} total={reportLayoutTemplates.length} noun="template" />
                                         {canManage && (
                                             <Button
                                                 className="bg-primary hover:bg-primary/90 text-white gap-2"
@@ -1633,6 +1635,7 @@ export default function TemplatesPage() {
                                                 className="pl-9 w-64 bg-slate-800/50 border-slate-700"
                                             />
                                         </div>
+                                        <ResultCount count={filteredRT.length} total={reportThemes.length} noun="theme" />
                                         {canManage && (
                                             <Button
                                                 className="bg-primary hover:bg-primary/90 text-white gap-2"

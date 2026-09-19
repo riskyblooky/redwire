@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ResultCount } from '@/components/ui/result-count';
 import { Badge } from '@/components/ui/badge';
 import { cn, parseUTCDate } from '@/lib/utils';
 import {
@@ -591,6 +592,9 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
                                 className="h-7 text-xs pl-7 bg-slate-900/50 border-slate-700"
                             />
                         </div>
+                    )}
+                    {(searchQuery || activeFilterCount > 0) && (
+                        <ResultCount count={filteredNotes.length} total={notes.length} noun="note" className="px-1" />
                     )}
                 </div>
 

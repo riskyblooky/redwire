@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ResultCount } from '@/components/ui/result-count';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -238,6 +239,7 @@ export default function TagsPage() {
                                                 className="pl-10 w-64 bg-slate-800/50 border-slate-700"
                                             />
                                         </div>
+                                        <ResultCount count={filteredTags.length} noun="tag" />
                                         {canManage && (
                                             <Button
                                                 onClick={() => setIsCreateOpen(true)}
@@ -347,6 +349,7 @@ export default function TagsPage() {
                                                 className="pl-10 w-64 bg-slate-800/50 border-slate-700"
                                             />
                                         </div>
+                                        <ResultCount count={filteredTags.length} noun="tag" />
                                         {canManage && (
                                             <Button
                                                 onClick={() => setIsCreateOpen(true)}
@@ -456,6 +459,7 @@ export default function TagsPage() {
                                                 className="pl-10 w-64 bg-slate-800/50 border-slate-700"
                                             />
                                         </div>
+                                        <ResultCount count={filteredTags.length} noun="tag" />
                                         {canManage && (
                                             <Button
                                                 onClick={() => setIsCreateOpen(true)}

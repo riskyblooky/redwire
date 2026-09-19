@@ -21,6 +21,7 @@ import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ResultCount } from '@/components/ui/result-count';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -590,6 +591,13 @@ export default function ClientsPage() {
         return filterNodes(tree);
     }, [tree, searchQuery, engagementFilter, typeFilter]);
 
+    // Count every matching node across the tree (not just top level).
+    const filteredClientCount = useMemo(() => {
+        const count = (nodes: Client[]): number =>
+            nodes.reduce((n, node) => n + 1 + (node.children ? count(node.children) : 0), 0);
+        return count(filteredTree);
+    }, [filteredTree]);
+
     return (
         <DashboardLayout>
             <div className="p-6 space-y-6 max-w-6xl">
@@ -672,14 +680,17 @@ export default function ClientsPage() {
                         </div>
                     </CardHeader>
                     <div className="px-6 pb-4 space-y-2.5">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                            <Input
-                                placeholder="Search clients..."
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                className="pl-9 bg-slate-800/50 border-slate-700 text-white"
-                            />
+                        <div className="flex items-center gap-3">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                                <Input
+                                    placeholder="Search clients..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="pl-9 bg-slate-800/50 border-slate-700 text-white"
+                                />
+                            </div>
+                            <ResultCount count={filteredClientCount} total={totalClients} noun="client" />
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mr-1">Engagements</span>

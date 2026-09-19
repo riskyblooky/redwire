@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useVaultItems, VaultItem, VaultItemReveal, useLinkVaultToFinding, useUnlinkVaultFromFinding, useLinkVaultToTestCase, useUnlinkVaultFromTestCase, useLinkVaultToAsset, useUnlinkVaultFromAsset } from '@/lib/hooks/use-vault';
+import { ResultCount } from '@/components/ui/result-count';
 import { useCheckPassword, useLookupHash } from '@/lib/hooks/use-wordlist';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useTestCases } from '@/lib/hooks/use-testcases';
@@ -987,6 +988,7 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
                         </div>
+                        <ResultCount count={processedItems.length} total={items.length} noun="item" />
                         <div className="flex items-center gap-2">
                             {/* Sort */}
                             <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>

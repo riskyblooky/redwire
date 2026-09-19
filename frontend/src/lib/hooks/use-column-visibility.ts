@@ -11,7 +11,14 @@ export interface ColumnDef {
     label: string;
     /** If true the column cannot be hidden (e.g. "Name", "Actions") */
     required?: boolean;
+    /** If true the column starts hidden (user can enable it from the column
+     *  toggle). Only affects the initial/default state, not saved preferences. */
+    defaultHidden?: boolean;
 }
+
+/** The columns visible by default — everything except opt-out (defaultHidden) ones. */
+const defaultVisible = (columns: ColumnDef[]) =>
+    new Set(columns.filter(c => !c.defaultHidden).map(c => c.key));
 
 /** Returns a Set of currently-visible column keys and a toggle function. */
 export function useColumnVisibility(
@@ -19,7 +26,7 @@ export function useColumnVisibility(
     columns: ColumnDef[],
 ): [Set<string>, (key: string) => void] {
     const [visible, setVisible] = useState<Set<string>>(() => {
-        if (typeof window === 'undefined') return new Set(columns.map(c => c.key));
+        if (typeof window === 'undefined') return defaultVisible(columns);
         const saved = localStorage.getItem(storageKey);
         if (saved) {
             try {
@@ -29,7 +36,7 @@ export function useColumnVisibility(
                 if (valid.length > 0) return new Set(valid);
             } catch { /* ignore */ }
         }
-        return new Set(columns.map(c => c.key));
+        return defaultVisible(columns);
     });
 
     useEffect(() => {
@@ -60,7 +67,9 @@ export function useColumnVisibility(
         if (fresh.length > 0) {
             fresh.forEach(c => knownRef.current!.add(c.key));
             localStorage.setItem(storageKey + ':known', JSON.stringify([...knownRef.current!]));
-            setVisible(prev => new Set([...prev, ...fresh.map(c => c.key)]));
+            // Auto-show newly-seen columns, except those that opt out (defaultHidden).
+            const freshVisible = fresh.filter(c => !c.defaultHidden).map(c => c.key);
+            if (freshVisible.length > 0) setVisible(prev => new Set([...prev, ...freshVisible]));
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [columnsKey, storageKey]);

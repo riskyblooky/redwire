@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { ResultCount } from '@/components/ui/result-count';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -376,6 +377,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                                 <SelectItem value="NOT_APPLICABLE">Not Applicable</SelectItem>
                             </SelectContent>
                         </Select>
+                        <ResultCount count={sortedArtifacts.length} total={artifacts.length} noun="artifact" />
                     </div>
 
                     {canCreate && (

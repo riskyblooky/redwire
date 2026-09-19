@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
 import { ColumnToggle } from '@/components/ui/column-toggle';
+import { ResultCount } from '@/components/ui/result-count';
 import {
     Table,
     TableBody,
@@ -402,6 +403,7 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                         <Input placeholder="Search attachments..." className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
+                    {!isLoading && <ResultCount count={filteredEvidence.length} total={evidence.length} noun="attachment" className="mr-1" />}
                     <ColumnToggle columns={ATTACHMENTS_COLUMNS} visible={visibleCols} onToggle={toggleCol} />
                     {canCreateEvidence && (
                         <Button

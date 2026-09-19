@@ -20,6 +20,7 @@ import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ResultCount } from '@/components/ui/result-count';
 import { Badge } from '@/components/ui/badge';
 import {
     Table,
@@ -253,6 +254,7 @@ export default function TestCasesPage() {
                                     className="pl-10 bg-slate-800/50 border-slate-700 text-white focus:ring-primary focus:border-primary"
                                 />
                             </div>
+                            <ResultCount count={displayRows.length} total={testcases.length} noun="test case" className="self-center" />
                             <Button variant="outline" size="sm" onClick={expandAll} className="text-slate-300 border-slate-700 hover:bg-slate-800">
                                 Expand All
                             </Button>
