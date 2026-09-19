@@ -20,6 +20,28 @@ section becomes one release entry.
 - **Peer review ties into comments** — leaving an anchored comment on a finding
   automatically records your peer review as *changes requested* (the author is
   skipped). Anchored review threads are titled `<Field> Review #N`.
+- **Attack graph on finding & test-case pages** — a collapsible **Attack Graph**
+  section on the finding and test-case view pages shows that item's attack path:
+  the chain that led to it (upstream) and what it produced downstream, with the
+  same interactive controls as the reporting page (drag to connect, edit/delete
+  edges) so chains can be built and edited right from the view page.
+- **Tags column on the findings & test-case tabs** — an optional **Tags** column
+  (hidden by default; enable it from the column toggle) shows each row's tags.
+
+### Improved
+- **Reports draw the attack path from your authored chains** — the PDF and
+  interactive HTML reports now build each finding's attack path from the causal
+  chains you author in the app (falling back to the test-case→finding→asset
+  associations when a finding has no chain), so what you edit in the attack graph
+  is what the report shows. The reporting page's attack-graph selector now picks a
+  **finding** to view its chain (instead of an auto-detected cluster).
+- **Result counts by the search bar** — the finding, test-case, asset, attachment,
+  vault, cleanup and notes tabs (and the clients, tags, template and test-case
+  list pages) now show a live "N results" count next to the search box, in a
+  fixed slot so the controls don't shift as you type.
+- **Clickable attachments in tab tables** — linked evidence in the Links column of
+  the finding/test-case tables now opens the attachment view page, like linked
+  findings and test cases already did.
 
 ### Improved
 - **Annotation editor UX** — the comments panel is resizable (drag its edge) and
