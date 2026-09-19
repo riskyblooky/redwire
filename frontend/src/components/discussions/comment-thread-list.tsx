@@ -16,6 +16,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { MarkdownPreview } from '@/components/ui/markdown-editor';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
     MessageSquare, Check, CheckCircle2, CornerDownRight, Loader2, ChevronRight, Quote as QuoteIcon, Trash2,
@@ -87,7 +88,9 @@ function RailComment({ comment, engagementId, onDelete, deleting }: {
                     )}
                 </span>
             </div>
-            <p className="text-[11px] text-slate-400 whitespace-pre-wrap break-words leading-snug">{comment.content}</p>
+            <div className="text-[11px] text-slate-400 leading-snug break-words prose-p:my-1 prose-pre:my-1">
+                <MarkdownPreview value={comment.content || ''} theme="dark" />
+            </div>
         </div>
     );
 }
