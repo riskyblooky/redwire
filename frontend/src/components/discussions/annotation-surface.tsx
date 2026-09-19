@@ -84,6 +84,40 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     // highlight); the header toggle brings them back.
     const [hideResolved, setHideResolved] = useState(true);
 
+    // Draggable rail width (lg+ only), persisted per session.
+    const RAIL_MIN = 200, RAIL_MAX = 640, RAIL_DEFAULT = 272;
+    const [railWidth, setRailWidth] = useState(RAIL_DEFAULT);
+    const railDragRef = useRef<{ startX: number; startW: number } | null>(null);
+    useEffect(() => {
+        try {
+            const v = parseInt(localStorage.getItem('rw-comment-rail-width') || '', 10);
+            if (!Number.isNaN(v)) setRailWidth(Math.min(RAIL_MAX, Math.max(RAIL_MIN, v)));
+        } catch { /* ignore */ }
+    }, []);
+    const onRailDragMove = useCallback((e: MouseEvent) => {
+        const d = railDragRef.current;
+        if (!d) return;
+        // Dragging the handle left widens the rail (editor shrinks).
+        const w = Math.min(RAIL_MAX, Math.max(RAIL_MIN, d.startW - (e.clientX - d.startX)));
+        setRailWidth(w);
+    }, []);
+    const onRailDragEnd = useCallback(() => {
+        railDragRef.current = null;
+        window.removeEventListener('mousemove', onRailDragMove);
+        window.removeEventListener('mouseup', onRailDragEnd);
+        document.body.style.userSelect = '';
+        try { localStorage.setItem('rw-comment-rail-width', String(railWidthRef.current)); } catch { /* ignore */ }
+    }, [onRailDragMove]);
+    const railWidthRef = useRef(railWidth);
+    useEffect(() => { railWidthRef.current = railWidth; }, [railWidth]);
+    const startRailDrag = useCallback((e: React.MouseEvent) => {
+        railDragRef.current = { startX: e.clientX, startW: railWidthRef.current };
+        window.addEventListener('mousemove', onRailDragMove);
+        window.addEventListener('mouseup', onRailDragEnd);
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    }, [onRailDragMove, onRailDragEnd]);
+
     const { data: allThreads = [] } = useThreads({ engagement_id: engagementId, resource_type: resourceType, resource_id: resourceId });
     // Findings only: leaving an anchored comment records the commenter's own
     // peer review as "changes requested".
@@ -221,7 +255,10 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
 
     return (
         <div className={cn('rounded-lg border border-slate-700 bg-slate-950/30 p-2', outerClassName)}>
-            <div className={cn('grid gap-2 items-stretch', showRail && 'lg:grid-cols-[1fr_17rem]')}>
+            <div
+                className={cn('grid gap-2 items-stretch', showRail && 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]')}
+                style={showRail ? ({ ['--rail-w' as string]: `${railWidth}px` } as React.CSSProperties) : undefined}
+            >
                 {/* When the rail is shown, the editor fills the column so it grows
                     to match a taller comments column, and the footer stays pinned
                     at the bottom. Without the rail, keep the normal resizable box. */}
@@ -252,7 +289,15 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                 </div>
 
                 {showRail && (
-                    <div className="lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
+                    <div className="relative lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
+                        {/* Drag handle — resize the comments rail horizontally (lg+). */}
+                        <div
+                            onMouseDown={startRailDrag}
+                            title="Drag to resize the comments panel"
+                            className="hidden lg:block absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize group/raildrag z-10"
+                        >
+                            <div className="absolute left-1 top-0 bottom-0 w-px bg-transparent group-hover/raildrag:bg-primary/50 transition-colors" />
+                        </div>
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                             <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                 <MessageSquare className="h-3 w-3" /> Comments
