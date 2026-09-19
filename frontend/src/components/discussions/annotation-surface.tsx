@@ -20,6 +20,7 @@ import {
 import { CommentThreadList } from './comment-thread-list';
 import { CommentHoverCard } from './comment-hover-card';
 import { nextThreadTitle } from './field-labels';
+import { RightPaneCollapseButton, RightPaneExpandTab } from '@/components/ui/right-pane-collapse';
 
 export interface AnnotationSurfaceHandle {
     /** Persist any anchors that have drifted from their stored quote/context.
@@ -98,6 +99,16 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     // Hide resolved threads from the rail by default (they also lose their
     // highlight); the header toggle brings them back.
     const [hideResolved, setHideResolved] = useState(true);
+
+    // Collapse the whole comments rail (editor takes the full width), persisted.
+    const [railCollapsed, setRailCollapsed] = useState(false);
+    useEffect(() => {
+        try { if (localStorage.getItem('rw-comment-rail-collapsed') === '1') setRailCollapsed(true); } catch { /* ignore */ }
+    }, []);
+    const setRailCollapsedPersist = (v: boolean) => {
+        setRailCollapsed(v);
+        try { localStorage.setItem('rw-comment-rail-collapsed', v ? '1' : '0'); } catch { /* ignore */ }
+    };
 
     // Draggable rail width (lg+ only), persisted per session.
     const RAIL_MIN = 200, RAIL_MAX = 640, RAIL_DEFAULT = 272;
@@ -269,18 +280,22 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     };
 
     const showRail = fieldThreads.length > 0;
+    const railOpen = showRail && !railCollapsed;
 
     return (
         <div ref={rootRef} className={cn('relative rounded-lg border border-slate-700 bg-slate-950/30 p-2', outerClassName)}>
             <div
-                className={cn('grid gap-2 items-stretch', showRail && 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]')}
-                style={showRail ? ({ ['--rail-w' as string]: `${railWidth}px` } as React.CSSProperties) : undefined}
+                className={cn('grid gap-2 items-stretch',
+                    railOpen && 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]',
+                    showRail && !railOpen && 'lg:grid-cols-[1fr_auto]',
+                )}
+                style={railOpen ? ({ ['--rail-w' as string]: `${railWidth}px` } as React.CSSProperties) : undefined}
             >
-                {/* When the rail is shown, the editor fills the column so it grows
+                {/* When the rail is open, the editor fills the column so it grows
                     to match a taller comments column, and the footer stays pinned
-                    at the bottom. Without the rail, keep the normal resizable box. */}
-                <div className={cn('min-w-0', showRail && 'flex flex-col')}>
-                    <div className={cn('rounded-lg border border-slate-800 overflow-hidden', showRail && 'flex-1 min-h-[300px]')}>
+                    at the bottom. Otherwise, keep the normal resizable box. */}
+                <div className={cn('min-w-0', railOpen && 'flex flex-col')}>
+                    <div className={cn('rounded-lg border border-slate-800 overflow-hidden', railOpen && 'flex-1 min-h-[300px]')}>
                         <MarkdownEditor
                             value={value}
                             onChange={onChange}
@@ -288,9 +303,9 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                             fieldContext={fieldContext}
                             placeholder={placeholder}
                             minHeight={minHeight}
-                            resizable={!showRail}
-                            fillHeight={showRail}
-                            className={showRail ? 'h-full' : undefined}
+                            resizable={!railOpen}
+                            fillHeight={railOpen}
+                            className={railOpen ? 'h-full' : undefined}
                             disabled={!canEdit}
                             commentThreads={lite}
                             activeCommentId={activeId}
@@ -305,7 +320,7 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                     {footer}
                 </div>
 
-                {showRail && (
+                {railOpen && (
                     <div className="relative lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
                         {/* Drag handle — resize the comments rail horizontally (lg+). */}
                         <div
@@ -319,20 +334,23 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                             <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                 <MessageSquare className="h-3 w-3" /> Comments
                             </span>
-                            {resolvedCount > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => setHideResolved((v) => !v)}
-                                    className={cn(
-                                        'flex items-center gap-1 text-[10px] font-semibold transition-colors',
-                                        hideResolved ? 'text-slate-500 hover:text-slate-300' : 'text-emerald-400 hover:text-emerald-300',
-                                    )}
-                                    title={hideResolved ? `Show ${resolvedCount} resolved` : 'Hide resolved'}
-                                >
-                                    {hideResolved ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                                    {hideResolved ? `Resolved (${resolvedCount})` : 'Hide resolved'}
-                                </button>
-                            )}
+                            <span className="flex items-center gap-1.5">
+                                {resolvedCount > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setHideResolved((v) => !v)}
+                                        className={cn(
+                                            'flex items-center gap-1 text-[10px] font-semibold transition-colors',
+                                            hideResolved ? 'text-slate-500 hover:text-slate-300' : 'text-emerald-400 hover:text-emerald-300',
+                                        )}
+                                        title={hideResolved ? `Show ${resolvedCount} resolved` : 'Hide resolved'}
+                                    >
+                                        {hideResolved ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                                        {hideResolved ? `Resolved (${resolvedCount})` : 'Hide resolved'}
+                                    </button>
+                                )}
+                                <RightPaneCollapseButton onClick={() => setRailCollapsedPersist(true)} />
+                            </span>
                         </div>
                         <CommentThreadList
                             threads={visibleThreads}
@@ -343,6 +361,10 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                             emptyText={hideResolved && resolvedCount > 0 ? 'All comments resolved.' : undefined}
                         />
                     </div>
+                )}
+
+                {showRail && railCollapsed && (
+                    <RightPaneExpandTab onClick={() => setRailCollapsedPersist(false)} label="Comments" />
                 )}
             </div>
 
