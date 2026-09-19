@@ -664,7 +664,9 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                         <Input placeholder="Search test cases..." className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
-                    {!isLoading && <ResultCount count={displayTestCases.length} total={testcases.length} noun="test case" className="mr-1" />}
+                    <span className="w-36 shrink-0 flex justify-end overflow-hidden mr-1">
+                        {!isLoading && <ResultCount count={displayTestCases.length} total={testcases.length} noun="test case" />}
+                    </span>
                     <Button
                         size="icon" variant="ghost"
                         className={cn("h-9 w-9", hasActiveFilters ? "text-primary bg-primary/10" : "text-slate-400 hover:text-white")}

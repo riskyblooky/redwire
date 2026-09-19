@@ -20,6 +20,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
 import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs } from '@/components/custom-fields/custom-field-list-columns';
 import { ColumnToggle } from '@/components/ui/column-toggle';
+import { ResultCount } from '@/components/ui/result-count';
 import { useRouter } from 'next/navigation';
 import {
     Search, Plus, Server, Loader2, ArrowUpDown, ArrowUp, ArrowDown, User as UserIcon,
@@ -590,6 +591,9 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                         <Input placeholder="Search... (port:80, service:http, version:8.2)" className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
+                    <span className="w-20 shrink-0 flex justify-end overflow-hidden mr-1">
+                        {!isLoading && <ResultCount count={totalAssets} noun="asset" />}
+                    </span>
                     {(parsedSearch.port !== undefined || parsedSearch.service || parsedSearch.version) && (
                         <div className="flex items-center gap-1">
                             {parsedSearch.port !== undefined && (
