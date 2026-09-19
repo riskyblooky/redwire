@@ -98,7 +98,7 @@ export default function DiscussionSection({
 
     return (
         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs">
-            <CardHeader>
+            <CardHeader className="pt-4 pb-3">
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mb-1">
@@ -110,7 +110,7 @@ export default function DiscussionSection({
                             >
                                 <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', !isCollapsed && 'rotate-90')} />
                                 <MessageSquare className="h-5 w-5 text-primary shrink-0" />
-                                <CardTitle className="text-white">{title}</CardTitle>
+                                <CardTitle className="text-white text-xl font-bold tracking-tight">{title}</CardTitle>
                             </button>
                             <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-xs">
