@@ -523,7 +523,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                 field="description"
                                                 engagementId={finding.engagement_id}
                                                 fieldContext={{ resourceType: 'finding', fieldName: 'description', entityContext: buildFindingContext(finding) }}
-                                                previewWrapperClassName="prose prose-invert max-w-none prose-slate"
+                                                previewWrapperClassName="prose prose-invert prose-sm max-w-none bg-slate-950 p-4 rounded-xl border border-slate-800 shadow-inner overflow-hidden"
                                                 emptyText="Double-click to add an executive summary…"
                                             />
                                         )}
