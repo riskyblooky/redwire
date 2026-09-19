@@ -7,7 +7,7 @@ import { useThreads, ResourceType } from '@/lib/hooks/use-discussions';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, MessageSquare, ChevronRight } from 'lucide-react';
+import { Loader2, MessageSquare, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ThreadCard from './thread-card';
 import NewThreadDialog from './new-thread-dialog';
@@ -35,6 +35,9 @@ export default function DiscussionSection({
 }: DiscussionSectionProps) {
     const queryClient = useQueryClient();
     const [isCollapsed, setIsCollapsed] = useState(false);
+    // Anchored (peer-review highlight) threads are hidden by default to keep this
+    // section focused on general discussion; a toggle reveals them.
+    const [showAnchored, setShowAnchored] = useState(false);
     const hasInitialized = useRef(false);
     const threadsParams = useMemo(() => ({
         engagement_id: engagementId,
@@ -75,11 +78,17 @@ export default function DiscussionSection({
         }
     }, [isLoading, threads.length, hasDeepLink]);
 
-    // If a deep-link arrives after mount, make sure the section is expanded.
+    // If a deep-link arrives after mount, make sure the section is expanded and
+    // anchored threads are revealed (the target may be one of them).
     useEffect(() => {
-        if (hasDeepLink) setIsCollapsed(false);
+        if (hasDeepLink) { setIsCollapsed(false); setShowAnchored(true); }
     }, [hasDeepLink]);
 
+    const anchoredCount = useMemo(() => threads.filter((t) => t.anchor).length, [threads]);
+    const visibleThreads = useMemo(
+        () => (showAnchored ? threads : threads.filter((t) => !t.anchor)),
+        [threads, showAnchored],
+    );
     const totalComments = threads.reduce((sum, thread) => sum + (thread.comment_count || 0), 0);
 
     const friendlyName: Record<string, string> = {
@@ -111,6 +120,20 @@ export default function DiscussionSection({
                                     {totalComments} {totalComments === 1 ? 'comment' : 'comments'}
                                 </span>
                             )}
+                            {anchoredCount > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAnchored((v) => !v)}
+                                    className={cn(
+                                        'flex items-center gap-1 text-xs font-medium transition-colors',
+                                        showAnchored ? 'text-amber-400 hover:text-amber-300' : 'text-slate-500 hover:text-slate-300',
+                                    )}
+                                    title={showAnchored ? 'Hide highlighted-text comments' : 'Show highlighted-text comments'}
+                                >
+                                    {showAnchored ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                                    {showAnchored ? 'Hide' : 'Show'} {anchoredCount} highlight{anchoredCount === 1 ? '' : 's'}
+                                </button>
+                            )}
                         </div>
                         <CardDescription>
                             {description ?? `Collaborate with your team on this ${friendlyName[resourceType] || resourceType}`}
@@ -133,9 +156,9 @@ export default function DiscussionSection({
                         <div className="flex items-center justify-center py-12">
                             <Loader2 className="h-6 w-6 animate-spin text-primary" />
                         </div>
-                    ) : threads.length > 0 ? (
+                    ) : visibleThreads.length > 0 ? (
                         <div className="space-y-3">
-                            {threads.map((thread) => (
+                            {visibleThreads.map((thread) => (
                                 <ThreadCard
                                     key={thread.id}
                                     thread={thread}
@@ -147,6 +170,14 @@ export default function DiscussionSection({
                                 />
                             ))}
                         </div>
+                    ) : anchoredCount > 0 ? (
+                        <button
+                            type="button"
+                            onClick={() => setShowAnchored(true)}
+                            className="w-full text-center py-8 text-sm text-slate-500 bg-slate-800/20 rounded-lg border border-dashed border-slate-700 hover:text-amber-300 hover:border-amber-500/30 transition-colors"
+                        >
+                            {anchoredCount} highlighted-text {anchoredCount === 1 ? 'comment' : 'comments'} hidden — show
+                        </button>
                     ) : (
                         <div className="text-center py-12 text-slate-500 bg-slate-800/20 rounded-lg border border-dashed border-slate-700">
                             <div className="flex flex-col items-center gap-3">

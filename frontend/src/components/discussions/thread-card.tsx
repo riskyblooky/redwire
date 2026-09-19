@@ -6,10 +6,11 @@ import { useComments, useUpdateThread, useDeleteThread } from '@/lib/hooks/use-d
 import { useCanDelete } from '@/lib/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronUp, CheckCircle2, MessageSquare, Loader2, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle2, MessageSquare, Loader2, Trash2, Quote as QuoteIcon } from 'lucide-react';
 import CommentItem from './comment-item';
 import NewCommentForm from './new-comment-form';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { fieldLabel } from './field-labels';
 
 interface ThreadCardProps {
     thread: Thread;
@@ -95,6 +96,18 @@ export default function ThreadCard({ thread, currentUserId, isAdmin, users, targ
                                     </Badge>
                                 )}
                             </div>
+                            {/* Anchored (peer-review) threads: show the field +
+                                highlighted text so the "<Field> #N" title keeps its
+                                context. */}
+                            {thread.anchor?.quote && (
+                                <div className="flex items-start gap-1.5 mb-1 text-xs">
+                                    <QuoteIcon className="h-3 w-3 shrink-0 mt-0.5 text-amber-500/70" />
+                                    <span className="min-w-0">
+                                        <span className="text-slate-500">{fieldLabel(thread.resource_type, thread.anchor.field)}: </span>
+                                        <span className="italic text-amber-300/90 line-clamp-2">“{thread.anchor.quote}”</span>
+                                    </span>
+                                </div>
+                            )}
                             <div className="flex items-center gap-3 text-xs text-slate-500">
                                 <span className="flex items-center gap-1">
                                     <MessageSquare className="h-3 w-3" />

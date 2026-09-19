@@ -6,14 +6,61 @@ import {
     useComments,
     useCreateComment,
     useResolveThread,
+    useDeleteThread,
+    useDeleteComment,
     type Thread,
+    type Comment,
 } from '@/lib/hooks/use-discussions';
+import { useCanDelete } from '@/lib/hooks/use-permissions';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import {
-    MessageSquare, Check, CheckCircle2, CornerDownRight, Loader2, ChevronRight, Quote as QuoteIcon,
+    MessageSquare, Check, CheckCircle2, CornerDownRight, Loader2, ChevronRight, Quote as QuoteIcon, Trash2,
 } from 'lucide-react';
+
+/** One comment row in the rail, with an owner/admin delete control. Split out so
+ *  the per-comment permission hook is called at the component top level. */
+function RailComment({ comment, engagementId, onDelete, deleting }: {
+    comment: Comment;
+    engagementId: string;
+    onDelete: (c: Comment) => void;
+    deleting: boolean;
+}) {
+    const canDelete = useCanDelete(engagementId, 'discussion', comment.created_by);
+    return (
+        <div className="group/rc rounded-md bg-slate-900/50 border border-slate-800/50 p-2">
+            <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className="flex items-center gap-1.5 min-w-0">
+                    <UserAvatar
+                        userId={comment.created_by}
+                        username={comment.author_name}
+                        user={comment.author_profile_photo ? { id: comment.created_by, full_name: comment.author_name, profile_photo: comment.author_profile_photo } as any : undefined}
+                        className="h-4 w-4 text-[8px]"
+                    />
+                    <span className="text-[11px] font-semibold text-slate-300 truncate">{comment.author_name || 'Unknown'}</span>
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] text-slate-500 tabular-nums">{ago(comment.created_at)}</span>
+                    {canDelete && (
+                        <button
+                            type="button"
+                            onClick={() => onDelete(comment)}
+                            disabled={deleting}
+                            className="opacity-0 group-hover/rc:opacity-100 text-slate-500 hover:text-red-400 transition-opacity disabled:opacity-50"
+                            title="Delete comment"
+                            aria-label="Delete comment"
+                        >
+                            <Trash2 className="h-3 w-3" />
+                        </button>
+                    )}
+                </span>
+            </div>
+            <p className="text-[11px] text-slate-400 whitespace-pre-wrap break-words leading-snug">{comment.content}</p>
+        </div>
+    );
+}
 
 function ago(iso: string): string {
     const then = parseUTCDate(iso).getTime();
@@ -40,6 +87,10 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
     const { data: comments = [] } = useComments(thread.id);
     const createComment = useCreateComment();
     const resolveThread = useResolveThread();
+    const deleteThread = useDeleteThread();
+    const deleteComment = useDeleteComment();
+    const canDeleteThread = useCanDelete(thread.engagement_id, 'discussion', thread.created_by);
+    const { confirm, ConfirmDialog } = useConfirmDialog();
     const [reply, setReply] = useState('');
     const [open, setOpen] = useState(false);
 
@@ -52,6 +103,16 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
         if (!body || createComment.isPending) return;
         await createComment.mutateAsync({ thread_id: thread.id, content: body });
         setReply('');
+    };
+
+    const handleDeleteThread = async () => {
+        const ok = await confirm({ title: 'Delete comment thread', description: 'Delete this thread and all its replies? This cannot be undone.' });
+        if (ok) await deleteThread.mutateAsync(thread.id);
+    };
+
+    const handleDeleteComment = async (c: Comment) => {
+        const ok = await confirm({ title: 'Delete comment', description: 'Delete this comment? This cannot be undone.' });
+        if (ok) await deleteComment.mutateAsync({ id: c.id, thread_id: thread.id });
     };
 
     return (
@@ -91,21 +152,13 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
                 <div className="px-2.5 pb-2.5 space-y-2">
                     <div className="space-y-1.5">
                         {comments.map((c) => (
-                            <div key={c.id} className="rounded-md bg-slate-900/50 border border-slate-800/50 p-2">
-                                <div className="flex items-center justify-between gap-2 mb-0.5">
-                                    <span className="flex items-center gap-1.5 min-w-0">
-                                        <UserAvatar
-                                            userId={c.created_by}
-                                            username={c.author_name}
-                                            user={c.author_profile_photo ? { id: c.created_by, full_name: c.author_name, profile_photo: c.author_profile_photo } as any : undefined}
-                                            className="h-4 w-4 text-[8px]"
-                                        />
-                                        <span className="text-[11px] font-semibold text-slate-300 truncate">{c.author_name || 'Unknown'}</span>
-                                    </span>
-                                    <span className="text-[10px] text-slate-500 tabular-nums shrink-0">{ago(c.created_at)}</span>
-                                </div>
-                                <p className="text-[11px] text-slate-400 whitespace-pre-wrap break-words leading-snug">{c.content}</p>
-                            </div>
+                            <RailComment
+                                key={c.id}
+                                comment={c}
+                                engagementId={thread.engagement_id}
+                                onDelete={handleDeleteComment}
+                                deleting={deleteComment.isPending}
+                            />
                         ))}
                     </div>
                     <div className="flex items-start gap-1.5">
@@ -121,7 +174,18 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
                             {createComment.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CornerDownRight className="h-3.5 w-3.5" />}
                         </Button>
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex justify-end items-center gap-1">
+                        {canDeleteThread && (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 gap-1 text-[10px] text-slate-500 hover:text-red-400"
+                                onClick={handleDeleteThread}
+                                disabled={deleteThread.isPending}
+                            >
+                                <Trash2 className="h-3 w-3" /> Delete
+                            </Button>
+                        )}
                         <Button
                             size="sm"
                             variant="ghost"
@@ -134,6 +198,7 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
                     </div>
                 </div>
             )}
+            <ConfirmDialog />
         </div>
     );
 }
