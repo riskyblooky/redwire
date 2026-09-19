@@ -13,6 +13,7 @@ import {
     useThreads, useCreateThread, useCreateComment, useUpdateThread,
     type Thread, type ResourceType,
 } from '@/lib/hooks/use-discussions';
+import { useFindingReviews, useSubmitFindingReview } from '@/lib/hooks/use-finding-reviews';
 import {
     anchorFromRange, computeAnchorRanges, type AnchoredThreadLite,
 } from '@/components/ui/comment-highlight-extension';
@@ -84,6 +85,11 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     const [hideResolved, setHideResolved] = useState(true);
 
     const { data: allThreads = [] } = useThreads({ engagement_id: engagementId, resource_type: resourceType, resource_id: resourceId });
+    // Findings only: leaving an anchored comment records the commenter's own
+    // peer review as "changes requested".
+    const isFinding = resourceType === 'finding';
+    const { data: reviewSummary } = useFindingReviews(isFinding ? resourceId : undefined);
+    const submitReview = useSubmitFindingReview(resourceId);
     const createThread = useCreateThread();
     const createComment = useCreateComment();
     const updateThread = useUpdateThread();
@@ -183,6 +189,19 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
             });
             await createComment.mutateAsync({ thread_id: thread.id, content: body });
             setComposer(null); setComposerText(''); setActiveId(thread.id);
+
+            // On a finding, a review comment is a change request: record the
+            // commenter's own peer review as CHANGES_REQUESTED (skip the author,
+            // who can't review their own finding, and no-op if already set).
+            if (
+                isFinding && reviewSummary && !reviewSummary.is_author &&
+                reviewSummary.my_review?.status !== 'CHANGES_REQUESTED'
+            ) {
+                try {
+                    await submitReview.mutateAsync({ status: 'CHANGES_REQUESTED' });
+                    toast.info('Your review was set to “changes requested”.');
+                } catch { /* non-fatal: the comment already posted */ }
+            }
         } catch (e: any) {
             toast.error(e?.response?.data?.detail || 'Failed to add comment');
         }
