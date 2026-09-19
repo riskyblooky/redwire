@@ -627,31 +627,34 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
     // Focus mode (finding/test-case view pages): the node to center the graph on.
     const focusNodeId = focusEntity ? `${focusEntity.type}-${focusEntity.id}` : null;
 
-    // The subgraph for a single entity's "chain": follow the authored causal
-    // (kind:'chain') edges transitively from the node, then include each chain
-    // member's immediate (1-hop, any-edge) neighbours for local attack-path
-    // context. This deliberately does NOT traverse association edges transitively,
-    // so it stays scoped to the finding's chain rather than the whole engagement
-    // (which is usually one big association-connected component).
+    // The subgraph for a single entity's attack path: the directed chain that
+    // LED TO it (walk edges backwards) plus everything it PRODUCED downstream
+    // (walk edges forwards). Test-case hierarchy (parent/child) edges are
+    // excluded so a discovering test case doesn't drag in its parent and the
+    // parent's other children. Association + causal(chain) edges are followed;
+    // this mirrors how the report's per-finding attack path is built.
     const focusSubgraphIds = useCallback((nodeId: string | null): Set<string> | null => {
         if (!nodeId) return null;
-        const chainAdj: Record<string, Set<string>> = {};
-        const anyAdj: Record<string, Set<string>> = {};
+        const fwd: Record<string, Set<string>> = {}; // source -> targets
+        const rev: Record<string, Set<string>> = {}; // target -> sources
         const add = (m: Record<string, Set<string>>, a: string, b: string) => { (m[a] ??= new Set()).add(b); };
         for (const e of graphData.edges) {
-            add(anyAdj, e.source, e.target); add(anyAdj, e.target, e.source);
-            if (e.kind === 'chain') { add(chainAdj, e.source, e.target); add(chainAdj, e.target, e.source); }
+            if (e.kind === 'hierarchy') continue; // skip parent/child test-case tree
+            add(fwd, e.source, e.target);
+            add(rev, e.target, e.source);
         }
-        // BFS over chain edges → the authored causal chain (just the node if none).
-        const chainComp = new Set<string>([nodeId]);
-        const queue = [nodeId];
-        while (queue.length) {
-            const cur = queue.shift()!;
-            for (const nb of chainAdj[cur] ?? []) if (!chainComp.has(nb)) { chainComp.add(nb); queue.push(nb); }
-        }
-        // Add 1-hop context around each chain member.
-        const result = new Set(chainComp);
-        for (const m of chainComp) for (const nb of anyAdj[m] ?? []) result.add(nb);
+        const walk = (adj: Record<string, Set<string>>) => {
+            const seen = new Set<string>([nodeId]);
+            const queue = [nodeId];
+            while (queue.length) {
+                const cur = queue.shift()!;
+                for (const nb of adj[cur] ?? []) if (!seen.has(nb)) { seen.add(nb); queue.push(nb); }
+            }
+            return seen;
+        };
+        const result = new Set<string>([nodeId]);
+        for (const id of walk(rev)) result.add(id); // upstream: what led to it
+        for (const id of walk(fwd)) result.add(id); // downstream: what it produced
         return result;
     }, [graphData]);
 
