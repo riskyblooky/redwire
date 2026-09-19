@@ -101,17 +101,18 @@ export default function DiscussionSection({
             <CardHeader>
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                        <button
-                            type="button"
-                            onClick={() => setIsCollapsed(!isCollapsed)}
-                            className="flex items-center gap-2 mb-2 text-left w-full"
-                            aria-expanded={!isCollapsed}
-                        >
-                            <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', !isCollapsed && 'rotate-90')} />
-                            <MessageSquare className="h-5 w-5 text-primary shrink-0" />
-                            <CardTitle className="text-white">{title}</CardTitle>
-                        </button>
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mb-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsCollapsed(!isCollapsed)}
+                                className="flex items-center gap-2 text-left"
+                                aria-expanded={!isCollapsed}
+                            >
+                                <ChevronRight className={cn('h-4 w-4 text-slate-400 shrink-0 transition-transform', !isCollapsed && 'rotate-90')} />
+                                <MessageSquare className="h-5 w-5 text-primary shrink-0" />
+                                <CardTitle className="text-white">{title}</CardTitle>
+                            </button>
+                            <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-xs">
                                 {threads.length} {threads.length === 1 ? 'thread' : 'threads'}
                             </Badge>
@@ -134,6 +135,7 @@ export default function DiscussionSection({
                                     {showAnchored ? 'Hide' : 'Show'} {anchoredCount} highlight{anchoredCount === 1 ? '' : 's'}
                                 </button>
                             )}
+                            </div>
                         </div>
                         <CardDescription>
                             {description ?? `Collaborate with your team on this ${friendlyName[resourceType] || resourceType}`}
