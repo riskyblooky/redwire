@@ -21,7 +21,7 @@
   --brand:hsl(263 70% 55%); --brand-ink:hsl(263 82% 74%); --brand-dim:hsl(263 45% 20%);
   --sev-critical:#ef4444; --sev-high:#f97316; --sev-medium:#eab308; --sev-low:#60a5fa; --sev-info:#94a3b8;
   --ok:#22c55e; --ok-dim:hsl(142 40% 14%); --warn:#f59e0b; --open:#fb923c;
-  --ent-asset:#60a5fa; --ent-testcase:#34d399; --ent-cleanup:#a3e635;
+  --ent-asset:#60a5fa; --ent-testcase:#34d399; --ent-cleanup:#a3e635; --ent-vault:#eab308;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.28);
   --tlp:#FFC000; --tlp-ink:#1a1400; --brand-rgb:139,92,246;
   --font-display:'Archivo',system-ui,sans-serif;
@@ -36,7 +36,7 @@
   --brand:hsl(263 60% 52%); --brand-ink:hsl(263 60% 46%); --brand-dim:hsl(263 60% 93%);
   --sev-critical:#dc2626; --sev-high:#ea580c; --sev-medium:#ca8a04; --sev-low:#2563eb; --sev-info:#64748b;
   --ok:#16a34a; --ok-dim:hsl(142 55% 90%); --warn:#b45309; --open:#c2410c;
-  --ent-asset:#2563eb; --ent-testcase:#059669; --ent-cleanup:#4d7c0f;
+  --ent-asset:#2563eb; --ent-testcase:#059669; --ent-cleanup:#4d7c0f; --ent-vault:#ca8a04;
   --shadow:0 1px 2px rgba(16,24,40,.06),0 10px 26px rgba(16,24,40,.08);
   --brand-rgb:124,58,237;
 }
@@ -655,6 +655,7 @@ const IC={
  'bug':'<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>',
  'share-2':'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
  'server':'<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+ 'key':'<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
  'image':'<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
  'trash-2':'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
  'file-text':'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
@@ -674,7 +675,10 @@ function stampIcons(root=document){root.querySelectorAll('[data-ic]').forEach(el
 /* ===== the data contract (this is the shape report-data.js would carry) ===== */
 const SEV = {critical:{r:4,c:'var(--sev-critical)'},high:{r:3,c:'var(--sev-high)'},medium:{r:2,c:'var(--sev-medium)'},low:{r:1,c:'var(--sev-low)'},info:{r:0,c:'var(--sev-info)'}};
 const R=window.__REPORT__||{};
-const FINDINGS=R.findings||[], CLEANUP=R.cleanup||[], ASSETS=R.assets||[], CHAIN=R.chain||[];
+const FINDINGS=R.findings||[], CLEANUP=R.cleanup||[], ASSETS=R.assets||[], CHAIN=R.chain||[], CHAIN_VAULT=R.chainVault||[];
+/* vault items only appear in the graph when a chain touches them (they aren't
+   otherwise in the report) — mirrors GET /{eng}/attack-graph. */
+const VMAP=Object.fromEntries(CHAIN_VAULT.map(v=>[v.id,v]));
 
 /* ===== attack graph — same node/edge shape as GET /{eng}/attack-graph =====
    nodes: testcase | finding | asset | cleanup ; edges typed by kind. Here we
@@ -691,14 +695,22 @@ function buildGraph(){
    const src=(c.asset&&aid[c.asset])?aid[c.asset]:c.finding; if(src)edges.push({s:src,t:'C'+i,kind:'cleanup'});});
  TC.forEach(t=>{ if(t.parent) edges.push({s:t.parent,t:t.id,kind:'subtest'}); (t.finds||[]).forEach(fid=>edges.push({s:t.id,t:fid,kind:'discovered'})); });
  FINDINGS.forEach(f=>f.assets.forEach(an=>{ if(aid[an]) edges.push({s:f.id,t:aid[an],kind:'impacts'}); }));
+ /* Chain overlay: surface touched vault items, drop a 'discovered' edge that a
+    same-direction chain edge duplicates, then add the causal chain edges. Empty
+    CHAIN → no change (renders identically to the association-only graph). */
+ CHAIN_VAULT.forEach(v=>nodes.push({id:v.id,type:'vault',label:v.label,vtype:v.itype}));
+ if(CHAIN.length){const cd=new Set(CHAIN.map(c=>c.s+'>'+c.t));
+   for(let i=edges.length-1;i>=0;i--){const e=edges[i]; if(e.kind==='discovered'&&cd.has(e.s+'>'+e.t))edges.splice(i,1);}}
+ CHAIN.forEach(c=>edges.push({s:c.s,t:c.t,kind:'chain',note:c.note}));
  return {nodes,edges};
 }
 const GRAPH=buildGraph();
 /* type color = the box's entity identity (RedWire: asset blue, testcase green, cleanup lime, finding severity) */
-const gType=n=>n.type==='finding'?`var(--sev-${n.sev})`:n.type==='testcase'?'var(--ent-testcase)':n.type==='asset'?'var(--ent-asset)':'var(--ent-cleanup)';
+const gType=n=>n.type==='finding'?`var(--sev-${n.sev})`:n.type==='testcase'?'var(--ent-testcase)':n.type==='asset'?'var(--ent-asset)':n.type==='vault'?'var(--ent-vault)':'var(--ent-cleanup)';
 /* icon color = the RATING — finding by LMHC severity, testcase by pass/fail */
-const gIcon=n=>n.type==='finding'?`var(--sev-${n.sev})`:n.type==='testcase'?(n.status==='Fail'?'var(--sev-critical)':n.status==='Pass'?'var(--ok)':n.status==='Executed'?'var(--ink-muted)':'var(--ink-faint)'):n.type==='asset'?'var(--ent-asset)':'var(--ent-cleanup)';
-const EDGE_STYLE={subtest:'stroke:var(--ink-faint);stroke-width:1.5',discovered:'stroke:var(--brand);stroke-width:2',impacts:'stroke:var(--sev-low);stroke-width:1.5;stroke-dasharray:4 4',cleanup:'stroke:var(--warn);stroke-width:1.5;stroke-dasharray:2 4'};
+const gIcon=n=>n.type==='finding'?`var(--sev-${n.sev})`:n.type==='testcase'?(n.status==='Fail'?'var(--sev-critical)':n.status==='Pass'?'var(--ok)':n.status==='Executed'?'var(--ink-muted)':'var(--ink-faint)'):n.type==='asset'?'var(--ent-asset)':n.type==='vault'?'var(--ent-vault)':'var(--ent-cleanup)';
+/* 'chain' = operator-authored causal edge (indigo-400, matches the app graph's CHAIN_EDGE_COLOR) */
+const EDGE_STYLE={subtest:'stroke:var(--ink-faint);stroke-width:1.5',discovered:'stroke:var(--brand);stroke-width:2',impacts:'stroke:var(--sev-low);stroke-width:1.5;stroke-dasharray:4 4',cleanup:'stroke:var(--warn);stroke-width:1.5;stroke-dasharray:2 4',chain:'stroke:#818cf8;stroke-width:2'};
 function renderGraph(el,g,compact){
  const NW=compact?134:158, NH=compact?36:44, COLW=NW+(compact?48:66), ROWH=NH+(compact?14:22);
  const byId=Object.fromEntries(g.nodes.map(n=>[n.id,n]));
@@ -715,8 +727,8 @@ function renderGraph(el,g,compact){
  const epaths=g.edges.map(e=>{const a=pos[e.s],b=pos[e.t]; if(!a||!b)return''; const sx=a.x+NW,sy=a.y+NH/2,tx=b.x,ty=b.y+NH/2,mx=(sx+tx)/2;
    return `<path d="M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}" fill="none" style="${EDGE_STYLE[e.kind]}" data-s="${e.s}" data-t="${e.t}" class="gedge"/>`;}).join('');
  const gn=g.nodes.map(n=>{const p=pos[n.id]; const lbl=n.label.length>(compact?15:19)?n.label.slice(0,(compact?14:18))+'…':n.label;
-   const sub=n.type==='finding'?(n.sev.toUpperCase()+' · '+n.id):n.type==='testcase'?n.status:n.type;
-   const icn=n.type==='finding'?'bug':n.type==='testcase'?'check-square':n.type==='asset'?'server':'trash-2';
+   const sub=n.type==='finding'?(n.sev.toUpperCase()+' · '+n.id):n.type==='testcase'?n.status:n.type==='vault'?(n.vtype||'Vault item'):n.type;
+   const icn=n.type==='finding'?'bug':n.type==='testcase'?'check-square':n.type==='asset'?'server':n.type==='vault'?'key':'trash-2';
    return `<g transform="translate(${p.x},${p.y})" class="gnode gnode-${n.type}" data-id="${n.id}">
      <rect width="${NW}" height="${NH}" rx="9" class="gbox"/><rect width="4" height="${NH}" rx="2" fill="${gType(n)}"/>
      <svg x="13" y="${NH/2-8}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${gIcon(n)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IC[icn]}</svg>
@@ -736,7 +748,24 @@ function hiGraph(el,id){const E=[...el.querySelectorAll('.gedge')],N=[...el.quer
  const near=new Set([id]); E.forEach(e=>{if(e.dataset.s===id||e.dataset.t===id){near.add(e.dataset.s);near.add(e.dataset.t);}});
  E.forEach(e=>{const on=e.dataset.s===id||e.dataset.t===id; e.classList.toggle('on',on); e.classList.toggle('dim',!on);});
  N.forEach(n=>n.classList.toggle('dim',!near.has(n.dataset.id)));}
-function findingSubgraph(fid){const f=FMAP[fid],nodes=[],edges=[],seen=new Set();
+/* Chain connected-component (chain edges treated as undirected) containing a
+   finding, or null if the finding is in no chain edge. */
+function chainComponent(fid){ if(!CHAIN.length)return null;
+ const adj={}; CHAIN.forEach(c=>{(adj[c.s]=adj[c.s]||[]).push(c.t);(adj[c.t]=adj[c.t]||[]).push(c.s);});
+ if(!adj[fid])return null; const seen=new Set([fid]),st=[fid];
+ while(st.length){const n=st.pop();(adj[n]||[]).forEach(m=>{if(!seen.has(m)){seen.add(m);st.push(m);}});}
+ return seen;}
+function chainSubgraph(comp){const nodes=[],edges=[];
+ comp.forEach(id=>{const t=TCMAP[id],f=FMAP[id],v=VMAP[id];
+   if(t)nodes.push({id:t.id,type:'testcase',label:t.label,status:t.status,finds:t.finds||[]});
+   else if(f)nodes.push({id:f.id,type:'finding',label:f.title,sev:f.sev,cvss:f.cvss,cwe:f.cwe,fstatus:f.status});
+   else if(v)nodes.push({id:v.id,type:'vault',label:v.label,vtype:v.itype});});
+ CHAIN.forEach(c=>{if(comp.has(c.s)&&comp.has(c.t))edges.push({s:c.s,t:c.t,kind:'chain',note:c.note});});
+ return {nodes,edges};}
+/* Per-finding attack path: the operator's chain component when the finding is
+   in one, else the association-derived subgraph (unchanged). */
+function findingSubgraph(fid){const comp=chainComponent(fid); if(comp)return chainSubgraph(comp);
+ const f=FMAP[fid],nodes=[],edges=[],seen=new Set();
  TC.filter(t=>(t.finds||[]).includes(fid)).forEach(t=>{edges.push({s:t.id,t:fid,kind:'discovered'}); let cur=t;
    while(cur){ if(!seen.has(cur.id)){seen.add(cur.id); nodes.push({id:cur.id,type:'testcase',label:cur.label,status:cur.status,finds:cur.finds||[]});}
      if(cur.parent){edges.push({s:cur.parent,t:cur.id,kind:'subtest'}); cur=TCMAP[cur.parent];} else cur=null; } });
@@ -758,6 +787,7 @@ function nodeInfo(n){
  if(n.type==='asset'){const cnt=FINDINGS.filter(f=>f.assets.includes(n.label)).length;
    return {icon:'server',color:'var(--ent-asset)',title:n.label,tag:'Asset',rows:[['Type',n.atype||'—'],['Findings',cnt+' affecting']],
      action:{label:'Open asset →',kind:'jump',view:'assets',sel:`[data-asset='${n.label}']`}};}
+ if(n.type==='vault') return {icon:'key',color:'var(--ent-vault)',title:n.label,tag:'Vault item',rows:[['Type',n.vtype||'—']],action:null};
  return {icon:'trash-2',color:'var(--ent-cleanup)',title:n.label,tag:'Cleanup artifact',rows:[['Status',n.cstatus||'—'],['System',n.csys||'—']],
    action:{label:'Go to cleanup triage →',kind:'jump',view:'cleanup',sel:`[data-cleanup='${n.ci}']`}};
 }
@@ -837,7 +867,7 @@ function findingHTML(f){
  if(f.desc) secs.push(`<div class="fsec"><span class="lbl">Description</span><div class="md">${f.desc}</div></div>`);
  if(f.impact) secs.push(`<div class="fsec"><span class="lbl">Impact demonstrated</span><div class="md">${f.impact}</div></div>`);
  if(f.assets&&f.assets.length) secs.push(`<div class="fsec"><span class="lbl">Affected assets</span><div class="assettags">${f.assets.map(a=>`<span class="atag">${esc(a)}</span>`).join('')}</div></div>`);
- if(TC.some(t=>(t.finds||[]).includes(f.id))) secs.push(`<div class="fsec"><span class="lbl">Attack path — how this was reached</span><div class="graphwrap fpath" data-fpath="${f.id}"></div></div>`);
+ if(TC.some(t=>(t.finds||[]).includes(f.id)) || CHAIN.some(c=>c.s===f.id||c.t===f.id)) secs.push(`<div class="fsec"><span class="lbl">Attack path — how this was reached</span><div class="graphwrap fpath" data-fpath="${f.id}"></div></div>`);
  if(f.cvss||(f.vec&&f.vec!=='—')) secs.push(`<div class="fsec depth-tech"><span class="lbl">CVSS 3.1 · ${(+f.cvss).toFixed(1)}${f.cwe?' · '+esc(f.cwe):''}</span>${cvssBreak(f.vec)}</div>`);
  if(f.steps) secs.push(`<div class="fsec depth-tech"><span class="lbl">Steps to reproduce</span><div class="md">${f.steps}</div></div>`);
  if(f.tech) secs.push(`<div class="fsec depth-tech"><span class="lbl">Technical detail</span><div class="md">${f.tech}</div></div>`);

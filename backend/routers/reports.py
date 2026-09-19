@@ -260,6 +260,46 @@ async def _do_generate_report(
         cleanup_id_set = set(config.cleanup_ids)
         cleanup_artifacts = [ca for ca in cleanup_artifacts if str(ca.id) in cleanup_id_set]
 
+    # 6c. Attack-chain edges (operator-authored ChainLink "led_to" edges over
+    # testcases / findings / vault items). Passed to the PDF and interactive
+    # HTML graph builders so the report's attack paths reflect the operator's
+    # causal chain when present — the generators fall back to the existing
+    # association-derived subgraph for any finding with no chain edges. Loaded
+    # once here (the generators are DB-free), normalized to plain dicts so they
+    # don't stay coupled to the ORM session. Vault items aren't otherwise in
+    # the report, so we also load the name/type of the ones a chain touches
+    # (mirrors routers/attack_graph.get_attack_graph).
+    from models.chain_link import ChainLink
+    from models.vault import VaultItem
+    chain_rows = list((await db.execute(
+        select(ChainLink).where(ChainLink.engagement_id == config.engagement_id)
+    )).scalars().all())
+    chain_edges = [
+        {
+            "source_type": cl.source_type, "source_id": cl.source_id,
+            "target_type": cl.target_type, "target_id": cl.target_id,
+            "note": cl.note,
+        }
+        for cl in chain_rows
+    ]
+    chain_vault_ids = set()
+    for cl in chain_rows:
+        if cl.source_type == "vault_item":
+            chain_vault_ids.add(cl.source_id)
+        if cl.target_type == "vault_item":
+            chain_vault_ids.add(cl.target_id)
+    chain_vault_items = {}
+    if chain_vault_ids:
+        vault_res = await db.execute(
+            select(VaultItem.id, VaultItem.name, VaultItem.item_type)
+            .where(VaultItem.id.in_(chain_vault_ids),
+                   VaultItem.engagement_id == config.engagement_id)
+        )
+        chain_vault_items = {
+            row.id: {"name": row.name, "item_type": row.item_type}
+            for row in vault_res.all()
+        }
+
     # 6b. Marking enforcement lint (WARN / BLOCK). Only meaningful when a
     # profile with levels is in effect.
     marking_warning_headers = {}
@@ -327,7 +367,7 @@ async def _do_generate_report(
         print(f"[reports] report.generated event emit error (non-fatal): {_e}")
 
     if config.report_format == ReportFormat.PDF:
-        generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields)
+        generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields, chain_edges=chain_edges, chain_vault_items=chain_vault_items)
         pdf_content = generator.generate()
         filename = f"Report_{safe_name}.pdf"
         return Response(
@@ -347,7 +387,7 @@ async def _do_generate_report(
         )
 
     elif config.report_format == ReportFormat.HTML:
-        generator = HTMLReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields)
+        generator = HTMLReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields, chain_edges=chain_edges, chain_vault_items=chain_vault_items)
         html_content = generator.generate()
         filename = f"Report_{safe_name}.html"
         return Response(

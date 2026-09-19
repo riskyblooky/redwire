@@ -187,6 +187,93 @@ def _v(val) -> str:
     return val.value if hasattr(val, 'value') else str(val)
 
 
+# ── Attack-chain (ChainLink) resolution ───────────────────────────────
+#
+# Operator-authored directed "led_to" edges over testcases / findings /
+# vault items (backend/models/chain_link.py). This mirrors the resolution
+# in routers/attack_graph.get_attack_graph so the report's attack paths
+# reflect the operator's causal chain when one exists, falling back to the
+# association-derived subgraph when a finding has no chain edges.
+#
+# `chain_edges` is a list of plain dicts (decoupled from the ORM/session):
+#   {source_type, source_id, target_type, target_id, note}
+# where *_type ∈ {testcase, finding, vault_item}.
+#
+# `tc_id_map` / `finding_id_map` map a raw entity id to the id that entity's
+# node carries in the report graph (identity for the PDF, the F##/T# display
+# id for the interactive HTML). `vault_items` maps a raw vault id to
+# {name, item_type} for the vault items that participate in a chain — vault
+# items are not otherwise in the report, so we surface only those.
+#
+# Returns (vault_nodes, resolved_edges, dupe_pairs):
+#   vault_nodes  – [{'id':'vault-<id>','type':'vault','label','itype'}]
+#   resolved_edges – [{'s','t','kind':'chain','note'}] (both endpoints resolved)
+#   dupe_pairs   – set of (s,t) so callers can drop a factual 'discovered'
+#                  edge duplicated by a same-direction chain edge.
+def _resolve_chain_edges(chain_edges, tc_id_map, finding_id_map, vault_items):
+    vault_items = vault_items or {}
+    vault_ok = set(vault_items.keys())
+
+    def _map(etype, eid):
+        if etype == 'testcase':
+            return tc_id_map.get(eid)
+        if etype == 'finding':
+            return finding_id_map.get(eid)
+        if etype == 'vault_item':
+            return ('vault-' + eid) if eid in vault_ok else None
+        return None
+
+    resolved = []
+    used_vault = set()
+    for e in (chain_edges or []):
+        try:
+            s = _map(e['source_type'], e['source_id'])
+            t = _map(e['target_type'], e['target_id'])
+        except (KeyError, TypeError):
+            continue
+        # Skip dangling edges whose endpoints no longer resolve to a rendered
+        # node (deleted entity, filtered-out finding, unloaded vault item).
+        if s is None or t is None or s == t:
+            continue
+        resolved.append({'s': s, 't': t, 'kind': 'chain', 'note': e.get('note') or None})
+        if e['source_type'] == 'vault_item':
+            used_vault.add(e['source_id'])
+        if e['target_type'] == 'vault_item':
+            used_vault.add(e['target_id'])
+
+    vault_nodes = []
+    for vid in used_vault:
+        vi = vault_items.get(vid) or {}
+        vault_nodes.append({
+            'id': 'vault-' + vid, 'type': 'vault',
+            'label': vi.get('name') or 'Vault item',
+            'itype': vi.get('item_type') or '',
+        })
+    dupe_pairs = {(r['s'], r['t']) for r in resolved}
+    return vault_nodes, resolved, dupe_pairs
+
+
+def _chain_component(start_id, resolved_edges):
+    """Connected component (chain edges treated as undirected) containing
+    `start_id`. Returns a set of node ids, or None if `start_id` participates
+    in no chain edge."""
+    adj = {}
+    for e in resolved_edges:
+        adj.setdefault(e['s'], set()).add(e['t'])
+        adj.setdefault(e['t'], set()).add(e['s'])
+    if start_id not in adj:
+        return None
+    seen = {start_id}
+    stack = [start_id]
+    while stack:
+        n = stack.pop()
+        for m in adj.get(n, ()):
+            if m not in seen:
+                seen.add(m)
+                stack.append(m)
+    return seen
+
+
 # ── Markdown → ReportLab inline / block conversion ────────────────────
 #
 # The frontend's MarkdownEditor stores fields (finding description, impact,
@@ -734,6 +821,8 @@ class PDFReportGenerator:
         markdown_image_map: Optional[dict] = None,
         marking_profile=None,
         finding_custom_fields=None,
+        chain_edges=None,
+        chain_vault_items=None,
     ):
         self.engagement = engagement
         self.sections = sections
@@ -742,6 +831,11 @@ class PDFReportGenerator:
         self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
         self.storage = storage
+        # Operator-authored attack-chain edges (ChainLink) + the vault items
+        # they touch. Empty → the attack-path graphs fall back to the
+        # association-derived subgraphs (byte-identical to pre-chain output).
+        self.chain_edges = chain_edges or []
+        self.chain_vault_items = chain_vault_items or {}
         # Report-visible finding custom-field definitions (show_in_report).
         self.finding_custom_fields = finding_custom_fields or []
         # Portion marking — None when no profile is selected (marking disabled).
@@ -1842,6 +1936,41 @@ class PDFReportGenerator:
     _ENT_ASSET = '#2563EB'      # blue-600  (light-theme entity colors)
     _ENT_TESTCASE = '#059669'   # emerald-600
     _ENT_CLEANUP = '#4D7C0F'    # lime-700
+    _ENT_VAULT = '#CA8A04'      # yellow-600 (vault items in a chain)
+
+    def _resolved_chain(self):
+        """(vault_nodes, resolved_edges, dupe_pairs) for this engagement's
+        chain edges, resolved into the PDF graph's identity scheme (test cases
+        and findings keep their raw entity id; vault items become 'vault-<id>').
+        Cached; empty when there are no chain edges."""
+        if not hasattr(self, '_rc_cache'):
+            tc_map = {t.id: t.id for t in self.testcases}
+            f_map = {f.id: f.id for f in self.findings}
+            self._rc_cache = _resolve_chain_edges(
+                self.chain_edges, tc_map, f_map, self.chain_vault_items)
+        return self._rc_cache
+
+    def _chain_subgraph_nodes(self, comp, resolved, vault_nodes):
+        """Build (nodes, edges) for the chain connected-component `comp`."""
+        dF, dT = self._display_ids()
+        tcmap = {t.id: t for t in self.testcases}
+        fmap = {f.id: f for f in self.findings}
+        vmap = {v['id']: v for v in vault_nodes}
+        nodes = []
+        for nid in comp:
+            if nid in tcmap:
+                t = tcmap[nid]
+                nodes.append({'id': t.id, 'type': 'testcase', 'label': t.title or 'Test case',
+                              'did': dT.get(t.id, ''), 'status': self._graph_status(t)})
+            elif nid in fmap:
+                f = fmap[nid]
+                nodes.append({'id': f.id, 'type': 'finding', 'label': f.title or 'Untitled',
+                              'did': dF.get(f.id, ''), 'sev': _v(f.severity).upper()})
+            elif nid in vmap:
+                v = vmap[nid]
+                nodes.append({'id': v['id'], 'type': 'vault', 'label': v['label'], 'did': ''})
+        edges = [e for e in resolved if e['s'] in comp and e['t'] in comp]
+        return nodes, edges
 
     @staticmethod
     def _graph_status(tc):
@@ -1867,6 +1996,8 @@ class PDFReportGenerator:
             return self._ENT_TESTCASE
         if t == 'asset':
             return self._ENT_ASSET
+        if t == 'vault':
+            return self._ENT_VAULT
         return self._ENT_CLEANUP
 
     def _edge_style(self, kind):
@@ -1880,11 +2011,25 @@ class PDFReportGenerator:
             'discovered': ('#7C3AED', 1.6, None),
             'impacts':    ('#60A5FA', 1.0, (3, 3)),
             'cleanup':    ('#B45309', 1.0, (2, 3)),
+            # Operator-authored causal chain edge — indigo-400, matches the
+            # app attack graph's CHAIN_EDGE_COLOR.
+            'chain':      ('#818CF8', 2.0, None),
         }.get(kind, ('#94A3B8', 1.0, None))
 
     def _finding_subgraph(self, f):
-        """(nodes, edges) for one finding: the test cases that discovered it (with
-        their parent chain), the finding, its assets, and its cleanup artifacts."""
+        """(nodes, edges) for one finding.
+
+        When the finding participates in operator-authored chain edges, the
+        subgraph is the chain's connected component (test cases / findings /
+        vault items reachable via ChainLink), drawn with the causal chain
+        edges. Otherwise it falls back — unchanged — to the association-derived
+        subgraph: the test cases that discovered it (with their parent chain),
+        the finding, its assets, and its cleanup artifacts."""
+        vault_nodes, resolved, _ = self._resolved_chain()
+        if resolved:
+            comp = _chain_component(f.id, resolved)
+            if comp:
+                return self._chain_subgraph_nodes(comp, resolved, vault_nodes)
         dF, dT = self._display_ids()
         tcmap = {t.id: t for t in self.testcases}
         nodes, edges, seen = [], [], set()
@@ -1956,6 +2101,27 @@ class PDFReportGenerator:
             for a in (f.assets or []):
                 if a.name in aid:
                     edges.append({'s': f.id, 't': aid[a.name], 'kind': 'impacts'})
+        # ── Chain overlay ──
+        # Overlay operator-authored causal chain edges (and any vault items
+        # they touch) onto the association-derived graph, mirroring the app's
+        # attack graph. No chain edges → this is a no-op and the graph is
+        # byte-identical to before.
+        vault_nodes, resolved, dupes = self._resolved_chain()
+        if resolved:
+            existing_ids = {n['id'] for n in nodes}
+            for v in vault_nodes:
+                if v['id'] not in existing_ids:
+                    nodes.append({'id': v['id'], 'type': 'vault', 'label': v['label'], 'did': ''})
+                    existing_ids.add(v['id'])
+            # Drop a factual 'discovered' edge duplicated by a same-direction
+            # chain edge (same fact twice); a reverse-direction chain edge is a
+            # distinct relationship and leaves 'discovered' intact.
+            if dupes:
+                edges = [e for e in edges
+                         if not (e.get('kind') == 'discovered' and (e['s'], e['t']) in dupes)]
+            for e in resolved:
+                if e['s'] in existing_ids and e['t'] in existing_ids:
+                    edges.append(e)
         return nodes, edges
 
     @staticmethod
@@ -2833,7 +2999,8 @@ class HTMLReportGenerator:
     def __init__(self, engagement, sections, findings, testcases,
                  cleanup_artifacts=None, theme=None, storage=None,
                  markdown_image_map=None, marking_profile=None,
-                 finding_custom_fields=None):
+                 finding_custom_fields=None, chain_edges=None,
+                 chain_vault_items=None):
         self.engagement = engagement
         self.sections = sections
         self.findings = sorted(findings, key=lambda x: _severity_rank(x.severity), reverse=True)
@@ -2841,6 +3008,11 @@ class HTMLReportGenerator:
         self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
         self.storage = storage
+        # Operator-authored attack-chain edges (ChainLink) + touched vault
+        # items. Empty → payload's `chain` is [] and the interactive graph
+        # renders exactly as before.
+        self.chain_edges = chain_edges or []
+        self.chain_vault_items = chain_vault_items or {}
         self.finding_custom_fields = finding_custom_fields or []
         self.markdown_image_map = markdown_image_map or {}
         self.marking = MarkingEngine(marking_profile, engagement) if marking_profile else None
@@ -3099,8 +3271,22 @@ class HTMLReportGenerator:
             'ref': ref_full, 'summary': '', 'fields': fields,
         }
 
-        return {'meta': meta, 'risk': risk, 'marking': marking, 'findings': findings,
-                'testcases': testcases, 'assets': assets, 'cleanup': cleanup, 'chain': []}
+        # Attack-chain overlay: resolve operator-authored ChainLink edges into
+        # the interactive graph's display-id space (F##/T#; vault → 'vault-<id>').
+        # Vault items aren't otherwise in the report, so surface the ones a chain
+        # touches. When there are no chain edges this yields chain=[] and no
+        # chainVault key — byte-identical to the pre-chain payload.
+        cv_nodes, c_edges, _ = _resolve_chain_edges(
+            self.chain_edges, tid, fid, self.chain_vault_items)
+        chain = [{'s': e['s'], 't': e['t'], 'note': e.get('note') or ''} for e in c_edges]
+
+        data = {'meta': meta, 'risk': risk, 'marking': marking, 'findings': findings,
+                'testcases': testcases, 'assets': assets, 'cleanup': cleanup, 'chain': chain}
+        if cv_nodes:
+            data['chainVault'] = [
+                {'id': v['id'], 'label': v['label'], 'itype': v['itype']} for v in cv_nodes
+            ]
+        return data
 
     def generate(self) -> str:
         """Portable, offline, interactive HTML report — a self-contained app whose
