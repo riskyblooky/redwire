@@ -318,7 +318,7 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                 </div>
 
                 {railOpen && (
-                    <div className="relative lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
+                    <div className="relative self-stretch lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
                         {/* Drag handle — resize the comments rail horizontally (lg+). */}
                         <div
                             onMouseDown={startRailDrag}
