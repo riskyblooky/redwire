@@ -43,6 +43,7 @@ import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
+import { useRightPaneCollapsed, RightPaneCollapseButton, RightPaneExpandTab } from '@/components/ui/right-pane-collapse';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserName } from '@/components/ui/user-name';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
@@ -137,6 +138,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
     const [isNotesCollapsed, setIsNotesCollapsed] = useState(true);
     // Per-section collapse (main content sections). Default expanded.
+    const [rightCollapsed, setRightCollapsed] = useRightPaneCollapsed('testcase-detail-right-pane');
     const [collapsedSec, setCollapsedSec] = useState<Record<string, boolean>>({});
     const toggleSec = (k: string) => setCollapsedSec(s => ({ ...s, [k]: !s[k] }));
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
@@ -362,9 +364,9 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                 </div>
 
                 {/* Main Grid: 4-col like findings */}
-                <div className="grid gap-6 lg:grid-cols-4">
-                    {/* Main Content - 3 cols */}
-                    <div className="lg:col-span-3 space-y-6">
+                <div className={cn("grid gap-6", rightCollapsed ? "lg:grid-cols-[1fr_auto]" : "lg:grid-cols-4")}>
+                    {/* Main Content */}
+                    <div className={cn("space-y-6", !rightCollapsed && "lg:col-span-3")}>
                         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs overflow-hidden">
                             <div className={cn("h-1.5 w-full", categoryStyle.accent)} />
                             <CardContent className="p-0">
@@ -626,14 +628,20 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                         </Card>
                     </div>
 
-                    {/* Sidebar - 1 col */}
+                    {/* Sidebar */}
+                    {rightCollapsed ? (
+                        <RightPaneExpandTab onClick={() => setRightCollapsed(false)} label="Details" />
+                    ) : (
                     <div className="space-y-6">
                         <Card className="border-slate-800 bg-slate-900/50 overflow-hidden relative">
                             <div className="absolute top-0 right-0 p-4 opacity-5">
                                 <CheckSquare className="h-24 w-24" />
                             </div>
                             <CardHeader className="pb-4">
-                                <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Test Details</CardTitle>
+                                <div className="flex items-center justify-between gap-2">
+                                    <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Test Details</CardTitle>
+                                    <RightPaneCollapseButton onClick={() => setRightCollapsed(true)} className="relative z-10" />
+                                </div>
                             </CardHeader>
                             <CardContent className="space-y-8">
                                 {/* Execution Status */}
@@ -924,6 +932,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                             </CardContent>
                         </Card>
                     </div>
+                    )}
                 </div>
 
                 {/* Peer-review comments (anchored + general threads) - Full Width */}

@@ -78,6 +78,7 @@ import { EvidenceCard } from '@/components/findings/evidence-card';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
+import { useRightPaneCollapsed, RightPaneCollapseButton, RightPaneExpandTab } from '@/components/ui/right-pane-collapse';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { AnchoredCommentsProvider } from '@/components/discussions/anchored-comments-context';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
@@ -154,6 +155,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     // Per-section collapse (main content sections). Default expanded.
     const [collapsedSec, setCollapsedSec] = useState<Record<string, boolean>>({});
     const toggleSec = (k: string) => setCollapsedSec(s => ({ ...s, [k]: !s[k] }));
+    const [rightCollapsed, setRightCollapsed] = useRightPaneCollapsed('finding-detail-right-pane');
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [copiedCvss, setCopiedCvss] = useState(false);
 
@@ -493,8 +495,8 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                     </div>
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-4">
-                    <div className="lg:col-span-3 space-y-6">
+                <div className={cn("grid gap-6", rightCollapsed ? "lg:grid-cols-[1fr_auto]" : "lg:grid-cols-4")}>
+                    <div className={cn("space-y-6", !rightCollapsed && "lg:col-span-3")}>
                         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs overflow-hidden">
                             <div className={cn("h-1.5 w-full",
                                 finding.severity === 'CRITICAL' ? 'bg-red-600' :
@@ -704,13 +706,19 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                     </div>
 
                     {/* Right Sidebar */}
+                    {rightCollapsed ? (
+                        <RightPaneExpandTab onClick={() => setRightCollapsed(false)} label="Details" />
+                    ) : (
                     <div className="flex flex-col">
                         <Card className="border-slate-800 bg-slate-900/50 overflow-hidden relative flex-1 flex flex-col">
                             <div className="absolute top-0 right-0 p-4 opacity-5">
                                 <Bug className="h-24 w-24" />
                             </div>
                             <CardHeader className="pb-4">
-                                <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Risk Assessment</CardTitle>
+                                <div className="flex items-center justify-between gap-2">
+                                    <CardTitle className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Risk Assessment</CardTitle>
+                                    <RightPaneCollapseButton onClick={() => setRightCollapsed(true)} className="relative z-10" />
+                                </div>
                             </CardHeader>
                             <CardContent className="space-y-8">
                                 <InlineCvssField
@@ -1058,6 +1066,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
 
                     </div>
+                    )}
                 </div>
 
                 {/* Peer-review comments (anchored + general threads) - Full Width */}
