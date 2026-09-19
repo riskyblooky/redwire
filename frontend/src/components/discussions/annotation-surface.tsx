@@ -72,10 +72,25 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
 }, ref) {
     const [editor, setEditor] = useState<Editor | null>(null);
     const [activeId, setActiveId] = useState<string | null>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
 
+    // Popup positions are stored relative to the surface container (rootRef), not
+    // the viewport: an ancestor card uses backdrop-filter, which makes position:
+    // fixed resolve against that card, so we position:absolute within rootRef and
+    // clamp to its width so the button/composer never overflow or hide off-screen.
     const [selBtn, setSelBtn] = useState<{ from: number; to: number; left: number; top: number } | null>(null);
     const [composer, setComposer] = useState<{ from: number; to: number; quote: string; left: number; top: number } | null>(null);
     const [composerText, setComposerText] = useState('');
+
+    // Selection end → position within the container, clamped to fit `width` px.
+    const anchorPos = useCallback((width: number) => {
+        if (!editor || !rootRef.current) return null;
+        const coords = editor.view.coordsAtPos(editor.state.selection.to);
+        const rect = rootRef.current.getBoundingClientRect();
+        const left = Math.max(6, Math.min(coords.left - rect.left, rect.width - width - 6));
+        const top = coords.bottom - rect.top + 6;
+        return { left, top };
+    }, [editor]);
 
     const [hover, setHover] = useState<{ thread: Thread; rect: DOMRect } | null>(null);
     const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,13 +175,13 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
             const { from, to, empty } = editor.state.selection;
             if (empty || composer) { setSelBtn(null); return; }
             try {
-                const coords = editor.view.coordsAtPos(to);
-                setSelBtn({ from, to, left: coords.left, top: coords.bottom });
+                const p = anchorPos(140);
+                if (p) setSelBtn({ from, to, left: p.left, top: p.top });
             } catch { setSelBtn(null); }
         };
         editor.on('selectionUpdate', update);
         return () => { editor.off('selectionUpdate', update); };
-    }, [editor, composer]);
+    }, [editor, composer, anchorPos]);
 
     // Scroll the active highlight into view.
     useEffect(() => {
@@ -206,7 +221,9 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     const openComposer = () => {
         if (!editor || !selBtn) return;
         const a = anchorFromRange(editor.state.doc, selBtn.from, selBtn.to);
-        setComposer({ from: selBtn.from, to: selBtn.to, quote: a.quote, left: selBtn.left, top: selBtn.top });
+        // Re-anchor for the wider composer so it stays inside the container.
+        const p = anchorPos(288) ?? { left: selBtn.left, top: selBtn.top };
+        setComposer({ from: selBtn.from, to: selBtn.to, quote: a.quote, left: p.left, top: p.top });
         setSelBtn(null);
     };
 
@@ -254,7 +271,7 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     const showRail = fieldThreads.length > 0;
 
     return (
-        <div className={cn('rounded-lg border border-slate-700 bg-slate-950/30 p-2', outerClassName)}>
+        <div ref={rootRef} className={cn('relative rounded-lg border border-slate-700 bg-slate-950/30 p-2', outerClassName)}>
             <div
                 className={cn('grid gap-2 items-stretch', showRail && 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]')}
                 style={showRail ? ({ ['--rail-w' as string]: `${railWidth}px` } as React.CSSProperties) : undefined}
@@ -333,8 +350,8 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                 <button
                     type="button"
                     onMouseDown={(e) => { e.preventDefault(); openComposer(); }}
-                    className="fixed z-50 flex items-center gap-1 px-2 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold shadow-lg"
-                    style={{ left: selBtn.left, top: selBtn.top + 6 }}
+                    className="absolute z-50 flex items-center gap-1 px-2 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold shadow-lg"
+                    style={{ left: selBtn.left, top: selBtn.top }}
                 >
                     <MessageSquarePlus className="h-3.5 w-3.5" /> Add comment
                 </button>
@@ -342,8 +359,8 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
 
             {composer && (
                 <div
-                    className="fixed z-50 w-72 rounded-lg border border-slate-700 bg-slate-900 shadow-xl p-2.5"
-                    style={{ left: Math.min(composer.left, window.innerWidth - 300), top: composer.top + 6 }}
+                    className="absolute z-50 w-72 rounded-lg border border-slate-700 bg-slate-900 shadow-xl p-2.5"
+                    style={{ left: composer.left, top: composer.top }}
                 >
                     <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">New comment</span>
