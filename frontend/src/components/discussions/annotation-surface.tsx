@@ -5,7 +5,7 @@ import type { Editor } from '@tiptap/react';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, MessageSquarePlus, MessageSquare, X } from 'lucide-react';
+import { Loader2, MessageSquarePlus, MessageSquare, X, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { EditorFieldContext } from '@/lib/types';
@@ -79,6 +79,10 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     const [hover, setHover] = useState<{ thread: Thread; rect: DOMRect } | null>(null);
     const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Hide resolved threads from the rail by default (they also lose their
+    // highlight); the header toggle brings them back.
+    const [hideResolved, setHideResolved] = useState(true);
+
     const { data: allThreads = [] } = useThreads({ engagement_id: engagementId, resource_type: resourceType, resource_id: resourceId });
     const createThread = useCreateThread();
     const createComment = useCreateComment();
@@ -87,6 +91,11 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     const fieldThreads = useMemo(
         () => allThreads.filter((t) => t.anchor && t.anchor.field === field),
         [allThreads, field],
+    );
+    const resolvedCount = useMemo(() => fieldThreads.filter((t) => t.is_resolved).length, [fieldThreads]);
+    const visibleThreads = useMemo(
+        () => (hideResolved ? fieldThreads.filter((t) => !t.is_resolved) : fieldThreads),
+        [fieldThreads, hideResolved],
     );
     const lite = useMemo(() => fieldThreads.map(toLite), [fieldThreads]);
     const byId = useMemo(() => new Map(fieldThreads.map((t) => [t.id, t])), [fieldThreads]);
@@ -225,15 +234,32 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
 
                 {showRail && (
                     <div className="lg:border-l lg:border-slate-800 lg:pl-2 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                            <MessageSquare className="h-3 w-3" /> Comments
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                <MessageSquare className="h-3 w-3" /> Comments
+                            </span>
+                            {resolvedCount > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setHideResolved((v) => !v)}
+                                    className={cn(
+                                        'flex items-center gap-1 text-[10px] font-semibold transition-colors',
+                                        hideResolved ? 'text-slate-500 hover:text-slate-300' : 'text-emerald-400 hover:text-emerald-300',
+                                    )}
+                                    title={hideResolved ? `Show ${resolvedCount} resolved` : 'Hide resolved'}
+                                >
+                                    {hideResolved ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                                    {hideResolved ? `Resolved (${resolvedCount})` : 'Hide resolved'}
+                                </button>
+                            )}
                         </div>
                         <CommentThreadList
-                            threads={fieldThreads}
+                            threads={visibleThreads}
                             activeId={activeId}
                             orphanedIds={orphanedIds}
                             showQuote
                             onActivate={setActiveId}
+                            emptyText={hideResolved && resolvedCount > 0 ? 'All comments resolved.' : undefined}
                         />
                     </div>
                 )}
