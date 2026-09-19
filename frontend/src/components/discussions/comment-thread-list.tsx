@@ -37,6 +37,7 @@ function RailComment({ comment, engagementId, onDelete, deleting }: {
                         userId={comment.created_by}
                         username={comment.author_name}
                         user={comment.author_profile_photo ? { id: comment.created_by, full_name: comment.author_name, profile_photo: comment.author_profile_photo } as any : undefined}
+                        title={comment.author_name || true}
                         className="h-4 w-4 text-[8px]"
                     />
                     <span className="text-[11px] font-semibold text-slate-300 truncate">{comment.author_name || 'Unknown'}</span>
@@ -138,6 +139,7 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
                     userId={creator?.created_by || thread.created_by}
                     username={creator?.author_name}
                     user={creator?.author_profile_photo ? { id: creator.created_by, full_name: creator.author_name, profile_photo: creator.author_profile_photo } as any : undefined}
+                    title={creator?.author_name || true}
                     className="h-4 w-4 text-[8px] shrink-0"
                 />
                 <span className="min-w-0 flex-1 flex items-center gap-1 text-[11px]">
