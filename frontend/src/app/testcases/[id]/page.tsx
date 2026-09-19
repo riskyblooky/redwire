@@ -137,6 +137,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const [viewCleanup, setViewCleanup] = useState<any>(null);
     const [isEvidenceCollapsed, setIsEvidenceCollapsed] = useState(true);
     const [isNotesCollapsed, setIsNotesCollapsed] = useState(true);
+    const [isExecCollapsed, setIsExecCollapsed] = useState(false);
     // Per-section collapse (main content sections). Default expanded.
     const [rightCollapsed, setRightCollapsed] = useRightPaneCollapsed('testcase-detail-right-pane');
     const [collapsedSec, setCollapsedSec] = useState<Record<string, boolean>>({});
@@ -176,6 +177,8 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
 
     const [actualResult, setActualResult] = useState('');
     const [isExecuting, setIsExecuting] = useState(false);
+    // Execution Result card collapse — always expanded while recording a result.
+    const execCollapsed = isExecCollapsed && !isExecuting;
 
     // Check permissions for edit/delete
     const canEdit = useCanEdit(testcase?.engagement_id, 'testcase', testcase?.created_by);
@@ -449,9 +452,13 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                     : testcase.is_successful === false ? 'bg-red-500/[0.04] border-l-red-500/60'
                                         : 'bg-slate-500/[0.04] border-l-slate-500/60')
                                 : 'bg-slate-900/50 border-l-blue-500/50')}>
-                            <CardHeader className="pb-3 border-b border-slate-800/60 mb-4">
+                            <CardHeader
+                                className={cn("pb-3 border-b border-slate-800/60 cursor-pointer select-none hover:bg-slate-800/20 transition-colors", !execCollapsed && "mb-4")}
+                                onClick={() => setIsExecCollapsed(v => !v)}
+                            >
                                 <div className="flex items-center justify-between">
                                     <CardTitle className="text-white text-lg flex items-center gap-2">
+                                        {execCollapsed ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                         <Play className="h-4 w-4 text-blue-400" />
                                         Execution Result
                                     </CardTitle>
@@ -471,6 +478,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                     )}
                                 </div>
                             </CardHeader>
+                            {!execCollapsed && (
                             <CardContent className="space-y-6">
                                 {!testcase.is_executed && !testcase.actual_result && !isExecuting ? (
                                     <div className="text-center py-8">
@@ -557,6 +565,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                     </div>
                                 )}
                             </CardContent>
+                            )}
                         </Card>
 
                         {/* Notes */}
