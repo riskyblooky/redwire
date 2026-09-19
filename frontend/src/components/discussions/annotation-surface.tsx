@@ -285,17 +285,16 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
     return (
         <div ref={rootRef} className={cn('relative rounded-lg border border-slate-700 bg-slate-950/30 p-2', outerClassName)}>
             <div
-                className={cn('grid gap-2 items-stretch',
+                className={cn('grid gap-2 items-start',
                     railOpen && 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]',
                     showRail && !railOpen && 'lg:grid-cols-[1fr_auto]',
                 )}
                 style={railOpen ? ({ ['--rail-w' as string]: `${railWidth}px` } as React.CSSProperties) : undefined}
             >
-                {/* When the rail is open, the editor fills the column so it grows
-                    to match a taller comments column, and the footer stays pinned
-                    at the bottom. Otherwise, keep the normal resizable box. */}
-                <div className={cn('min-w-0', railOpen && 'flex flex-col')}>
-                    <div className={cn('rounded-lg border border-slate-800 overflow-hidden', railOpen && 'flex-1 min-h-[300px]')}>
+                {/* The editor keeps its own (user-resizable) height in all layouts;
+                    the comments rail sizes independently beside it. */}
+                <div className="min-w-0">
+                    <div className="rounded-lg border border-slate-800 overflow-hidden">
                         <MarkdownEditor
                             value={value}
                             onChange={onChange}
@@ -303,9 +302,7 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                             fieldContext={fieldContext}
                             placeholder={placeholder}
                             minHeight={minHeight}
-                            resizable={!railOpen}
-                            fillHeight={railOpen}
-                            className={railOpen ? 'h-full' : undefined}
+                            resizable
                             disabled={!canEdit}
                             commentThreads={lite}
                             activeCommentId={activeId}
