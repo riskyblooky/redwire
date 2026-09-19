@@ -16,9 +16,39 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
     MessageSquare, Check, CheckCircle2, CornerDownRight, Loader2, ChevronRight, Quote as QuoteIcon, Trash2,
 } from 'lucide-react';
+
+/** A user avatar with the same styled hover tooltip the presence indicator uses. */
+function AvatarWithName({ userId, name, photo, className }: {
+    userId?: string; name?: string | null; photo?: string | null; className?: string;
+}) {
+    return (
+        <TooltipProvider delayDuration={0}>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <span className="shrink-0 inline-flex cursor-default">
+                        <UserAvatar
+                            userId={userId}
+                            username={name}
+                            user={photo ? { id: userId, full_name: name, profile_photo: photo } as any : undefined}
+                            className={className}
+                        />
+                    </span>
+                </TooltipTrigger>
+                <TooltipContent
+                    side="top"
+                    className="bg-slate-900 border-slate-800 text-white p-2 shadow-2xl z-1000 animate-in fade-in zoom-in-95 duration-100"
+                    sideOffset={6}
+                >
+                    <p className="text-xs font-semibold truncate max-w-[160px]">{name || 'Unknown'}</p>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+    );
+}
 
 /** One comment row in the rail, with an owner/admin delete control. Split out so
  *  the per-comment permission hook is called at the component top level. */
@@ -33,11 +63,10 @@ function RailComment({ comment, engagementId, onDelete, deleting }: {
         <div className="group/rc rounded-md bg-slate-900/50 border border-slate-800/50 p-2">
             <div className="flex items-center justify-between gap-2 mb-0.5">
                 <span className="flex items-center gap-1.5 min-w-0">
-                    <UserAvatar
+                    <AvatarWithName
                         userId={comment.created_by}
-                        username={comment.author_name}
-                        user={comment.author_profile_photo ? { id: comment.created_by, full_name: comment.author_name, profile_photo: comment.author_profile_photo } as any : undefined}
-                        title={comment.author_name || true}
+                        name={comment.author_name}
+                        photo={comment.author_profile_photo}
                         className="h-4 w-4 text-[8px]"
                     />
                     <span className="text-[11px] font-semibold text-slate-300 truncate">{comment.author_name || 'Unknown'}</span>
@@ -135,11 +164,10 @@ export function CommentThread({ thread, active, orphaned, showQuote = true, onAc
                 className="w-full text-left p-2.5 flex items-center gap-2"
             >
                 <ChevronRight className={cn('h-3.5 w-3.5 text-slate-500 shrink-0 transition-transform', open && 'rotate-90')} />
-                <UserAvatar
+                <AvatarWithName
                     userId={creator?.created_by || thread.created_by}
-                    username={creator?.author_name}
-                    user={creator?.author_profile_photo ? { id: creator.created_by, full_name: creator.author_name, profile_photo: creator.author_profile_photo } as any : undefined}
-                    title={creator?.author_name || true}
+                    name={creator?.author_name}
+                    photo={creator?.author_profile_photo}
                     className="h-4 w-4 text-[8px] shrink-0"
                 />
                 <span className="min-w-0 flex-1 flex items-center gap-1 text-[11px]">

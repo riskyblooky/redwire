@@ -11,12 +11,9 @@ export interface UserAvatarProps {
     userId?: string;
     username?: string | null;
     className?: string;
-    /** When set, show this as a native hover tooltip. Pass `true` to use the
-     *  resolved display name. Opt-in so avatars elsewhere aren't affected. */
-    title?: string | boolean;
 }
 
-export function UserAvatar({ user, userId, username, className, title }: UserAvatarProps) {
+export function UserAvatar({ user, userId, username, className }: UserAvatarProps) {
     // If we have a full user object, prefer that
     const id = user?.id || userId || 'unknown';
     // Prefer full_name so initials are a person's initials (JD), not username chars.
@@ -61,10 +58,8 @@ export function UserAvatar({ user, userId, username, className, title }: UserAva
         return hexColors[index];
     };
 
-    const tooltip = title === true ? (name !== '??' ? name : undefined) : (title || undefined);
-
     return (
-        <Avatar title={tooltip} className={cn("h-8 w-8 ring-2 ring-slate-950 shadow-lg", className)}>
+        <Avatar className={cn("h-8 w-8 ring-2 ring-slate-950 shadow-lg", className)}>
             {blobUrl ? (
                 <AvatarImage
                     src={blobUrl}
