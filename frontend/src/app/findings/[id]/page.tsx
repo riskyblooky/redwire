@@ -504,10 +504,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                         finding.severity === 'MEDIUM' ? 'bg-amber-500' : 'bg-blue-500'
                             )} />
                             <CardContent className="p-0">
-                                <div className="p-8 space-y-10">
+                                <div className="p-6 space-y-6">
                                     {/* Description Section */}
                                     <section>
-                                        <button type="button" onClick={() => toggleSec('summary')} className="flex items-center gap-2 mb-4 text-white w-full text-left">
+                                        <button type="button" onClick={() => toggleSec('summary')} className="flex items-center gap-2 mb-3 text-white w-full text-left">
                                             {collapsedSec['summary'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <FileText className="h-5 w-5 text-red-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Executive Summary</h3>
@@ -607,7 +607,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
                                     {/* Remediation Section */}
                                     <section>
-                                        <button type="button" onClick={() => toggleSec('remediation')} className="flex items-center gap-2 mb-4 text-white w-full text-left">
+                                        <button type="button" onClick={() => toggleSec('remediation')} className="flex items-center gap-2 mb-3 text-white w-full text-left">
                                             {collapsedSec['remediation'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <Shield className="h-5 w-5 text-green-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Mitigation & Remediation</h3>
