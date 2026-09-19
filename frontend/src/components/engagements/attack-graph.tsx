@@ -624,63 +624,36 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
         return graphData.nodes.filter(n => !linkedNodeIds.has(n.id)).length;
     }, [graphData, linkedNodeIds]);
 
-    // Compute connected components (chains) via BFS
-    const chains = useMemo(() => {
-        const adjacency: Record<string, Set<string>> = {};
-        graphData.edges.forEach((e) => {
-            if (!adjacency[e.source]) adjacency[e.source] = new Set();
-            if (!adjacency[e.target]) adjacency[e.target] = new Set();
-            adjacency[e.source].add(e.target);
-            adjacency[e.target].add(e.source);
-        });
-
-        const visited = new Set<string>();
-        const components: Array<{ id: string; name: string; nodeIds: Set<string> }> = [];
-
-        const linkedNodes = graphData.nodes.filter(n => linkedNodeIds.has(n.id));
-
-        for (const startNode of linkedNodes) {
-            if (visited.has(startNode.id)) continue;
-
-            const queue = [startNode.id];
-            const component = new Set<string>();
-            visited.add(startNode.id);
-
-            while (queue.length > 0) {
-                const current = queue.shift()!;
-                component.add(current);
-                const neighbors = adjacency[current];
-                if (neighbors) {
-                    for (const neighbor of neighbors) {
-                        if (!visited.has(neighbor)) {
-                            visited.add(neighbor);
-                            queue.push(neighbor);
-                        }
-                    }
-                }
-            }
-
-            // Name by root test case (or first node)
-            const tcNode = graphData.nodes.find(n => component.has(n.id) && n.type === 'testcase');
-            const name = tcNode?.data.label || graphData.nodes.find(n => component.has(n.id))?.data.label || 'Unnamed';
-
-            components.push({
-                id: `chain-${components.length}`,
-                name,
-                nodeIds: component,
-            });
-        }
-
-        return components;
-    }, [graphData, linkedNodeIds]);
-
     // Focus mode (finding/test-case view pages): the node to center the graph on.
     const focusNodeId = focusEntity ? `${focusEntity.type}-${focusEntity.id}` : null;
-    // The set of node ids in the connected component containing a given node.
-    const componentContaining = useCallback((nodeId: string | null): Set<string> | null => {
+
+    // The subgraph for a single entity's "chain": follow the authored causal
+    // (kind:'chain') edges transitively from the node, then include each chain
+    // member's immediate (1-hop, any-edge) neighbours for local attack-path
+    // context. This deliberately does NOT traverse association edges transitively,
+    // so it stays scoped to the finding's chain rather than the whole engagement
+    // (which is usually one big association-connected component).
+    const focusSubgraphIds = useCallback((nodeId: string | null): Set<string> | null => {
         if (!nodeId) return null;
-        return chains.find(c => c.nodeIds.has(nodeId))?.nodeIds ?? null;
-    }, [chains]);
+        const chainAdj: Record<string, Set<string>> = {};
+        const anyAdj: Record<string, Set<string>> = {};
+        const add = (m: Record<string, Set<string>>, a: string, b: string) => { (m[a] ??= new Set()).add(b); };
+        for (const e of graphData.edges) {
+            add(anyAdj, e.source, e.target); add(anyAdj, e.target, e.source);
+            if (e.kind === 'chain') { add(chainAdj, e.source, e.target); add(chainAdj, e.target, e.source); }
+        }
+        // BFS over chain edges → the authored causal chain (just the node if none).
+        const chainComp = new Set<string>([nodeId]);
+        const queue = [nodeId];
+        while (queue.length) {
+            const cur = queue.shift()!;
+            for (const nb of chainAdj[cur] ?? []) if (!chainComp.has(nb)) { chainComp.add(nb); queue.push(nb); }
+        }
+        // Add 1-hop context around each chain member.
+        const result = new Set(chainComp);
+        for (const m of chainComp) for (const nb of anyAdj[m] ?? []) result.add(nb);
+        return result;
+    }, [graphData]);
 
     // Findings available for the reporting-page selector (chain = a finding's component).
     const findingOptions = useMemo(
@@ -764,10 +737,10 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
 
         let restrictIds: Set<string> | null = null;
         if (focusNodeId) {
-            restrictIds = componentContaining(focusNodeId) ?? new Set([focusNodeId]);
+            restrictIds = focusSubgraphIds(focusNodeId) ?? new Set([focusNodeId]);
         } else if (selectedChain !== 'all') {
-            // selectedChain is a finding node id → show its connected component.
-            restrictIds = componentContaining(selectedChain);
+            // selectedChain is a finding node id → show that finding's chain.
+            restrictIds = focusSubgraphIds(selectedChain);
         }
         if (restrictIds) {
             displayNodes = displayNodes.filter(n => restrictIds!.has(n.id));
@@ -794,7 +767,7 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
                 reactFlowInstance.fitView({ padding: 0.2 });
             }, 50);
         }
-    }, [graphData, showUnlinked, selectedChain, chains, linkedNodeIds, focusNodeId, componentContaining, setNodes, setEdges, reactFlowInstance]);
+    }, [graphData, showUnlinked, selectedChain, linkedNodeIds, focusNodeId, focusSubgraphIds, setNodes, setEdges, reactFlowInstance]);
 
     const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
         setSelectedNode(node as Node<GraphNodeData>);
