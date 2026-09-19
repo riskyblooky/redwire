@@ -444,6 +444,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                 <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-4">
                     <div className="lg:col-span-3 space-y-6">
                         <Tabs defaultValue="technical" className="w-full">
+                            <div className="sticky top-[92px] z-10 -mx-1 px-1 py-1 bg-slate-950/95 backdrop-blur-md rounded-xl">
                             <TabsList className="bg-slate-950/40 border border-slate-800/60 p-1 w-full flex justify-start gap-1 rounded-xl h-12">
                                 <TabsTrigger value="overview" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-red-500/10 data-[state=active]:text-red-400 font-semibold">
                                     <FileText className="h-4 w-4" /> Overview
@@ -463,6 +464,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                     </TabsTrigger>
                                 )}
                             </TabsList>
+                            </div>
 
                             <div className="mt-6">
                                 <TabsContent value="overview">
@@ -667,7 +669,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                     </div>
 
                     {/* Sidebar */}
-                    <div className="space-y-6 lg:sticky lg:top-6 self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto custom-scrollbar">
+                    <div className="space-y-6 lg:sticky lg:top-[92px] self-start lg:max-h-[calc(100vh-108px)] lg:overflow-y-auto custom-scrollbar">
                         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
                             <div className="h-1.5 bg-linear-to-r from-blue-500 to-indigo-500" />
                             <CardHeader className="pb-4">

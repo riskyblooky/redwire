@@ -264,6 +264,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                 <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-4">
                     <div className="lg:col-span-3">
                         <Tabs defaultValue="result" className="w-full">
+                            <div className="sticky top-[92px] z-10 -mx-1 px-1 py-1 bg-slate-950/95 backdrop-blur-md rounded-xl">
                             <TabsList className="bg-slate-950/40 border border-slate-800/60 p-1 w-full flex justify-start gap-1 rounded-xl h-12">
                                 <TabsTrigger value="definition" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-400 font-semibold">
                                     <FileText className="h-4 w-4" /> Definition
@@ -277,6 +278,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                     </TabsTrigger>
                                 )}
                             </TabsList>
+                            </div>
 
                             <div className="mt-6">
                                 {/* ── Definition ── */}
@@ -421,8 +423,8 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                         </Tabs>
                     </div>
 
-                    {/* Sidebar with Tags */}
-                    <div className="space-y-6 lg:sticky lg:top-6 self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto custom-scrollbar">
+                    {/* Sidebar with Tags — pins just below the sticky header */}
+                    <div className="space-y-6 lg:sticky lg:top-[92px] self-start lg:max-h-[calc(100vh-108px)] lg:overflow-y-auto custom-scrollbar">
                         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-md overflow-hidden">
                             <div className="h-1.5 bg-linear-to-r from-purple-500 via-pink-500 to-amber-500" />
                             <CardHeader className="pb-4">
