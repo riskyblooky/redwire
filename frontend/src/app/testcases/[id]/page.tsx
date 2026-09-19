@@ -373,10 +373,10 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                         <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs overflow-hidden">
                             <div className={cn("h-1.5 w-full", categoryStyle.accent)} />
                             <CardContent className="p-0">
-                                <div className="p-6 space-y-6">
+                                <div className="p-5 space-y-4">
                                     {/* Description Section */}
                                     <section>
-                                        <button type="button" onClick={() => toggleSec('desc')} className="flex items-center gap-2 mb-3 text-white w-full text-left">
+                                        <button type="button" onClick={() => toggleSec('desc')} className="flex items-center gap-2 mb-2 text-white w-full text-left">
                                             {collapsedSec['desc'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <FileText className="h-5 w-5 text-primary" />
                                             <h3 className="text-xl font-bold tracking-tight">Description</h3>
@@ -399,7 +399,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
 
                                     {/* Execution Steps Section */}
                                     <section>
-                                        <button type="button" onClick={() => toggleSec('steps')} className="flex items-center gap-2 mb-3 text-white w-full text-left">
+                                        <button type="button" onClick={() => toggleSec('steps')} className="flex items-center gap-2 mb-2 text-white w-full text-left">
                                             {collapsedSec['steps'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <Terminal className="h-5 w-5 text-blue-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Execution Steps</h3>
@@ -422,7 +422,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
 
                                     {/* Expected Result Section */}
                                     <section>
-                                        <button type="button" onClick={() => toggleSec('expected')} className="flex items-center gap-2 mb-3 text-white w-full text-left">
+                                        <button type="button" onClick={() => toggleSec('expected')} className="flex items-center gap-2 mb-2 text-white w-full text-left">
                                             {collapsedSec['expected'] ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                                             <CheckCircle2 className="h-5 w-5 text-green-400" />
                                             <h3 className="text-xl font-bold tracking-tight">Expected Result</h3>
