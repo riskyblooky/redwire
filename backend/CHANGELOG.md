@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.5.7] — Unreleased
+## [1.5.7] — 2026-09-21
 
 ### Added
 - **Anchored peer-review comments** — highlight a span of text inside a finding or
