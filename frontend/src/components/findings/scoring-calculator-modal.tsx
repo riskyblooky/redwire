@@ -212,11 +212,29 @@ export function ScoringCalculatorModal({
 
 // ─── Metric Row ──────────────────────────────────────────────────────────────
 
+const segButton = (selected: boolean) =>
+    cn(
+        'flex-1 h-8 px-2 rounded-md text-[11px] font-bold transition-all duration-150 border',
+        'focus:outline-hidden focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-950',
+        selected
+            ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-[0_0_16px_rgba(245,158,11,0.35)]'
+            : 'bg-slate-900/60 border-slate-800/60 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 hover:border-slate-600',
+    );
+
 function MetricRow({ metric, value, onChange }: {
     metric: ScoringMetric;
     value: unknown;
     onChange: (metric: ScoringMetric, value: string) => void;
 }) {
+    // Integer scales (DREAD 0-10, OWASP 0-9) render as a segmented button row.
+    // Only fall back to a plain input for an unusually wide/open range.
+    const min = metric.min ?? 0;
+    const max = metric.max ?? 10;
+    const span = max - min;
+    const useSegments = metric.type === 'number' && Number.isFinite(span) && span >= 0 && span <= 20;
+    const steps = useSegments ? Array.from({ length: Math.round(span) + 1 }, (_, i) => min + i) : [];
+    const hasValue = value !== undefined && value !== null && value !== '';
+
     return (
         <div className="flex items-center gap-3 group">
             <div className="w-[150px] shrink-0">
@@ -227,15 +245,28 @@ function MetricRow({ metric, value, onChange }: {
             </div>
             <div className="flex gap-1 flex-1 flex-wrap">
                 {metric.type === 'number' ? (
-                    <Input
-                        type="number"
-                        value={value === undefined || value === null ? '' : String(value)}
-                        min={metric.min ?? undefined}
-                        max={metric.max ?? undefined}
-                        step="0.1"
-                        onChange={(e) => onChange(metric, e.target.value)}
-                        className="bg-slate-900/60 border-slate-800/60 text-white h-8 text-xs font-mono"
-                    />
+                    useSegments ? (
+                        steps.map((n) => (
+                            <button
+                                key={n}
+                                type="button"
+                                onClick={() => onChange(metric, String(n))}
+                                className={cn(segButton(hasValue && Number(value) === n), 'min-w-[30px] px-1')}
+                            >
+                                {n}
+                            </button>
+                        ))
+                    ) : (
+                        <Input
+                            type="number"
+                            value={hasValue ? String(value) : ''}
+                            min={metric.min ?? undefined}
+                            max={metric.max ?? undefined}
+                            step="1"
+                            onChange={(e) => onChange(metric, e.target.value)}
+                            className="bg-slate-900/60 border-slate-800/60 text-white h-8 text-xs font-mono"
+                        />
+                    )
                 ) : (
                     (metric.options ?? []).map((opt) => {
                         const selected = value === opt.value;
@@ -245,13 +276,7 @@ function MetricRow({ metric, value, onChange }: {
                                     <button
                                         type="button"
                                         onClick={() => onChange(metric, opt.value)}
-                                        className={cn(
-                                            'flex-1 min-w-[48px] h-8 px-2 rounded-md text-[11px] font-bold transition-all duration-150 border',
-                                            'focus:outline-hidden focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-950',
-                                            selected
-                                                ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-[0_0_16px_rgba(245,158,11,0.35)]'
-                                                : 'bg-slate-900/60 border-slate-800/60 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 hover:border-slate-600',
-                                        )}
+                                        className={cn(segButton(selected), 'min-w-[48px]')}
                                     >
                                         {opt.label}
                                     </button>
