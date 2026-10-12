@@ -1,0 +1,47 @@
+{
+  "id": "usaf-rac",
+  "label": "USAF Risk Assessment Matrix",
+  "version": "1.0",
+  "source": "builtin",
+  "score_kind": "categorical",
+  "description": "US Air Force / MIL-STD-882 Risk Assessment Matrix — hazard Severity x Probability -> risk level (Extremely High / High / Medium / Low).",
+  "metrics": [
+    {
+      "id": "sev", "label": "Severity (effect of hazard)", "group": "Risk Assessment Matrix", "type": "select",
+      "description": "Worst credible outcome of the hazard.",
+      "options": [
+        {"value": "catastrophic", "label": "I — Catastrophic", "description": "Death, loss of asset, mission capability or unit readiness"},
+        {"value": "critical", "label": "II — Critical", "description": "Severe injury or damage, significantly degraded mission capability or unit readiness"},
+        {"value": "moderate", "label": "III — Moderate", "description": "Minor injury or damage, degraded mission capability or unit readiness"},
+        {"value": "negligible", "label": "IV — Negligible", "description": "Minimal injury or damage, little or no mission capability or unit readiness"}
+      ]
+    },
+    {
+      "id": "prob", "label": "Probability (frequency of occurrence)", "group": "Risk Assessment Matrix", "type": "select",
+      "description": "How often the hazard is expected to occur over time.",
+      "options": [
+        {"value": "frequent", "label": "A — Frequent", "description": "Continuously experienced"},
+        {"value": "likely", "label": "B — Likely", "description": "Will occur frequently"},
+        {"value": "occasional", "label": "C — Occasional", "description": "Will occur several times"},
+        {"value": "seldom", "label": "D — Seldom", "description": "Unlikely; can be expected to occur"},
+        {"value": "rarely", "label": "E — Rarely", "description": "Improbable; but possible to occur"}
+      ]
+    }
+  ],
+  "formula": {
+    "op": "matrix",
+    "axes": ["sev", "prob"],
+    "cells": {
+      "catastrophic|frequent": "EH", "catastrophic|likely": "EH", "catastrophic|occasional": "H", "catastrophic|seldom": "H", "catastrophic|rarely": "M",
+      "critical|frequent": "EH",     "critical|likely": "H",      "critical|occasional": "H",      "critical|seldom": "M",      "critical|rarely": "L",
+      "moderate|frequent": "H",      "moderate|likely": "M",      "moderate|occasional": "M",      "moderate|seldom": "L",      "moderate|rarely": "L",
+      "negligible|frequent": "M",    "negligible|likely": "L",    "negligible|occasional": "L",    "negligible|seldom": "L",    "negligible|rarely": "L"
+    }
+  },
+  "severity": {
+    "from": "map",
+    "map": {"EH": "CRITICAL", "H": "HIGH", "M": "MEDIUM", "L": "LOW"}
+  },
+  "nominal_score": {"CRITICAL": 9.5, "HIGH": 7.5, "MEDIUM": 5.0, "LOW": 2.0, "INFO": 0.0},
+  "vector_template": "USAF-RAC/S:{sev}/P:{prob}"
+}
