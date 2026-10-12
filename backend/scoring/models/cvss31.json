@@ -1,0 +1,91 @@
+{
+  "id": "cvss31",
+  "label": "CVSS 3.1",
+  "version": "3.1",
+  "source": "builtin",
+  "score_kind": "numeric",
+  "description": "Common Vulnerability Scoring System v3.1 base score (FIRST.ORG).",
+  "metrics": [
+    {
+      "id": "AV", "label": "Attack Vector", "group": "Exploitability", "type": "select",
+      "description": "How can the vulnerability be exploited?",
+      "options": [
+        {"value": "N", "label": "Network", "description": "Remotely exploitable; no physical or local access needed"},
+        {"value": "A", "label": "Adjacent", "description": "Requires adjacent network access (e.g. same subnet, Bluetooth)"},
+        {"value": "L", "label": "Local", "description": "Requires local access (e.g. keyboard, SSH session)"},
+        {"value": "P", "label": "Physical", "description": "Requires physical access to the device"}
+      ]
+    },
+    {
+      "id": "AC", "label": "Attack Complexity", "group": "Exploitability", "type": "select",
+      "description": "What conditions beyond attacker control must exist?",
+      "options": [
+        {"value": "L", "label": "Low", "description": "No specialized conditions; reproducible at will"},
+        {"value": "H", "label": "High", "description": "Success depends on conditions the attacker cannot control"}
+      ]
+    },
+    {
+      "id": "PR", "label": "Privileges Required", "group": "Exploitability", "type": "select",
+      "description": "What level of privileges must an attacker possess?",
+      "options": [
+        {"value": "N", "label": "None", "description": "No prior authentication needed"},
+        {"value": "L", "label": "Low", "description": "Basic user privileges"},
+        {"value": "H", "label": "High", "description": "Significant privileges (e.g. administrator)"}
+      ]
+    },
+    {
+      "id": "UI", "label": "User Interaction", "group": "Exploitability", "type": "select",
+      "description": "Must a user take action for the exploit to succeed?",
+      "options": [
+        {"value": "N", "label": "None", "description": "No user interaction required"},
+        {"value": "R", "label": "Required", "description": "User must perform some action (e.g. click a link)"}
+      ]
+    },
+    {
+      "id": "S", "label": "Scope", "group": "Exploitability", "type": "select",
+      "description": "Can the vulnerability impact resources beyond its security scope?",
+      "options": [
+        {"value": "U", "label": "Unchanged", "description": "Impact limited to the vulnerable component"},
+        {"value": "C", "label": "Changed", "description": "Can impact resources beyond the vulnerable component"}
+      ]
+    },
+    {
+      "id": "C", "label": "Confidentiality", "group": "Impact", "type": "select",
+      "description": "Impact to the confidentiality of information resources",
+      "options": [
+        {"value": "N", "label": "None", "description": "No loss of confidentiality"},
+        {"value": "L", "label": "Low", "description": "Some loss of confidentiality"},
+        {"value": "H", "label": "High", "description": "Total loss of confidentiality"}
+      ]
+    },
+    {
+      "id": "I", "label": "Integrity", "group": "Impact", "type": "select",
+      "description": "Impact to the integrity of information resources",
+      "options": [
+        {"value": "N", "label": "None", "description": "No loss of integrity"},
+        {"value": "L", "label": "Low", "description": "Modification possible but limited in scope"},
+        {"value": "H", "label": "High", "description": "Total loss of integrity"}
+      ]
+    },
+    {
+      "id": "A", "label": "Availability", "group": "Impact", "type": "select",
+      "description": "Impact to the availability of information resources",
+      "options": [
+        {"value": "N", "label": "None", "description": "No impact to availability"},
+        {"value": "L", "label": "Low", "description": "Reduced performance or partial denial of access"},
+        {"value": "H", "label": "High", "description": "Total loss of availability"}
+      ]
+    }
+  ],
+  "formula": { "engine": "builtin-cvss31" },
+  "severity": {
+    "from": "bands",
+    "bands": [
+      {"max": 0.0, "severity": "INFO"},
+      {"max": 3.9, "severity": "LOW"},
+      {"max": 6.9, "severity": "MEDIUM"},
+      {"max": 8.9, "severity": "HIGH"},
+      {"max": 10.0, "severity": "CRITICAL"}
+    ]
+  }
+}
