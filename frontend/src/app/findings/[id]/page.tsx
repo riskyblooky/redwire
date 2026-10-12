@@ -61,7 +61,6 @@ import { useFinding, useUpdateFinding, useDeleteFinding, useTags } from '@/lib/h
 import { useFindingReviews } from '@/lib/hooks/use-finding-reviews';
 import { FindingPeerReview } from '@/components/findings/finding-peer-review';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
-import { severityRating } from '@/lib/cvss31';
 import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-field';
 import { InlineSelectField, InlineSelectOption } from '@/components/ui/inline/inline-select-field';
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
@@ -331,8 +330,6 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const categoryOptions: InlineComboboxOption[] = findingTypes.map((t: any) => ({ value: t.name, label: t.name, color: t.color }));
 
     // CVSS score → severity enum (mirrors the edit page's auto-sync on Apply).
-    const scoreToSeverity = (score: number) =>
-        (({ None: 'INFO', Low: 'LOW', Medium: 'MEDIUM', High: 'HIGH', Critical: 'CRITICAL' } as Record<string, string>)[severityRating(score)] || 'INFO');
 
     const handleStatusChange = async (newStatus: string) => {
         // If selecting REMEDIATED and there are unremediated assets, prompt
@@ -749,8 +746,10 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                             <CardContent className="space-y-8">
                                 <InlineCvssField
                                     vector={finding.cvss_vector}
+                                    scoreModel={finding.score_model}
+                                    scoreInputs={finding.score_inputs}
                                     canEdit={canEdit}
-                                    onSave={(score, vector) => saveField({ cvss_score: score, cvss_vector: vector, severity: scoreToSeverity(score) })}
+                                    onSave={(r) => saveField({ cvss_score: r.score ?? null, cvss_vector: r.vector ?? null, severity: r.severity, score_model: r.model_id, score_inputs: r.inputs })}
                                 >
                                 <div className="flex flex-col items-center justify-center p-6 bg-slate-950/50 rounded-2xl border border-slate-800/50 shadow-inner">
                                     <span className={cn("text-5xl font-black italic tracking-tighter transition-all hover:scale-110 cursor-default",

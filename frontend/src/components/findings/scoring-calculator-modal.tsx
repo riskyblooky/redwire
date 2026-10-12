@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Calculator, Check, Copy, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -36,10 +37,14 @@ interface ScoringCalculatorModalProps {
     modelId: string;
     initialInputs?: Record<string, unknown> | null;
     onApply: (result: ScoringApplyResult) => void;
+    /** When provided, an in-modal model picker is shown (used by inline editing;
+     *  the form pages supply their own external picker instead). */
+    models?: { id: string; label: string }[];
+    onModelChange?: (id: string) => void;
 }
 
 export function ScoringCalculatorModal({
-    open, onOpenChange, modelId, initialInputs, onApply,
+    open, onOpenChange, modelId, initialInputs, onApply, models, onModelChange,
 }: ScoringCalculatorModalProps) {
     const { data: model, isLoading } = useScoringModel(open ? modelId : null);
     const evaluate = useEvaluateScoring();
@@ -136,9 +141,22 @@ export function ScoringCalculatorModal({
                                 <DialogTitle className="text-base font-semibold">
                                     {model?.label ?? 'Scoring Calculator'}
                                 </DialogTitle>
-                                <DialogDescription className="text-xs text-slate-500 mt-0.5">
-                                    {model?.description ?? 'Select metrics to compute the rating'}
-                                </DialogDescription>
+                                {models && onModelChange ? (
+                                    <Select value={modelId} onValueChange={onModelChange}>
+                                        <SelectTrigger className="h-6 mt-1 bg-slate-900/60 border-slate-800 text-xs text-slate-300 w-[200px]">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                            {models.map((m) => (
+                                                <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                                        {model?.description ?? 'Select metrics to compute the rating'}
+                                    </DialogDescription>
+                                )}
                             </div>
                         </div>
                         <div className="text-right">

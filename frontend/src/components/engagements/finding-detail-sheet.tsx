@@ -55,7 +55,6 @@ import { EvidenceUpload } from '@/components/findings/evidence-upload';
 import { EvidenceCard } from '@/components/findings/evidence-card';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
-import { severityRating } from '@/lib/cvss31';
 import { buildFindingContext } from '@/lib/ai-entity-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
@@ -192,8 +191,6 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
     ];
     const categoryOptions: InlineComboboxOption[] = findingTypes.map((t: any) => ({ value: t.name, label: t.name, color: t.color }));
 
-    const scoreToSeverity = (score: number) =>
-        (({ None: 'INFO', Low: 'LOW', Medium: 'MEDIUM', High: 'HIGH', Critical: 'CRITICAL' } as Record<string, string>)[severityRating(score)] || 'INFO');
 
     const copyCvssVector = async (vector: string) => {
         try {
@@ -633,8 +630,10 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 <CollapsibleSection title="Risk Assessment" icon={AlertTriangle} iconColor="text-amber-400">
                                     <InlineCvssField
                                         vector={finding.cvss_vector}
+                                        scoreModel={finding.score_model}
+                                        scoreInputs={finding.score_inputs}
                                         canEdit={canEdit}
-                                        onSave={(score, vector) => saveField({ cvss_score: score, cvss_vector: vector, severity: scoreToSeverity(score) })}
+                                        onSave={(r) => saveField({ cvss_score: r.score ?? null, cvss_vector: r.vector ?? null, severity: r.severity, score_model: r.model_id, score_inputs: r.inputs })}
                                     >
                                         <div className="flex flex-col items-center justify-center p-4 bg-slate-950/50 rounded-2xl border border-slate-800/50 shadow-inner">
                                             <span className={cn('text-4xl font-black italic tracking-tighter cursor-default',
