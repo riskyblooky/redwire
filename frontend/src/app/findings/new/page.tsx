@@ -50,10 +50,10 @@ import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
-import { CvssCalculatorModal } from '@/components/findings/cvss-calculator-modal';
+import { ScoringCalculatorModal } from '@/components/findings/scoring-calculator-modal';
+import { useScoringModels } from '@/lib/hooks/use-scoring';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
-import { severityRating } from '@/lib/cvss31';
 import { apiErrorMessage } from '@/lib/api';
 
 const severities = [
@@ -98,6 +98,8 @@ export default function NewFindingPage() {
         references: '',
         cvss_score: 5.0,
         cvss_vector: '',
+        score_model: '' as string,
+        score_inputs: null as Record<string, unknown> | null,
         asset_ids: [] as string[],
         tag_ids: [] as string[],
         attack_technique_ids: [] as string[],
@@ -107,6 +109,9 @@ export default function NewFindingPage() {
     const { data: assets = [], isLoading: isLoadingAssets } = useAssets(formData.engagement_id);
     const [templateOpen, setTemplateOpen] = useState(false);
     const [cvssCalcOpen, setCvssCalcOpen] = useState(false);
+    const { data: scoringModels = [] } = useScoringModels();
+    const [scoreModelId, setScoreModelId] = useState('cvss31');
+    const scoreModelLabel = scoringModels.find((m) => m.id === scoreModelId)?.label ?? 'Score';
     const [selectedPortIds, setSelectedPortIds] = useState<Map<string, Set<string>>>(new Map());
     const [assetSearch, setAssetSearch] = useState('');
 
@@ -244,6 +249,8 @@ export default function NewFindingPage() {
             references: formData.references || undefined,
             cvss_score: isNaN(score) ? 0 : score,
             cvss_vector: formData.cvss_vector || undefined,
+            score_model: formData.score_model || undefined,
+            score_inputs: formData.score_inputs || undefined,
             asset_ids: formData.asset_ids || [],
             asset_port_ids: Object.keys(assetPortIds).length > 0 ? assetPortIds : undefined,
             tag_ids: formData.tag_ids || [],
@@ -614,8 +621,19 @@ export default function NewFindingPage() {
                                 </div>
 
                                 <div className="space-y-3 pt-2">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <Label className="text-slate-400 text-xs font-semibold uppercase tracking-widest">CVSS v3.1</Label>
+                                    <Label className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Scoring Model</Label>
+                                    <Select value={scoreModelId} onValueChange={setScoreModelId}>
+                                        <SelectTrigger className="bg-slate-950/50 border-slate-800 text-white h-10 text-xs">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                            {scoringModels.map((m) => (
+                                                <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="flex items-center justify-between mb-2 pt-1">
+                                        <Label className="text-slate-400 text-xs font-semibold uppercase tracking-widest">{scoreModelLabel}</Label>
                                         <div className="flex items-center gap-2">
                                             <Button
                                                 type="button"
@@ -649,16 +667,17 @@ export default function NewFindingPage() {
                                     />
                                 </div>
 
-                                <CvssCalculatorModal
+                                <ScoringCalculatorModal
                                     open={cvssCalcOpen}
                                     onOpenChange={setCvssCalcOpen}
-                                    initialVector={formData.cvss_vector}
-                                    onApply={(score, vector) => {
-                                        handleChange('cvss_score', score);
-                                        handleChange('cvss_vector', vector);
-                                        const sev = severityRating(score);
-                                        const sevMap: Record<string, string> = { Critical: 'CRITICAL', High: 'HIGH', Medium: 'MEDIUM', Low: 'LOW', None: 'INFO' };
-                                        handleChange('severity', sevMap[sev] || 'MEDIUM');
+                                    modelId={scoreModelId}
+                                    initialInputs={formData.score_inputs}
+                                    onApply={(r) => {
+                                        handleChange('cvss_score', r.score ?? '');
+                                        handleChange('cvss_vector', r.vector ?? '');
+                                        handleChange('severity', r.severity);
+                                        handleChange('score_model', r.model_id);
+                                        handleChange('score_inputs', r.inputs);
                                     }}
                                 />
 
