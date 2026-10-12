@@ -727,6 +727,67 @@ async def update_peer_review_config(
     await db.commit()
     return PeerReviewConfigResponse(required=payload.required, min_approvals=payload.min_approvals)
 
+
+# ─── Scoring policy (site-wide) ──────────────────────────────────────────────
+
+class ScoringPolicyModelInfo(BaseModel):
+    id: str
+    label: str
+
+
+class ScoringPolicyResponse(BaseModel):
+    enabled_models: Optional[List[str]] = None   # null ⇒ all available enabled
+    default_model: Optional[str] = None
+    locked_model: Optional[str] = None            # forces this one model everywhere
+    available_models: List[ScoringPolicyModelInfo]
+
+
+class ScoringPolicyUpdate(BaseModel):
+    enabled_models: Optional[List[str]] = None
+    default_model: Optional[str] = None
+    locked_model: Optional[str] = None
+
+
+def _scoring_policy_response(site: dict) -> "ScoringPolicyResponse":
+    from scoring.registry import scoring_registry
+    return ScoringPolicyResponse(
+        enabled_models=site["enabled_models"],
+        default_model=site["default_model"],
+        locked_model=site["locked_model"],
+        available_models=[ScoringPolicyModelInfo(id=m.id, label=m.label) for m in scoring_registry.list()],
+    )
+
+
+@router.get(
+    "/settings/scoring",
+    response_model=ScoringPolicyResponse,
+    dependencies=[Depends(require_roles(ADMIN_ROLES))],
+)
+async def read_scoring_policy(db: AsyncSession = Depends(get_db)):
+    from utils.scoring_policy import get_site_policy
+    return _scoring_policy_response(await get_site_policy(db))
+
+
+@router.put(
+    "/settings/scoring",
+    response_model=ScoringPolicyResponse,
+    dependencies=[Depends(require_roles(WRITE_ADMIN_ROLES))],
+)
+async def update_scoring_policy(
+    payload: ScoringPolicyUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from utils.scoring_policy import get_site_policy, set_site_policy
+    await set_site_policy(
+        db,
+        enabled_models=payload.enabled_models,
+        default_model=payload.default_model,
+        locked_model=payload.locked_model,
+        user_id=current_user.id,
+    )
+    return _scoring_policy_response(await get_site_policy(db))
+
     from utils.collaboration import create_activity_log
     await create_activity_log(
         db=db,

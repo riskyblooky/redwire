@@ -43,6 +43,12 @@ class Engagement(Base, AuditMixin):
     # Admin-defined custom field values, keyed by CustomFieldDefinition.field_key.
     custom_fields = Column(JSON, nullable=True, default=dict)
 
+    # Scoring policy: which finding scoring models this engagement permits
+    # (JSON list of model ids; null ⇒ inherit the site policy / all enabled) and
+    # the default model for new findings (null ⇒ inherit). See utils/scoring_policy.
+    allowed_score_models = Column(JSON, nullable=True)
+    default_score_model = Column(String(64), nullable=True)
+
     # Relationships
     marking_profile = relationship("MarkingProfile")
     client = relationship("Client", back_populates="engagements")

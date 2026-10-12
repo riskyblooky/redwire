@@ -17,6 +17,7 @@ from models.user import User
 from models.finding import Finding, Severity, FindingStatus, Tag
 from scoring.registry import scoring_registry
 from scoring.engine import evaluate as evaluate_score, ScoringError
+from utils.scoring_policy import assert_model_allowed
 from models.evidence import Evidence
 from schemas.finding import FindingCreate, FindingUpdate, FindingResponse, TagResponse
 from schemas.evidence import EvidenceResponse
@@ -444,8 +445,9 @@ async def create_finding(
     testcase_id = finding_data.testcase_id
     attack_technique_ids = finding_data.attack_technique_ids
     finding_dict = finding_data.model_dump(exclude={"asset_ids", "asset_port_ids", "tag_ids", "testcase_id", "attack_technique_ids"})
-    # Authoritative scoring: if a model + inputs were supplied, compute the
-    # severity/CVSS from them (overriding any client-sent values).
+    # Enforce the engagement's scoring policy, then authoritatively score.
+    if finding_data.score_model:
+        await assert_model_allowed(db, finding_data.engagement_id, finding_data.score_model)
     _apply_scoring(finding_dict)
 
     new_finding = Finding(
@@ -596,9 +598,11 @@ async def update_finding(
             "finding", update_data.pop("custom_fields"), db
         )
 
-    # Authoritative scoring: recompute severity/CVSS from the model when the user
-    # changed the calculator inputs. Done before the change-summary / version
-    # snapshot below so the computed values are diffed and versioned.
+    # Enforce the engagement's scoring policy on an explicit model change, then
+    # authoritatively (re)score. Done before the change-summary / version snapshot
+    # below so the computed values are diffed and versioned.
+    if update_data.get("score_model"):
+        await assert_model_allowed(db, finding.engagement_id, update_data["score_model"])
     _apply_scoring(update_data, existing=finding)
 
     # Two-person rule: a finding's author cannot self-attest the terminal-state
