@@ -210,7 +210,16 @@ def evaluate(model: ScoringModel, inputs: Dict[str, Any]) -> ScoreResult:
             except ValueError as exc:  # normalize engine errors to ScoringError
                 raise ScoringError(str(exc))
         else:
-            raise ScoringError(f"unknown engine {eng!r} (no provider registered)")
+            # Plugin-supplied engine (e.g. the CVSS 4.0 plugin). Registered from
+            # the plugin's setup(); see scoring/providers.py.
+            from scoring.providers import scoring_provider_registry
+            provider = scoring_provider_registry.get(eng)
+            if provider is None:
+                raise ScoringError(f"unknown engine {eng!r} (no provider registered)")
+            try:
+                numeric_value, vector = provider(inputs)
+            except ValueError as exc:
+                raise ScoringError(str(exc))
     else:
         result = _eval(formula, model, inputs, {})
         if isinstance(result, (int, float)):

@@ -1,0 +1,108 @@
+{
+  "id": "cvss40",
+  "label": "CVSS 4.0",
+  "version": "4.0",
+  "source": "plugin:cvss4_scoring",
+  "score_kind": "numeric",
+  "description": "Common Vulnerability Scoring System v4.0 base score (CVSS-B, FIRST.ORG).",
+  "metrics": [
+    {
+      "id": "AV", "label": "Attack Vector", "group": "Exploitability", "type": "select",
+      "options": [
+        {"value": "N", "label": "Network", "description": "Remotely exploitable across a network"},
+        {"value": "A", "label": "Adjacent", "description": "Limited to a logically adjacent network"},
+        {"value": "L", "label": "Local", "description": "Local access (console, SSH, or local app)"},
+        {"value": "P", "label": "Physical", "description": "Requires physical access"}
+      ]
+    },
+    {
+      "id": "AC", "label": "Attack Complexity", "group": "Exploitability", "type": "select",
+      "options": [
+        {"value": "L", "label": "Low", "description": "No evasion of security-enhancing conditions needed"},
+        {"value": "H", "label": "High", "description": "Must evade or overcome built-in defenses"}
+      ]
+    },
+    {
+      "id": "AT", "label": "Attack Requirements", "group": "Exploitability", "type": "select",
+      "options": [
+        {"value": "N", "label": "None", "description": "No pre-conditions on deployment or execution"},
+        {"value": "P", "label": "Present", "description": "Depends on specific deployment/execution conditions"}
+      ]
+    },
+    {
+      "id": "PR", "label": "Privileges Required", "group": "Exploitability", "type": "select",
+      "options": [
+        {"value": "N", "label": "None", "description": "No privileges required"},
+        {"value": "L", "label": "Low", "description": "Basic user privileges"},
+        {"value": "H", "label": "High", "description": "Administrative/significant privileges"}
+      ]
+    },
+    {
+      "id": "UI", "label": "User Interaction", "group": "Exploitability", "type": "select",
+      "options": [
+        {"value": "N", "label": "None", "description": "No user interaction required"},
+        {"value": "P", "label": "Passive", "description": "Limited, involuntary user interaction"},
+        {"value": "A", "label": "Active", "description": "Specific, conscious user interaction required"}
+      ]
+    },
+    {
+      "id": "VC", "label": "Confidentiality (VC)", "group": "Vulnerable System Impact", "type": "select",
+      "options": [
+        {"value": "H", "label": "High", "description": "Total loss of confidentiality"},
+        {"value": "L", "label": "Low", "description": "Some loss of confidentiality"},
+        {"value": "N", "label": "None", "description": "No loss of confidentiality"}
+      ]
+    },
+    {
+      "id": "VI", "label": "Integrity (VI)", "group": "Vulnerable System Impact", "type": "select",
+      "options": [
+        {"value": "H", "label": "High", "description": "Total loss of integrity"},
+        {"value": "L", "label": "Low", "description": "Some loss of integrity"},
+        {"value": "N", "label": "None", "description": "No loss of integrity"}
+      ]
+    },
+    {
+      "id": "VA", "label": "Availability (VA)", "group": "Vulnerable System Impact", "type": "select",
+      "options": [
+        {"value": "H", "label": "High", "description": "Total loss of availability"},
+        {"value": "L", "label": "Low", "description": "Reduced performance/availability"},
+        {"value": "N", "label": "None", "description": "No impact to availability"}
+      ]
+    },
+    {
+      "id": "SC", "label": "Confidentiality (SC)", "group": "Subsequent System Impact", "type": "select",
+      "options": [
+        {"value": "H", "label": "High", "description": "Total loss of confidentiality in subsequent systems"},
+        {"value": "L", "label": "Low", "description": "Some loss of confidentiality in subsequent systems"},
+        {"value": "N", "label": "None", "description": "No subsequent confidentiality impact"}
+      ]
+    },
+    {
+      "id": "SI", "label": "Integrity (SI)", "group": "Subsequent System Impact", "type": "select",
+      "options": [
+        {"value": "H", "label": "High", "description": "Total loss of integrity in subsequent systems"},
+        {"value": "L", "label": "Low", "description": "Some loss of integrity in subsequent systems"},
+        {"value": "N", "label": "None", "description": "No subsequent integrity impact"}
+      ]
+    },
+    {
+      "id": "SA", "label": "Availability (SA)", "group": "Subsequent System Impact", "type": "select",
+      "options": [
+        {"value": "H", "label": "High", "description": "Total loss of availability in subsequent systems"},
+        {"value": "L", "label": "Low", "description": "Reduced availability in subsequent systems"},
+        {"value": "N", "label": "None", "description": "No subsequent availability impact"}
+      ]
+    }
+  ],
+  "formula": { "engine": "cvss40" },
+  "severity": {
+    "from": "bands",
+    "bands": [
+      {"max": 0.0, "severity": "INFO"},
+      {"max": 3.9, "severity": "LOW"},
+      {"max": 6.9, "severity": "MEDIUM"},
+      {"max": 8.9, "severity": "HIGH"},
+      {"max": 10.0, "severity": "CRITICAL"}
+    ]
+  }
+}

@@ -23,6 +23,12 @@ section becomes one release entry.
   dashboards, reports, analytics and automation are unaffected. The rating is
   recomputed on the server when a finding is saved, so it is always authoritative,
   and each finding remembers which model and inputs produced it.
+- **CVSS 4.0 scoring (plugin)** — a bundled **CVSS 4.0 Scoring** plugin adds
+  CVSS 4.0 (CVSS-B) as a scoring model. It appears in the Scoring Model picker
+  like the built-ins; its engine is a faithful port of FIRST.org's reference
+  calculator (validated to match exactly across 25,000 vectors). Plugins can now
+  contribute scoring models — a declarative model definition plus, for complex
+  math, a scoring engine — through the plugin system.
 
 ## [1.5.7] — 2026-09-21
 

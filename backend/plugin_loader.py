@@ -512,6 +512,25 @@ class PluginRegistry:
                     manifest=plugin.manifest,
                 )
 
+        # Register declarative scoring models the plugin ships. Each entry under
+        # provides.scoring_models is a path (relative to the plugin dir) to a
+        # ScoringModel JSON; it is merged into the shared scoring registry.
+        scoring_models = plugin.manifest.provides.get("scoring_models")
+        if scoring_models:
+            try:
+                import json as _json
+                from scoring.registry import scoring_registry
+                from scoring.types import ScoringModel
+                scoring_registry.load_builtins()  # avoid lazy-load clobber
+                for rel in scoring_models:
+                    model_path = plugin_dir / rel
+                    with open(model_path, "r", encoding="utf-8") as fh:
+                        model = ScoringModel.model_validate(_json.load(fh))
+                    scoring_registry.register(model, source=f"plugin:{plugin.id}")
+                    print(f"  🧮 {plugin.manifest.name}: registered scoring model '{model.id}'")
+            except Exception as e:
+                print(f"  ❌ {plugin.manifest.name}: scoring_models load failed: {e}")
+
         # Import router.py if plugin provides routes
         if plugin.manifest.provides.get("routes", False):
             router_path = plugin_dir / "router.py"
