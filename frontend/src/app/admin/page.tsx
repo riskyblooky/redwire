@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info, ListPlus, Filter, Search, X } from 'lucide-react';
+import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info, ListPlus, Filter, Search, X, SlidersHorizontal } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
     DropdownMenu,
@@ -305,6 +305,11 @@ export default function AdminPage() {
                         {show('permissions') && (
 <TabsTrigger value="permissions" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Shield className="h-3.5 w-3.5" /> Permissions
+                        </TabsTrigger>
+)}
+                        {show('policies') && (
+<TabsTrigger value="policies" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-sky-500/10 data-[state=active]:text-sky-400 data-[state=active]:shadow-[0_0_12px_rgba(14,165,233,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+                            <SlidersHorizontal className="h-3.5 w-3.5" /> Policies
                         </TabsTrigger>
 )}
                         {show('registration-codes') && (
@@ -667,10 +672,15 @@ export default function AdminPage() {
 
                     {show('permissions') && (
 <TabsContent value="permissions" className="space-y-6">
+                        <PermissionsManagement />
+                    </TabsContent>
+)}
+
+                    {show('policies') && (
+<TabsContent value="policies" className="space-y-6">
                         <StatsScopeSettings />
                         <PeerReviewSettings />
                         <ScoringPolicySettings />
-                        <PermissionsManagement />
                     </TabsContent>
 )}
 
