@@ -183,6 +183,8 @@ export interface Finding {
     references?: string;
     cvss_score?: number;
     cvss_vector?: string;
+    score_model?: string | null;
+    score_inputs?: Record<string, unknown> | null;
     created_by: string;
     updated_by?: string;
     created_by_username?: string;

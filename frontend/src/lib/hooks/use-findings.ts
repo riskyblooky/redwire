@@ -18,6 +18,8 @@ export interface Finding {
     references: string | null;
     cvss_score: number | null;
     cvss_vector: string | null;
+    score_model?: string | null;
+    score_inputs?: Record<string, unknown> | null;
     classification_level?: string | null;
     classification_suffix?: string | null;
     created_by: string;
