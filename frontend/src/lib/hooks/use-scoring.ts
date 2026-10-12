@@ -71,6 +71,27 @@ export function useScoringModel(modelId?: string | null) {
     });
 }
 
+export interface EffectiveScoringPolicy {
+    allowed: ScoringModelSummary[];
+    default: string;
+    locked: boolean;      // single allowed model ⇒ picker disables switching
+}
+
+/** The scoring models permitted for an engagement (site policy resolved with the
+ *  engagement's own policy), the default to preselect, and whether it's locked. */
+export function useEffectiveScoringPolicy(engagementId?: string | null) {
+    return useQuery<EffectiveScoringPolicy>({
+        queryKey: ['scoring', 'effective-policy', engagementId ?? null],
+        // No engagement id resolves to the site-wide policy (used on the new
+        // finding page before an engagement is chosen).
+        queryFn: async () =>
+            (await api.get('/scoring/effective-policy', {
+                params: engagementId ? { engagement_id: engagementId } : {},
+            })).data,
+        staleTime: 60_000,
+    });
+}
+
 /** The default scoring model id for new findings. */
 export function useDefaultScoringModel() {
     return useQuery<ScoringModelSummary>({

@@ -53,7 +53,7 @@ import { toast } from 'sonner';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { ScoringCalculatorModal } from '@/components/findings/scoring-calculator-modal';
-import { useScoringModels } from '@/lib/hooks/use-scoring';
+import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
@@ -119,9 +119,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     const { data: assetTypes = [] } = useConfigurableTypes('asset');
     const [templateOpen, setTemplateOpen] = useState(false);
     const [cvssCalcOpen, setCvssCalcOpen] = useState(false);
-    const { data: scoringModels = [] } = useScoringModels();
     const [scoreModelId, setScoreModelId] = useState('cvss31');
-    const scoreModelLabel = scoringModels.find((m) => m.id === scoreModelId)?.label ?? 'Score';
     const [isDirty, setIsDirty] = useState(false);
 
     const getBackPath = () => {
@@ -154,6 +152,15 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
         attack_technique_ids: [] as string[],
         custom_fields: {} as Record<string, unknown>,
     });
+    const { data: scoringPolicy } = useEffectiveScoringPolicy(formData.engagement_id || undefined);
+    const scoringModels = scoringPolicy?.allowed ?? [];
+    const scoringLocked = !!scoringPolicy?.locked;
+    const scoreModelLabel = scoringModels.find((m) => m.id === scoreModelId)?.label ?? 'Score';
+    useEffect(() => {
+        if (scoringPolicy) {
+            setScoreModelId((cur) => scoringPolicy.allowed.some((m) => m.id === cur) ? cur : scoringPolicy.default);
+        }
+    }, [scoringPolicy]);
 
     const { data: assets = [] } = useAssets(formData.engagement_id);
     const [selectedPortIds, setSelectedPortIds] = useState<Map<string, Set<string>>>(new Map());
@@ -714,7 +721,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                 </div>
                                 <div className="space-y-3 pt-2">
                                     <Label className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Scoring Model</Label>
-                                    <Select value={scoreModelId} onValueChange={setScoreModelId}>
+                                    <Select value={scoreModelId} onValueChange={setScoreModelId} disabled={scoringLocked}>
                                         <SelectTrigger className="bg-slate-950/50 border-slate-800 text-white h-10 text-xs">
                                             <SelectValue />
                                         </SelectTrigger>

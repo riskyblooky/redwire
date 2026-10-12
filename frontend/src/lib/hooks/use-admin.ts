@@ -221,3 +221,35 @@ export function useUpdatePeerReviewConfig() {
     });
 }
 
+// ── Scoring policy (which scoring models may be used, site-wide) ──
+
+export interface ScoringPolicyModelInfo { id: string; label: string; }
+export interface ScoringPolicy {
+    enabled_models: string[] | null;   // null = all available
+    default_model: string | null;
+    locked_model: string | null;       // forces one model everywhere
+    available_models: ScoringPolicyModelInfo[];
+}
+export type ScoringPolicyUpdate = Pick<ScoringPolicy, 'enabled_models' | 'default_model' | 'locked_model'>;
+
+export function useScoringPolicy() {
+    return useQuery<ScoringPolicy>({
+        queryKey: ['admin', 'scoring-policy'],
+        queryFn: async () => (await api.get('/admin/settings/scoring')).data,
+        staleTime: 60_000,
+    });
+}
+
+export function useUpdateScoringPolicy() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (cfg: ScoringPolicyUpdate) =>
+            (await api.put('/admin/settings/scoring', cfg)).data as ScoringPolicy,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin', 'scoring-policy'] });
+            // The effective policy + model lists seen by finding pages change.
+            queryClient.invalidateQueries({ queryKey: ['scoring'] });
+        },
+    });
+}
+

@@ -56,6 +56,8 @@ export interface Engagement {
     default_classification_level?: string | null;
     default_classification_suffix?: string | null;
     ceiling_classification_level?: string | null;
+    allowed_score_models?: string[] | null;
+    default_score_model?: string | null;
 }
 
 export interface EngagementCreate {
@@ -77,6 +79,8 @@ export interface EngagementCreate {
     default_classification_level?: string | null;
     default_classification_suffix?: string | null;
     ceiling_classification_level?: string | null;
+    allowed_score_models?: string[] | null;
+    default_score_model?: string | null;
 }
 
 export interface EngagementUpdate extends Partial<EngagementCreate> {

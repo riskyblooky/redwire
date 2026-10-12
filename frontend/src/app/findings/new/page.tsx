@@ -51,7 +51,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { ScoringCalculatorModal } from '@/components/findings/scoring-calculator-modal';
-import { useScoringModels } from '@/lib/hooks/use-scoring';
+import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { apiErrorMessage } from '@/lib/api';
@@ -109,8 +109,17 @@ export default function NewFindingPage() {
     const { data: assets = [], isLoading: isLoadingAssets } = useAssets(formData.engagement_id);
     const [templateOpen, setTemplateOpen] = useState(false);
     const [cvssCalcOpen, setCvssCalcOpen] = useState(false);
-    const { data: scoringModels = [] } = useScoringModels();
+    const { data: scoringPolicy } = useEffectiveScoringPolicy(formData.engagement_id || undefined);
+    const scoringModels = scoringPolicy?.allowed ?? [];
+    const scoringLocked = !!scoringPolicy?.locked;
     const [scoreModelId, setScoreModelId] = useState('cvss31');
+    // Snap to the engagement's default (and clamp to allowed) as the policy loads
+    // or the selected engagement changes.
+    useEffect(() => {
+        if (scoringPolicy) {
+            setScoreModelId((cur) => scoringPolicy.allowed.some((m) => m.id === cur) ? cur : scoringPolicy.default);
+        }
+    }, [scoringPolicy]);
     const scoreModelLabel = scoringModels.find((m) => m.id === scoreModelId)?.label ?? 'Score';
     const [selectedPortIds, setSelectedPortIds] = useState<Map<string, Set<string>>>(new Map());
     const [assetSearch, setAssetSearch] = useState('');
@@ -622,7 +631,7 @@ export default function NewFindingPage() {
 
                                 <div className="space-y-3 pt-2">
                                     <Label className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Scoring Model</Label>
-                                    <Select value={scoreModelId} onValueChange={setScoreModelId}>
+                                    <Select value={scoreModelId} onValueChange={setScoreModelId} disabled={scoringLocked}>
                                         <SelectTrigger className="bg-slate-950/50 border-slate-800 text-white h-10 text-xs">
                                             <SelectValue />
                                         </SelectTrigger>

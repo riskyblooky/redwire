@@ -632,6 +632,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                         vector={finding.cvss_vector}
                                         scoreModel={finding.score_model}
                                         scoreInputs={finding.score_inputs}
+                                        engagementId={finding.engagement_id}
                                         canEdit={canEdit}
                                         onSave={(r) => saveField({ cvss_score: r.score ?? null, cvss_vector: r.vector ?? null, severity: r.severity, score_model: r.model_id, score_inputs: r.inputs })}
                                     >

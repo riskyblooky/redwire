@@ -23,6 +23,8 @@ import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useScoringModels, useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     ArrowLeft, Save, Loader2, Users, Shield, AlertTriangle,
@@ -144,8 +146,13 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         default_classification_suffix: '', ceiling_classification_level: '',
         tag_ids: [] as string[],
         custom_fields: {} as Record<string, unknown>,
+        allowed_score_models: [] as string[],   // [] = inherit site policy / all
+        default_score_model: '' as string,
     });
     const [detailsDirty, setDetailsDirty] = useState(false);
+    const { data: allScoringModels = [] } = useScoringModels();
+    const { data: siteScoringPolicy } = useEffectiveScoringPolicy(undefined);
+    const siteScoringLocked = !!siteScoringPolicy?.locked;
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
     const [editingPhases, setEditingPhases] = useState<Record<string, { start: string; end: string }>>({});
     const [phasesEdited, setPhasesEdited] = useState(false);
@@ -197,6 +204,8 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 ceiling_classification_level:  engagement.ceiling_classification_level || '',
                 tag_ids:                       (engagement.tags || []).map(t => t.id),
                 custom_fields:                 (engagement.custom_fields as Record<string, unknown>) || {},
+                allowed_score_models:          engagement.allowed_score_models || [],
+                default_score_model:           engagement.default_score_model || '',
             });
             setDetailsDirty(false);
         }
@@ -264,6 +273,8 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 default_classification_level:  formData.default_classification_level || null,
                 default_classification_suffix: formData.default_classification_suffix || null,
                 ceiling_classification_level:  formData.ceiling_classification_level || null,
+                allowed_score_models: formData.allowed_score_models.length ? formData.allowed_score_models : null,
+                default_score_model:  formData.default_score_model || null,
             }));
         }
 
@@ -540,6 +551,58 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                                 </div>
                                             </>
                                         )}
+                                    </div>
+
+                                    <SectionDivider label="Scoring policy" />
+                                    <div className="space-y-4">
+                                        {siteScoringLocked && (
+                                            <div className="rounded-lg border border-amber-700/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                                                Scoring is restricted site-wide by an administrator — these engagement settings may be overridden.
+                                            </div>
+                                        )}
+                                        <div className="space-y-2">
+                                            <Label className="text-slate-300">Allowed scoring models</Label>
+                                            <p className="text-xs text-slate-500">
+                                                Leave all unchecked to inherit the site policy. Check some to restrict this
+                                                engagement; check exactly one to lock it to that model.
+                                            </p>
+                                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                                {allScoringModels.map((m) => {
+                                                    const checked = formData.allowed_score_models.includes(m.id);
+                                                    return (
+                                                        <label key={m.id} className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 cursor-pointer hover:bg-slate-800/40">
+                                                            <Checkbox
+                                                                checked={checked}
+                                                                onCheckedChange={() => {
+                                                                    const set = new Set(formData.allowed_score_models);
+                                                                    if (set.has(m.id)) set.delete(m.id); else set.add(m.id);
+                                                                    handleChange('allowed_score_models', [...set]);
+                                                                }}
+                                                            />
+                                                            <span className="text-sm text-slate-200">{m.label}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1.5 max-w-xs">
+                                            <Label className="text-slate-300">Default model for new findings</Label>
+                                            <Select
+                                                value={formData.default_score_model || '__inherit__'}
+                                                onValueChange={(v) => handleChange('default_score_model', v === '__inherit__' ? '' : v)}
+                                            >
+                                                <SelectTrigger className="bg-slate-950/50 border-slate-800 h-9 text-sm"><SelectValue /></SelectTrigger>
+                                                <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                                    <SelectItem value="__inherit__">Inherit site default</SelectItem>
+                                                    {(formData.allowed_score_models.length
+                                                        ? allScoringModels.filter((m) => formData.allowed_score_models.includes(m.id))
+                                                        : allScoringModels
+                                                    ).map((m) => (
+                                                        <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
                                     </div>
                                 </CardContent>
                             </Card>
