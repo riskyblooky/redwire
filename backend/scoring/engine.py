@@ -205,7 +205,10 @@ def evaluate(model: ScoringModel, inputs: Dict[str, Any]) -> ScoreResult:
     if "engine" in formula:
         eng = formula["engine"]
         if eng == "builtin-cvss31":
-            numeric_value, vector = _cvss31_calc(inputs)
+            try:
+                numeric_value, vector = _cvss31_calc(inputs)
+            except ValueError as exc:  # normalize engine errors to ScoringError
+                raise ScoringError(str(exc))
         else:
             raise ScoringError(f"unknown engine {eng!r} (no provider registered)")
     else:

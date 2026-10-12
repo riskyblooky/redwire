@@ -47,9 +47,16 @@ class Finding(Base, AuditMixin):
     severity = Column(SQLEnum(Severity), nullable=False, index=True)
     status = Column(SQLEnum(FindingStatus), default=FindingStatus.OPEN, nullable=False)
     
-    # CVSS Scoring
+    # CVSS Scoring. cvss_score / cvss_vector hold the active model's numeric
+    # score and (opaque) vector string — not necessarily CVSS; see score_model.
     cvss_score = Column(Float)
     cvss_vector = Column(String(100))
+    # Pluggable scoring: which ScoringModel produced the current rating (null ⇒
+    # legacy/free-form, treated as "cvss31" for display), and the raw metric
+    # selections so the calculator can round-trip. See scoring/ + the design at
+    # docs/pluggable-finding-scoring.md.
+    score_model = Column(String(64), nullable=True)
+    score_inputs = Column(JSON, nullable=True)
     
     # Technical Details
     impact = Column(Text)

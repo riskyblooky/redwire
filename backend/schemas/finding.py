@@ -76,6 +76,11 @@ class FindingBase(BaseModel):
     classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
     custom_fields: Optional[dict] = None
+    # Pluggable scoring. When score_model + score_inputs are supplied, the server
+    # authoritatively (re)computes severity / cvss_score / cvss_vector from the
+    # model; otherwise the raw severity/cvss values above are accepted as-is.
+    score_model: Optional[str] = Field(None, max_length=64)
+    score_inputs: Optional[dict] = None
 
 class FindingCreate(FindingBase):
     engagement_id: str = Field(..., max_length=UUID_FIELD)
@@ -105,6 +110,8 @@ class FindingUpdate(BaseModel):
     tag_ids: Optional[list[str]] = None
     attack_technique_ids: Optional[list[str]] = None
     custom_fields: Optional[dict] = None
+    score_model: Optional[str] = Field(None, max_length=64)
+    score_inputs: Optional[dict] = None
 
 class FindingResponse(FindingBase):
     id: str

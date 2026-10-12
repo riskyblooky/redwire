@@ -15,6 +15,8 @@ from database import get_db
 
 from models.user import User
 from models.finding import Finding, Severity, FindingStatus, Tag
+from scoring.registry import scoring_registry
+from scoring.engine import evaluate as evaluate_score, ScoringError
 from models.evidence import Evidence
 from schemas.finding import FindingCreate, FindingUpdate, FindingResponse, TagResponse
 from schemas.evidence import EvidenceResponse
@@ -382,6 +384,42 @@ async def get_finding(
 from models.asset import Asset
 from models.associations import FindingAsset
 
+
+def _apply_scoring(data: dict, existing: Finding | None = None) -> None:
+    """Authoritative server-side scoring.
+
+    When ``score_inputs`` are present (the user used a scoring calculator),
+    (re)compute severity / cvss_score / cvss_vector from the chosen ScoringModel
+    and write them into ``data`` — so the computed rating, not a client-supplied
+    one, is persisted, diffed, versioned, and fed to automation. When no inputs
+    are supplied the finding keeps its manually set severity/CVSS (back-compat).
+
+    ``existing`` supplies the current model when the user tweaks inputs without
+    resending score_model (update path). Mutates ``data`` in place.
+    """
+    inputs = data.get("score_inputs")
+    if not inputs:
+        return
+    model_id = data.get("score_model") or (existing.score_model if existing else None)
+    if not model_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="score_inputs provided without a scoring model")
+    model = scoring_registry.get(model_id)
+    if model is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"Unknown scoring model '{model_id}'")
+    try:
+        result = evaluate_score(model, inputs)
+    except ScoringError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"Scoring failed: {exc}")
+    data["score_model"] = model_id
+    data["severity"] = Severity(result.severity)
+    data["cvss_score"] = result.score
+    data["cvss_vector"] = result.vector
+    data["score_inputs"] = result.inputs
+
+
 @router.post("", response_model=FindingResponse, status_code=status.HTTP_201_CREATED)
 async def create_finding(
     finding_data: FindingCreate,
@@ -406,7 +444,10 @@ async def create_finding(
     testcase_id = finding_data.testcase_id
     attack_technique_ids = finding_data.attack_technique_ids
     finding_dict = finding_data.model_dump(exclude={"asset_ids", "asset_port_ids", "tag_ids", "testcase_id", "attack_technique_ids"})
-    
+    # Authoritative scoring: if a model + inputs were supplied, compute the
+    # severity/CVSS from them (overriding any client-sent values).
+    _apply_scoring(finding_dict)
+
     new_finding = Finding(
         **finding_dict,
         created_by=current_user.id
@@ -554,6 +595,11 @@ async def update_finding(
         finding.custom_fields = await validate_custom_fields(
             "finding", update_data.pop("custom_fields"), db
         )
+
+    # Authoritative scoring: recompute severity/CVSS from the model when the user
+    # changed the calculator inputs. Done before the change-summary / version
+    # snapshot below so the computed values are diffed and versioned.
+    _apply_scoring(update_data, existing=finding)
 
     # Two-person rule: a finding's author cannot self-attest the terminal-state
     # transitions that downstream reports + dashboards treat as reviewed work.

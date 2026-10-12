@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from database import Base, engine
 
 # Import routers
-from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, chain_links, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, stats_pages, custom_fields, changelog, plugins as plugins_router
+from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, chain_links, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, stats_pages, custom_fields, changelog, scoring, plugins as plugins_router
 from routers import imports as imports_router
 from routers import spray as spray_router
 from routers import help as help_router
@@ -627,6 +627,7 @@ app.include_router(permissions.router)
 app.include_router(engagements.router)
 app.include_router(engagements_transfer.router)
 app.include_router(findings.router)
+app.include_router(scoring.router)
 app.include_router(assets.router)
 app.include_router(websocket.router)
 app.include_router(testcases.router)
