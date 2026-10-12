@@ -4,6 +4,26 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.6.0] — Unreleased
+
+### Added
+- **Pluggable finding scoring** — findings can be scored with rating models
+  beyond CVSS 3.1. A **Scoring Model** picker on the new and edit finding pages —
+  and inside the double-click score editor on the finding view page and the side
+  sheet — lets you choose a model; the calculator renders that model's metrics
+  (selects and 0–N button scales) and computes the score and severity live.
+  Built-in models:
+  - **CVSS 3.1** — the existing base-score calculator.
+  - **DREAD** — mean of the five 0–10 factors.
+  - **OWASP Risk Rating** — Likelihood × Impact from their factor groups, via the
+    OWASP severity matrix.
+  - **USAF Risk Assessment Matrix** — MIL-STD-882 hazard Severity (I–IV) ×
+    Probability (A–E) → Extremely High / High / Medium / Low.
+  Every model maps onto the existing Critical/High/Medium/Low/Info scale, so
+  dashboards, reports, analytics and automation are unaffected. The rating is
+  recomputed on the server when a finding is saved, so it is always authoritative,
+  and each finding remembers which model and inputs produced it.
+
 ## [1.5.7] — 2026-09-21
 
 ### Added
