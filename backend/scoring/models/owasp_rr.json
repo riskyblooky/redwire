@@ -1,0 +1,48 @@
+{
+  "id": "owasp-rr",
+  "label": "OWASP Risk Rating",
+  "version": "1.0",
+  "source": "builtin",
+  "score_kind": "categorical",
+  "description": "OWASP Risk Rating Methodology — Likelihood x Impact, each the mean of its factors (0-9), bucketed Low/Medium/High and combined via the OWASP severity matrix.",
+  "metrics": [
+    {"id": "sl", "label": "Skill level", "group": "Likelihood · Threat agent", "type": "number", "min": 0, "max": 9},
+    {"id": "mo", "label": "Motive", "group": "Likelihood · Threat agent", "type": "number", "min": 0, "max": 9},
+    {"id": "op", "label": "Opportunity", "group": "Likelihood · Threat agent", "type": "number", "min": 0, "max": 9},
+    {"id": "sz", "label": "Size", "group": "Likelihood · Threat agent", "type": "number", "min": 0, "max": 9},
+    {"id": "ed", "label": "Ease of discovery", "group": "Likelihood · Vulnerability", "type": "number", "min": 0, "max": 9},
+    {"id": "ee", "label": "Ease of exploit", "group": "Likelihood · Vulnerability", "type": "number", "min": 0, "max": 9},
+    {"id": "aw", "label": "Awareness", "group": "Likelihood · Vulnerability", "type": "number", "min": 0, "max": 9},
+    {"id": "id", "label": "Intrusion detection", "group": "Likelihood · Vulnerability", "type": "number", "min": 0, "max": 9},
+    {"id": "lc", "label": "Loss of confidentiality", "group": "Impact · Technical", "type": "number", "min": 0, "max": 9},
+    {"id": "li", "label": "Loss of integrity", "group": "Impact · Technical", "type": "number", "min": 0, "max": 9},
+    {"id": "la", "label": "Loss of availability", "group": "Impact · Technical", "type": "number", "min": 0, "max": 9},
+    {"id": "lac", "label": "Loss of accountability", "group": "Impact · Technical", "type": "number", "min": 0, "max": 9},
+    {"id": "fd", "label": "Financial damage", "group": "Impact · Business", "type": "number", "min": 0, "max": 9},
+    {"id": "rd", "label": "Reputation damage", "group": "Impact · Business", "type": "number", "min": 0, "max": 9},
+    {"id": "nc", "label": "Non-compliance", "group": "Impact · Business", "type": "number", "min": 0, "max": 9},
+    {"id": "pv", "label": "Privacy violation", "group": "Impact · Business", "type": "number", "min": 0, "max": 9}
+  ],
+  "formula": {
+    "op": "pipeline",
+    "steps": [
+      {"id": "L", "op": "average", "of": ["sl", "mo", "op", "sz", "ed", "ee", "aw", "id"]},
+      {"id": "I", "op": "average", "of": ["lc", "li", "la", "lac", "fd", "rd", "nc", "pv"]},
+      {"id": "Lb", "op": "bucket", "of": "$L", "bands": [
+        {"max": 2.999, "label": "Low"}, {"max": 5.999, "label": "Medium"}, {"max": 9, "label": "High"}]},
+      {"id": "Ib", "op": "bucket", "of": "$I", "bands": [
+        {"max": 2.999, "label": "Low"}, {"max": 5.999, "label": "Medium"}, {"max": 9, "label": "High"}]},
+      {"id": "sev", "op": "matrix", "axes": ["$Lb", "$Ib"], "cells": {
+        "Low|Low": "INFO", "Low|Medium": "LOW", "Low|High": "MEDIUM",
+        "Medium|Low": "LOW", "Medium|Medium": "MEDIUM", "Medium|High": "HIGH",
+        "High|Low": "MEDIUM", "High|Medium": "HIGH", "High|High": "CRITICAL"}}
+    ],
+    "output": "sev"
+  },
+  "severity": {
+    "from": "map",
+    "map": {"INFO": "INFO", "LOW": "LOW", "MEDIUM": "MEDIUM", "HIGH": "HIGH", "CRITICAL": "CRITICAL"}
+  },
+  "nominal_score": {"CRITICAL": 9.5, "HIGH": 7.5, "MEDIUM": 5.0, "LOW": 2.0, "INFO": 0.0},
+  "vector_template": "OWASP/L:{sl}{mo}{op}{sz}{ed}{ee}{aw}{id}/I:{lc}{li}{la}{lac}{fd}{rd}{nc}{pv}"
+}

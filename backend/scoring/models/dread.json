@@ -1,0 +1,32 @@
+{
+  "id": "dread",
+  "label": "DREAD",
+  "version": "1.0",
+  "source": "builtin",
+  "score_kind": "numeric",
+  "description": "DREAD risk model — mean of five 0-10 factors.",
+  "metrics": [
+    {"id": "D", "label": "Damage", "group": "DREAD", "type": "number", "min": 0, "max": 10,
+     "description": "How bad is an attack? (0 = none, 10 = catastrophic)"},
+    {"id": "R", "label": "Reproducibility", "group": "DREAD", "type": "number", "min": 0, "max": 10,
+     "description": "How easy is it to reproduce the attack?"},
+    {"id": "E", "label": "Exploitability", "group": "DREAD", "type": "number", "min": 0, "max": 10,
+     "description": "How much work is it to launch the attack?"},
+    {"id": "A", "label": "Affected users", "group": "DREAD", "type": "number", "min": 0, "max": 10,
+     "description": "How many people will be impacted?"},
+    {"id": "Di", "label": "Discoverability", "group": "DREAD", "type": "number", "min": 0, "max": 10,
+     "description": "How easy is it to discover the threat?"}
+  ],
+  "formula": {"op": "average", "of": ["D", "R", "E", "A", "Di"]},
+  "severity": {
+    "from": "bands",
+    "bands": [
+      {"max": 0.0, "severity": "INFO"},
+      {"max": 3.9, "severity": "LOW"},
+      {"max": 6.9, "severity": "MEDIUM"},
+      {"max": 8.9, "severity": "HIGH"},
+      {"max": 10.0, "severity": "CRITICAL"}
+    ]
+  },
+  "vector_template": "DREAD/D:{D}/R:{R}/E:{E}/A:{A}/Di:{Di}"
+}
