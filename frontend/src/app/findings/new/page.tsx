@@ -41,7 +41,7 @@ import { TemplatePickerDialog } from '@/components/ui/template-picker-dialog';
 import {
     ArrowLeft, Save, Loader2, Bug, Target, FileText,
     Terminal, Shield, Layers, Plus, BookOpen, CheckCircle2, ChevronsUpDown, Search,
-    Calculator
+    Calculator, ListPlus
 } from 'lucide-react';
 import { useCreateFinding, useFindingTemplates, useTags } from '@/lib/hooks/use-findings';
 import { useEngagements } from '@/lib/hooks/use-engagements';
@@ -54,6 +54,7 @@ import { ScoringCalculatorModal } from '@/components/findings/scoring-calculator
 import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
+import { useCustomFieldDefs } from '@/lib/hooks/use-custom-fields';
 import { apiErrorMessage } from '@/lib/api';
 
 const severities = [
@@ -121,6 +122,8 @@ export default function NewFindingPage() {
         }
     }, [scoringPolicy]);
     const scoreModelLabel = scoringModels.find((m) => m.id === scoreModelId)?.label ?? 'Score';
+    const { data: cfDefs = [] } = useCustomFieldDefs('finding');
+    const hasCustomFields = cfDefs.length > 0;
     const [selectedPortIds, setSelectedPortIds] = useState<Map<string, Set<string>>>(new Map());
     const [assetSearch, setAssetSearch] = useState('');
 
@@ -355,6 +358,12 @@ export default function NewFindingPage() {
                                         </span>
                                     )}
                                 </TabsTrigger>
+                                {hasCustomFields && (
+                                    <TabsTrigger value="custom" className="flex items-center gap-2 px-6 py-2 rounded-lg data-[state=active]:bg-amber-500/10 data-[state=active]:text-amber-400 transition-all font-semibold">
+                                        <ListPlus className="h-4 w-4" />
+                                        Custom Fields
+                                    </TabsTrigger>
+                                )}
                             </TabsList>
 
                             <div className="mt-6">
@@ -585,6 +594,21 @@ export default function NewFindingPage() {
                                         </CardContent>
                                     </Card>
                                 </TabsContent>
+                                {hasCustomFields && (
+                                    <TabsContent value="custom">
+                                        <Card className="border-slate-800 bg-slate-900/40 backdrop-blur-xs border-t-0 rounded-t-none">
+                                            <CardContent className="pt-6">
+                                                <CustomFieldsForm
+                                                    entity="finding"
+                                                    value={formData.custom_fields}
+                                                    onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                                                    engagementId={formData.engagement_id}
+                                                    hideHeading
+                                                />
+                                            </CardContent>
+                                        </Card>
+                                    </TabsContent>
+                                )}
                             </div>
                         </Tabs>
                     </div>
@@ -760,11 +784,6 @@ export default function NewFindingPage() {
                             </CardContent>
                         </Card>
 
-                        <CustomFieldsForm
-                            entity="finding"
-                            value={formData.custom_fields}
-                            onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
-                        />
                     </div>
                 </form>
             </div>
