@@ -43,8 +43,15 @@ section becomes one release entry.
   their outcome (e.g. USAF "Extremely High") rather than a number, the HTML
   report's metadata lists the scoring models used, and JSON exports include
   each finding's `score_model` and `score_inputs`.
+- **MCP: scoring models** — `create_finding` and `update_finding` accept
+  `score_model` + `score_inputs` (the server computes the rating), and new
+  `list_scoring_models` / `get_scoring_model` tools let MCP clients discover the
+  models an engagement permits and their metrics.
 
 ### Fixed
+- **MCP `create_finding` always failed** — the tool sent `engagement_id` only
+  as a query parameter, but the API requires it in the body, so every call was
+  rejected; its schema also omitted the required `description`. Both fixed.
 - **Let's Encrypt renewals not taking effect** — the certbot container renewed
   certificates on schedule, but nginx kept serving the old certificate from
   memory until it was restarted, so the site's certificate expired despite a

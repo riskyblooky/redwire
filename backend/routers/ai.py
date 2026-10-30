@@ -1302,6 +1302,8 @@ async def list_mcp_tools(
             {"name": "get_finding", "description": "Get full finding details"},
             {"name": "create_finding", "description": "Create a new finding"},
             {"name": "update_finding", "description": "Update finding fields"},
+            {"name": "list_scoring_models", "description": "List scoring models permitted for an engagement"},
+            {"name": "get_scoring_model", "description": "Get a scoring model's metrics"},
             {"name": "list_assets", "description": "List assets for an engagement"},
             {"name": "list_testcases", "description": "List test cases for an engagement"},
             {"name": "list_notes", "description": "List notes for an engagement"},

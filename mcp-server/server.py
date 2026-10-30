@@ -13,6 +13,7 @@ unauthenticated `/sse` is refused.
 
 import os
 import json
+import re
 import logging
 import contextvars
 from typing import Any
@@ -307,7 +308,7 @@ def _all_tools() -> list[Tool]:
         ),
         Tool(
             name="create_finding",
-            description="Create a new vulnerability finding in an engagement. Requires at least a title and severity.",
+            description="Create a new vulnerability finding in an engagement. Requires a title, severity and description. To rate it with a scoring model (CVSS 3.1, USAF RAC, ...), also pass score_model + score_inputs; the server then computes the severity.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -318,12 +319,20 @@ def _all_tools() -> list[Tool]:
                         "description": "Severity level",
                         "enum": list(SEVERITIES),
                     },
-                    "description": {"type": "string", "description": "Detailed description (markdown)"},
+                    "description": {"type": "string", "description": "Detailed description (markdown, required)"},
                     "impact": {"type": "string", "description": "Business/technical impact (markdown)"},
                     "mitigations": {"type": "string", "description": "Recommended remediation (markdown)"},
                     "category": {"type": "string", "description": "Finding category"},
+                    "score_model": {
+                        "type": "string",
+                        "description": "Optional scoring model id (e.g. 'cvss31', 'usaf-rac'). Call list_scoring_models for the models this engagement permits and get_scoring_model for its metric ids and allowed values. Use together with score_inputs.",
+                    },
+                    "score_inputs": {
+                        "type": "object",
+                        "description": "Metric values for score_model, keyed by metric id (e.g. {\"AV\": \"N\", \"AC\": \"L\", ...} for cvss31). When given, the server computes severity, score and vector from these and they override `severity`.",
+                    },
                 },
-                "required": ["engagement_id", "title", "severity"],
+                "required": ["engagement_id", "title", "severity", "description"],
             },
         ),
         Tool(
@@ -340,8 +349,37 @@ def _all_tools() -> list[Tool]:
                     "description": {"type": "string", "description": "Updated description (markdown)"},
                     "impact": {"type": "string", "description": "Updated impact (markdown)"},
                     "mitigations": {"type": "string", "description": "Updated mitigations (markdown)"},
+                    "score_model": {
+                        "type": "string",
+                        "description": "Optional scoring model id (e.g. 'cvss31', 'usaf-rac'). Call list_scoring_models for the models this engagement permits and get_scoring_model for its metric ids and allowed values. Use together with score_inputs.",
+                    },
+                    "score_inputs": {
+                        "type": "object",
+                        "description": "Metric values for score_model, keyed by metric id (e.g. {\"AV\": \"N\", \"AC\": \"L\", ...} for cvss31). When given, the server computes severity, score and vector from these and they override `severity`.",
+                    },
                 },
                 "required": ["finding_id", "engagement_id"],
+            },
+        ),
+        Tool(
+            name="list_scoring_models",
+            description="List the finding scoring models permitted for an engagement (site policy combined with the engagement's own policy), the default model, and whether the model is locked. Omit engagement_id for the site-wide policy.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "engagement_id": {"type": "string", "description": "The engagement UUID (optional)"},
+                },
+            },
+        ),
+        Tool(
+            name="get_scoring_model",
+            description="Get a scoring model's definition: its metrics (ids, labels, allowed option values or numeric ranges) — the keys and values to send as score_inputs on create_finding / update_finding.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model_id": {"type": "string", "description": "Scoring model id from list_scoring_models (e.g. 'cvss31')"},
+                },
+                "required": ["model_id"],
             },
         ),
 
@@ -1042,13 +1080,25 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         )
 
     elif name == "create_finding":
-        eid = args.pop("engagement_id")
-        return await _api_post(f"/findings?engagement_id={eid}", data=args)
+        # engagement_id stays in the body: FindingCreate requires it there.
+        return await _api_post(f"/findings?engagement_id={args['engagement_id']}", data=args)
 
     elif name == "update_finding":
         fid = args.pop("finding_id")
         eid = args.pop("engagement_id")
         return await _api_put(f"/findings/{fid}?engagement_id={eid}", data=args)
+
+    # ── Scoring ──────────────────────────────────────────────────────
+    elif name == "list_scoring_models":
+        params = {"engagement_id": args["engagement_id"]} if args.get("engagement_id") else {}
+        return await _api_get("/scoring/effective-policy", params=params)
+
+    elif name == "get_scoring_model":
+        model_id = args.get("model_id") or ""
+        # Interpolated into a URL path — same traversal guard as the *_id UUIDs.
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", model_id):
+            raise ValueError(f"argument 'model_id'={model_id!r} is not a valid scoring model id")
+        return await _api_get(f"/scoring/models/{model_id}")
 
     # ── Assets ───────────────────────────────────────────────────────
     elif name == "list_assets":
