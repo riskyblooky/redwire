@@ -199,11 +199,23 @@ async def test_status_change_fires_finding_status_trigger(stubbed):
     db = FakeDb()
     await create_activity_log(
         db, "eng-1", "user-1", "updated", "finding", "fnd-1",
-        extra_context={"status": "RESOLVED"},
+        extra_context={"status": "RESOLVED",
+                       "changes": {"status": {"old": "OPEN", "new": "RESOLVED"}}},
     )
     triggers = {c["trigger"] for c in stubbed.rule_calls}
     assert "updated" in triggers
     assert "finding_status_changed" in triggers
+
+
+async def test_status_present_without_transition_does_not_fire(stubbed):
+    # Creates and non-status edits carry the current status in extra_context;
+    # only a recorded status change may fire *_status_changed (2f7f906).
+    db = FakeDb()
+    await create_activity_log(
+        db, "eng-1", "user-1", "updated", "finding", "fnd-1",
+        extra_context={"status": "OPEN", "changes": {"title": {"old": "a", "new": "b"}}},
+    )
+    assert {c["trigger"] for c in stubbed.rule_calls} == {"updated"}
 
 
 @pytest.mark.parametrize(
@@ -218,7 +230,7 @@ async def test_status_trigger_matches_resource_type(stubbed, resource_type, expe
     db = FakeDb()
     await create_activity_log(
         db, "eng-1", "user-1", "updated", resource_type, "r-1",
-        extra_context={"status": "X"},
+        extra_context={"status": "X", "changes": {"status": {"old": "W", "new": "X"}}},
     )
     assert expected in {c["trigger"] for c in stubbed.rule_calls}
 
