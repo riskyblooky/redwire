@@ -4,6 +4,17 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.6.1] — Unreleased
+
+### Security
+- **Interactive HTML report: stored XSS** — finding titles, asset names, CVSS
+  vectors, cleanup-artifact fields and attack-graph labels were inserted into
+  the interactive HTML report without escaping, so markup in any of them (typed
+  by a user or carried in from imported scanner output) ran as script when the
+  report was opened. Every such field is now escaped. Affects HTML reports
+  generated since the interactive report was introduced; regenerate any HTML
+  reports you have shared.
+
 ## [1.6.0] — 2026-10-29
 
 ### Added
