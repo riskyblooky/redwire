@@ -43,5 +43,6 @@
     "map": {"EH": "CRITICAL", "H": "HIGH", "M": "MEDIUM", "L": "LOW"}
   },
   "nominal_score": {"CRITICAL": 9.5, "HIGH": 7.5, "MEDIUM": 5.0, "LOW": 2.0, "INFO": 0.0},
+  "outcome_labels": {"EH": "Extremely High", "H": "High", "M": "Medium", "L": "Low"},
   "vector_template": "USAF-RAC/S:{sev}/P:{prob}"
 }

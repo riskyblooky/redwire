@@ -20,6 +20,9 @@ export interface Finding {
     cvss_vector: string | null;
     score_model?: string | null;
     score_inputs?: Record<string, unknown> | null;
+    /** Categorical models' outcome label (e.g. "Extremely High"); their
+     *  cvss_score is only a nominal sort key. Null for numeric models. */
+    score_outcome?: string | null;
     classification_level?: string | null;
     classification_suffix?: string | null;
     created_by: string;

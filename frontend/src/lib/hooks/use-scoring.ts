@@ -38,6 +38,7 @@ export interface ScoringModel extends ScoringModelSummary {
     severity: { from: 'bands' | 'map'; bands?: unknown[]; map?: Record<string, string> };
     vector_template?: string | null;
     nominal_score?: Record<string, number> | null;
+    outcome_labels?: Record<string, string> | null;
 }
 
 export interface ScoreResult {
@@ -59,6 +60,13 @@ export function useScoringModels() {
         queryFn: async () => (await api.get('/scoring/models')).data,
         staleTime: 5 * 60_000,
     });
+}
+
+/** Display name of a finding's scoring model; legacy findings (no model) are CVSS 3.1. */
+export function useScoreModelLabel(modelId?: string | null): string {
+    const { data: models } = useScoringModels();
+    const id = modelId || 'cvss31';
+    return models?.find((m) => m.id === id)?.label ?? (id === 'cvss31' ? 'CVSS 3.1' : id);
 }
 
 /** Full definition of one model (metrics + formula + severity mapping). */

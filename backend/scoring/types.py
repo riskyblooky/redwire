@@ -66,6 +66,9 @@ class ScoringModel(BaseModel):
     # Nominal 0-10 score per severity, so categorical models still sort among
     # numeric ones. Only used when a formula yields no real number.
     nominal_score: Optional[Dict[str, float]] = None
+    # Display names for categorical outcome tokens (e.g. "EH" -> "Extremely
+    # High"). Tokens without an entry are shown as-is.
+    outcome_labels: Optional[Dict[str, str]] = None
 
     def metric(self, metric_id: str) -> Optional[Metric]:
         for m in self.metrics:

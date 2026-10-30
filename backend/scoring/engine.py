@@ -185,8 +185,15 @@ def _eval(node: Dict[str, Any], model: ScoringModel, inputs: Dict[str, Any], ste
 _PLACEHOLDER = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 
 
+def _vector_token(value: Any) -> str:
+    # Whole-number floats (e.g. 9.0 from a JSON number input) render as "9".
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return "" if value is None else str(value)
+
+
 def _render_vector(template: str, inputs: Dict[str, Any]) -> str:
-    return _PLACEHOLDER.sub(lambda m: str(inputs.get(m.group(1), "")), template)
+    return _PLACEHOLDER.sub(lambda m: _vector_token(inputs.get(m.group(1))), template)
 
 
 # ─── Public entry point ───────────────────────────────────────────────────────

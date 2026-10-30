@@ -658,7 +658,7 @@ export default function RemediationPage() {
 
                                                         {finding.cvss_score > 0 && (
                                                             <span className="text-xs font-mono font-bold text-slate-400 shrink-0">
-                                                                {finding.cvss_score}
+                                                                {finding.score_outcome ?? finding.cvss_score}
                                                             </span>
                                                         )}
 

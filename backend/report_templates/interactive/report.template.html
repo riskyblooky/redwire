@@ -220,7 +220,7 @@ main{padding:26px 26px 60px; min-width:0}
 .f-id{font-family:var(--font-mono); font-size:12px; color:var(--ink-faint); width:52px; flex:none}
 .f-title{font-weight:600; font-size:15px; flex:1; min-width:0}
 .f-title .pmark{margin-right:7px}
-.f-cvss{font-family:var(--font-mono); font-size:13px; color:var(--ink-muted); width:44px; text-align:right}
+.f-cvss{font-family:var(--font-mono); font-size:13px; color:var(--ink-muted); min-width:44px; white-space:nowrap; text-align:right}
 .f-caret{color:var(--ink-faint); transition:transform .2s} .finding.open .f-caret{transform:rotate(90deg)}
 .f-body{display:none; padding:2px 18px 20px; border-top:1px solid var(--border-soft)}
 .finding.open .f-body{display:block}
@@ -523,7 +523,7 @@ table.data tbody tr:hover td, table.data tr:hover td{background:var(--surface-2)
       <p class="sub">Every issue below was demonstrated against the target — no theoretical impact. Expand a finding for reproduction, evidence, and the concrete fix.</p>
       <div class="toolbar">
         <label class="search"><i data-ic="search"></i><input id="fsearch" type="search" placeholder="Search findings, assets, CWE…"></label>
-        <select class="selct" id="fsort"><option value="sev">Sort: Severity</option><option value="cvss">Sort: CVSS</option><option value="status">Sort: Status</option><option value="id">Sort: ID</option></select>
+        <select class="selct" id="fsort"><option value="sev">Sort: Severity</option><option value="cvss">Sort: Score</option><option value="status">Sort: Status</option><option value="id">Sort: ID</option></select>
       </div>
       <div class="fchips" id="fchips">
         <button class="fchip" data-sev="critical" aria-pressed="false">Critical</button>
@@ -627,7 +627,7 @@ table.data tbody tr:hover td, table.data tr:hover td{background:var(--surface-2)
           <div class="phase"><span class="pn">03</span><div><div style="font-weight:600">Post-exploitation</div><div class="sub" style="margin:0">Impact demonstration, scoped to agreed rules of engagement.</div></div></div>
           <div class="phase"><span class="pn">04</span><div><div style="font-weight:600">Reporting &amp; retest</div><div class="sub" style="margin:0">This deliverable, plus a retest window on fixes.</div></div></div>
           <div class="ch-h" style="margin-top:16px"><h3>Standards</h3></div>
-          <p class="sub" style="margin:0">OWASP Testing Guide, PTES, and CVSS 3.1 base scoring throughout.</p>
+          <p class="sub" style="margin:0">OWASP Testing Guide and PTES; each finding is rated with the scoring model shown on it.</p>
         </div>
       </div>
     </section>
@@ -676,6 +676,9 @@ function stampIcons(root=document){root.querySelectorAll('[data-ic]').forEach(el
 const SEV = {critical:{r:4,c:'var(--sev-critical)'},high:{r:3,c:'var(--sev-high)'},medium:{r:2,c:'var(--sev-medium)'},low:{r:1,c:'var(--sev-low)'},info:{r:0,c:'var(--sev-info)'}};
 const R=window.__REPORT__||{};
 const FINDINGS=R.findings||[], CLEANUP=R.cleanup||[], ASSETS=R.assets||[], CHAIN=R.chain||[], CHAIN_VAULT=R.chainVault||[];
+// Display score: numeric models show the number; categorical ones (num:false) carry
+// only a nominal sort key in cvss, so show their outcome label instead.
+const scoreTxt=f=>(f.num===false)?(f.outcome||'—'):(f.cvss?(+f.cvss).toFixed(1):'—');
 /* vault items only appear in the graph when a chain touches them (they aren't
    otherwise in the report) — mirrors GET /{eng}/attack-graph. */
 const VMAP=Object.fromEntries(CHAIN_VAULT.map(v=>[v.id,v]));
@@ -689,7 +692,7 @@ const FMAP=Object.fromEntries(FINDINGS.map(f=>[f.id,f]));
 function buildGraph(){
  const nodes=[], edges=[], aid={};
  TC.forEach(t=>nodes.push({id:t.id,type:'testcase',label:t.label,status:t.status,finds:t.finds||[]}));
- FINDINGS.forEach(f=>nodes.push({id:f.id,type:'finding',label:f.title,sev:f.sev,cvss:f.cvss,cwe:f.cwe,fstatus:f.status}));
+ FINDINGS.forEach(f=>nodes.push({id:f.id,type:'finding',label:f.title,sev:f.sev,cvss:f.cvss,score:scoreTxt(f),model:f.model,cwe:f.cwe,fstatus:f.status}));
  ASSETS.forEach((a,i)=>{aid[a.n]='A'+i; nodes.push({id:'A'+i,type:'asset',label:a.n,atype:a.type});});
  CLEANUP.forEach((c,i)=>{nodes.push({id:'C'+i,type:'cleanup',label:c.t,cstatus:c.status,csys:c.sys,ci:i});
    const src=(c.asset&&aid[c.asset])?aid[c.asset]:c.finding; if(src)edges.push({s:src,t:'C'+i,kind:'cleanup'});});
@@ -758,7 +761,7 @@ function chainComponent(fid){ if(!CHAIN.length)return null;
 function chainSubgraph(comp){const nodes=[],edges=[];
  comp.forEach(id=>{const t=TCMAP[id],f=FMAP[id],v=VMAP[id];
    if(t)nodes.push({id:t.id,type:'testcase',label:t.label,status:t.status,finds:t.finds||[]});
-   else if(f)nodes.push({id:f.id,type:'finding',label:f.title,sev:f.sev,cvss:f.cvss,cwe:f.cwe,fstatus:f.status});
+   else if(f)nodes.push({id:f.id,type:'finding',label:f.title,sev:f.sev,cvss:f.cvss,score:scoreTxt(f),model:f.model,cwe:f.cwe,fstatus:f.status});
    else if(v)nodes.push({id:v.id,type:'vault',label:v.label,vtype:v.itype});});
  CHAIN.forEach(c=>{if(comp.has(c.s)&&comp.has(c.t))edges.push({s:c.s,t:c.t,kind:'chain',note:c.note});});
  return {nodes,edges};}
@@ -769,7 +772,7 @@ function findingSubgraph(fid){const comp=chainComponent(fid); if(comp)return cha
  TC.filter(t=>(t.finds||[]).includes(fid)).forEach(t=>{edges.push({s:t.id,t:fid,kind:'discovered'}); let cur=t;
    while(cur){ if(!seen.has(cur.id)){seen.add(cur.id); nodes.push({id:cur.id,type:'testcase',label:cur.label,status:cur.status,finds:cur.finds||[]});}
      if(cur.parent){edges.push({s:cur.parent,t:cur.id,kind:'subtest'}); cur=TCMAP[cur.parent];} else cur=null; } });
- nodes.push({id:fid,type:'finding',label:f.title,sev:f.sev,cvss:f.cvss,cwe:f.cwe,fstatus:f.status});
+ nodes.push({id:fid,type:'finding',label:f.title,sev:f.sev,cvss:f.cvss,score:scoreTxt(f),model:f.model,cwe:f.cwe,fstatus:f.status});
  f.assets.forEach(an=>{const at=(ASSETS.find(a=>a.n===an)||{}).type; nodes.push({id:'a-'+an,type:'asset',label:an,atype:at}); edges.push({s:fid,t:'a-'+an,kind:'impacts'});});
  CLEANUP.forEach((c,i)=>{ if(c.finding===fid){nodes.push({id:'sC'+i,type:'cleanup',label:c.t,cstatus:c.status,csys:c.sys,ci:i});
    const src=(c.asset&&f.assets.includes(c.asset))?'a-'+c.asset:fid; edges.push({s:src,t:'sC'+i,kind:'cleanup'});} });
@@ -779,7 +782,7 @@ function findingSubgraph(fid){const comp=chainComponent(fid); if(comp)return cha
 function nodeInfo(n){
  if(n.type==='finding'){const st={open:'Open',progress:'In progress',remediated:'Remediated'}[n.fstatus]||n.fstatus;
    return {icon:'bug',color:`var(--sev-${n.sev})`,title:n.label,tag:n.id+' · finding',
-     rows:[['Severity',n.sev.toUpperCase()],['CVSS',n.cvss?n.cvss.toFixed(1):'—'],['CWE',n.cwe||'—'],['Status',st]],
+     rows:[['Severity',n.sev.toUpperCase()],[esc(n.model||'Score'),n.score||'—'],['CWE',n.cwe||'—'],['Status',st]],
      action:{label:'Open finding →',kind:'finding',view:'findings',id:n.id}};}
  if(n.type==='testcase') return {icon:'check-square',color:'var(--ent-testcase)',title:n.label,tag:'Test case',
    rows:[['Result',n.status]].concat((n.finds&&n.finds.length)?[['Discovered',n.finds.join(', ')]]:[]),
@@ -830,7 +833,7 @@ const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 /* render markdown like the app does (server-side in production; marked here for the mockup) */
 const md=s=>s||'';  // fields are pre-rendered HTML (server-side markdown)
 function cvssBreak(vec){ if(vec==='—') return ''; const map={AV:'Attack Vector',AC:'Complexity',PR:'Privileges',UI:'User Interact.',S:'Scope',C:'Confidentiality',I:'Integrity',A:'Availability'};
-  return '<div class="cvss-vec">'+vec.split('/').map(p=>{const[k,v]=p.split(':');return `<span class="cvm" title="${map[k]||k}">${k}:<b>${v}</b></span>`}).join('')+'</div>'; }
+  return '<div class="cvss-vec">'+vec.split('/').filter(p=>p.includes(':')).map(p=>{const[k,v]=p.split(':');return `<span class="cvm" title="${map[k]||k}">${k}:<b>${v}</b></span>`}).join('')+'</div>'; }
 
 /* stat tiles */
 const counts={critical:0,high:0,medium:0,low:0,info:0}; FINDINGS.forEach(f=>counts[f.sev]++);
@@ -857,7 +860,7 @@ $('#tiles').innerHTML=Object.entries(counts).map(([k,v])=>`<button class="tile" 
 })();
 
 /* top risks */
-$('#toprisk').innerHTML=[...FINDINGS].filter(f=>f.sev!=='info').sort((a,b)=>b.cvss-a.cvss).slice(0,5).map((f,i)=>`<div class="tr" data-open="${f.id}"><span class="rank tnum">${i+1}</span><span class="chip ${f.sev}">${f.sev}</span><span class="tr-t">${f.title}</span><span class="cv tnum">${f.cvss.toFixed(1)}</span></div>`).join('');
+$('#toprisk').innerHTML=[...FINDINGS].filter(f=>f.sev!=='info').sort((a,b)=>b.cvss-a.cvss).slice(0,5).map((f,i)=>`<div class="tr" data-open="${f.id}"><span class="rank tnum">${i+1}</span><span class="chip ${f.sev}">${f.sev}</span><span class="tr-t">${f.title}</span><span class="cv tnum">${esc(scoreTxt(f))}</span></div>`).join('');
 
 /* findings list */
 let sevFilter=new Set(), openOnly=false, sortBy='sev', q='';
@@ -868,7 +871,7 @@ function findingHTML(f){
  if(f.impact) secs.push(`<div class="fsec"><span class="lbl">Impact demonstrated</span><div class="md">${f.impact}</div></div>`);
  if(f.assets&&f.assets.length) secs.push(`<div class="fsec"><span class="lbl">Affected assets</span><div class="assettags">${f.assets.map(a=>`<span class="atag">${esc(a)}</span>`).join('')}</div></div>`);
  if(TC.some(t=>(t.finds||[]).includes(f.id)) || CHAIN.some(c=>c.s===f.id||c.t===f.id)) secs.push(`<div class="fsec"><span class="lbl">Attack path — how this was reached</span><div class="graphwrap fpath" data-fpath="${f.id}"></div></div>`);
- if(f.cvss||(f.vec&&f.vec!=='—')) secs.push(`<div class="fsec depth-tech"><span class="lbl">CVSS 3.1 · ${(+f.cvss).toFixed(1)}${f.cwe?' · '+esc(f.cwe):''}</span>${cvssBreak(f.vec)}</div>`);
+ if(f.cvss||f.outcome||(f.vec&&f.vec!=='—')) secs.push(`<div class="fsec depth-tech"><span class="lbl">${esc(f.model||'Score')} · ${esc(scoreTxt(f))}${f.cwe?' · '+esc(f.cwe):''}</span>${cvssBreak(f.vec)}</div>`);
  if(f.steps) secs.push(`<div class="fsec depth-tech"><span class="lbl">Steps to reproduce</span><div class="md">${f.steps}</div></div>`);
  if(f.tech) secs.push(`<div class="fsec depth-tech"><span class="lbl">Technical detail</span><div class="md">${f.tech}</div></div>`);
  if(f.ev&&f.ev.length) secs.push(`<div class="fsec"><span class="lbl">Evidence</span><div class="ev-thumbs">${f.ev.map(e=>`<div class="ev-thumb" data-ev data-cap="${esc(e.cap||f.id)}"><img src="${e.img}" alt="${esc(e.cap||'')}"><div class="cap">${esc(e.cap||(f.id+' · captured proof'))}</div></div>`).join('')}</div></div>`);
@@ -880,7 +883,7 @@ function findingHTML(f){
    <div class="f-head"><span class="f-id">${f.id}</span><span class="chip ${f.sev}">${f.sev}</span>
      <span class="f-title"><span class="pmark">${f.mark}</span>${f.title}</span>
      <span class="pill ${st}">${stlabel}</span>
-     <span class="f-cvss tnum">${f.cvss?f.cvss.toFixed(1):'—'}</span>
+     <span class="f-cvss tnum">${esc(scoreTxt(f))}</span>
      <span class="f-caret">${svgIcon('chevron-right','width="16" height="16"')}</span>
    </div>
    <div class="f-body"><div class="f-sections">${secs.join('')}</div></div></div>`;

@@ -29,6 +29,12 @@ section becomes one release entry.
   calculator (validated to match exactly across 25,000 vectors). Plugins can now
   contribute scoring models — a declarative model definition plus, for complex
   math, a scoring engine — through the plugin system.
+- **Model-aware score display** — reports (PDF, HTML, Markdown) and the finding
+  view, side sheet and remediation tracker label each finding's score with the
+  model that produced it instead of a fixed "CVSS 3.1". Categorical models show
+  their outcome (e.g. USAF "Extremely High") rather than a number, the HTML
+  report's metadata lists the scoring models used, and JSON exports include
+  each finding's `score_model` and `score_inputs`.
 
 ### Fixed
 - **Let's Encrypt renewals not taking effect** — the certbot container renewed

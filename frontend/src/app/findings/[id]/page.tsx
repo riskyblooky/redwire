@@ -58,6 +58,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useFinding, useUpdateFinding, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { useScoreModelLabel } from '@/lib/hooks/use-scoring';
 import { useFindingReviews } from '@/lib/hooks/use-finding-reviews';
 import { FindingPeerReview } from '@/components/findings/finding-peer-review';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
@@ -145,6 +146,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const { user } = useAuthStore();
 
     const { data: finding, isLoading, error } = useFinding(id);
+    const scoreModelLabel = useScoreModelLabel(finding?.score_model);
     const { data: engagement } = useEngagement(finding?.engagement_id || '');
     const { data: reviewSummary } = useFindingReviews(id);
     const updateFinding = useUpdateFinding();
@@ -753,14 +755,15 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                     onSave={(r) => saveField({ cvss_score: r.score ?? null, cvss_vector: r.vector ?? null, severity: r.severity, score_model: r.model_id, score_inputs: r.inputs })}
                                 >
                                 <div className="flex flex-col items-center justify-center p-6 bg-slate-950/50 rounded-2xl border border-slate-800/50 shadow-inner">
-                                    <span className={cn("text-5xl font-black italic tracking-tighter transition-all hover:scale-110 cursor-default",
+                                    <span className={cn("text-5xl font-black italic tracking-tighter transition-all hover:scale-110 cursor-default text-center",
+                                        finding.score_outcome && 'text-3xl not-italic',
                                         (finding.cvss_score || 0) >= 9 ? 'text-red-600 drop-shadow-[0_0_10px_rgba(220,38,38,0.3)]' :
                                             (finding.cvss_score || 0) >= 7 ? 'text-orange-500 drop-shadow-[0_0_10px_rgba(249,115,22,0.3)]' :
                                                 (finding.cvss_score || 0) >= 4 ? 'text-amber-500' : 'text-blue-500'
                                     )}>
-                                        {finding.cvss_score?.toFixed(1) || '0.0'}
+                                        {finding.score_outcome ?? (finding.cvss_score?.toFixed(1) || '0.0')}
                                     </span>
-                                    <span className="text-[9px] text-slate-500 font-black uppercase mt-2 tracking-widest">CVSS v3.1 BASE</span>
+                                    <span className="text-[9px] text-slate-500 font-black uppercase mt-2 tracking-widest">{scoreModelLabel}</span>
                                     {finding.cvss_vector && (
                                         <button
                                             type="button"

@@ -17,6 +17,7 @@ from models.user import User
 from models.finding import Finding, Severity, FindingStatus, Tag
 from scoring.registry import scoring_registry
 from scoring.engine import evaluate as evaluate_score, ScoringError
+from scoring.display import outcome_label
 from utils.scoring_policy import assert_model_allowed
 from models.evidence import Evidence
 from schemas.finding import FindingCreate, FindingUpdate, FindingResponse, TagResponse
@@ -249,6 +250,7 @@ async def get_remediation_summary(
             "severity": severity_val,
             "status": status_val,
             "cvss_score": f.cvss_score,
+            "score_outcome": outcome_label(f.score_model, f.score_inputs),
             "category": f.category,
             "created_at": f.created_at.isoformat(),
             "total_assets": total_assets,

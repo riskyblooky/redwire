@@ -94,7 +94,10 @@ export function ScoringCalculatorModal({
 
     const color = severityHex(result?.severity);
     const scoreLabel = result
-        ? (result.score !== null ? result.score.toFixed(1) : (result.outcome ?? '—'))
+        // Categorical models' score is only a nominal sort key — show the outcome.
+        ? (model?.score_kind !== 'categorical' && result.score !== null
+            ? result.score.toFixed(1)
+            : (result.outcome ? (model?.outcome_labels?.[result.outcome] ?? result.outcome) : '—'))
         : '—';
 
     const handleApply = () => {

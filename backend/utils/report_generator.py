@@ -30,6 +30,8 @@ from models.cleanup_artifact import CleanupArtifact
 from models.report_layout import ReportSection, SectionType
 from models.report_theme import ReportTheme
 from utils.marking import MarkingEngine, MarkedImage
+from scoring.display import outcome_label
+from scoring.registry import DEFAULT_MODEL_ID, scoring_registry
 from typing import List, Optional
 import re
 from html import unescape as _html_unescape
@@ -185,6 +187,36 @@ def _v(val) -> str:
     if val is None:
         return 'N/A'
     return val.value if hasattr(val, 'value') else str(val)
+
+
+def _score_info(finding) -> dict:
+    """How a finding's rating should be presented, given the scoring model that
+    produced it. Legacy findings (no ``score_model``) are CVSS 3.1.
+
+    Returns ``label`` (model name, e.g. "USAF Risk Assessment Matrix"),
+    ``numeric`` (False for categorical models, whose ``cvss_score`` is only a
+    nominal sort key and must not be printed as a score), ``score``,
+    ``outcome`` (categorical display label), ``vector`` and ``text`` (one-line
+    display string, '' when unscored).
+    """
+    model_id = getattr(finding, 'score_model', None) or DEFAULT_MODEL_ID
+    model = scoring_registry.get(model_id)
+    label = model.label if model else 'Score'
+    numeric = model is None or model.score_kind == 'numeric'
+    score = float(finding.cvss_score) if numeric and finding.cvss_score is not None else None
+    outcome = None if numeric else outcome_label(model_id, getattr(finding, 'score_inputs', None))
+    vector = finding.cvss_vector or None
+    head = f'{score:.1f}' if score is not None else (outcome or '')
+    text = f'{head}  |  {vector}' if head and vector else (head or vector or '')
+    return {'label': label, 'numeric': numeric, 'score': score, 'outcome': outcome,
+            'vector': vector, 'text': text}
+
+
+def _score_label(findings) -> str:
+    """Overall label for scores across several findings: the shared model's name
+    when all scored findings use one model, else a generic 'Score'."""
+    labels = {_score_info(f)['label'] for f in findings}
+    return labels.pop() if len(labels) == 1 else 'Score'
 
 
 # ── Attack-chain (ChainLink) resolution ───────────────────────────────
@@ -1708,8 +1740,10 @@ class PDFReportGenerator:
             counts[k] = counts.get(k, 0) + 1
         total = len(self.findings)
         rating = _v(self.findings[0].severity).upper()
-        cvsses = [f.cvss_score for f in self.findings if f.cvss_score]
-        score = float(max(cvsses)) if cvsses else 0.0
+        # Only numeric models carry a real score; categorical ones store a
+        # nominal sort key that must not be shown as e.g. "CVSS up to 9.5".
+        numeric = [f for f in self.findings if _score_info(f)['score']]
+        score = float(max(f.cvss_score for f in numeric)) if numeric else 0.0
         muted = _t(self.theme, 'muted_text_color')
         body = _t(self.theme, 'body_text_color')
 
@@ -1718,7 +1752,9 @@ class PDFReportGenerator:
 
         rating_p = Paragraph(rating, ParagraphStyle(name='_rating', parent=self.styles['Normal'],
             fontSize=26, fontName='Helvetica-Bold', textColor=colors.HexColor(self._sev_hex(rating)), leading=27))
-        score_p = Paragraph(f'CVSS up to <b>{score:.1f}</b>', ParagraphStyle(name='_rscore',
+        score_line = (f'{_escape_xml(_score_label(numeric))} up to <b>{score:.1f}</b>'
+                      if numeric else f'{len(self.findings)} findings rated')
+        score_p = Paragraph(score_line, ParagraphStyle(name='_rscore',
             parent=self.styles['Normal'], fontSize=10, textColor=colors.HexColor(body), leading=13))
         cap_p = Paragraph('Overall risk posture', ParagraphStyle(name='_rcap', parent=self.styles['Normal'],
             fontSize=8, textColor=colors.HexColor(muted), leading=10))
@@ -1808,19 +1844,16 @@ class PDFReportGenerator:
         ]))
         elements.append(header_t)
 
-        # -- Meta row: criticality + CVSS, split columns, first under title.
+        # -- Meta row: criticality + score (labelled by its scoring model).
         meta_val_style = ParagraphStyle(
             name=f'MV_{idx}', parent=self.styles['BodyText2'],
             fontSize=10, fontName=font_b, textColor=colors.HexColor(body_c), spaceAfter=0,
         )
-        cvss_text = ''
-        if finding.cvss_score is not None:
-            cvss_text = f'{finding.cvss_score}'
-            if finding.cvss_vector:
-                cvss_text += f'  |  {finding.cvss_vector}'
+        score_info = _score_info(finding)
+        cvss_text = score_info['text']
         meta_t = Table(
             [
-                [_label_para('CRITICALITY'), _label_para('CVSS')],
+                [_label_para('CRITICALITY'), _label_para(_escape_xml(score_info['label'].upper()))],
                 [Paragraph(f'<font color="{sev_hex}">{sev_str}</font>', meta_val_style),
                  Paragraph(_escape_xml(cvss_text) if cvss_text else '—', meta_val_style)],
             ],
@@ -2899,8 +2932,9 @@ class MarkdownReportGenerator:
             asset_names = ', '.join([a.name for a in finding.assets]) if finding.assets else 'N/A'
             md += f'- **Affected Asset(s):** {asset_names}\n'
 
-            if finding.cvss_score is not None:
-                md += f'- **CVSS Score:** {finding.cvss_score}\n'
+            score_info = _score_info(finding)
+            if score_info['text']:
+                md += f'- **{score_info["label"]}:** {score_info["text"]}\n'
 
             md += f'\n#### Description\n\n{_markdown_from_html(finding.description)}\n\n'
 
@@ -3170,9 +3204,13 @@ class HTMLReportGenerator:
             if self.marking:
                 _lvl, _suf = self._eff(f)
                 mark_tok = self.marking.portion_mark(_lvl, _suf) or ''
+            si = _score_info(f)
             findings.append({
                 'id': fid[f.id], 'sev': _v(f.severity).lower(), 'status': self._fstatus(f.status),
+                # 'cvss' stays numeric for sorting (nominal for categorical
+                # models); 'num' says whether it is a real score to display.
                 'cvss': (round(float(f.cvss_score), 1) if f.cvss_score is not None else 0),
+                'num': si['numeric'], 'model': si['label'], 'outcome': si['outcome'] or '',
                 'vec': f.cvss_vector or '—',
                 'cwe': self._title_case(f.category),
                 'mark': mark_tok, 'title': f.title or 'Untitled',
@@ -3264,6 +3302,9 @@ class HTMLReportGenerator:
         if marking.get('banner'):
             fields.append(['Classification', marking['banner'], '#FFC000'])
         fields.append(['Findings', f'{n} confirmed', None])
+        models = sorted({_score_info(f)['label'] for f in self.findings})
+        if models:
+            fields.append(['Scoring', ' · '.join(models), None])
 
         meta = {
             'title': _t(self.theme, 'cover_title') or 'Security Assessment Report',

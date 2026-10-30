@@ -437,6 +437,8 @@ async def _do_generate_report(
                     "references": f.references,
                     "cvss_score": f.cvss_score,
                     "cvss_vector": f.cvss_vector,
+                    "score_model": f.score_model,
+                    "score_inputs": f.score_inputs,
                     "created_at": f.created_at.isoformat() if f.created_at else None,
                     "updated_at": f.updated_at.isoformat() if f.updated_at else None,
                     "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in (f.tags or [])],

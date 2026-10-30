@@ -1,10 +1,11 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from typing import Optional, List
 from datetime import datetime
 from models.finding import Severity, FindingStatus
 from models.template_status import TemplateStatus
 from schemas.evidence import EvidenceResponse
 from schemas.asset import AssetBase
+from scoring.display import outcome_label
 from schemas._field_limits import (
     CVSS_VECTOR,
     DESCRIPTION,
@@ -132,6 +133,13 @@ class FindingResponse(FindingBase):
     cleanup_artifacts: list[LinkedCleanupArtifactResponse] = []
     attack_technique_ids: list[str] = []
     unresolved_thread_count: int = 0
+
+    @computed_field
+    @property
+    def score_outcome(self) -> Optional[str]:
+        """Outcome label for categorical scoring models (e.g. "Extremely High");
+        None for numeric models, whose cvss_score is the real score."""
+        return outcome_label(self.score_model, self.score_inputs)
 
     class Config:
         from_attributes = True

@@ -24,6 +24,7 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useFinding, useDeleteFinding, useUpdateFinding, useTags } from '@/lib/hooks/use-findings';
+import { useScoreModelLabel } from '@/lib/hooks/use-scoring';
 import { useFindingReviews } from '@/lib/hooks/use-finding-reviews';
 import { FindingPeerReview } from '@/components/findings/finding-peer-review';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
@@ -142,6 +143,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
     }, [nonModal, open]);
 
     const { data: finding, isLoading } = useFinding(fid);
+    const scoreModelLabel = useScoreModelLabel(finding?.score_model);
     const { data: engagement } = useEngagement(finding?.engagement_id || '');
     const { data: allNotes = [] } = useNotes(engagementId);
     const { data: intelItems = [] } = useIntelByEntity('finding', fid);
@@ -450,7 +452,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                             )}
                                             {finding.cvss_score != null && (
                                                 <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-400">
-                                                    CVSS {finding.cvss_score}
+                                                    {finding.score_outcome ? `${scoreModelLabel}: ${finding.score_outcome}` : `${scoreModelLabel} ${finding.cvss_score}`}
                                                 </Badge>
                                             )}
                                             {engagement && (
@@ -637,14 +639,15 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                         onSave={(r) => saveField({ cvss_score: r.score ?? null, cvss_vector: r.vector ?? null, severity: r.severity, score_model: r.model_id, score_inputs: r.inputs })}
                                     >
                                         <div className="flex flex-col items-center justify-center p-4 bg-slate-950/50 rounded-2xl border border-slate-800/50 shadow-inner">
-                                            <span className={cn('text-4xl font-black italic tracking-tighter cursor-default',
+                                            <span className={cn('text-4xl font-black italic tracking-tighter cursor-default text-center',
+                                                finding.score_outcome && 'text-2xl not-italic',
                                                 (finding.cvss_score || 0) >= 9 ? 'text-red-600' :
                                                     (finding.cvss_score || 0) >= 7 ? 'text-orange-500' :
                                                         (finding.cvss_score || 0) >= 4 ? 'text-amber-500' : 'text-blue-500'
                                             )}>
-                                                {finding.cvss_score?.toFixed(1) || '0.0'}
+                                                {finding.score_outcome ?? (finding.cvss_score?.toFixed(1) || '0.0')}
                                             </span>
-                                            <span className="text-[9px] text-slate-500 font-black uppercase mt-1 tracking-widest">CVSS v3.1 BASE</span>
+                                            <span className="text-[9px] text-slate-500 font-black uppercase mt-1 tracking-widest">{scoreModelLabel}</span>
                                             {finding.cvss_vector && (
                                                 <button
                                                     type="button"
