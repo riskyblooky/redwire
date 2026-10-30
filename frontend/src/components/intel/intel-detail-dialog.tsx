@@ -31,6 +31,7 @@ import {
 import { useIntelItem, useUnlinkIntel, useUploadIntelAttachment, useDeleteIntelAttachment } from '@/lib/hooks/use-intel';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { SEVERITY_BADGE } from '@/lib/severity';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -44,11 +45,11 @@ export const INTEL_TYPE_CONFIG: Record<string, { label: string; color: string; i
 };
 
 export const INTEL_SEVERITY_CONFIG: Record<string, { label: string; color: string }> = {
-    CRITICAL: { label: 'Critical', color: 'bg-red-600/20 text-red-400 border-red-500/40' },
-    HIGH: { label: 'High', color: 'bg-orange-500/20 text-orange-400 border-orange-500/40' },
-    MEDIUM: { label: 'Medium', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' },
-    LOW: { label: 'Low', color: 'bg-blue-500/20 text-blue-400 border-blue-500/40' },
-    INFO: { label: 'Info', color: 'bg-slate-500/20 text-slate-400 border-slate-500/40' },
+    CRITICAL: { label: 'Critical', color: SEVERITY_BADGE.CRITICAL },
+    HIGH: { label: 'High', color: SEVERITY_BADGE.HIGH },
+    MEDIUM: { label: 'Medium', color: SEVERITY_BADGE.MEDIUM },
+    LOW: { label: 'Low', color: SEVERITY_BADGE.LOW },
+    INFO: { label: 'Info', color: SEVERITY_BADGE.INFO },
 };
 
 function formatTimeAgo(dateStr?: string): string {

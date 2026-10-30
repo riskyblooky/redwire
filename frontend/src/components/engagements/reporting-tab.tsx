@@ -74,6 +74,7 @@ import { useCleanupArtifacts } from '@/lib/hooks/use-cleanup-artifacts';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import dynamic from 'next/dynamic';
+import { SEVERITY_BADGE } from '@/lib/severity';
 
 const TiptapEditor = dynamic(() => import('@/components/ui/tiptap-editor'), { ssr: false });
 const AttackGraph = dynamic(
@@ -548,11 +549,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                 const toggleAll = () => { if (allSelected) setSelectedIds(new Set()); else setSelectedIds(null); };
                 const isItemSelected = (id: string) => allSelected || selectedIds.has(id);
                 const severityBadge = (severity: string) => {
-                    const colors: Record<string, string> = {
-                        CRITICAL: 'bg-red-500/20 text-red-400', HIGH: 'bg-orange-500/20 text-orange-400',
-                        MEDIUM: 'bg-yellow-500/20 text-yellow-400', LOW: 'bg-blue-500/20 text-blue-400', INFO: 'bg-slate-500/20 text-slate-400',
-                    };
-                    return <Badge className={cn('text-[9px] h-4 px-1.5 border-none', colors[severity] || 'bg-slate-500/20 text-slate-400')}>{severity}</Badge>;
+                    return <Badge className={cn('text-[9px] h-4 px-1.5 border-none', SEVERITY_BADGE[severity] || SEVERITY_BADGE.INFO)}>{severity}</Badge>;
                 };
                 const statusBadge = (status: string) => {
                     const colors: Record<string, string> = {
@@ -1100,14 +1097,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                             const isItemSelected = (id: string) => allSelected || selectedIds.has(id);
 
                                             const severityBadge = (severity: string) => {
-                                                const colors: Record<string, string> = {
-                                                    CRITICAL: 'bg-red-500/20 text-red-400',
-                                                    HIGH: 'bg-orange-500/20 text-orange-400',
-                                                    MEDIUM: 'bg-yellow-500/20 text-yellow-400',
-                                                    LOW: 'bg-blue-500/20 text-blue-400',
-                                                    INFO: 'bg-slate-500/20 text-slate-400',
-                                                };
-                                                return <Badge className={cn('text-[9px] h-4 px-1.5 border-none', colors[severity] || 'bg-slate-500/20 text-slate-400')}>{severity}</Badge>;
+                                                return <Badge className={cn('text-[9px] h-4 px-1.5 border-none', SEVERITY_BADGE[severity] || SEVERITY_BADGE.INFO)}>{severity}</Badge>;
                                             };
 
                                             const statusBadge = (status: string) => {

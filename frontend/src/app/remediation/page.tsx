@@ -84,16 +84,17 @@ import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-moda
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { useAuthStore } from '@/stores/auth-store';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { SEVERITY_BADGE } from '@/lib/severity';
 
 // ── Config Maps ───────────────────────────────────────────────────
 
-const severityConfig: Record<string, { color: string; bg: string; border: string; order: number }> = {
-    CRITICAL: { color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30', order: 0 },
-    HIGH: { color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30', order: 1 },
-    MEDIUM: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', order: 2 },
-    LOW: { color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30', order: 3 },
-    INFO: { color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/30', order: 4 },
-};
+// Split from the shared palette (SEVERITY_BADGE is "bg text border").
+const severityConfig: Record<string, { color: string; bg: string; border: string; order: number }> = Object.fromEntries(
+    ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].map((sev, order) => {
+        const [bg, color, border] = SEVERITY_BADGE[sev].split(' ');
+        return [sev, { color, bg, border, order }];
+    }),
+);
 
 const statusConfig: Record<string, { color: string; bg: string }> = {
     OPEN: { color: 'text-red-400', bg: 'bg-red-500/15' },

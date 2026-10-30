@@ -18,6 +18,10 @@ section becomes one release entry.
   AI-chat mode fields now enforce maximum lengths like every other request
   field.
 
+### Changed
+- **Severity colors** — the remediation tracker, report-builder pickers and
+  threat-intel severities now use the shared severity palette too.
+
 ### Fixed
 - **Burp and Nessus imports** — on public installs the Burp and Nessus parsers
   failed to load, so uploading either scan format errored; a finding whose
