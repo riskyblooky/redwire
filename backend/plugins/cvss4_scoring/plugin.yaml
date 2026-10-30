@@ -2,7 +2,7 @@ name: "CVSS 4.0 Scoring"
 version: "1.0.0"
 author: "RedWire"
 description: "Adds CVSS 4.0 (CVSS-B) as a finding scoring model, via the pluggable scoring contract."
-min_redwire_version: "1.5.7"
+min_redwire_version: "1.6.0"
 
 provides:
   # Declarative scoring model(s) this plugin contributes. Each path is relative

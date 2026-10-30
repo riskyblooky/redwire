@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.6.0] — Unreleased
+## [1.6.0] — 2026-10-29
 
 ### Added
 - **Pluggable finding scoring** — findings can be scored with rating models
