@@ -189,6 +189,9 @@ services:
       - ./nginx/certbot/www:/var/www/certbot:ro
     environment:
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+    # Reload every 6h so certs renewed by the certbot container are picked up;
+    # without this nginx keeps serving the old cert from memory until restarted.
+    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g 'daemon off;'"]
     depends_on:
       - frontend
       - backend

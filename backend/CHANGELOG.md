@@ -30,6 +30,13 @@ section becomes one release entry.
   contribute scoring models — a declarative model definition plus, for complex
   math, a scoring engine — through the plugin system.
 
+### Fixed
+- **Let's Encrypt renewals not taking effect** — the certbot container renewed
+  certificates on schedule, but nginx kept serving the old certificate from
+  memory until it was restarted, so the site's certificate expired despite a
+  valid renewal on disk. The production nginx container now reloads every 6
+  hours to pick up renewed certificates.
+
 ## [1.5.7] — 2026-09-21
 
 ### Added
