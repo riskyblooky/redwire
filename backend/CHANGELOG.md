@@ -29,6 +29,14 @@ section becomes one release entry.
   calculator (validated to match exactly across 25,000 vectors). Plugins can now
   contribute scoring models — a declarative model definition plus, for complex
   math, a scoring engine — through the plugin system.
+- **Scoring-model policy** — admins choose which scoring models are enabled
+  site-wide, the default model, and optionally lock every finding to a single
+  model (**Admin → Policies → Scoring models**). Each engagement can narrow that
+  further with its own allowed models and default (**Edit engagement → Scoring
+  policy**). The model pickers only offer permitted models and lock when just one
+  is allowed, and the server rejects a finding scored with a disallowed model.
+- **Admin Policies tab** — site-wide policy settings (stats scope, peer review,
+  scoring models) now live together on a new **Policies** tab in the admin area.
 - **Model-aware score display** — reports (PDF, HTML, Markdown) and the finding
   view, side sheet and remediation tracker label each finding's score with the
   model that produced it instead of a fixed "CVSS 3.1". Categorical models show
@@ -42,6 +50,11 @@ section becomes one release entry.
   memory until it was restarted, so the site's certificate expired despite a
   valid renewal on disk. The production nginx container now reloads every 6
   hours to pick up renewed certificates.
+
+### Changed
+- **New finding page: Custom Fields tab** — custom fields moved from the sidebar
+  into a **Custom Fields** tab in the main editor, matching the edit page. The
+  tab only appears when finding custom fields are defined.
 
 ## [1.5.7] — 2026-09-21
 
