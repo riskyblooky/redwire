@@ -123,8 +123,8 @@ async def _make_finding(db_session, engagement, **overrides) -> Finding:
 
 @pytest.mark.integration
 async def test_admin_write_route_denies_operator(client, make_user, authenticate_as):
-    """GET /admin/users gates on WRITE_ADMIN_ROLES ([ADMIN]). An operator is
-    not admin → 403 (denied side)."""
+    """GET /admin/users gates on the VIEW_ALL_USERS global permission. A plain
+    operator holds no such grant → 403 (denied side)."""
     operator = await make_user(role="operator")
     authenticate_as(operator)
     resp = await client.get("/admin/users")
@@ -156,17 +156,21 @@ async def test_admin_write_route_allows_admin(client, make_user, authenticate_as
 async def test_admin_read_route_read_only_admin_distinction(
     client, make_user, authenticate_as
 ):
-    """GET /admin/groups gates on ADMIN_ROLES ([ADMIN, READ_ONLY_ADMIN]) —
-    a *read* route. A read_only_admin is allowed here (200) but was denied on
-    the /admin/users *write* route above. Pinning both routes with the same
-    role proves the ADMIN-vs-ADMIN_ROLES split is enforced, not incidental."""
+    """READ_ONLY_ADMIN bypasses read-style global permissions only
+    (auth/permissions.py). Reads — GET /admin/groups and GET /admin/users
+    (VIEW_ALL_USERS) — are allowed; the write route POST /admin/users
+    (MANAGE_USERS) is denied. Pinning both sides with the same role proves
+    the read/write split is enforced, not incidental."""
     roa = await make_user(role="read_only_admin")
     authenticate_as(roa)
 
-    allowed = await client.get("/admin/groups")
-    assert allowed.status_code == 200
+    assert (await client.get("/admin/groups")).status_code == 200
+    assert (await client.get("/admin/users")).status_code == 200
 
-    denied = await client.get("/admin/users")  # write-admin route
+    denied = await client.post("/admin/users", json={
+        "username": "should_not_exist", "email": "nope@example.com",
+        "password": "Sup3r-Secret-Passw0rd!", "role": "operator",
+    })
     assert denied.status_code == 403
 
 

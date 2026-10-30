@@ -55,6 +55,16 @@ def _user(role: UserRole, user_id: str = "u-1"):
     return SimpleNamespace(id=user_id, role=role)
 
 
+@pytest.fixture(autouse=True)
+def _no_global_view_grant(monkeypatch):
+    """apply_stats_scope also consults a group-granted VIEW_ALL_ENGAGEMENTS
+    (d1369af). Stub it to "not granted" so the queued _FakeDb results feed
+    the membership check they're written for; tests that need the grant
+    re-patch it."""
+    import auth.permissions
+    monkeypatch.setattr(auth.permissions, "has_global_permission", AsyncMock(return_value=False))
+
+
 # ── admin always sees everything ─────────────────────────────────────
 
 
@@ -115,6 +125,20 @@ async def test_non_admin_with_engagement_id_member_loads_scoped():
         "eng-1", db, _user(UserRole.OPERATOR)
     )
     assert is_admin is False
+    assert strip is False
+
+
+@pytest.mark.asyncio
+async def test_group_view_all_engagements_treated_as_admin(monkeypatch):
+    """A non-admin holding a group-granted VIEW_ALL_ENGAGEMENTS (e.g. the Team
+    Leads group) gets admin scoping — no membership check, no 403."""
+    import auth.permissions
+    monkeypatch.setattr(auth.permissions, "has_global_permission", AsyncMock(return_value=True))
+    db = _FakeDb([None])  # would 403 if the membership check ran
+    is_admin, _subq, strip = await apply_stats_scope(
+        "eng-x", db, _user(UserRole.OPERATOR)
+    )
+    assert is_admin is True
     assert strip is False
 
 
