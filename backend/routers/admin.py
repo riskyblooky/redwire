@@ -56,7 +56,7 @@ def require_global_perm_read(permission: Permission):
     return _checker
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
+from typing import Annotated, Optional
 
 from schemas.user import normalize_username
 
@@ -743,9 +743,10 @@ class ScoringPolicyResponse(BaseModel):
 
 
 class ScoringPolicyUpdate(BaseModel):
-    enabled_models: Optional[List[str]] = None
-    default_model: Optional[str] = None
-    locked_model: Optional[str] = None
+    # Model ids match findings.score_model (String(64)).
+    enabled_models: Optional[List[Annotated[str, Field(max_length=64)]]] = Field(None, max_length=100)
+    default_model: Optional[str] = Field(None, max_length=64)
+    locked_model: Optional[str] = Field(None, max_length=64)
 
 
 def _scoring_policy_response(site: dict) -> "ScoringPolicyResponse":

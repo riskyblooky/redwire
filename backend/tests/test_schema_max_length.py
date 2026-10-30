@@ -84,6 +84,12 @@ _RESPONSE_NAME_FRAGMENTS = (
     "LinkedVaultRef",
     "LinkedCleanupRef",
     "LinkedEntitySummary",
+    # Attack-chain / anchored-thread / scoring-policy response shapes.
+    "ChainLinkOut",
+    "ChainNeighbor",
+    "ChainNodeRef",
+    "ThreadAnchorOut",
+    "ScoringPolicyModelInfo",
 )
 
 # Specific fields that are intentionally bounded by validator instead of

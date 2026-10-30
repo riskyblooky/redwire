@@ -188,7 +188,7 @@ class ChatRequest(BaseModel):
     # "generate" (default) writes/edits field content; "review" runs the
     # bundled readability/AI-slop skill over editor_content and returns a
     # critique (never a rewrite). Editor path only; ignored for the chatbot.
-    mode: str = "generate"
+    mode: str = Field("generate", max_length=32)
     editor_content: str = Field("", max_length=65536)
     # Optional excerpt the user highlighted in the editor. When present the
     # editor prompt tells the model to act on this text only and return just

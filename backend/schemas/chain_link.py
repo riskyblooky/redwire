@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+from schemas._field_limits import ENUM_STR, UUID_FIELD
+
 
 class ChainNodeRef(BaseModel):
     """A resolved reference to a chain endpoint, ready for rendering."""
@@ -13,10 +15,10 @@ class ChainNodeRef(BaseModel):
 
 
 class ChainLinkCreate(BaseModel):
-    source_type: str
-    source_id: str
-    target_type: str
-    target_id: str
+    source_type: str = Field(..., max_length=ENUM_STR)
+    source_id: str = Field(..., max_length=UUID_FIELD)
+    target_type: str = Field(..., max_length=ENUM_STR)
+    target_id: str = Field(..., max_length=UUID_FIELD)
     note: Optional[str] = Field(None, max_length=2000)
 
 

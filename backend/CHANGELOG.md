@@ -14,6 +14,15 @@ section becomes one release entry.
   report was opened. Every such field is now escaped. Affects HTML reports
   generated since the interactive report was introduced; regenerate any HTML
   reports you have shared.
+- **Request size caps** — the scoring-policy settings, attack-chain link and
+  AI-chat mode fields now enforce maximum lengths like every other request
+  field.
+
+### Fixed
+- **Burp and Nessus imports** — on public installs the Burp and Nessus parsers
+  failed to load, so uploading either scan format errored; a finding whose
+  creator had been deleted could also fail to display. Both fixes were in the
+  development tree but had not reached the public release.
 
 ## [1.6.0] — 2026-10-29
 
