@@ -22,7 +22,10 @@ string-producing HTML/markdown paths and pure helpers are exercised.
 
 from __future__ import annotations
 
+import json
 import re
+import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -51,6 +54,12 @@ def _asset(name="host01"):
 
 def _finding(**over):
     base = dict(
+        id=str(uuid.uuid4()),
+        status="OPEN",
+        category=None,
+        technical_details="",
+        score_model=None,
+        score_inputs=None,
         title="Benign Finding",
         severity="HIGH",
         assets=[_asset()],
@@ -203,107 +212,82 @@ def test_md_empty_returns_empty():
 
 
 # ═══════════════════════════════════════════════════════════════════
-# HTMLReportGenerator.generate — end-to-end stored-XSS pin
+# HTMLReportGenerator.generate — interactive report, stored-XSS pins
 # ═══════════════════════════════════════════════════════════════════
+#
+# The interactive report embeds the data as JSON (window.__REPORT__) and the
+# template renders it client-side. Two layers keep author/scanner-controlled
+# text inert: the payload can't break out of its <script> tag, and every
+# template sink escapes via esc() (pinned statically below, and verified in a
+# browser when the template was fixed).
+
+_TEMPLATE = Path(rg.__file__).resolve().parent.parent / "report_templates" / "interactive" / "report.template.html"
 
 
-def test_generate_escapes_malicious_finding_title_and_description():
-    f = _finding(
-        title="<script>steal()</script>Injected",
-        description="Payload: <img src=x onerror=alert(1)>",
-    )
-    gen = _html_gen(findings=[f], sections=[_section(SectionType.FINDINGS)])
-    html = gen.generate()
-    # The document is produced and the live markup is gone.
-    assert "<!DOCTYPE html>" in html
-    assert "<script>steal()</script>" not in html
-    assert "&lt;script&gt;" in html
-    # The <img> is neutralised: escaped to inert text, never a live tag.
-    assert "<img" not in html
-    assert "&lt;img src=x onerror=alert(1)&gt;" in html
+def _payload(html: str) -> dict:
+    m = re.search(r"window\.__REPORT__ = (\{.*?\});\n", html, re.S)
+    assert m, "report payload not embedded"
+    return json.loads(m.group(1).replace("<\\/", "</"))
 
 
-def test_generate_escapes_engagement_name_in_title_and_cover():
-    eng = _engagement(name='Op "><script>x</script>', client_name="<b>C</b>")
-    gen = _html_gen(findings=[], sections=[], engagement=eng)
-    html = gen.generate()
-    assert "<script>x</script>" not in html
-    assert "<b>C</b>" not in html
-    assert "&lt;b&gt;C&lt;/b&gt;" in html
+def test_generate_payload_cannot_break_out_of_script_tag():
+    f = _finding(title="</script><script>steal()</script>Injected")
+    html = _html_gen(findings=[f]).generate()
+    assert "</script><script>steal()" not in html
+    assert "<\\/script><script>steal()<\\/script>" in html
+    assert _payload(html)["findings"][0]["title"] == "</script><script>steal()</script>Injected"
+
+
+def test_generate_markdown_fields_are_escaped_server_side():
+    f = _finding(description="Payload: <img src=x onerror=alert(1)>")
+    html = _html_gen(findings=[f]).generate()
+    desc = _payload(html)["findings"][0]["desc"]
+    assert "<img" not in desc
+    assert "&lt;img src=x onerror=alert(1)&gt;" in desc
 
 
 def test_generate_renders_benign_finding_fields():
-    f = _finding(
-        title="SQL Injection",
-        severity="CRITICAL",
-        cvss_score=9.1,
-        assets=[_asset("db01"), _asset("db02")],
-        description="Injectable parameter.",
-    )
-    gen = _html_gen(findings=[f], sections=[_section(SectionType.FINDINGS)])
-    html = gen.generate()
-    assert "SQL Injection" in html
-    assert "CRITICAL" in html
-    assert "db01, db02" in html
-    assert "9.1" in html
-    # Severity distribution table present.
-    assert "Severity Distribution" in html
+    f = _finding(title="SQL Injection", severity="CRITICAL", cvss_score=9.1,
+                 assets=[_asset("db01"), _asset("db02")], description="Injectable parameter.")
+    data = _payload(_html_gen(findings=[f]).generate())
+    row = data["findings"][0]
+    assert row["title"] == "SQL Injection"
+    assert row["sev"] == "critical"
+    assert row["cvss"] == 9.1
+    assert row["assets"] == ["db01", "db02"]
+    assert {a["n"] for a in data["assets"]} == {"db01", "db02"}
 
 
-def test_generate_escapes_cvss_vector():
-    f = _finding(cvss_score=7.5, cvss_vector='"><script>y</script>')
-    gen = _html_gen(findings=[f], sections=[_section(SectionType.FINDINGS)])
-    html = gen.generate()
-    assert "<script>y</script>" not in html
+def test_generate_with_no_findings():
+    data = _payload(_html_gen(findings=[]).generate())
+    assert data["findings"] == []
+    assert data["risk"]["rating"] == "INFO"
 
 
-def test_findings_html_empty_state():
-    gen = _html_gen(findings=[], sections=[_section(SectionType.FINDINGS)])
-    assert "No findings recorded" in gen._findings_html()
+def test_generate_cleanup_note_escaped_server_side():
+    ca = SimpleNamespace(title="<script>ca</script>", artifact_type="backdoor", status="removed",
+                         location="<img src=x onerror=1>", description="<b>note</b>", cleanup_notes=None,
+                         findings=[], assets=[], classification_level=None, classification_suffix=None)
+    data = _payload(_html_gen(cleanup=[ca]).generate())
+    assert data["cleanup"][0]["note"] == "&lt;b&gt;note&lt;/b&gt;"
 
 
-# ── testcases / cleanup section escaping ─────────────────────────────
+# Fields that carry author/scanner-controlled plain text. Interpolating any of
+# them into the template without esc() is a stored XSS (fixed in 1.6.1).
+_RAW_TEXT_SINKS = re.compile(
+    r"\$\{(?:f\.(?:title|mark|status|cwe|model|outcome)"
+    r"|c\.(?:t|sys|owner|type|status)|a\.(?:n|type)|r\.n|s\.(?:n|t|x|f|sev)"
+    r"|n\.(?:label|status|vtype|atype|cstatus|csys)|t\.(?:label|status)|sub|lbl|info\.(?:tag|title)"
+    r"|r\[0\])\}"
+)
 
 
-def test_testcases_html_escapes_title():
-    tc = SimpleNamespace(
-        title="<script>tc</script>",
-        category="injection",
-        is_executed=True,
-        is_successful=True,
-        classification_level=None,
-        classification_suffix=None,
-    )
-    gen = _html_gen(testcases=[tc])
-    out = gen._testcases_html()
-    assert "<script>tc</script>" not in out
-    assert "&lt;script&gt;" in out
-    assert "✓ Pass" in out
-
-
-def test_cleanup_html_escapes_title_and_location():
-    ca = SimpleNamespace(
-        title="<script>ca</script>",
-        artifact_type="backdoor",
-        status="removed",
-        location='<img src=x onerror=1>',
-        classification_level=None,
-        classification_suffix=None,
-    )
-    gen = _html_gen(cleanup=[ca])
-    out = gen._cleanup_html()
-    assert "<script>ca</script>" not in out
-    assert "<img src=x" not in out
-    assert "&lt;script&gt;" in out
-
-
-def test_section_bar_escapes_title():
-    gen = _html_gen()
-    bar = gen._section_bar(_section(title="<b>Overview</b>"))
-    assert "<b>Overview</b>" not in bar
-    # Titles are upper-cased then escaped.
-    assert "&lt;B&gt;OVERVIEW&lt;/B&gt;" in bar
-
+def test_template_escapes_all_text_sinks():
+    tmpl = _TEMPLATE.read_text(encoding="utf-8")
+    raw = sorted(set(_RAW_TEXT_SINKS.findall(tmpl)))
+    assert not raw, f"unescaped template interpolations: {raw}"
+    # esc() must also neutralise quotes — several sinks are attribute values.
+    assert "replace(/\"/g,'&quot;')" in tmpl and "replace(/'/g,'&#39;')" in tmpl
 
 # ═══════════════════════════════════════════════════════════════════
 # _markdown_from_html — Markdown export sanitisation
