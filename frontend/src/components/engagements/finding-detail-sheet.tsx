@@ -50,6 +50,7 @@ import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inlin
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 import { InlineTextField } from '@/components/ui/inline/inline-text-field';
 import { InlineCvssField } from '@/components/ui/inline/inline-cvss-field';
+import { ScoreModelPolicyBadge } from '@/components/findings/score-model-policy-badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { EvidenceUpload } from '@/components/findings/evidence-upload';
@@ -442,6 +443,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                     {finding.score_outcome ? `${scoreModelLabel}: ${finding.score_outcome}` : `${scoreModelLabel} ${finding.cvss_score}`}
                                                 </Badge>
                                             )}
+                                            <ScoreModelPolicyBadge finding={finding} />
                                             {engagement && (
                                                 <Link
                                                     href={`/engagements/${engagement.id}?tab=findings`}

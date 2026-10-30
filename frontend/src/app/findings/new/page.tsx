@@ -704,7 +704,7 @@ export default function NewFindingPage() {
                                     open={cvssCalcOpen}
                                     onOpenChange={setCvssCalcOpen}
                                     modelId={scoreModelId}
-                                    initialInputs={formData.score_inputs}
+                                    initialInputs={formData.score_model === scoreModelId ? formData.score_inputs : null}
                                     onApply={(r) => {
                                         handleChange('cvss_score', r.score ?? '');
                                         handleChange('cvss_vector', r.vector ?? '');

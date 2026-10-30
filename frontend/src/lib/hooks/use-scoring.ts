@@ -100,6 +100,25 @@ export function useEffectiveScoringPolicy(engagementId?: string | null) {
     });
 }
 
+/** When a finding's score was made with a model its engagement no longer
+ *  allows (site lock, site enable-list or engagement allow-list changed after
+ *  it was scored), returns the labels to explain it; otherwise null. Legacy
+ *  findings with a score but no model count as CVSS 3.1. */
+export function useScoreModelPolicyIssue(finding?: {
+    engagement_id?: string | null;
+    score_model?: string | null;
+    cvss_score?: number | null;
+    cvss_vector?: string | null;
+} | null): { model: string; allowed: string[] } | null {
+    const { data: policy } = useEffectiveScoringPolicy(finding?.engagement_id);
+    const modelLabel = useScoreModelLabel(finding?.score_model);
+    if (!finding || !policy) return null;
+    const scored = !!finding.score_model || !!finding.cvss_vector || (finding.cvss_score ?? 0) > 0;
+    const modelId = finding.score_model || 'cvss31';
+    if (!scored || policy.allowed.some((m) => m.id === modelId)) return null;
+    return { model: modelLabel, allowed: policy.allowed.map((m) => m.label) };
+}
+
 /** The default scoring model id for new findings. */
 export function useDefaultScoringModel() {
     return useQuery<ScoringModelSummary>({

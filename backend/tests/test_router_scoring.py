@@ -119,3 +119,51 @@ async def test_engagement_allow_list_enforced_on_update(client, db_session, make
     assert ok.status_code == 200, ok.text
     assert ok.json()["severity"] == "LOW"
     assert ok.json()["score_outcome"] == "Low"
+
+
+async def test_unchanged_disallowed_model_still_saves(client, db_session, make_user, authenticate_as):
+    admin = await _admin(make_user, authenticate_as)
+    eng = await _make_engagement(db_session)
+    created = await client.post("/findings", json=_payload(eng.id, score_model="usaf-rac", score_inputs=USAF_TOP))
+    assert created.status_code == 201, created.text
+    fid = created.json()["id"]
+
+    # Site later locks to another model: the existing score is grandfathered.
+    await set_site_policy(db_session, enabled_models=None, default_model=None,
+                          locked_model="cvss31", user_id=admin.id)
+    ok = await client.put(f"/findings/{fid}", json={
+        "title": "Renamed", "score_model": "usaf-rac", "score_inputs": USAF_TOP})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["score_model"] == "usaf-rac"
+
+    # Rescoring with the locked model is the way out.
+    moved = await client.put(f"/findings/{fid}", json={
+        "score_model": "cvss31",
+        "score_inputs": {"AV": "N", "AC": "L", "PR": "N", "UI": "N", "S": "U", "C": "H", "I": "H", "A": "H"}})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["score_model"] == "cvss31"
+
+
+async def test_engagement_policy_limited_to_site_models(client, db_session, make_user, authenticate_as):
+    admin = await _admin(make_user, authenticate_as)
+    eng = await _make_engagement(db_session, created_by=admin.id)
+    await set_site_policy(db_session, enabled_models=["cvss31", "usaf-rac"], default_model=None,
+                          locked_model=None, user_id=admin.id)
+
+    bad = await client.put(f"/engagements/{eng.id}", json={"allowed_score_models": ["cvss31", "dread"]})
+    assert bad.status_code == 422
+    assert "dread" in bad.json()["detail"]
+
+    bad_default = await client.put(f"/engagements/{eng.id}", json={"default_score_model": "dread"})
+    assert bad_default.status_code == 422
+
+    ok = await client.put(f"/engagements/{eng.id}", json={
+        "allowed_score_models": ["usaf-rac"], "default_score_model": "usaf-rac"})
+    assert ok.status_code == 200, ok.text
+
+    # A model already stored before the site narrowed doesn't block later edits.
+    await set_site_policy(db_session, enabled_models=["cvss31"], default_model=None,
+                          locked_model=None, user_id=admin.id)
+    again = await client.put(f"/engagements/{eng.id}", json={
+        "allowed_score_models": ["usaf-rac"], "default_score_model": "usaf-rac"})
+    assert again.status_code == 200, again.text

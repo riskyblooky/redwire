@@ -4,6 +4,24 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.6.2] — Unreleased
+
+### Fixed
+- **Scoring policy on the engagement page** — the engagement's allowed and
+  default scoring models now offer only the models enabled site-wide, and the
+  section is read-only while the site allows a single model. Saving a model
+  the site doesn't enable is rejected.
+- **Editing findings scored under a dropped model** — a finding scored with a
+  model its engagement no longer allows could not be saved at all (any edit
+  returned a "not permitted" error). It now saves and keeps its score until it
+  is rescored.
+
+### Added
+- **"Model not allowed" indicator** — findings scored with a model their
+  engagement no longer allows show a warning on the finding page, the finding
+  side panel and the edit page, which explains how to rescore with an allowed
+  model.
+
 ## [1.6.1] — 2026-10-29
 
 ### Security

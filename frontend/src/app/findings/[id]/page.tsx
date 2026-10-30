@@ -68,6 +68,7 @@ import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inlin
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
 import { InlineTextField } from '@/components/ui/inline/inline-text-field';
 import { InlineCvssField } from '@/components/ui/inline/inline-cvss-field';
+import { ScoreModelPolicyBadge } from '@/components/findings/score-model-policy-badge';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { useEngagement } from '@/lib/hooks/use-engagements';
@@ -758,6 +759,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                         {finding.score_outcome ?? (finding.cvss_score?.toFixed(1) || '0.0')}
                                     </span>
                                     <span className="text-[9px] text-slate-500 font-black uppercase mt-2 tracking-widest">{scoreModelLabel}</span>
+                                    <ScoreModelPolicyBadge finding={finding} className="mt-2" />
                                     {finding.cvss_vector && (
                                         <button
                                             type="button"

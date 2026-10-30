@@ -45,6 +45,7 @@ from utils.uploads import (
 )
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict, manager
 from utils.custom_fields import validate_custom_fields
+from utils.scoring_policy import assert_engagement_policy_allowed
 from models.discussion import ResourceType
 from auth.rbac import check_engagement_permission
 from auth.permissions import has_global_permission
@@ -548,6 +549,7 @@ async def create_engagement(
         )
 
     data = engagement_data.model_dump()
+    await assert_engagement_policy_allowed(db, data.get("allowed_score_models"), data.get("default_score_model"))
     user_ids = data.pop("assigned_user_ids", [])
     assignments_data = data.pop("assignments", [])
     tag_ids = data.pop("tag_ids", []) or []
@@ -695,6 +697,15 @@ async def update_engagement(
         )
 
     update_data = engagement_data.model_dump(exclude_unset=True)
+
+    if "allowed_score_models" in update_data or "default_score_model" in update_data:
+        await assert_engagement_policy_allowed(
+            db,
+            update_data.get("allowed_score_models", engagement.allowed_score_models),
+            update_data.get("default_score_model", engagement.default_score_model),
+            prev_allowed=engagement.allowed_score_models,
+            prev_default=engagement.default_score_model,
+        )
 
     # Enforce the same global name uniqueness on rename (excluding self).
     if "name" in update_data:

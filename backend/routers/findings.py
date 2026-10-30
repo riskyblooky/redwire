@@ -602,8 +602,10 @@ async def update_finding(
 
     # Enforce the engagement's scoring policy on an explicit model change, then
     # authoritatively (re)score. Done before the change-summary / version snapshot
-    # below so the computed values are diffed and versioned.
-    if update_data.get("score_model"):
+    # below so the computed values are diffed and versioned. Resending the
+    # finding's current model is not a change: a score made under a model the
+    # policy has since dropped stays editable (the UI flags it for rescoring).
+    if update_data.get("score_model") and update_data["score_model"] != finding.score_model:
         await assert_model_allowed(db, finding.engagement_id, update_data["score_model"])
     _apply_scoring(update_data, existing=finding)
 

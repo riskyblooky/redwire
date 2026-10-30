@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Annotated, Optional, List
 from datetime import datetime
 from models.engagement import EngagementStatus
 from schemas.user import UserSummary
@@ -54,7 +54,7 @@ class EngagementBase(BaseModel):
     ceiling_classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     custom_fields: Optional[dict] = None
     # Scoring policy: allowed model ids (null ⇒ inherit site), default model id.
-    allowed_score_models: Optional[List[str]] = None
+    allowed_score_models: Optional[List[Annotated[str, Field(max_length=64)]]] = Field(None, max_length=100)
     default_score_model: Optional[str] = Field(None, max_length=64)
 
 class EngagementCreate(EngagementBase):
@@ -91,7 +91,7 @@ class EngagementUpdate(BaseModel):
     # None = don't touch, [] = clear all — same semantics as findings.
     tag_ids: Optional[List[str]] = None
     custom_fields: Optional[dict] = None
-    allowed_score_models: Optional[List[str]] = None
+    allowed_score_models: Optional[List[Annotated[str, Field(max_length=64)]]] = Field(None, max_length=100)
     default_score_model: Optional[str] = Field(None, max_length=64)
 
 class EngagementResponse(EngagementBase):

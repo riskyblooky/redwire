@@ -131,6 +131,32 @@ async def get_effective_policy(db: AsyncSession, engagement_id: Optional[str]) -
     return resolve_effective(site, eng_allowed, eng_default, scoring_registry.ids())
 
 
+async def assert_engagement_policy_allowed(
+    db: AsyncSession,
+    allowed_models: Optional[List[str]],
+    default_model: Optional[str],
+    prev_allowed: Optional[List[str]] = None,
+    prev_default: Optional[str] = None,
+) -> None:
+    """Raise 422 if an engagement's scoring policy adds a model the site policy
+    doesn't permit. Ids the engagement already had are left alone, so a site
+    narrowing later doesn't block unrelated engagement edits (resolve_effective
+    ignores them anyway)."""
+    site_allowed = set((await get_effective_policy(db, None))["allowed"])
+    prev = set(prev_allowed or [])
+    bad = [m for m in (allowed_models or []) if m not in site_allowed and m not in prev]
+    if default_model and default_model != prev_default and default_model not in site_allowed:
+        bad.append(default_model)
+    if bad:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Scoring model(s) {', '.join(sorted(set(bad)))} are not enabled site-wide. "
+                f"Enabled: {', '.join(sorted(site_allowed)) or '(none)'}."
+            ),
+        )
+
+
 async def assert_model_allowed(db: AsyncSession, engagement_id: Optional[str], model_id: str) -> None:
     """Raise 422 if model_id is not permitted for this engagement's effective policy."""
     eff = await get_effective_policy(db, engagement_id)

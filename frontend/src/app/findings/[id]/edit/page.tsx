@@ -42,7 +42,7 @@ import { TemplatePickerDialog } from '@/components/ui/template-picker-dialog';
 import {
     ArrowLeft, Save, Loader2, Bug, Target, FileText, ListPlus,
     Terminal, Shield, Layers, Plus, BookOpen, CheckCircle2, Edit, ChevronsUpDown,
-    Calculator, Search
+    Calculator, Search, AlertTriangle,
 } from 'lucide-react';
 import { useFinding, useUpdateFinding, useFindingTemplates, useTags } from '@/lib/hooks/use-findings';
 import { useEngagements } from '@/lib/hooks/use-engagements';
@@ -53,7 +53,8 @@ import { toast } from 'sonner';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { ScoringCalculatorModal } from '@/components/findings/scoring-calculator-modal';
-import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
+import { scoreModelPolicyMessage } from '@/components/findings/score-model-policy-badge';
+import { useEffectiveScoringPolicy, useScoreModelPolicyIssue } from '@/lib/hooks/use-scoring';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
@@ -156,11 +157,20 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     const scoringModels = scoringPolicy?.allowed ?? [];
     const scoringLocked = !!scoringPolicy?.locked;
     const scoreModelLabel = scoringModels.find((m) => m.id === scoreModelId)?.label ?? 'Score';
+    // Clamp the picker to the allowed set, also after the finding loads with a
+    // model the policy has since dropped (the stored score stays until rescored).
     useEffect(() => {
         if (scoringPolicy) {
             setScoreModelId((cur) => scoringPolicy.allowed.some((m) => m.id === cur) ? cur : scoringPolicy.default);
         }
-    }, [scoringPolicy]);
+    }, [scoringPolicy, scoreModelId]);
+    const scorePolicyIssue = useScoreModelPolicyIssue(finding && {
+        engagement_id: formData.engagement_id || finding.engagement_id,
+        score_model: formData.score_model,
+        cvss_score: Number(formData.cvss_score) || 0,
+        cvss_vector: formData.cvss_vector,
+    });
+    const storedModelId = formData.score_model || 'cvss31';
 
     const { data: assets = [] } = useAssets(formData.engagement_id);
     const [selectedPortIds, setSelectedPortIds] = useState<Map<string, Set<string>>>(new Map());
@@ -731,6 +741,16 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                    {scorePolicyIssue ? (
+                                        <p className="flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-300">
+                                            <AlertTriangle className="h-3.5 w-3.5 mt-px shrink-0" />
+                                            {scoreModelPolicyMessage(scorePolicyIssue)}
+                                        </p>
+                                    ) : storedModelId !== scoreModelId && (formData.score_model || formData.cvss_vector || Number(formData.cvss_score) > 0) ? (
+                                        <p className="text-[11px] text-slate-500">
+                                            Use Calc to rescore with {scoreModelLabel}; the current score stays until you apply.
+                                        </p>
+                                    ) : null}
                                     <div className="flex items-center justify-between mb-2 pt-1">
                                         <Label className="text-slate-400 text-xs font-semibold uppercase tracking-widest">{scoreModelLabel}</Label>
                                         <div className="flex items-center gap-2">
@@ -765,7 +785,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                     open={cvssCalcOpen}
                                     onOpenChange={setCvssCalcOpen}
                                     modelId={scoreModelId}
-                                    initialInputs={formData.score_inputs}
+                                    initialInputs={storedModelId === scoreModelId ? formData.score_inputs : null}
                                     onApply={(r) => {
                                         handleChange('cvss_score', r.score ?? '');
                                         handleChange('cvss_vector', r.vector ?? '');

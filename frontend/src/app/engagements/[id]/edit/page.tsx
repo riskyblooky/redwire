@@ -24,7 +24,7 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useScoringModels, useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
+import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     ArrowLeft, Save, Loader2, Users, Shield, AlertTriangle,
@@ -150,9 +150,12 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         default_score_model: '' as string,
     });
     const [detailsDirty, setDetailsDirty] = useState(false);
-    const { data: allScoringModels = [] } = useScoringModels();
+    // The engagement can only narrow the site policy, so offer just the models
+    // enabled site-wide. While the site forces one model the engagement
+    // settings have no effect; they're kept (not sent) for when it's lifted.
     const { data: siteScoringPolicy } = useEffectiveScoringPolicy(undefined);
     const siteScoringLocked = !!siteScoringPolicy?.locked;
+    const siteScoringModels = siteScoringPolicy?.allowed ?? [];
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
     const [editingPhases, setEditingPhases] = useState<Record<string, { start: string; end: string }>>({});
     const [phasesEdited, setPhasesEdited] = useState(false);
@@ -259,13 +262,27 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     };
 
     // ── Unified save ──────────────────────────────────────────────
+    // Scoring fields for the save payload. Omitted (left unchanged) while the
+    // site policy is loading or locked; otherwise only site-enabled ids are sent.
+    const scoringPolicyPayload = () => {
+        if (!siteScoringPolicy || siteScoringLocked) return {};
+        const ids = new Set(siteScoringModels.map((m) => m.id));
+        const allowed = formData.allowed_score_models.filter((id) => ids.has(id));
+        const def = formData.default_score_model;
+        return {
+            allowed_score_models: allowed.length ? allowed : null,
+            default_score_model: def && ids.has(def) && (!allowed.length || allowed.includes(def)) ? def : null,
+        };
+    };
+
     const handleSaveAll = async () => {
         const saves: Promise<any>[] = [];
 
         if (detailsDirty) {
+            const { allowed_score_models: _a, default_score_model: _d, ...details } = formData;
             saves.push(updateEngagement.mutateAsync({
                 id,
-                ...formData,
+                ...details,
                 client_id:  formData.client_id  || undefined,
                 start_date: formData.start_date ? `${formData.start_date}T00:00:00` : undefined,
                 end_date:   formData.end_date   ? `${formData.end_date}T23:59:59`   : undefined,
@@ -273,8 +290,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 default_classification_level:  formData.default_classification_level || null,
                 default_classification_suffix: formData.default_classification_suffix || null,
                 ceiling_classification_level:  formData.ceiling_classification_level || null,
-                allowed_score_models: formData.allowed_score_models.length ? formData.allowed_score_models : null,
-                default_score_model:  formData.default_score_model || null,
+                ...scoringPolicyPayload(),
             }));
         }
 
@@ -557,7 +573,8 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                     <div className="space-y-4">
                                         {siteScoringLocked && (
                                             <div className="rounded-lg border border-amber-700/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-                                                Scoring is restricted site-wide by an administrator — these engagement settings may be overridden.
+                                                An administrator has locked scoring site-wide to {siteScoringModels[0]?.label ?? 'one model'}.
+                                                Every finding uses it, so these engagement settings are disabled until the lock is lifted.
                                             </div>
                                         )}
                                         <div className="space-y-2">
@@ -567,12 +584,13 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                                 engagement; check exactly one to lock it to that model.
                                             </p>
                                             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                                {allScoringModels.map((m) => {
+                                                {siteScoringModels.map((m) => {
                                                     const checked = formData.allowed_score_models.includes(m.id);
                                                     return (
-                                                        <label key={m.id} className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 cursor-pointer hover:bg-slate-800/40">
+                                                        <label key={m.id} className={cn('flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2', siteScoringLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-slate-800/40')}>
                                                             <Checkbox
                                                                 checked={checked}
+                                                                disabled={siteScoringLocked}
                                                                 onCheckedChange={() => {
                                                                     const set = new Set(formData.allowed_score_models);
                                                                     if (set.has(m.id)) set.delete(m.id); else set.add(m.id);
@@ -588,15 +606,16 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                         <div className="space-y-1.5 max-w-xs">
                                             <Label className="text-slate-300">Default model for new findings</Label>
                                             <Select
-                                                value={formData.default_score_model || '__inherit__'}
+                                                disabled={siteScoringLocked}
+                                                value={siteScoringModels.some((m) => m.id === formData.default_score_model) ? formData.default_score_model : '__inherit__'}
                                                 onValueChange={(v) => handleChange('default_score_model', v === '__inherit__' ? '' : v)}
                                             >
                                                 <SelectTrigger className="bg-slate-950/50 border-slate-800 h-9 text-sm"><SelectValue /></SelectTrigger>
                                                 <SelectContent className="bg-slate-900 border-slate-800 text-white">
                                                     <SelectItem value="__inherit__">Inherit site default</SelectItem>
                                                     {(formData.allowed_score_models.length
-                                                        ? allScoringModels.filter((m) => formData.allowed_score_models.includes(m.id))
-                                                        : allScoringModels
+                                                        ? siteScoringModels.filter((m) => formData.allowed_score_models.includes(m.id))
+                                                        : siteScoringModels
                                                     ).map((m) => (
                                                         <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
                                                     ))}
