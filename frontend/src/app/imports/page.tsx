@@ -46,16 +46,10 @@ import { cn, parseUTCDate } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
+import { SEVERITY_BADGE as SEV_COLORS } from '@/lib/severity';
 
 /* ── Severity badge helper ──────────────────────────────────────── */
 
-const SEV_COLORS: Record<string, string> = {
-    CRITICAL: 'bg-red-500/20 text-red-400 border-red-500/30',
-    HIGH: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-    MEDIUM: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    LOW: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    INFO: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-};
 
 function SeverityBadge({ severity }: { severity: string }) {
     return (

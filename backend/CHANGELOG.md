@@ -59,6 +59,11 @@ section becomes one release entry.
   hours to pick up renewed certificates.
 
 ### Changed
+- **Consistent severity colors** — severity badges, accents and charts across
+  findings, test cases, assets, imports, the attack graph, analytics and client
+  stats now share one palette (Critical red, High orange, Medium yellow, Low
+  light blue, Info slate). Previously some views showed Medium as amber and Low
+  as a darker blue.
 - **New finding page: Custom Fields tab** — custom fields moved from the sidebar
   into a **Custom Fields** tab in the main editor, matching the edit page. The
   tab only appears when finding custom fields are defined.

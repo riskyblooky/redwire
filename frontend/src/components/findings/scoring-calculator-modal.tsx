@@ -15,12 +15,8 @@ import { cn } from '@/lib/utils';
 import {
     ScoreResult, ScoringMetric, useEvaluateScoring, useScoringModel,
 } from '@/lib/hooks/use-scoring';
+import { severityHex } from '@/lib/severity';
 
-// Canonical severity palette (mirrors backend scoring/severity.py SEVERITY_COLORS).
-const SEVERITY_HEX: Record<string, string> = {
-    CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#60a5fa', INFO: '#94a3b8',
-};
-const severityHex = (sev?: string | null) => (sev && SEVERITY_HEX[sev]) || '#64748b';
 
 export interface ScoringApplyResult {
     model_id: string;
@@ -92,7 +88,7 @@ export function ScoringCalculatorModal({
         }));
     }, []);
 
-    const color = severityHex(result?.severity);
+    const color = severityHex(result?.severity) ?? '#64748b';
     const scoreLabel = result
         // Categorical models' score is only a nominal sort key — show the outcome.
         ? (model?.score_kind !== 'categorical' && result.score !== null

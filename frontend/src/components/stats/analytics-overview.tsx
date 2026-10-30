@@ -68,13 +68,11 @@ import {
     ClipboardCheck, Trash2, Briefcase, Clock, Zap, Building2,
 } from 'lucide-react';
 import { AuthedImg } from '@/lib/hooks/use-authed-image';
+import { SEVERITY_HEX as SEVERITY_COLORS } from '@/lib/severity';
 
 type TimeRange = '7d' | '30d' | '90d' | '180d' | 'custom';
 
 // ─── Shared constants ───
-const SEVERITY_COLORS: Record<string, string> = {
-    CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#f59e0b', LOW: '#3b82f6', INFO: '#64748b',
-};
 const STATUS_COLORS: Record<string, string> = {
     OPEN: '#ef4444', IN_REVIEW: '#f59e0b', VERIFIED: '#3b82f6', REMEDIATED: '#10b981', CLOSED: '#64748b',
 };

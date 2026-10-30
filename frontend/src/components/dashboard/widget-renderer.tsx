@@ -32,6 +32,7 @@ import {
 } from '@/lib/hooks/use-stats';
 import { useDashboardStats } from '@/lib/hooks/use-analytics';
 import { useCustomWidgetData } from '@/lib/hooks/use-dashboard-widgets';
+import { severityHex } from '@/lib/severity';
 
 // Selects the backend scoping model for custom_query widget data. The
 // dashboard leaves the default ('dashboard' → assignment-scoped); a shared
@@ -69,10 +70,6 @@ const TOOLTIP_STYLE = {
     allowEscapeViewBox: { x: false, y: false } as { x: boolean; y: boolean },
 };
 
-const SEVERITY_COLORS: Record<string, string> = {
-    CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#f59e0b', LOW: '#3b82f6', INFO: '#64748b',
-    Critical: '#ef4444', High: '#f97316', Medium: '#f59e0b', Low: '#3b82f6', Info: '#64748b',
-};
 const STATUS_COLORS: Record<string, string> = {
     OPEN: '#ef4444', IN_REVIEW: '#f59e0b', VERIFIED: '#3b82f6', REMEDIATED: '#10b981', CLOSED: '#64748b',
 };
@@ -697,7 +694,7 @@ function getDataKey(widget: DashboardWidgetDef): string {
 function getColor(widget: DashboardWidgetDef, entry: any, index: number): string {
     if (widget.data_source === 'custom_query') return ACCENT_COLORS[index % ACCENT_COLORS.length];
     switch (widget.data_source) {
-        case 'severity_distribution': return SEVERITY_COLORS[entry.severity] || ACCENT_COLORS[index % ACCENT_COLORS.length];
+        case 'severity_distribution': return severityHex(entry.severity) || ACCENT_COLORS[index % ACCENT_COLORS.length];
         case 'engagement_status': return ENG_STATUS_COLORS[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];
         case 'findings_by_status': return STATUS_COLORS[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];
         case 'cleanup_status': return CLEANUP_COLORS[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];

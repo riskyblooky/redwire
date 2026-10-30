@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { GitCommitHorizontal, ChevronDown, Clock, User, ArrowRight, Loader2, History, X, RotateCcw } from 'lucide-react';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn, parseUTCDate } from '@/lib/utils';
+import { SEVERITY_BADGE as SEVERITY_COLORS } from '@/lib/severity';
 
 // Human-readable field labels
 const FIELD_LABELS: Record<string, string> = {
@@ -36,13 +37,6 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 // Severity / status badge colors
-const SEVERITY_COLORS: Record<string, string> = {
-    CRITICAL: 'bg-red-500/20 text-red-400 border-red-500/30',
-    HIGH: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-    MEDIUM: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-    LOW: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    INFO: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-};
 
 function timeAgo(dateStr: string) {
     const diff = Date.now() - new Date(dateStr).getTime();

@@ -74,6 +74,7 @@ import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-fiel
 import { AnchoredCommentsProvider } from '@/components/discussions/anchored-comments-context';
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { InlineTagsField } from '@/components/ui/inline/inline-tags-field';
+import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
 
 const categoryLabels: Record<string, string> = {
     RECONNAISSANCE: 'Reconnaissance',
@@ -95,13 +96,6 @@ const testCaseCategoryStyles: Record<string, { color: string; icon: any; accent:
     OTHER: { color: 'bg-slate-500/10 text-slate-400 border-slate-500/20', icon: Circle, accent: 'bg-slate-500' },
 };
 
-const severityColors: Record<string, string> = {
-    CRITICAL: 'bg-red-500/10 text-red-400 border-red-500/20',
-    HIGH: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-    MEDIUM: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-    LOW: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    INFO: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 export default function TestCaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = useParams(params);

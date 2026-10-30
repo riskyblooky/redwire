@@ -89,15 +89,9 @@ import {
 } from '@/components/ui/select';
 import { FindingDetailSheet } from '@/components/engagements/finding-detail-sheet';
 import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
+import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
 
 // ── Constants ────────────────────────────────────────────────────────
-const severityColors: Record<string, string> = {
-    CRITICAL: 'bg-red-500/20 text-red-500 border-red-500/30',
-    HIGH: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
-    MEDIUM: 'bg-amber-500/20 text-amber-500 border-amber-500/30',
-    LOW: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
-    INFO: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-};
 
 const severityOrder: Record<string, number> = {
     CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4,

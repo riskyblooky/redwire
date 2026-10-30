@@ -104,14 +104,8 @@ import {
     useLinkAssetToFinding, useUnlinkAssetFromFinding,
 } from '@/lib/hooks/use-entity-links';
 import { Link as LinkIcon } from 'lucide-react';
+import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
 
-const severityColors: Record<string, string> = {
-    CRITICAL: 'bg-red-500/10 text-red-500 border-red-500/20',
-    HIGH: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-    MEDIUM: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-    LOW: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-    INFO: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 const statusColors: Record<string, string> = {
     OPEN: 'bg-purple-500/10 text-purple-400 border-purple-500/20',

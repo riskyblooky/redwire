@@ -52,14 +52,8 @@ import {
 } from '@/lib/hooks/use-clients';
 import { Client } from '@/lib/types';
 import Link from 'next/link';
+import { SEVERITY_HEX as SEVERITY_COLORS } from '@/lib/severity';
 
-const SEVERITY_COLORS: Record<string, string> = {
-    CRITICAL: '#ef4444',
-    HIGH: '#f97316',
-    MEDIUM: '#f59e0b',
-    LOW: '#3b82f6',
-    INFO: '#64748b',
-};
 
 const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as const;
 

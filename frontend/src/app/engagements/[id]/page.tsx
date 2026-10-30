@@ -165,6 +165,7 @@ import {
 } from '@/components/ui/popover';
 import { useEngagementSkills, SKILL_LEVELS } from '@/lib/hooks/use-skills';
 import { SkillsRadarChart, buildRadarData } from '@/components/ui/skills-radar-chart';
+import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
 
 // Parse smart search syntax: port:80, service:http, etc.
 function parseAssetSearch(input: string): { search: string; port?: number; service?: string } {
@@ -228,13 +229,6 @@ const assetTypeStyles: Record<string, { color: string, icon: any }> = {
     OTHER: { color: 'bg-slate-500/10 text-slate-400 border-slate-500/20', icon: Server },
 };
 
-const severityColors: any = {
-    CRITICAL: 'bg-red-500/20 text-red-500 border-red-500/30',
-    HIGH: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
-    MEDIUM: 'bg-amber-500/20 text-amber-500 border-amber-500/30',
-    LOW: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
-    INFO: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-};
 
 const severityOrder: Record<string, number> = {
     CRITICAL: 0,

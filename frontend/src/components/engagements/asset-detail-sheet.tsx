@@ -52,6 +52,7 @@ import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-fiel
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { buildAssetContext } from '@/lib/ai-entity-context';
+import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
 
 const assetTypeAccentColors: Record<string, string> = {
     IP_ADDRESS: 'bg-blue-500',
@@ -73,13 +74,6 @@ const assetTypeLabels: Record<string, string> = {
     OTHER: 'Other',
 };
 
-const severityColors: Record<string, string> = {
-    CRITICAL: 'bg-red-500/10 text-red-400 border-red-500/20',
-    HIGH: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-    MEDIUM: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-    LOW: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    INFO: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 interface AssetDetailSheetProps {
     assetId: string | null;

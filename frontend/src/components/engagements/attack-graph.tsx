@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { severityHex } from '@/lib/severity';
 
 
 // ── Types ──
@@ -118,13 +119,6 @@ function getLayoutedElements(
 }
 
 // ── Colors / Styles ──
-const severityColors: Record<string, string> = {
-    critical: '#ef4444',
-    high: '#f97316',
-    medium: '#eab308',
-    low: '#3b82f6',
-    info: '#6b7280',
-};
 
 const typeConfig: Record<string, { bg: string; border: string; text: string; icon: React.ElementType; accent: string }> = {
     asset: { bg: '#0e1a2e', border: '#22d3ee', text: '#22d3ee', icon: Monitor, accent: 'bg-cyan-500/20 text-cyan-400' },
@@ -147,7 +141,7 @@ const HIERARCHY_EDGE_COLOR = '#64748b'; // slate-500
 function GraphNode({ data, type }: { data: GraphNodeData; type?: string }) {
     const config = typeConfig[type || 'asset'] || typeConfig.asset;
     const Icon = config.icon;
-    const borderColor = type === 'finding' ? (severityColors[data.severity || 'info'] || config.border) : config.border;
+    const borderColor = type === 'finding' ? (severityHex(data.severity || 'info') || config.border) : config.border;
 
     return (
         <div
@@ -175,8 +169,8 @@ function GraphNode({ data, type }: { data: GraphNodeData; type?: string }) {
                     <span
                         className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
                         style={{
-                            color: severityColors[data.severity] || '#6b7280',
-                            background: `${severityColors[data.severity] || '#6b7280'}22`,
+                            color: severityHex(data.severity) || '#6b7280',
+                            background: `${severityHex(data.severity) || '#6b7280'}22`,
                         }}
                     >
                         {data.severity}
@@ -487,9 +481,9 @@ function DetailPanel({ node, onClose, onDeleteAttacker, onConnectAttacker, onDel
                         <Badge
                             className="text-[10px]"
                             style={{
-                                color: severityColors[data.severity],
-                                background: `${severityColors[data.severity]}22`,
-                                borderColor: `${severityColors[data.severity]}44`,
+                                color: severityHex(data.severity),
+                                background: `${severityHex(data.severity)}22`,
+                                borderColor: `${severityHex(data.severity)}44`,
                             }}
                         >
                             {data.severity.toUpperCase()}

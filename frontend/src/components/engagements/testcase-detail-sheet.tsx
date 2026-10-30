@@ -60,6 +60,7 @@ import { cn, parseUTCDate } from '@/lib/utils';
 import { UserName } from '@/components/ui/user-name';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import Link from 'next/link';
+import { SEVERITY_BADGE as severityBadge } from '@/lib/severity';
 
 // ── colour maps ──────────────────────────────────────────────────────
 
@@ -73,13 +74,6 @@ const categoryStyles: Record<string, { color: string; accent: string; icon: any 
     OTHER:               { color: 'bg-slate-500/10 text-slate-400 border-slate-500/20',        accent: 'bg-slate-500',  icon: Circle },
 };
 
-const severityBadge: Record<string, string> = {
-    CRITICAL: 'bg-red-500/10 text-red-400 border-red-500/20',
-    HIGH: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-    MEDIUM: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    LOW: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    INFO: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 // ── props ────────────────────────────────────────────────────────────
 

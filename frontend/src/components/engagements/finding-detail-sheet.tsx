@@ -69,24 +69,11 @@ import {
 import { toast } from 'sonner';
 import { cn, parseUTCDate } from '@/lib/utils';
 import Link from 'next/link';
+import { SEVERITY_SOLID as severityAccent, SEVERITY_BADGE as severityBadge } from '@/lib/severity';
 
 // ── colour maps ──────────────────────────────────────────────────────
 
-const severityAccent: Record<string, string> = {
-    CRITICAL: 'bg-red-500',
-    HIGH: 'bg-orange-500',
-    MEDIUM: 'bg-amber-500',
-    LOW: 'bg-blue-500',
-    INFO: 'bg-slate-500',
-};
 
-const severityBadge: Record<string, string> = {
-    CRITICAL: 'bg-red-500/10 text-red-400 border-red-500/20',
-    HIGH: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-    MEDIUM: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    LOW: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    INFO: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 const statusBadge: Record<string, string> = {
     OPEN: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
