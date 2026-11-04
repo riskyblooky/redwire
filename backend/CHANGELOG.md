@@ -7,6 +7,10 @@ section becomes one release entry.
 ## [1.6.2] — Unreleased
 
 ### Fixed
+- **Pasting images into report sections** — pasting or dropping an image into
+  a report builder text section failed with "Image upload requires an
+  engagement context". The same fix applies to the engagement, asset and test
+  case description editors.
 - **Scoring policy on the engagement page** — the engagement's allowed and
   default scoring models now offer only the models enabled site-wide, and the
   section is read-only while the site allows a single model. Saving a model
@@ -17,6 +21,8 @@ section becomes one release entry.
   is rescored.
 
 ### Added
+- **Marking column on the engagements list** — shows each engagement's
+  marking profile; hover it to see the profile's levels.
 - **"Model not allowed" indicator** — findings scored with a model their
   engagement no longer allows show a warning on the finding page, the finding
   side panel and the edit page, which explains how to rescore with an allowed

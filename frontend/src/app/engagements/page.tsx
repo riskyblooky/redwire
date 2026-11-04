@@ -39,6 +39,8 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
+import { MarkingProfilePill } from '@/components/marking/marking-profile-pill';
+import { useMarkingProfiles, type MarkingProfile } from '@/lib/hooks/use-marking-profiles';
 import { Plus, Search, Eye, Edit, Trash2, Briefcase, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Upload, Download, Users, ArrowRight, CheckCircle2, AlertCircle, MoreHorizontal, Filter, X, KeyRound, Tag as TagIcon } from 'lucide-react';
 import { useEngagementsPage, useDeleteEngagement } from '@/lib/hooks/use-engagements';
 import { useTags } from '@/lib/hooks/use-findings';
@@ -88,9 +90,10 @@ interface EngagementRowProps {
     isDeleting: boolean;
     isExporting: string | null;
     typeLabels: Record<string, string>;
+    markingProfile?: MarkingProfile;
 }
 
-const EngagementRow = ({ engagement, handleView, handleEdit, handleDelete, handleExport, isDeleting, isExporting, typeLabels }: EngagementRowProps) => {
+const EngagementRow = ({ engagement, handleView, handleEdit, handleDelete, handleExport, isDeleting, isExporting, typeLabels, markingProfile }: EngagementRowProps) => {
     const canEdit = useCanEdit(engagement.id, 'engagement' as any, engagement.created_by);
     const canDelete = useCanDelete(engagement.id, 'engagement' as any, engagement.created_by);
 
@@ -140,6 +143,9 @@ const EngagementRow = ({ engagement, handleView, handleEdit, handleDelete, handl
                 <Badge className={statusColors[engagement.status] || statusColors.PLANNING}>
                     {engagement.status.replace('_', ' ')}
                 </Badge>
+            </TableCell>
+            <TableCell>
+                <MarkingProfilePill profile={markingProfile} defaultLevel={engagement.default_classification_level} />
             </TableCell>
             <TableCell className="text-slate-300 text-sm">
                 {new Date(engagement.start_date).toLocaleDateString()}
@@ -351,6 +357,8 @@ export default function EngagementsPage() {
     // Server does search/filter/sort now — see useEngagementsPage. Anything
     // rendered from the list should reference `engagements` directly.
     const filteredEngagements = engagements;
+    const { data: markingProfiles = [] } = useMarkingProfiles();
+    const markingProfilesById = new Map(markingProfiles.map((p) => [p.id, p]));
 
     const handleSort = (field: SortField) => {
         if (sortField === field) {
@@ -857,6 +865,7 @@ export default function EngagementsPage() {
                                                     Status <SortIcon field="status" />
                                                 </div>
                                             </TableHead>
+                                            <TableHead className="text-slate-300">Marking</TableHead>
                                             <TableHead
                                                 className="text-slate-300 cursor-pointer hover:text-white transition-colors"
                                                 onClick={() => handleSort('start_date')}
@@ -880,7 +889,7 @@ export default function EngagementsPage() {
                                     <TableBody>
                                         {filteredEngagements.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={6} className="text-center text-slate-400 py-10">
+                                                <TableCell colSpan={7} className="text-center text-slate-400 py-10">
                                                     {hasActiveFilters ? 'No engagements match your filters.' : 'No engagements found. Create your first engagement to get started.'}
                                                 </TableCell>
                                             </TableRow>
@@ -896,6 +905,7 @@ export default function EngagementsPage() {
                                                     isDeleting={deleteEngagement.isPending}
                                                     isExporting={isExporting}
                                                     typeLabels={typeLabels}
+                                                    markingProfile={engagement.marking_profile_id ? markingProfilesById.get(engagement.marking_profile_id) : undefined}
                                                 />
                                             ))
                                         )}
