@@ -42,6 +42,7 @@ async def _broadcast_discussion_update(engagement_id: str, thread_id: str, actio
 _ANCHOR_FIELDS = {
     "finding": {"description", "impact", "technical_details", "steps_to_reproduce", "mitigations", "references"},
     "testcase": {"description", "steps", "expected_result", "notes"},
+    "report_section": {"content"},
 }
 
 
@@ -212,6 +213,19 @@ async def create_thread(
                 status_code=400,
                 detail=f"{rt.capitalize()} belongs to a different engagement",
             )
+
+    elif rt == "report_section":
+        # Sections hang off a layout; the layout carries the engagement.
+        from models.report_layout import ReportLayout, ReportSection
+        _layout_eng = (await db.execute(
+            select(ReportLayout.engagement_id)
+            .join(ReportSection, ReportSection.report_layout_id == ReportLayout.id)
+            .where(ReportSection.id == thread_data.resource_id)
+        )).scalar_one_or_none()
+        if _layout_eng is None:
+            raise HTTPException(status_code=404, detail="Report section not found")
+        if _layout_eng != thread_data.engagement_id:
+            raise HTTPException(status_code=400, detail="Report section belongs to a different engagement")
 
     # Peer-review highlight anchor (optional): validate the field belongs to the
     # resource type before persisting.
@@ -510,6 +524,8 @@ def _comment_deep_link(thread, comment_id: str) -> str:
         base = f"/assets/{rid}?engagementId={eid}"
     elif rt == "engagement":
         base = f"/engagements/{rid}?tab=overview"
+    elif rt == "report_section":
+        base = f"/engagements/{eid}?tab=reporting&sectionId={rid}"
     else:
         base = f"/engagements/{eid}?tab=overview"
     sep = "&" if "?" in base else "?"

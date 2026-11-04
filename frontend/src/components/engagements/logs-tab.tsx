@@ -104,6 +104,7 @@ export async function openThreadFromLog(threadId: string, engagementId: string) 
         const rt = (thread.resource_type || '').toLowerCase();
         let base: string;
         if (rt === 'engagement') base = `/engagements/${thread.resource_id || engagementId}?tab=overview`;
+        else if (rt === 'report_section' && thread.resource_id) base = `/engagements/${thread.engagement_id || engagementId}?tab=reporting&sectionId=${thread.resource_id}`;
         else if (THREAD_ROUTE[rt] && thread.resource_id) base = `${THREAD_ROUTE[rt]}/${thread.resource_id}?engagementId=${thread.engagement_id || engagementId}`;
         else base = `/engagements/${engagementId}?tab=overview`;
         window.location.assign(`${base}&threadId=${thread.id}`);

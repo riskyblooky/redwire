@@ -7,6 +7,10 @@ section becomes one release entry.
 ## [1.6.2] — Unreleased
 
 ### Fixed
+- **Report sections keep their identity on save** — saving a report layout
+  used to delete and recreate every section. Sections are now updated in
+  place, so their review threads stay attached; removing a section deletes
+  its threads. Engagement import keeps report-section threads attached too.
 - **Pasting images into report sections** — pasting or dropping an image into
   a report builder text section failed with "Image upload requires an
   engagement context". The same fix applies to the engagement, asset and test
@@ -21,6 +25,12 @@ section becomes one release entry.
   is rescored.
 
 ### Added
+- **Review threads on report sections** — report builder sections now support
+  the same peer-review comments as findings. In a saved text section, select
+  text to leave a highlighted comment. Every section also has a "Review
+  threads" list, collapsed by default, for general discussion; the
+  all-sections view shows each section's open-thread count. Mention
+  notifications link straight to the section.
 - **Marking column on the engagements list** — shows each engagement's
   marking profile; hover it to see the profile's levels.
 - **"Model not allowed" indicator** — findings scored with a model their

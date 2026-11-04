@@ -17,8 +17,14 @@ export const TESTCASE_FIELD_LABELS: Record<string, string> = {
     notes: 'Notes',
 };
 
+export const REPORT_SECTION_FIELD_LABELS: Record<string, string> = {
+    content: 'Report Section',
+};
+
 export function fieldLabel(resourceType: ResourceType, field: string): string {
-    const map = resourceType === 'testcase' ? TESTCASE_FIELD_LABELS : FINDING_FIELD_LABELS;
+    const map = resourceType === 'testcase' ? TESTCASE_FIELD_LABELS
+        : resourceType === 'report_section' ? REPORT_SECTION_FIELD_LABELS
+        : FINDING_FIELD_LABELS;
     return map[field] || field;
 }
 

@@ -1620,6 +1620,11 @@ async def import_engagement(
         # boundary, so silently normalising is preferable to refusing
         # the whole archive.
         _valid_resource_types = {v.value for v in ResourceType}
+        # Report sections are created in step 15; register their new ids now
+        # so report-section threads remap instead of losing their resource.
+        for rl in data.get("report_layouts", []):
+            for sec in rl.get("sections", []):
+                new_id(sec.get("id"))
         for th in data.get("threads", []):
             # Remap resource_id if it was an engagement-scoped entity
             resource_id = remap(th.get("resource_id"))

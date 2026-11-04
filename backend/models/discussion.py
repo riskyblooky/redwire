@@ -18,6 +18,7 @@ class ResourceType(str, enum.Enum):
     NOTE = "note"
     CLEANUP_ARTIFACT = "cleanup_artifact"
     FINDING_REMEDIATION = "finding_remediation"
+    REPORT_SECTION = "report_section"
 
 class Thread(Base):
     __tablename__ = "threads"

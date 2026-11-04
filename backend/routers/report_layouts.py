@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 from typing import List
 from database import get_db
@@ -37,19 +37,41 @@ async def _check_report_write(user: User, engagement_id: str, db: AsyncSession):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
-def _replace_sections(layout: ReportLayout, sections_data: List[ReportSectionCreate]):
-    """Delete existing sections and create new ones from the payload."""
-    layout.sections.clear()
+def _replace_sections(layout: ReportLayout, sections_data: List[ReportSectionCreate]) -> List[str]:
+    """Make the layout's sections match the payload. A payload section carrying
+    the id of one of THIS layout's sections updates it in place (so its id, and
+    the review threads anchored to it, survive the save); any other section is
+    created fresh. Returns the ids of sections that were removed."""
+    existing = {s.id: s for s in layout.sections}
+    kept: List[ReportSection] = []
     for s in sections_data:
-        layout.sections.append(ReportSection(
-            section_type=SectionType(s.section_type.value),
-            title=s.title,
-            content=s.content or "",
-            sort_order=s.sort_order,
-            classification_level=getattr(s, "classification_level", None),
-            classification_suffix=getattr(s, "classification_suffix", None),
-            page_break_before=getattr(s, "page_break_before", None),
-        ))
+        sec = existing.pop(s.id, None) if s.id else None
+        if sec is None:
+            sec = ReportSection()
+        sec.section_type = SectionType(s.section_type.value)
+        sec.title = s.title
+        sec.content = s.content or ""
+        sec.sort_order = s.sort_order
+        sec.classification_level = getattr(s, "classification_level", None)
+        sec.classification_suffix = getattr(s, "classification_suffix", None)
+        sec.page_break_before = getattr(s, "page_break_before", None)
+        kept.append(sec)
+    layout.sections[:] = kept  # delete-orphan removes the rest
+    return list(existing.keys())
+
+
+async def _delete_section_threads(db: AsyncSession, section_ids: List[str]) -> None:
+    """Drop the discussion threads (and their comments) of removed sections."""
+    if not section_ids:
+        return
+    from models.discussion import Thread, Comment
+    thread_ids = select(Thread.id).where(
+        Thread.resource_type == "report_section", Thread.resource_id.in_(section_ids)
+    )
+    await db.execute(delete(Comment).where(Comment.thread_id.in_(thread_ids)))
+    await db.execute(delete(Thread).where(
+        Thread.resource_type == "report_section", Thread.resource_id.in_(section_ids)
+    ))
 
 
 # ── List layouts for an engagement ──
@@ -158,7 +180,7 @@ async def update_report_layout(
     if data.is_default is not None:
         layout.is_default = data.is_default
     if data.sections is not None:
-        _replace_sections(layout, data.sections)
+        await _delete_section_threads(db, _replace_sections(layout, data.sections))
 
     layout.updated_by = current_user.id
     await db.commit()
@@ -186,11 +208,13 @@ async def delete_report_layout(
     result = await db.execute(
         select(ReportLayout)
         .where(ReportLayout.id == layout_id, ReportLayout.engagement_id == engagement_id)
+        .options(selectinload(ReportLayout.sections))
     )
     layout = result.scalar_one_or_none()
     if not layout:
         raise HTTPException(status_code=404, detail="Report layout not found")
 
+    await _delete_section_threads(db, [s.id for s in layout.sections])
     await db.delete(layout)
     await db.commit()
     return None

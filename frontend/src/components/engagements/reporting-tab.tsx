@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, Fragment } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, Fragment } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiErrorMessage } from '@/lib/api';
 import {
     DndContext,
@@ -46,7 +48,7 @@ import {
     Plus, GripVertical, Trash2, Save, Import, Upload, Search,
     BookOpen, ClipboardList, Type, ChevronDown, LayoutTemplate, Palette, Sparkles, Package, Network,
     Maximize2, Minimize2,
-    Eye, Paperclip, ExternalLink, X, Archive, ShieldAlert
+    Eye, Paperclip, ExternalLink, X, Archive, ShieldAlert, MessageSquare
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGenerateReport, useSaveReportToEngagement, downloadBlob, type GenerateReportResult } from '@/lib/hooks/use-reports';
@@ -75,6 +77,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import dynamic from 'next/dynamic';
 import { SEVERITY_BADGE } from '@/lib/severity';
+import { useThreads, type Thread } from '@/lib/hooks/use-discussions';
+import { useAuthStore } from '@/stores/auth-store';
+import { AnnotationSurface, type AnnotationSurfaceHandle } from '@/components/discussions/annotation-surface';
+import { ReportSectionThreads } from '@/components/engagements/report-section-threads';
 
 const TiptapEditor = dynamic(() => import('@/components/ui/tiptap-editor'), { ssr: false });
 const AttackGraph = dynamic(
@@ -85,6 +91,7 @@ const AttackGraph = dynamic(
 // ── Local section type for in-memory editing ──
 interface LocalSection {
     localId: string; // for dnd-kit key; may not map to a real id
+    id?: string;     // server id once saved — keeps review threads attached
     section_type: SectionType;
     title: string;
     content: string;
@@ -138,9 +145,10 @@ function InsertZone({ at, onAdd, disabled }: {
 
 // ── Expanded (full-editor) draggable section card ──
 function ExpandedSectionCard({
-    section, onDelete, disabled, collapsed, onToggleCollapse, children,
+    section, onDelete, disabled, collapsed, onToggleCollapse, openThreads = 0, children,
 }: {
     section: LocalSection;
+    openThreads?: number;
     onDelete: () => void;
     disabled?: boolean;
     collapsed?: boolean;
@@ -168,6 +176,11 @@ function ExpandedSectionCard({
                     <ChevronDown className={cn('h-4 w-4 transition-transform', collapsed && '-rotate-90')} />
                 </button>
                 <p className="flex-1 min-w-0 text-sm font-medium text-white truncate cursor-pointer" onClick={onToggleCollapse}>{section.title || 'Untitled Section'}</p>
+                {openThreads > 0 && (
+                    <span className="flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 shrink-0" title={`${openThreads} open review thread${openThreads === 1 ? '' : 's'}`}>
+                        <MessageSquare className="h-3 w-3" /> {openThreads}
+                    </span>
+                )}
                 <Badge variant="outline" className={cn('text-[10px] gap-1 shrink-0', meta.color)}>{meta.icon} {meta.label}</Badge>
                 <Button
                     variant="ghost" size="icon"
@@ -320,6 +333,36 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     const [selectedSectionIdx, setSelectedSectionIdx] = useState<number | null>(null);
     const [expandedBuilder, setExpandedBuilder] = useState(false);
     const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(new Set());
+
+    // ── Review threads on sections ──
+    // One fetch + one socket for every section's threads; grouped client-side.
+    const { user } = useAuthStore();
+    const queryClient = useQueryClient();
+    const searchParams = useSearchParams();
+    const focusSectionId = searchParams?.get('sectionId') || null;
+    const targetCommentId = searchParams?.get('commentId') || null;
+    const targetThreadId = searchParams?.get('threadId') || null;
+    const { data: sectionThreads = [] } = useThreads({ engagement_id: engagementId, resource_type: 'report_section' });
+    const threadsBySection = useMemo(() => {
+        const m = new Map<string, Thread[]>();
+        for (const t of sectionThreads) {
+            if (!t.resource_id) continue;
+            m.set(t.resource_id, [...(m.get(t.resource_id) ?? []), t]);
+        }
+        return m;
+    }, [sectionThreads]);
+    useCollaboration({
+        resourceType: 'engagement',
+        resourceId: engagementId,
+        onMessage: (data) => {
+            if (data.type === 'discussion_update') {
+                queryClient.invalidateQueries({ queryKey: ['threads'] });
+                queryClient.invalidateQueries({ queryKey: ['comments'] });
+            }
+        },
+    });
+    // Annotation editors by section id, so a save can refresh drifted anchors.
+    const surfaceRefs = useRef(new Map<string, AnnotationSurfaceHandle>());
     const [isDirty, setIsDirty] = useState(false);
 
     // ── Temporary item selection (not saved in layout) ──
@@ -366,6 +409,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                 .sort((a, b) => a.sort_order - b.sort_order)
                 .map(s => ({
                     localId: newLocalId(),
+                    id: s.id,
                     section_type: s.section_type,
                     title: s.title,
                     content: s.content,
@@ -379,11 +423,18 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     }, [layouts]);
 
     // Auto-select first layout on load
+    // (or, for a ?sectionId= deep link, the layout holding that section).
     useEffect(() => {
         if (layouts.length > 0 && !selectedLayoutId) {
-            loadLayout(layouts[0].id);
+            const linked = focusSectionId && layouts.find(l => l.sections.some(s => s.id === focusSectionId));
+            loadLayout((linked || layouts[0]).id);
         }
-    }, [layouts, selectedLayoutId, loadLayout]);
+    }, [layouts, selectedLayoutId, loadLayout, focusSectionId]);
+    // A deep link to a section's thread opens the all-sections view so the
+    // section's thread list can expand and scroll into view.
+    useEffect(() => {
+        if (focusSectionId) setExpandedBuilder(true);
+    }, [focusSectionId]);
 
     // ── Handlers ──
     const handleDragEnd = (event: DragEndEvent) => {
@@ -468,6 +519,54 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
         setIsDirty(true);
     };
 
+    // Text section body. Once the section is saved it's an annotation editor
+    // (select text → review comment, highlights + comment rail); before that it
+    // has no id for threads to attach to, so it's a plain editor.
+    const renderTextContent = (section: LocalSection, idx: number) => section.id ? (
+        <AnnotationSurface
+            ref={(h) => {
+                if (h) surfaceRefs.current.set(section.id!, h);
+                else surfaceRefs.current.delete(section.id!);
+            }}
+            value={section.content}
+            onChange={val => updateSectionContent(idx, val)}
+            canEdit={canGenerateReport}
+            engagementId={engagementId}
+            resourceType="report_section"
+            resourceId={section.id}
+            field="content"
+            minHeight="250px"
+            placeholder="Write your section content here..."
+            focusThreadId={focusSectionId === section.id ? targetThreadId : null}
+        />
+    ) : (
+        <>
+            <TiptapEditor
+                value={section.content}
+                onChange={val => updateSectionContent(idx, val)}
+                placeholder="Write your section content here..."
+                minHeight="250px"
+                disabled={!canGenerateReport}
+                engagementId={engagementId}
+            />
+            <p className="text-[11px] text-slate-500">Save the layout to enable review comments on this section.</p>
+        </>
+    );
+
+    const renderSectionThreads = (section: LocalSection) => section.id ? (
+        <ReportSectionThreads
+            engagementId={engagementId}
+            sectionId={section.id}
+            threads={threadsBySection.get(section.id) ?? []}
+            currentUserId={user?.id}
+            isAdmin={user?.role === 'admin'}
+            users={engagement?.assigned_users}
+            focus={focusSectionId === section.id}
+            targetCommentId={focusSectionId === section.id ? targetCommentId : null}
+            targetThreadId={focusSectionId === section.id ? targetThreadId : null}
+        />
+    ) : null;
+
     // Full editor for a single section — used by both the collapsed master-detail
     // panel and the expanded all-sections view.
     const renderSectionFields = (section: LocalSection, idx: number) => (
@@ -509,14 +608,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             {section.section_type === SectionType.TEXT ? (
                 <div className="space-y-1.5">
                     <Label className="text-xs text-slate-400 uppercase tracking-wide">Content</Label>
-                    <TiptapEditor
-                        value={section.content}
-                        onChange={val => updateSectionContent(idx, val)}
-                        placeholder="Write your section content here..."
-                        minHeight="250px"
-                        disabled={!canGenerateReport}
-                        engagementId={engagementId}
-                    />
+                    {renderTextContent(section, idx)}
                 </div>
             ) : (() => {
                 const isFindings = section.section_type === SectionType.FINDINGS;
@@ -607,6 +699,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             return;
         }
         const sectionPayload = sections.map((s, i) => ({
+            id: s.id,
             section_type: s.section_type as 'text' | 'findings' | 'testcases' | 'cleanup_artifacts',
             title: s.title,
             content: s.content,
@@ -616,8 +709,9 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             page_break_before: !!s.page_break_before,
         }));
         try {
+            let saved: { sections: { id: string; sort_order: number }[] };
             if (selectedLayoutId) {
-                await updateLayout.mutateAsync({
+                saved = await updateLayout.mutateAsync({
                     engagementId,
                     layoutId: selectedLayoutId,
                     name: layoutName,
@@ -625,14 +719,19 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                 });
                 toast.success('Layout saved');
             } else {
-                const created = await createLayout.mutateAsync({
+                saved = await createLayout.mutateAsync({
                     engagementId,
                     name: layoutName,
                     sections: sectionPayload,
                 });
-                setSelectedLayoutId(created.id);
+                setSelectedLayoutId((saved as unknown as { id: string }).id);
                 toast.success('Layout created');
             }
+            // Adopt server ids (new sections get one; existing ones keep theirs),
+            // then re-anchor review highlights against the saved text.
+            const savedIds = [...saved.sections].sort((a, b) => a.sort_order - b.sort_order).map(s => s.id);
+            setSections(prev => prev.map((s, i) => ({ ...s, id: savedIds[i] ?? s.id })));
+            await Promise.all([...surfaceRefs.current.values()].map(h => h.refreshAnchors().catch(() => undefined)));
             setIsDirty(false);
         } catch (err) {
             toast.error(getErrorMessage(err, 'Failed to save layout'));
@@ -1049,14 +1148,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                         {selectedSection.section_type === SectionType.TEXT ? (
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs text-slate-400 uppercase tracking-wide">Content</Label>
-                                                <TiptapEditor
-                                                    value={selectedSection.content}
-                                                    onChange={val => updateSectionContent(selectedSectionIdx!, val)}
-                                                    placeholder="Write your section content here..."
-                                                    minHeight="250px"
-                                                    disabled={!canGenerateReport}
-                                                    engagementId={engagementId}
-                                                />
+                                                {renderTextContent(selectedSection, selectedSectionIdx!)}
                                             </div>
                                         ) : (() => {
                                             // Multi-select item lists for placeholder sections
@@ -1169,6 +1261,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                                 </div>
                                             );
                                         })()}
+                                        {renderSectionThreads(selectedSection)}
                                     </div>
                                 ) : (
                                     <div className="flex items-center justify-center h-full min-h-[300px] rounded-lg border border-dashed border-slate-800">
@@ -1244,8 +1337,10 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                                             return next;
                                                         })}
                                                         onDelete={() => deleteSection(idx)}
+                                                        openThreads={section.id ? (threadsBySection.get(section.id) ?? []).filter(t => !t.is_resolved).length : 0}
                                                     >
                                                         {renderSectionFields(section, idx)}
+                                                        {renderSectionThreads(section)}
                                                     </ExpandedSectionCard>
                                                 </Fragment>
                                             ))}

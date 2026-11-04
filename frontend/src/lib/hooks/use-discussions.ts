@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 
-export type ResourceType = 'engagement' | 'finding' | 'asset' | 'testcase' | 'evidence' | 'cleanup_artifact' | 'finding_remediation';
+export type ResourceType = 'engagement' | 'finding' | 'asset' | 'testcase' | 'evidence' | 'cleanup_artifact' | 'finding_remediation' | 'report_section';
 
 // Anchored peer-review comment: points a thread at a span of text inside one
 // field of the resource. See docs/anchored-comments-peer-review.md.

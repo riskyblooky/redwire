@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import Enum
 from schemas._field_limits import (
     DESCRIPTION,
+    UUID_FIELD,
     ENUM_STR,
     LONG_TEXT,
     NAME,
@@ -32,7 +33,9 @@ class ReportSectionBase(BaseModel):
 
 
 class ReportSectionCreate(ReportSectionBase):
-    pass
+    # Id of an existing section of the same layout, to update it in place (keeps
+    # its review threads attached). Omitted or unknown ⇒ a new section.
+    id: Optional[str] = Field(None, max_length=UUID_FIELD)
 
 
 class ReportSectionResponse(ReportSectionBase):

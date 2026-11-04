@@ -3,6 +3,8 @@ import api from '../api';
 import { ReportLayout } from '../types';
 
 export interface ReportSectionCreate {
+    /** Existing section id — updated in place so its review threads stay attached. */
+    id?: string;
     section_type: 'text' | 'findings' | 'testcases' | 'cleanup_artifacts';
     title: string;
     content?: string;
