@@ -352,6 +352,32 @@ def _dt(v):
     return v
 
 
+def _import_anchor(th: dict, resource_type: str) -> dict:
+    """Thread anchor columns from an archive row, validated: kept only when the
+    field is annotatable for the resource type and the quote is a string; the
+    rest is clamped to the column sizes. Anything else imports as a plain
+    (unanchored) thread rather than failing the whole archive."""
+    from routers.discussions import _ANCHOR_FIELDS
+    field, quote = th.get("anchor_field"), th.get("anchor_quote")
+    if (not isinstance(field, str) or not isinstance(quote, str)
+            or field not in _ANCHOR_FIELDS.get(resource_type, ())):
+        return {}
+
+    def _ctx(v):
+        return v[:128] if isinstance(v, str) else None
+
+    occ = th.get("anchor_occurrence")
+    status = th.get("anchor_status")
+    return {
+        "anchor_field": field,
+        "anchor_quote": quote[:2048],  # ThreadAnchor.quote max_length
+        "anchor_prefix": _ctx(th.get("anchor_prefix")),
+        "anchor_suffix": _ctx(th.get("anchor_suffix")),
+        "anchor_occurrence": occ if isinstance(occ, int) and not isinstance(occ, bool) and 0 <= occ < 10000 else 0,
+        "anchor_status": status if status in ("active", "orphaned") else "active",
+    }
+
+
 def _row_dict(obj, fields: list[str]) -> dict:
     """Extract selected columns from an ORM object."""
     d = {}
@@ -616,7 +642,10 @@ async def export_engagement(
     )
     threads = th_res.scalars().all()
     data["threads"] = [
-        _row_dict(t, ["id", "resource_type", "resource_id", "title", "is_resolved", "created_by", "created_at"])
+        _row_dict(t, ["id", "resource_type", "resource_id", "title", "is_resolved", "created_by", "created_at",
+                      # Peer-review highlight anchor (null on plain threads).
+                      "anchor_field", "anchor_quote", "anchor_prefix", "anchor_suffix",
+                      "anchor_occurrence", "anchor_status"])
         for t in threads
     ]
     for t in threads:
@@ -1644,6 +1673,7 @@ async def import_engagement(
                 is_resolved=th.get("is_resolved", False),
                 created_by=resolve_user(th.get("created_by")),
                 created_at=parse_dt(th.get("created_at")) or datetime.utcnow(),
+                **_import_anchor(th, raw_rt),
             ))
         await db.flush()
 

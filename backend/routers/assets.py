@@ -1051,6 +1051,8 @@ async def delete_asset(
         details=f"Deleted asset: {db_asset.name}"
     )
 
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "asset", db_asset.id)
     await db.delete(db_asset)
     await db.commit()
     

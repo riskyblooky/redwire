@@ -1042,6 +1042,8 @@ async def delete_finding(
     # no DB FK — see utils/chain_links.py).
     from utils.chain_links import sweep_chain_links
     await sweep_chain_links(db, "finding", finding.id)
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, ["finding", "finding_remediation"], finding.id)
 
     await db.delete(finding)
     await db.commit()

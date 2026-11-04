@@ -332,6 +332,8 @@ async def delete_evidence(
         print(f"Failed to delete file from storage: {e}")
         
     # Delete from database
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "evidence", evidence.id)
     await db.delete(evidence)
     await db.commit()
     

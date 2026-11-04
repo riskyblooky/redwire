@@ -510,6 +510,8 @@ async def delete_vault_item(
     # no DB FK — see utils/chain_links.py).
     from utils.chain_links import sweep_chain_links
     await sweep_chain_links(db, "vault_item", item.id)
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "vault", item.id)
 
     await db.delete(item)
     await db.commit()

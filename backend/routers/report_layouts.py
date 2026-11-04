@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List
 from database import get_db
@@ -62,16 +62,8 @@ def _replace_sections(layout: ReportLayout, sections_data: List[ReportSectionCre
 
 async def _delete_section_threads(db: AsyncSession, section_ids: List[str]) -> None:
     """Drop the discussion threads (and their comments) of removed sections."""
-    if not section_ids:
-        return
-    from models.discussion import Thread, Comment
-    thread_ids = select(Thread.id).where(
-        Thread.resource_type == "report_section", Thread.resource_id.in_(section_ids)
-    )
-    await db.execute(delete(Comment).where(Comment.thread_id.in_(thread_ids)))
-    await db.execute(delete(Thread).where(
-        Thread.resource_type == "report_section", Thread.resource_id.in_(section_ids)
-    ))
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "report_section", section_ids)
 
 
 # ── List layouts for an engagement ──

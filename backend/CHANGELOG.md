@@ -11,6 +11,13 @@ section becomes one release entry.
   used to delete and recreate every section. Sections are now updated in
   place, so their review threads stay attached; removing a section deletes
   its threads. Engagement import keeps report-section threads attached too.
+- **Threads left behind by deleted items** — deleting a finding, test case,
+  asset, cleanup artifact, evidence file, note or vault item now deletes its
+  discussion threads too. They used to stay in the engagement's discussions
+  list, linking to nothing.
+- **Highlight comments survive engagement export/import** — exported threads
+  now include their highlight position, so after an import they still show as
+  highlighted comments instead of plain threads.
 - **Pasting images into report sections** — pasting or dropping an image into
   a report builder text section failed with "Image upload requires an
   engagement context". The same fix applies to the engagement, asset and test

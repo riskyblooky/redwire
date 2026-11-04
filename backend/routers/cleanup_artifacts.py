@@ -281,6 +281,8 @@ async def delete_cleanup_artifact(
         details=f"Deleted cleanup artifact: {artifact.title}",
     )
 
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "cleanup_artifact", artifact.id)
     await db.delete(artifact)
     await db.commit()
     return None
