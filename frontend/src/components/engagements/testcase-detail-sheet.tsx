@@ -454,7 +454,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                         <div className="space-y-3">
                                             <Label className="text-slate-300 text-xs">Actual Result / Evidence</Label>
                                             {isExecuting ? (
-                                                <MarkdownEditor
+                                                <MarkdownEditor engagementId={engagementId}
                                                     value={actualResult}
                                                     onChange={(val) => setActualResult(val)}
                                                     placeholder="Describe what happened during testing…"

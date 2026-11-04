@@ -334,7 +334,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                                 <Label htmlFor="description" className="text-slate-200">
                                     Description
                                 </Label>
-                                <MarkdownEditor
+                                <MarkdownEditor engagementId={formData.engagement_id || undefined}
                                     id="description"
                                     value={formData.description}
                                     onChange={(val) => handleChange('description', val)}
@@ -348,7 +348,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                                 <Label htmlFor="notes" className="text-slate-200">
                                     Internal Notes
                                 </Label>
-                                <MarkdownEditor
+                                <MarkdownEditor engagementId={formData.engagement_id || undefined}
                                     id="notes"
                                     value={formData.notes}
                                     onChange={(val) => handleChange('notes', val)}

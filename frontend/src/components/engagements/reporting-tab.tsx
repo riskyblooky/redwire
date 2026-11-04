@@ -515,6 +515,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                         placeholder="Write your section content here..."
                         minHeight="250px"
                         disabled={!canGenerateReport}
+                        engagementId={engagementId}
                     />
                 </div>
             ) : (() => {
@@ -1054,6 +1055,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                                     placeholder="Write your section content here..."
                                                     minHeight="250px"
                                                     disabled={!canGenerateReport}
+                                                    engagementId={engagementId}
                                                 />
                                             </div>
                                         ) : (() => {

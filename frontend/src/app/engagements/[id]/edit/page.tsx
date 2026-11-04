@@ -471,7 +471,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                     <SectionDivider label="Overview" />
                                     <div className="space-y-2">
                                         <Label className="text-slate-200 text-sm">Description</Label>
-                                        <MarkdownEditor id="description" value={formData.description}
+                                        <MarkdownEditor engagementId={id} id="description" value={formData.description}
                                             onChange={val => handleChange('description', val)}
                                             placeholder="Brief description of the engagement..."
                                             minHeight="130px"
@@ -482,7 +482,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                     <SectionDivider label="Scope" />
                                     <div className="space-y-1.5">
                                         <p className="text-xs text-slate-500">Systems, networks, and applications included in this engagement</p>
-                                        <MarkdownEditor id="scope" value={formData.scope}
+                                        <MarkdownEditor engagementId={id} id="scope" value={formData.scope}
                                             onChange={val => handleChange('scope', val)}
                                             placeholder="Define what is in scope (IP ranges, domains, apps, exclusions)..."
                                             minHeight="220px"
@@ -493,7 +493,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                     <SectionDivider label="Objectives" />
                                     <div className="space-y-1.5">
                                         <p className="text-xs text-slate-500">Goals, success criteria, and deliverables</p>
-                                        <MarkdownEditor id="objectives" value={formData.objectives}
+                                        <MarkdownEditor engagementId={id} id="objectives" value={formData.objectives}
                                             onChange={val => handleChange('objectives', val)}
                                             placeholder="What are the goals and success criteria for this engagement?"
                                             minHeight="220px"

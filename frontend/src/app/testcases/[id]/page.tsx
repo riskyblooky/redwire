@@ -491,7 +491,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                                         <div className="space-y-3">
                                             <Label className="text-slate-300 text-base">Actual Result / Evidence</Label>
                                             {isExecuting ? (
-                                                <MarkdownEditor
+                                                <MarkdownEditor engagementId={testcase?.engagement_id}
                                                     value={actualResult}
                                                     onChange={(val) => setActualResult(val)}
                                                     placeholder="Describe exactly what happened during testing. Paste screenshots directly here..."
