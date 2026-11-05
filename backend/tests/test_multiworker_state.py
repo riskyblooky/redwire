@@ -98,3 +98,41 @@ async def test_claim_is_exclusive():
     finally:
         await (await cluster.async_redis()).delete(f"rw:claim:{name}")
         cluster.reset_clients()
+
+
+async def test_startup_lock_serialises_workers():
+    """A second worker blocks on the advisory lock until the first releases."""
+    import asyncio
+
+    first = await cluster.acquire_startup_lock()
+    second_task = asyncio.create_task(cluster.acquire_startup_lock())
+    await asyncio.sleep(0.3)
+    assert not second_task.done()  # still waiting on worker 1
+    await cluster.release_startup_lock(first)
+    second = await asyncio.wait_for(second_task, 5)
+    await cluster.release_startup_lock(second)
+
+
+async def test_plugin_toggle_publishes_to_other_workers(client, make_user, authenticate_as, monkeypatch):
+    from plugin_loader import plugin_registry
+    from utils import ws_bus
+
+    if not plugin_registry.plugins:
+        pytest.skip("no plugins discovered")
+    published = []
+
+    class _Bus:
+        async def publish(self, kind, payload):
+            published.append((kind, payload))
+    monkeypatch.setattr(ws_bus, "bus", _Bus())
+
+    admin = await make_user(role="admin", username=f"pl_ad_{uuid.uuid4().hex[:6]}")
+    authenticate_as(admin)
+    pid, plugin = next(iter(plugin_registry.plugins.items()))
+    orig = plugin.manifest.enabled
+    try:
+        resp = await client.put(f"/plugins/{pid}/toggle", json={"enabled": not orig})
+        assert resp.status_code == 200, resp.text
+        assert published == [("plugin_toggle", {"id": pid, "enabled": not orig})]
+    finally:
+        plugin.manifest.enabled = orig

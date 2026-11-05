@@ -231,7 +231,7 @@ class PluginRegistry:
 
         return discovered
 
-    async def apply_persisted_states(self, db_factory):
+    async def apply_persisted_states(self, db_factory, quiet: bool = False):
         """Overlay persisted enabled/disabled state onto the discovered
         manifests, so an admin's toggle survives a restart/rebuild.
 
@@ -248,12 +248,13 @@ class PluginRegistry:
                 rows = (await db.execute(select(PluginState))).scalars().all()
             states = {r.plugin_id: r.enabled for r in rows}
         except Exception as e:
-            print(f"  ⚠️  Could not load persisted plugin states: {e}")
+            if not quiet:
+                print(f"  ⚠️  Could not load persisted plugin states: {e}")
             return
         for plugin_id, plugin in self.plugins.items():
             if plugin_id in states:
                 plugin.manifest.enabled = states[plugin_id]
-                if not states[plugin_id]:
+                if not states[plugin_id] and not quiet:
                     print(f"  ⏸️  Plugin '{plugin.manifest.name}' disabled by saved state")
 
     def load_all(self, app: FastAPI, event_bus, db_factory):

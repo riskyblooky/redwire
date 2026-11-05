@@ -21,6 +21,13 @@ section becomes one release entry.
   immediately, and backend restarts no longer rebuild the filter from the
   database.
 
+### Changed
+- **The backend runs two workers by default** — the production compose file
+  now starts two backend worker processes, so one slow request no longer
+  holds up everyone else. Set `BACKEND_WORKERS` in `.env` to change the
+  number; each worker uses about 200 MB. Enabling or disabling a plugin now
+  takes effect on every worker, and startup setup runs one worker at a time.
+
 ## [1.6.2] — 2026-11-04
 
 ### Fixed

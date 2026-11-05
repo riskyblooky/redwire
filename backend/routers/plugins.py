@@ -148,6 +148,10 @@ async def toggle_plugin(
     plugin.manifest.enabled = body.enabled
     await db.commit()
 
+    # Other workers hold their own copy of the plugin registry.
+    from utils.ws_bus import bus
+    await bus.publish("plugin_toggle", {"id": plugin_id, "enabled": body.enabled})
+
     return {"plugin_id": plugin_id, "enabled": body.enabled}
 
 

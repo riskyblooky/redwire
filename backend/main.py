@@ -358,6 +358,10 @@ async def lifespan(app):
     plugin_registry.mount_routes(app)
     print(f"🔌 {len(plugin_registry.plugins)} plugin(s) loaded\n")
 
+    # ── One-time startup work, one worker at a time (see utils/cluster) ──
+    from utils.cluster import acquire_startup_lock, release_startup_lock
+    _startup_lock = await acquire_startup_lock()
+
     # ── Seed admin user from env vars ──
     await _seed_admin_user(AsyncSessionLocal)
 
@@ -493,6 +497,8 @@ async def lifespan(app):
     except Exception as e:
         print(f"[auth-settings] WARN: backfill failed: {e}")
 
+    await release_startup_lock(_startup_lock)
+
     bloom_task = asyncio.create_task(_load_bloom())
     intel_task = asyncio.create_task(_refresh_intel_feeds_background())
     # Cross-worker WebSocket fan-out (Redis pub/sub). Degrades to
@@ -501,11 +507,28 @@ async def lifespan(app):
     import utils.collaboration  # noqa: F401  registers the bus handlers
     import utils.yjs_server  # noqa: F401
     await ws_bus.start()
+
+    # Plugin enable/disable is in-memory per worker: apply other workers'
+    # toggles from the bus at once, and resync from plugin_states every 30s
+    # in case a bus message was missed.
+    async def _on_plugin_toggle(p: dict) -> None:
+        plugin = plugin_registry.plugins.get(p.get("id") or "")
+        if plugin is not None and isinstance(p.get("enabled"), bool):
+            plugin.manifest.enabled = p["enabled"]
+    ws_bus.register("plugin_toggle", _on_plugin_toggle)
+
+    async def _plugin_state_resync() -> None:
+        while True:
+            await asyncio.sleep(30)
+            await plugin_registry.apply_persisted_states(AsyncSessionLocal, quiet=True)
+    plugin_sync_task = asyncio.create_task(_plugin_state_resync())
+
     yield
     await ws_bus.stop()
     bloom_task.cancel()
     intel_task.cancel()
-    for task in (bloom_task, intel_task):
+    plugin_sync_task.cancel()
+    for task in (bloom_task, intel_task, plugin_sync_task):
         try:
             await task
         except asyncio.CancelledError:

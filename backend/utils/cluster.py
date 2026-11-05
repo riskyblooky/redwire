@@ -75,3 +75,30 @@ async def claim(name: str, ttl_seconds: int) -> bool:
         return bool(await r.set(f"rw:claim:{name}", b"1", nx=True, ex=max(1, int(ttl_seconds))))
     except Exception:
         return True
+
+
+# ── Startup serialisation ──────────────────────────────────────────────────
+# Every worker runs the lifespan's one-time work (admin bootstrap, seeding,
+# backfills). Each step is idempotent, but on a fresh database two workers
+# can both see "missing" and collide on a unique insert. A Postgres advisory
+# lock makes workers take turns; the later ones find the work already done.
+# Held on a dedicated connection; released explicitly, or by Postgres if
+# the worker dies.
+_STARTUP_LOCK_KEY = 0x5277_5374  # "RwSt"
+
+
+async def acquire_startup_lock():
+    from sqlalchemy import text
+    from database import engine
+    conn = await engine.connect()
+    conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+    await conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _STARTUP_LOCK_KEY})
+    return conn
+
+
+async def release_startup_lock(conn) -> None:
+    from sqlalchemy import text
+    try:
+        await conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _STARTUP_LOCK_KEY})
+    finally:
+        await conn.close()

@@ -105,9 +105,22 @@ the one true real-time delta surface.
 4. **Heartbeat and activity-ping throttles** (`routers/users.py`) are still
    per worker. That's harmless: they only allow slightly more writes.
 
-Nothing in-process is left that blocks `--workers N`. To enable it, add
-`--workers N` to the backend `uvicorn` command in `docker-compose.yml`.
-Budget about 200 MB per worker on the 4 GB VPS.
+5. **Plugin enable/disable:** a toggle is published on the bus
+   (`plugin_toggle`), and every worker also resyncs from `plugin_states` every
+   30s as a backstop. Without this, a disabled plugin kept serving routes on
+   the other workers.
+6. **Startup work:** admin bootstrap, seeding, the seed revision and the
+   backfills run under a Postgres advisory lock (`utils/cluster.py`), so two
+   workers can't race on unique inserts on a fresh database.
+
+**Prod default since 1.7.0:** 2 workers (`--workers ${BACKEND_WORKERS:-2}`
+in `docker-compose.yml`, set `BACKEND_WORKERS` in `.env`). Budget about
+200 MB per worker on the 4 GB VPS. The dev compose stays at one worker
+because `--reload` can't be combined with `--workers`.
+
+Verified with `uvicorn --workers 2` in dev: both workers start one after the
+other and join the bus, and a plugin toggle is seen by both. The control run
+with `WS_FANOUT=false` showed the other worker still serving the old state.
 
 ## 3. WS push gaps (ranked) — the "gaps 1–5" work
 
