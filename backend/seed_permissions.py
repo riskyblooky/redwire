@@ -254,8 +254,8 @@ async def seed_default_groups_and_roles():
                 # administrator had deliberately revoked and re-defaulted
                 # groups the admin had un-defaulted. New permission constants
                 # introduced by an upgrade no longer auto-land here — the
-                # admin must add them via the admin UI (see the
-                # "seed_revision watermark" todo for the long-term path).
+                # admin must add them via the admin UI, or a release ships
+                # them as a SEED_REVISIONS entry (applied once, additively).
                 #
                 # The one remaining mutation: backfill the permissions row if
                 # it's missing entirely (group row present but no
@@ -323,8 +323,80 @@ async def seed_default_groups_and_roles():
                     db.add(role_perms)
                     print(f"🔄 Created missing permissions for role: {role_data['name']}")
         
+        await apply_seed_revisions(db)
+
         await db.commit()
         print("✅ Default groups and roles seeded/verified")
+
+
+# ============ Seed revisions ============
+# Existing groups/roles are never re-merged with the seed lists above
+# (GHSA-28f5), so a permission a release adds to a default group would only
+# reach fresh installs. Each SEED_REVISIONS entry is a one-shot, additive
+# grant to the named default group / engagement role, applied once per
+# deployment and tracked by the watermark in auth_settings. A grant an admin
+# later revokes stays revoked: the revision never runs again.
+#
+# To ship a new default permission: add it to the seed list above AND append
+# a new revision here. Never edit or renumber a released revision.
+SEED_REVISIONS: list[dict] = [
+    {
+        # Permissions added to the seed lists after GHSA-28f5 (1.3.x–1.5.x)
+        # that never reached existing deployments.
+        "revision": 1,
+        "groups": {
+            "Team Leads": [Permission.MANAGE_MARKING_PROFILES.value],
+        },
+        "roles": {
+            "Engagement Lead": [Permission.EVIDENCE_EDIT.value, Permission.EVIDENCE_EDIT_ANY.value],
+            "Operator": [Permission.EVIDENCE_EDIT.value],
+        },
+    },
+]
+
+SEED_REVISION_KEY = "seed_permissions_revision"
+
+
+async def apply_seed_revisions(db) -> int:
+    """Apply SEED_REVISIONS above the stored watermark; returns the new watermark.
+    Groups/roles that were renamed or deleted are skipped (nothing to grant to).
+    """
+    from models.auth_settings import AuthSetting
+
+    setting = await db.get(AuthSetting, SEED_REVISION_KEY)
+    try:
+        current = int(setting.value) if setting and setting.value else 0
+    except ValueError:
+        current = 0
+    pending = sorted((r for r in SEED_REVISIONS if r["revision"] > current), key=lambda r: r["revision"])
+    if not pending:
+        return current
+
+    async def _grant(model, perms_model, fk, name, perms):
+        row = (await db.execute(select(model).where(model.name == name))).scalar_one_or_none()
+        if row is None:
+            return
+        pr = (await db.execute(select(perms_model).where(getattr(perms_model, fk) == row.id))).scalar_one_or_none()
+        if pr is None:
+            return
+        have = list(pr.permissions or [])
+        added = [p for p in perms if p not in have]
+        if added:
+            pr.permissions = have + added  # reassign so the JSON column is flagged dirty
+            print(f"🔄 Seed revision: granted {', '.join(added)} to {name}")
+
+    for rev in pending:
+        for name, perms in rev.get("groups", {}).items():
+            await _grant(Group, GroupPermissions, "group_id", name, perms)
+        for name, perms in rev.get("roles", {}).items():
+            await _grant(EngagementRole, EngagementRolePermissions, "role_id", name, perms)
+
+    latest = pending[-1]["revision"]
+    if setting is None:
+        db.add(AuthSetting(key=SEED_REVISION_KEY, value=str(latest), is_encrypted=False))
+    else:
+        setting.value = str(latest)
+    return latest
 
     # Configurable types are now seeded by seed_defaults.seed_all_defaults
     # — kept the function below for any one-off callers that might still
