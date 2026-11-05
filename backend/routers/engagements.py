@@ -698,6 +698,21 @@ async def update_engagement(
 
     update_data = engagement_data.model_dump(exclude_unset=True)
 
+    # Status workflow: non-admins follow ALLOWED_TRANSITIONS (no skipping
+    # straight to COMPLETED, back only one stage); admins/team leads bypass.
+    if update_data.get("status") is not None and not is_admin:
+        from utils.engagement_status import ALLOWED_TRANSITIONS, transition_allowed
+        if not transition_allowed(engagement.status, update_data["status"]):
+            allowed = sorted(s.value for s in ALLOWED_TRANSITIONS.get(engagement.status, set()))
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Can't move this engagement from {engagement.status.value} to "
+                    f"{getattr(update_data['status'], 'value', update_data['status'])}. "
+                    f"Allowed next statuses: {', '.join(allowed) or 'none'}."
+                ),
+            )
+
     if "allowed_score_models" in update_data or "default_score_model" in update_data:
         await assert_engagement_policy_allowed(
             db,

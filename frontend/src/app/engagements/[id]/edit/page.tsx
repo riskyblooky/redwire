@@ -24,6 +24,8 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useAuthStore } from '@/stores/auth-store';
+import { canTransition } from '@/lib/engagement-status';
 import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -156,6 +158,9 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     const { data: siteScoringPolicy } = useEffectiveScoringPolicy(undefined);
     const siteScoringLocked = !!siteScoringPolicy?.locked;
     const siteScoringModels = siteScoringPolicy?.allowed ?? [];
+    // Admins and team leads may make any status change; others follow the workflow.
+    const authUser = useAuthStore((st) => st.user);
+    const bypassStatusRules = authUser?.role === 'admin' || authUser?.role === 'team_lead';
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
     const [editingPhases, setEditingPhases] = useState<Record<string, { start: string; end: string }>>({});
     const [phasesEdited, setPhasesEdited] = useState(false);
@@ -445,7 +450,11 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                                         <SelectValue />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {ENGAGEMENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                                                        {ENGAGEMENT_STATUSES.map(s => (
+                                                            <SelectItem key={s.value} value={s.value} disabled={!bypassStatusRules && !canTransition(engagement.status, s.value)}>
+                                                                {s.label}
+                                                            </SelectItem>
+                                                        ))}
                                                     </SelectContent>
                                                 </Select>
                                             </div>
