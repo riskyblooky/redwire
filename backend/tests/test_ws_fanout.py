@@ -96,9 +96,9 @@ async def test_remote_global_message_is_gated_per_recipient(monkeypatch):
 
     monkeypatch.setattr(database, "AsyncSessionLocal", lambda: _Session())
 
-    async def _perm(user_id, engagement_id, perm, db):
+    async def _perm(user_id, engagement_id, db):
         return user_id == "member"
-    monkeypatch.setattr(rbac, "check_engagement_permission", _perm)
+    monkeypatch.setattr(rbac, "can_view_engagement", _perm)
 
     mgr = ConnectionManager()
     member, outsider = FakeWS(), FakeWS()

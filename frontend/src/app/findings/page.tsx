@@ -49,7 +49,10 @@ const FindingRow = ({ finding, router, severityColors, statusColors, getSeverity
         <TableRow key={finding.id} className="border-slate-800 hover:bg-slate-800/50 group">
             <TableCell className="font-medium text-white pl-6 max-w-sm">
                 <div className="flex flex-col">
-                    <span>{finding.title}</span>
+                    <span className="flex items-center gap-2">
+                        <span>{finding.title}</span>
+                        <ScoreModelPolicyBadge finding={finding} className="shrink-0" />
+                    </span>
                     <span className="text-xs text-slate-500 truncate">{finding.description}</span>
                 </div>
             </TableCell>
@@ -117,6 +120,7 @@ const FindingRow = ({ finding, router, severityColors, statusColors, getSeverity
 import { toast } from 'sonner';
 import { useState as useStateForEngagement } from 'react';
 import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
+import { ScoreModelPolicyBadge } from '@/components/findings/score-model-policy-badge';
 
 
 const severityOrder: Record<string, number> = {

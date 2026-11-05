@@ -427,6 +427,7 @@ export default function ReportLayoutTemplateEditPage() {
                                         <div className="space-y-1.5">
                                             <Label className="text-xs text-slate-400 uppercase tracking-wide">Content</Label>
                                             <TiptapEditor
+                                imageScope="library"
                                                 value={selectedSection.content}
                                                 onChange={val => updateSectionContent(selectedSectionIdx!, val)}
                                                 placeholder="Write your section content here..."

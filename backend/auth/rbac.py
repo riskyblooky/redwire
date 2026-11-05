@@ -105,6 +105,25 @@ async def check_engagement_permission(user_id: str, engagement_id: str, required
 _ADMIN_ROLES = (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
 
 
+async def can_view_engagement(user_id: str, engagement_id: str, db: AsyncSession) -> bool:
+    """Engagement read access with the standard 3-tier gate: admin roles, then
+    a group-granted VIEW_ALL_ENGAGEMENTS, then an ENGAGEMENT_VIEW role on the
+    engagement. The role is read from the DB, never from client-supplied data.
+    """
+    from models.user import User
+    from models.permission import Permission
+    from auth.permissions import has_global_permission
+
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        return False
+    if user.role in _ADMIN_ROLES:
+        return True
+    if await has_global_permission(user, Permission.VIEW_ALL_ENGAGEMENTS, db):
+        return True
+    return await check_engagement_permission(user_id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db)
+
+
 async def resolve_engagement_scope(
     engagement_id: Optional[str],
     db: AsyncSession,

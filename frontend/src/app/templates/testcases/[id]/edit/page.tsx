@@ -240,6 +240,7 @@ export default function TestCaseTemplateEditPage() {
                         <CardContent className="p-6 space-y-2">
                             <Label>Description *</Label>
                             <MarkdownEditor
+                                imageScope="library"
                                 value={description}
                                 onChange={setDescription}
                                 placeholder="What this test case verifies..."
@@ -253,6 +254,7 @@ export default function TestCaseTemplateEditPage() {
                         <CardContent className="p-6 space-y-2">
                             <Label>Steps</Label>
                             <MarkdownEditor
+                                imageScope="library"
                                 value={steps}
                                 onChange={setSteps}
                                 placeholder="Step-by-step test procedure..."
@@ -266,6 +268,7 @@ export default function TestCaseTemplateEditPage() {
                         <CardContent className="p-6 space-y-2">
                             <Label>Expected Result</Label>
                             <MarkdownEditor
+                                imageScope="library"
                                 value={expectedResult}
                                 onChange={setExpectedResult}
                                 placeholder="What should happen if the test passes..."

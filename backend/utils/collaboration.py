@@ -689,13 +689,12 @@ class ConnectionManager:
                             # Fail closed: don't deliver to unidentified connections
                             continue
                         try:
-                            from auth.rbac import check_engagement_permission
-                            from models.permission import Permission
-                            allowed = await check_engagement_permission(
-                                recipient_id,
-                                gating_engagement,
-                                Permission.ENGAGEMENT_VIEW.value,
-                                db,
+                            # Same audience as the engagement itself: admin
+                            # roles and VIEW_ALL_ENGAGEMENTS holders get every
+                            # engagement's events, others need ENGAGEMENT_VIEW.
+                            from auth.rbac import can_view_engagement
+                            allowed = await can_view_engagement(
+                                recipient_id, gating_engagement, db,
                             )
                         except Exception as e:
                             logger.warning(

@@ -15,12 +15,18 @@ class MarkdownImage(Base):
     that referenced them is edited to remove the reference. That's
     acceptable; storage cost is small and a future cleanup job can scan
     referenced images vs. table rows.
+
+    Scope: ``engagement`` images belong to one engagement and need view
+    access to it. ``library`` images come from shared editors with no
+    engagement (finding / test-case / report-layout templates, intel) and are
+    readable by any authenticated user, the same audience as the templates.
     """
     __tablename__ = "markdown_images"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     storage_key = Column(String(512), nullable=False)
-    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False, index=True)
+    scope = Column(String(20), nullable=False, default="engagement", server_default="engagement")
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=True, index=True)
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     content_type = Column(String(100), nullable=False)

@@ -250,6 +250,7 @@ export default function FindingTemplateEditPage() {
                         <CardContent className="p-6 space-y-2">
                             <Label>Description *</Label>
                             <MarkdownEditor
+                                imageScope="library"
                                 value={description}
                                 onChange={setDescription}
                                 placeholder="Detailed description of the finding..."
@@ -263,6 +264,7 @@ export default function FindingTemplateEditPage() {
                         <CardContent className="p-6 space-y-2">
                             <Label>Impact</Label>
                             <MarkdownEditor
+                                imageScope="library"
                                 value={impact}
                                 onChange={setImpact}
                                 placeholder="Business/technical impact..."
@@ -276,6 +278,7 @@ export default function FindingTemplateEditPage() {
                         <CardContent className="p-6 space-y-2">
                             <Label>Mitigations</Label>
                             <MarkdownEditor
+                                imageScope="library"
                                 value={mitigations}
                                 onChange={setMitigations}
                                 placeholder="Recommended remediation steps..."
@@ -292,6 +295,7 @@ export default function FindingTemplateEditPage() {
                                 CWE links, vendor advisories, OWASP cheat sheets, etc. — copied into a finding's References field when this template is applied.
                             </p>
                             <MarkdownEditor
+                                imageScope="library"
                                 value={references}
                                 onChange={setReferences}
                                 placeholder={'- [CWE-89: SQL Injection](https://cwe.mitre.org/data/definitions/89.html)\n- [OWASP SQLi Prevention](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)'}

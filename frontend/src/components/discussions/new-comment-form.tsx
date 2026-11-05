@@ -10,10 +10,12 @@ import { useCreateComment } from '@/lib/hooks/use-discussions';
 
 interface NewCommentFormProps {
     threadId: string;
+    /** Scopes pasted / dropped images to the thread's engagement. */
+    engagementId?: string;
     onSuccess?: () => void;
 }
 
-export default function NewCommentForm({ threadId, onSuccess }: NewCommentFormProps) {
+export default function NewCommentForm({ threadId, engagementId, onSuccess }: NewCommentFormProps) {
     const [content, setContent] = useState('');
     const createComment = useCreateComment();
 
@@ -44,6 +46,7 @@ export default function NewCommentForm({ threadId, onSuccess }: NewCommentFormPr
                     onChange={(val) => setContent(val)}
                     placeholder="Write a comment..."
                     minHeight="150px"
+                    engagementId={engagementId}
                 />
             </div>
 

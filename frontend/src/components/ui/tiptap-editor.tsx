@@ -161,6 +161,9 @@ interface TiptapEditorProps {
      *  POST /markdown-images and inserts the resulting URL.
      *  Without it the toolbar image-by-URL dialog still works. */
     engagementId?: string;
+    /** 'library': editors with no engagement (templates, intel) upload pasted
+     *  images to the shared library scope instead. */
+    imageScope?: 'library';
     /** Fixed-height, user-resizable mode: a corner handle drags the whole
      *  editor taller/shorter, and (when the AI panel is open) an inner handle
      *  rebalances the split between the text area and the AI panel without
@@ -809,12 +812,15 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
  * preview) or the editor's own node-view, both of which fetch the bytes
  * with the user's JWT.
  */
-async function uploadAndInsertImage(view: any, file: File, pos: number, engagementId: string) {
+type ImageTarget = { engagementId: string } | { scope: 'library' };
+
+async function uploadAndInsertImage(view: any, file: File, pos: number, target: ImageTarget) {
     const { toast } = await import('sonner');
     try {
         const fd = new FormData();
         fd.append('file', file);
-        fd.append('engagement_id', engagementId);
+        if ('engagementId' in target) fd.append('engagement_id', target.engagementId);
+        else fd.append('scope', 'library');
         const { data } = await api.post('/markdown-images', fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -850,7 +856,7 @@ function parseInitialEditorHeight(minHeight?: string): number {
     return m ? Math.max(220, parseInt(m[1], 10)) : 360;
 }
 
-export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable = true, fillHeight = false, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: TiptapEditorProps) {
+export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable = true, fillHeight = false, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: TiptapEditorProps) {
     const [, setForceUpdate] = useState(0);
     const [showLineNumbers, setShowLineNumbers] = useState(lineNumbers);
     const showLineNumbersRef = useRef(lineNumbers);
@@ -878,6 +884,12 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     useEffect(() => { editorHeightRef.current = editorHeight; }, [editorHeight]);
     const dragRef = useRef<{ startY: number; startH: number } | null>(null);
     const editorRef = useRef<any>(null);
+
+    // Where pasted / dropped images go: the engagement, the shared library
+    // (templates, intel), or nowhere (e.g. a not-yet-created engagement).
+    const imageTarget: ImageTarget | null = engagementId
+        ? { engagementId }
+        : imageScope === 'library' ? { scope: 'library' } : null;
 
     const editor = useEditor({
 
@@ -1030,17 +1042,17 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                 if (!dt || !dt.files || dt.files.length === 0) return false;
                 const images = Array.from(dt.files).filter(f => f.type.startsWith('image/'));
                 if (images.length === 0) return false;
-                if (!engagementId) {
+                if (!imageTarget) {
                     event.preventDefault();
                     import('sonner').then(({ toast }) =>
-                        toast.error('Image upload requires an engagement context')
+                        toast.info('Images can be added once this is saved inside an engagement')
                     );
                     return true;
                 }
                 event.preventDefault();
                 const coords = view.posAtCoords({ left: (event as DragEvent).clientX, top: (event as DragEvent).clientY });
                 const insertPos = coords?.pos ?? view.state.selection.from;
-                images.forEach(f => uploadAndInsertImage(view, f, insertPos, engagementId));
+                images.forEach(f => uploadAndInsertImage(view, f, insertPos, imageTarget));
                 return true;
             },
             // Paste handler (Cmd/Ctrl+V from screenshot tools, etc.)
@@ -1068,16 +1080,16 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                     }
                 }
                 if (images.length === 0) return false;
-                if (!engagementId) {
+                if (!imageTarget) {
                     event.preventDefault();
                     import('sonner').then(({ toast }) =>
-                        toast.error('Image upload requires an engagement context')
+                        toast.info('Images can be added once this is saved inside an engagement')
                     );
                     return true;
                 }
                 event.preventDefault();
                 const insertPos = view.state.selection.from;
-                images.forEach(f => uploadAndInsertImage(view, f, insertPos, engagementId));
+                images.forEach(f => uploadAndInsertImage(view, f, insertPos, imageTarget));
                 return true;
             },
         },

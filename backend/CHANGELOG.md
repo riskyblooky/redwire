@@ -21,6 +21,24 @@ section becomes one release entry.
   immediately, and backend restarts no longer rebuild the filter from the
   database.
 
+- **Paste images into templates and intel** — finding, test-case and
+  report-layout templates and intel items now accept pasted or dropped
+  images. They're stored as shared library images that anyone signed in can
+  view, the same people who can see the templates, and they carry into
+  findings and reports created from those templates. The new-engagement form
+  explains that images can be added once the engagement exists, instead of
+  showing an error.
+- **"Model not allowed" on the findings list** — findings scored with a model
+  their engagement no longer allows are flagged in the engagement's findings
+  table and on the Findings page, as they already were on the finding itself.
+
+### Fixed
+- **Pasting images into discussion comments** — images pasted or dropped into
+  a comment reply now upload instead of failing.
+- **Live activity feed for admins** — admins, read-only admins, team leads and
+  anyone with *view all engagements* now get live dashboard updates for every
+  engagement they can view, not only the ones they're assigned to.
+
 ### Changed
 - **The backend runs two workers by default** — the production compose file
   now starts two backend worker processes, so one slow request no longer

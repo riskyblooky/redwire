@@ -191,7 +191,7 @@ export default function ThreadCard({ thread, currentUserId, isAdmin, users, targ
 
                             {/* New Comment Form */}
                             <div className="pt-3 border-t border-slate-800/50">
-                                <NewCommentForm threadId={thread.id} />
+                                <NewCommentForm threadId={thread.id} engagementId={thread.engagement_id} />
                             </div>
                         </div>
                     </div>

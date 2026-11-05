@@ -333,7 +333,10 @@ async def _do_generate_report(
     # references to MinIO storage keys without further DB access.
     from models.markdown_image import MarkdownImage
     md_img_result = await db.execute(
-        select(MarkdownImage).where(MarkdownImage.engagement_id == engagement.id)
+        # Library images too: findings created from templates carry them.
+        select(MarkdownImage).where(
+            (MarkdownImage.engagement_id == engagement.id) | (MarkdownImage.scope == "library")
+        )
     )
     markdown_image_map = {
         row.id: {

@@ -8,13 +8,21 @@ Permission model: an authenticated caller can upload to any engagement
 they have view access to (admins always pass). Fetching the image bytes
 re-checks engagement view permission, so a user removed from an
 engagement loses access to its markdown images.
+
+Library scope (``scope=library``, no engagement): images pasted into
+shared editors that have no engagement — finding / test-case /
+report-layout templates and intel items. Any authenticated user may
+upload (rate-limited) and fetch them: the same audience that can read
+those templates, which copy the image URLs into engagement findings.
 """
 
 import uuid
 import os
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +36,7 @@ from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from utils.storage import storage_service
 from utils.uploads import sanitize_original_filename
+from rate_limit import limiter
 
 router = APIRouter(prefix="/markdown-images", tags=["markdown-images"])
 
@@ -61,18 +70,29 @@ async def _check_engagement_view(user: User, engagement_id: str, db: AsyncSessio
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@limiter.limit("60/minute")
 async def upload_markdown_image(
+    request: Request,
     file: UploadFile = File(...),
-    engagement_id: str = Form(...),
+    engagement_id: Optional[str] = Form(None, max_length=64),
+    scope: str = Form("engagement", max_length=20),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Upload an image embedded inline in a markdown editor."""
-    # Verify engagement exists and caller has view access
-    eng_result = await db.execute(select(Engagement).where(Engagement.id == engagement_id))
-    if eng_result.scalar_one_or_none() is None:
-        raise HTTPException(404, "Engagement not found")
-    await _check_engagement_view(current_user, engagement_id, db)
+    if scope not in ("engagement", "library"):
+        raise HTTPException(400, "scope must be 'engagement' or 'library'")
+    if scope == "library":
+        if engagement_id:
+            raise HTTPException(400, "Library images can't belong to an engagement")
+    else:
+        if not engagement_id:
+            raise HTTPException(400, "engagement_id is required for engagement images")
+        # Verify engagement exists and caller has view access
+        eng_result = await db.execute(select(Engagement).where(Engagement.id == engagement_id))
+        if eng_result.scalar_one_or_none() is None:
+            raise HTTPException(404, "Engagement not found")
+        await _check_engagement_view(current_user, engagement_id, db)
 
     content_type = (file.content_type or "").lower()
     if content_type not in _ALLOWED_TYPES:
@@ -88,14 +108,15 @@ async def upload_markdown_image(
     ext = _EXT_FALLBACK.get(content_type, "")
     if not ext and file.filename and "." in file.filename:
         ext = "." + file.filename.rsplit(".", 1)[-1].lower()
-    storage_key = f"markdown/{engagement_id}/{image_id}{ext}"
+    storage_key = f"markdown/{engagement_id if scope == 'engagement' else 'library'}/{image_id}{ext}"
 
     await storage_service.upload_file(body, storage_key, content_type)
 
     row = MarkdownImage(
         id=image_id,
         storage_key=storage_key,
-        engagement_id=engagement_id,
+        scope=scope,
+        engagement_id=engagement_id if scope == "engagement" else None,
         created_by=current_user.id,
         content_type=content_type,
         size_bytes=len(body),
@@ -124,7 +145,8 @@ async def get_markdown_image(
     if row is None:
         raise HTTPException(404, "Image not found")
 
-    await _check_engagement_view(current_user, row.engagement_id, db)
+    if row.scope != "library":
+        await _check_engagement_view(current_user, row.engagement_id, db)
 
     body = await storage_service.download_file(row.storage_key)
     return StreamingResponse(

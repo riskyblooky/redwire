@@ -568,6 +568,7 @@ export default function IntelligencePage() {
                         <div className="space-y-2">
                             <Label className="text-slate-300 text-sm">Content / Notes</Label>
                             <TiptapEditor
+                                imageScope="library"
                                 value={newItem.content}
                                 onChange={(val) => setNewItem({ ...newItem, content: val })}
                                 placeholder="Description, impact, notes..."

@@ -27,8 +27,10 @@ interface MarkdownEditorProps {
     id?: string;
     className?: string;
     fieldContext?: EditorFieldContext;
-    /** Required for paste/drop image upload. */
+    /** Paste/drop image upload target (or set imageScope="library"). */
     engagementId?: string;
+    /** 'library': upload pasted images to the shared library (templates, intel). */
+    imageScope?: 'library';
     /** Fixed-height, user-resizable editor (corner + AI-split handles). */
     resizable?: boolean;
     /** Fill the parent's height instead of a fixed height (content scrolls). */
@@ -41,7 +43,7 @@ interface MarkdownEditorProps {
     onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
 }
 
-export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, resizable, fillHeight, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable, fillHeight, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: MarkdownEditorProps) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -63,6 +65,7 @@ export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeig
             className={className}
             fieldContext={fieldContext}
             engagementId={engagementId}
+            imageScope={imageScope}
             resizable={resizable}
             fillHeight={fillHeight}
             commentThreads={commentThreads}
