@@ -55,6 +55,7 @@ class RunbookItemResponse(BaseModel):
     parent_id: Optional[str] = None
     sort_order: int
     template: Optional[RunbookItemTemplateResponse] = None
+    frozen_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

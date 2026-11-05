@@ -31,6 +31,29 @@ section becomes one release entry.
   returned a "not permitted" error). It now saves and keeps its score until it
   is rescored.
 
+### Security
+- **Engagement status rules** — non-admins can now move an engagement forward
+  any number of stages or back one, put it on hold from any open stage and
+  resume to any open stage; Completed is reachable only from Reporting.
+  Admins and team leads can still make any change. The edit page greys out
+  statuses you can't move to.
+- **Approved runbooks are frozen** — approving a runbook snapshots its
+  test-case templates, and applying a published runbook uses that snapshot,
+  so editing or unpublishing a template later can't change what an approved
+  runbook creates. Runbooks already published are frozen at their current
+  content on upgrade; editing a published runbook's items refreezes them.
+- **New default permissions reach existing installs** — permissions a release
+  adds to the default groups and roles are now granted once to existing
+  deployments (tracked by a seed revision), instead of reaching only fresh
+  installs. A grant an admin later removes stays removed. This release grants
+  Team Leads *manage marking profiles*, Engagement Lead *evidence edit* /
+  *evidence edit any*, and Operator *evidence edit*.
+- **Deleted-engagement audit logs** — a new Admin → Audit tab lists deleted
+  engagements with their surviving activity history (who did what, when),
+  previously reachable only from the database. Visible to admins, read-only
+  admins and anyone with *view all engagements*. Engagements deleted before
+  this release show only their deletion record.
+
 ### Added
 - **httpx and NetExec (nxc) scanner imports** — the scanner import now accepts
   httpx JSON/JSONL output (hosts, web ports, server, page titles and

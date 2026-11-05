@@ -45,6 +45,17 @@ class RunbookItem(Base):
     parent_id = Column(String, ForeignKey("runbook_items.id", ondelete="SET NULL"), nullable=True, index=True)
     sort_order = Column(Integer, default=0, nullable=False)
 
+    # Template content frozen when the runbook is approved: applying a
+    # PUBLISHED runbook materializes these, not the live template, so a later
+    # template edit (or unpublish-edit-republish) can't change what an
+    # approved runbook creates. NULL frozen_at = not frozen (draft runbooks).
+    frozen_title = Column(String(500), nullable=True)
+    frozen_category = Column(String(100), nullable=True)
+    frozen_description = Column(Text, nullable=True)
+    frozen_steps = Column(Text, nullable=True)
+    frozen_expected_result = Column(Text, nullable=True)
+    frozen_at = Column(DateTime, nullable=True)
+
     # Relationships
     runbook = relationship("Runbook", back_populates="items")
     template = relationship("TestCaseTemplate", lazy="selectin")

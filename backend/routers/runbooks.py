@@ -47,14 +47,15 @@ def _enforce_referenced_templates_published(
     materialize into every engagement that applies the runbook (apply
     derefs ``item.template`` live), and a later unpublish-edit cycle on
     a previously-PUBLISHED template would push the new body into every
-    apply that follows. The companion content-freeze hardening (snapshot
-    template content into ``runbook_items`` at approve time) is tracked
-    separately.
+    apply that follows. Items frozen at approval (``_freeze_items``) don't
+    read the live template on apply, so they're exempt on the apply gate.
     """
     offenders = []
     for item in runbook.items or []:
         tmpl = item.template
         if tmpl is None:
+            continue
+        if gate == "apply" and _uses_frozen(runbook, item):
             continue
         if tmpl.status != TemplateStatus.PUBLISHED:
             offenders.append(f"{tmpl.title!r} ({tmpl.status.value})")
@@ -73,6 +74,25 @@ def _enforce_referenced_templates_published(
                 "before the runbook can be approved or applied."
             ),
         )
+
+
+def _freeze_items(runbook: Runbook) -> None:
+    """Snapshot each item's template content onto the item (approve time)."""
+    now = datetime.utcnow()
+    for item in runbook.items or []:
+        tmpl = item.template
+        if tmpl is None:
+            continue
+        item.frozen_title = tmpl.title
+        item.frozen_category = tmpl.category
+        item.frozen_description = tmpl.description
+        item.frozen_steps = tmpl.steps
+        item.frozen_expected_result = tmpl.expected_result
+        item.frozen_at = now
+
+
+def _uses_frozen(runbook: Runbook, item: RunbookItem) -> bool:
+    return runbook.status == TemplateStatus.PUBLISHED and item.frozen_at is not None
 
 
 async def _visibility_clause(current_user: User, db: AsyncSession):
@@ -316,6 +336,18 @@ async def update_runbook(
             )
             db.add(item)
 
+        if runbook.status == TemplateStatus.PUBLISHED:
+            # A manager editing a published runbook's items is re-approving
+            # them: same published-template gate as approve, then refreeze.
+            await db.flush()
+            runbook = (await db.execute(
+                select(Runbook).where(Runbook.id == runbook.id)
+                .options(selectinload(Runbook.items).selectinload(RunbookItem.template))
+                .execution_options(populate_existing=True)
+            )).scalar_one()
+            _enforce_referenced_templates_published(runbook, current_user, "approve")
+            _freeze_items(runbook)
+
     await db.commit()
 
     return await _load_runbook(runbook.id, db)
@@ -422,6 +454,7 @@ async def approve_runbook(
 
     # GHSA-8357-pmf3-28f8: every referenced template must be PUBLISHED.
     _enforce_referenced_templates_published(runbook, current_user, "approve")
+    _freeze_items(runbook)
 
     runbook.status = TemplateStatus.PUBLISHED
     runbook.published_at = datetime.utcnow()
@@ -558,7 +591,8 @@ async def apply_runbook_to_engagement(
 
     for item in ordered_items:
         template = item.template
-        if not template:
+        frozen = _uses_frozen(runbook, item)
+        if not template and not frozen:
             continue
 
         tc_parent_id = None
@@ -572,17 +606,17 @@ async def apply_runbook_to_engagement(
             id=testcase_id,
             engagement_id=engagement_id,
             parent_id=tc_parent_id,
-            title=template.title,
-            category=template.category,
-            description=template.description,
-            steps=template.steps,
-            expected_result=template.expected_result,
+            title=item.frozen_title if frozen else template.title,
+            category=item.frozen_category if frozen else template.category,
+            description=item.frozen_description if frozen else template.description,
+            steps=item.frozen_steps if frozen else template.steps,
+            expected_result=item.frozen_expected_result if frozen else template.expected_result,
             created_by=current_user.id,
         )
         db.add(testcase)
         runbook_item_id_to_testcase_id[item.id] = testcase_id
         created_testcases.append(testcase)
-        used_template_ids.append(template.id)
+        used_template_ids.append(item.template_id)
 
     # GHSA-7x2f-ff7r-h388 #14 (CWE-696): commit the applied test cases
     # BEFORE the activity-log call. Previously the only commit here was
