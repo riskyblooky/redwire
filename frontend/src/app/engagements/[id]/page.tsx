@@ -108,6 +108,7 @@ import { TeamManagementDialog } from '@/components/engagements/team-management-d
 import { AttachmentsTab } from '@/components/engagements/attachments-tab';
 import { ActivityTab } from '@/components/engagements/activity-tab';
 import { ReportingTab } from '@/components/engagements/reporting-tab';
+import { EngagementMarkingBanner } from '@/components/marking/engagement-marking-banner';
 import { VaultTab } from '@/components/engagements/vault-tab';
 import { NotesTab } from '@/components/engagements/notes-tab';
 import { CleanupTab } from '@/components/engagements/cleanup-tab';
@@ -1188,6 +1189,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     return (
         <DashboardLayout>
             <div className="p-6 space-y-6">
+                <EngagementMarkingBanner engagement={engagement} />
                 <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">

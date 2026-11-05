@@ -32,6 +32,16 @@ section becomes one release entry.
   is rescored.
 
 ### Added
+- **httpx and NetExec (nxc) scanner imports** — the scanner import now accepts
+  httpx JSON/JSONL output (hosts, web ports, server, page titles and
+  technologies) and NetExec console or `--log` output (hosts and services
+  from nxc's host banners). NetExec flags become findings: SMB signing not
+  required, SMBv1 enabled, SMB null sessions and RDP without NLA. Credential
+  results are left to the Spray import, and passwords in a logged command line
+  are masked.
+- **Classification banner on engagements** — engagements with a marking
+  profile show a banner across the top of the engagement page with their
+  default level in its colors, plus the profile and ceiling.
 - **Review threads on report sections** — report builder sections now support
   the same peer-review comments as findings. In a saved text section, select
   text to leave a highlighted comment. Every section also has a "Review
