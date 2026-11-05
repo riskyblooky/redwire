@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.7.0] — Unreleased
+## [1.7.0] — 2026-11-05
 
 ### Added
 - **Live updates work across backend workers** — WebSocket events (activity
