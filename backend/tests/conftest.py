@@ -32,6 +32,10 @@ from __future__ import annotations
 
 import os
 import uuid
+
+# Rate-limit counters stay in-process for tests: Redis-backed buckets would
+# carry over between runs and across tests sharing the fallback bucket.
+os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
 from typing import Any, Callable, Optional
 
 import pytest

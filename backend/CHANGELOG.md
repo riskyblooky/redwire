@@ -13,6 +13,13 @@ section becomes one release entry.
   more than one worker or replica. Single-worker installs behave as before,
   and if Redis is unreachable the backend falls back to single-process
   delivery. Set `WS_FANOUT=false` to turn it off.
+- **Ready for multiple backend workers** — login and other rate limits are
+  now counted in Redis, so adding workers doesn't multiply them. The
+  background intel feed refresh runs on one worker at a time. The password
+  wordlist filter is kept as one shared copy in Redis, built once instead of
+  by every worker. Wordlist imports and deletions apply everywhere
+  immediately, and backend restarts no longer rebuild the filter from the
+  database.
 
 ## [1.6.2] — 2026-11-04
 

@@ -14,8 +14,9 @@ Status: evaluation + plan. Findings current as of the 1.5.6 cycle.
 - **Scaling (updated 1.7.0):** the connection manager and Y.js rooms are still
   in-memory per process, but every broadcast now also goes over a **Redis
   pub/sub bus** (`utils/ws_bus.py`), so push, presence and Y.js work across
-  `--workers >1` / multiple replicas. Prod still runs a single worker; see §2
-  for what else must change before turning workers on.
+  `--workers >1` / multiple replicas. The rate limiter, intel refresh and
+  wordlist Bloom filter are shared through Redis too (§2). Prod still runs
+  one worker until `--workers` is set.
 - **Quick WS wins** (gaps 1–5 below): detail pages, the analytics page, and
   infrastructure aren't live; the admin user list polls; a couple of fallback
   polls are redundant.
@@ -82,17 +83,31 @@ the one true real-time delta surface.
   gated `dashboard:global`, Y.js frames and the peers hint all reach the
   other worker.
 
-**Still per-process, to fix before running `--workers >1` in prod:**
+**Other per-process state — fixed in 1.7.0:**
 
-1. The slowapi limiter (`rate_limit.py`) uses in-memory storage. With N
-   workers each one has its own budget, so N times the allowed rate. Move it
-   to Redis storage.
-2. `_refresh_intel_feeds_background` runs in every worker, so feeds are
-   fetched N times. Elect one worker with a Redis lock.
-3. The wordlist bloom filter is loaded per worker, multiplying memory on the
-   4 GB VPS.
-4. The heartbeat/activity-ping throttles (`routers/users.py`) are per worker.
-   This is harmless and only allows slightly more writes.
+1. **Rate limits:** slowapi stores its counters in Redis (`rate_limit.py`,
+   keys `LIMITS:LIMITER/rw:rl/...`), so all workers share one budget per
+   client. With Redis down it falls back to in-memory limits per worker.
+   `RATE_LIMIT_STORAGE_URI` overrides the storage; tests use `memory://`.
+2. **Intel feed refresh:** each cycle is claimed by one worker
+   (`utils/cluster.claim("intel-refresh")`, TTL = interval − 60s).
+3. **Wordlist Bloom filter:** one shared copy lives in Redis (`rw:bloom:bits`
+   and `rw:bloom:meta`, about 25 MB for 14M entries). `rw:bloom:loading` is
+   both the build lock and the "loading" status.
+   - One worker builds it. The build now streams rows instead of paging with
+     OFFSET, and other workers start in seconds without loading anything.
+   - Checks read 9 bits with GETBIT. Imports SETBIT in batches, so concurrent
+     imports don't lose bits. A delete rebuilds in a thread and swaps the
+     bits and metadata in one MULTI.
+   - If the shared copy disappears, for example after a Redis flush, the next
+     check triggers a rebuild.
+   - Without Redis it keeps a local in-memory filter, as before.
+4. **Heartbeat and activity-ping throttles** (`routers/users.py`) are still
+   per worker. That's harmless: they only allow slightly more writes.
+
+Nothing in-process is left that blocks `--workers N`. To enable it, add
+`--workers N` to the backend `uvicorn` command in `docker-compose.yml`.
+Budget about 200 MB per worker on the 4 GB VPS.
 
 ## 3. WS push gaps (ranked) — the "gaps 1–5" work
 
@@ -154,8 +169,8 @@ scalar.
    *and* upgrades presence; no scaling work.
 3. **Time-on-task aggregator** — session bucketing + anonymised lead dashboard.
 4. ~~**Redis pub/sub WS fan-out**~~ — done in 1.7.0 (see §2). The remaining
-   `--workers >1` blockers (rate limiter, intel refresh, bloom memory) are
-   listed there.
+   `--workers >1` blockers (rate limiter, intel refresh, Bloom filter) are
+   fixed too (see §2).
 
 ## Key references
 

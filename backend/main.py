@@ -122,7 +122,15 @@ async def _refresh_intel_feeds_background():
     # Wait 30s on startup before first refresh
     await asyncio.sleep(30)
 
+    from utils.cluster import claim
+
     while True:
+        # With several workers, only one refreshes per interval: the claim
+        # expires a minute before the next cycle so a dead worker's slot
+        # passes to another one.
+        if not await claim("intel-refresh", max(60, interval - 60)):
+            await asyncio.sleep(interval)
+            continue
         try:
             async with AsyncSessionLocal() as db:
                 result = await db.execute(select(IntelFeed).where(IntelFeed.enabled == True))

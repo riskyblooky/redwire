@@ -87,6 +87,19 @@ def identify_hash_type(hash_str: str) -> Optional[str]:
 # Bloom Filter Service
 # ═══════════════════════════════════════════════════════════════════
 
+def bloom_positions(item: str, bit_count: int, num_hashes: int) -> list:
+    """Bit positions for ``item`` (double hashing with MD5+SHA1)."""
+    h1 = int(hashlib.md5(item.encode("utf-8", errors="replace")).hexdigest(), 16)
+    h2 = int(hashlib.sha1(item.encode("utf-8", errors="replace")).hexdigest(), 16)
+    return [(h1 + i * h2) % bit_count for i in range(num_hashes)]
+
+
+def _redis_bit(pos: int) -> int:
+    """Redis GETBIT/SETBIT offset for our LSB-first bit layout (Redis numbers
+    bits MSB-first within each byte)."""
+    return (pos // 8) * 8 + (7 - pos % 8)
+
+
 class BloomFilter:
     """
     Simple but efficient Bloom filter using multiple hash functions.
@@ -115,14 +128,7 @@ class BloomFilter:
         self.count = 0
 
     def _get_bit_positions(self, item: str) -> list:
-        """Generate bit positions using double hashing with MD5+SHA1."""
-        h1 = int(hashlib.md5(item.encode("utf-8", errors="replace")).hexdigest(), 16)
-        h2 = int(hashlib.sha1(item.encode("utf-8", errors="replace")).hexdigest(), 16)
-        positions = []
-        for i in range(self.num_hashes):
-            pos = (h1 + i * h2) % self.bit_count
-            positions.append(pos)
-        return positions
+        return bloom_positions(item, self.bit_count, self.num_hashes)
 
     def add(self, item: str):
         """Add an item to the filter."""
@@ -142,10 +148,26 @@ class BloomFilter:
         return True
 
 
+_BITS_KEY = "rw:bloom:bits"
+_META_KEY = "rw:bloom:meta"
+_LOADING_KEY = "rw:bloom:loading"
+_LOADING_TTL = 3600
+
+
 class BloomFilterService:
     """
-    Singleton service managing the in-memory Bloom filter.
-    Loaded from database on startup; rebuilt when wordlists change.
+    Wordlist Bloom filter. Loaded from the database on startup and rebuilt
+    when wordlists change.
+
+    Shared mode (Redis reachable): the filter's bytes live in Redis
+    (``rw:bloom:bits`` + ``rw:bloom:meta``), so every backend worker reads
+    the same copy. One worker builds it (``rw:bloom:loading`` doubles as the
+    build lock), checks read ``num_hashes`` bits with GETBIT, imports SETBIT
+    in batches, and rebuilds swap bits and metadata in one MULTI. Workers
+    keep no local copy.
+
+    Local mode (no Redis): the filter is an in-process bytearray, as in
+    single-worker deployments.
     """
 
     _instance = None
@@ -159,6 +181,7 @@ class BloomFilterService:
             cls._instance = super().__new__(cls)
         return cls._instance
 
+    # ── local-mode accessors (kept for callers / tests) ───────────────────
     @property
     def is_loaded(self) -> bool:
         return self._loaded
@@ -172,74 +195,188 @@ class BloomFilterService:
         return self._count
 
     def check_password(self, password: str) -> bool:
-        """Check if a password is in the wordlist. Fast O(1) in-memory check."""
+        """Local-mode check. Prefer ``check_password_async``."""
         if not self._loaded or self._bloom is None:
             return False
         return self._bloom.check(password)
 
+    # ── shared mode ────────────────────────────────────────────────────────
+    @staticmethod
+    def _shared_sync():
+        from utils.cluster import sync_redis
+        return sync_redis()
+
+    @staticmethod
+    def _decode_meta(raw: dict) -> Optional[dict]:
+        if not raw:
+            return None
+        m = {(k.decode() if isinstance(k, bytes) else k): int(v) for k, v in raw.items()}
+        if not m.get("bit_count") or not m.get("num_hashes"):
+            return None
+        return m
+
+    async def check_password_async(self, password: str) -> bool:
+        from utils.cluster import async_redis
+        r = await async_redis()
+        if r is None:
+            return self.check_password(password)
+        try:
+            meta = self._decode_meta(await r.hgetall(_META_KEY))
+            if meta is None:
+                # Shared copy missing (Redis flushed/restarted without
+                # persistence): fall back to any local copy and rebuild.
+                self._kick_rebuild()
+                return self.check_password(password)
+            pipe = r.pipeline(transaction=False)
+            for pos in bloom_positions(password, meta["bit_count"], meta["num_hashes"]):
+                pipe.getbit(_BITS_KEY, _redis_bit(pos))
+            return all(await pipe.execute())
+        except Exception as e:
+            logger.warning(f"Shared Bloom check failed, using local copy: {e}")
+            return self.check_password(password)
+
+    def _kick_rebuild(self) -> None:
+        try:
+            from database import AsyncSessionLocal
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.load_from_db(AsyncSessionLocal))
+        except RuntimeError:
+            pass
+
+    async def status(self) -> Tuple[bool, bool, int]:
+        """(loaded, loading, count) — cluster-wide in shared mode."""
+        from utils.cluster import async_redis
+        r = await async_redis()
+        if r is None:
+            return self._loaded, self._loading, self._count
+        try:
+            meta = self._decode_meta(await r.hgetall(_META_KEY))
+            loading = bool(await r.exists(_LOADING_KEY))
+            if meta is None:
+                return False, loading, 0
+            return True, loading, meta.get("count", 0)
+        except Exception:
+            return self._loaded, self._loading, self._count
+
+    def begin_loading(self) -> bool:
+        """Take the build lock. False if another worker is already building."""
+        r = self._shared_sync()
+        if r is None:
+            if self._loading:
+                return False
+            self._loading = True
+            return True
+        try:
+            if not r.set(_LOADING_KEY, b"1", nx=True, ex=_LOADING_TTL):
+                return False
+        except Exception:
+            pass
+        self._loading = True
+        return True
+
+    def end_loading(self) -> None:
+        self._loading = False
+        r = self._shared_sync()
+        if r is not None:
+            try:
+                r.delete(_LOADING_KEY)
+            except Exception:
+                pass
+
+    def install(self, bloom: BloomFilter, count: int) -> None:
+        """Make ``bloom`` the live filter (shared copy, or local copy)."""
+        r = self._shared_sync()
+        if r is not None:
+            try:
+                pipe = r.pipeline(transaction=True)
+                pipe.set(_BITS_KEY, bytes(bloom.bit_array))
+                pipe.delete(_META_KEY)
+                pipe.hset(_META_KEY, mapping={
+                    "bit_count": bloom.bit_count, "num_hashes": bloom.num_hashes, "count": count,
+                })
+                pipe.execute()
+                self._bloom = None  # no per-worker copy in shared mode
+                self._count = count
+                self._loaded = True
+                return
+            except Exception as e:
+                logger.warning(f"Publishing shared Bloom filter failed, keeping it local: {e}")
+        self._bloom = bloom
+        self._count = count
+        self._loaded = True
+
+    def add_many(self, passwords: list) -> None:
+        """Add passwords to the live filter (wordlist import)."""
+        passwords = [p for p in passwords if p]
+        if not passwords:
+            return
+        r = self._shared_sync()
+        if r is not None:
+            try:
+                meta = self._decode_meta(r.hgetall(_META_KEY))
+                if meta is not None:
+                    pipe = r.pipeline(transaction=False)
+                    for pw in passwords:
+                        for pos in bloom_positions(pw, meta["bit_count"], meta["num_hashes"]):
+                            pipe.setbit(_BITS_KEY, _redis_bit(pos), 1)
+                    pipe.hincrby(_META_KEY, "count", len(passwords))
+                    pipe.execute()
+                    self._count = meta.get("count", 0) + len(passwords)
+                    return
+            except Exception as e:
+                logger.warning(f"Shared Bloom add failed, adding locally: {e}")
+        self.rebuild_sync_add(passwords)
+
     async def load_from_db(self, db_session_factory):
-        """Load all passwords from the database into the Bloom filter."""
-        if self._loading:
+        """Startup load. In shared mode only one worker builds, and only when
+        Redis doesn't already hold a filter."""
+        from utils.cluster import async_redis
+        r = await async_redis()
+        if r is not None:
+            try:
+                meta = self._decode_meta(await r.hgetall(_META_KEY))
+                if meta is not None:
+                    self._loaded, self._count = True, meta.get("count", 0)
+                    logger.info("Bloom filter: using shared copy (%s entries)", self._count)
+                    return
+            except Exception:
+                pass
+        if not await asyncio.to_thread(self.begin_loading):
             return
 
-        self._loading = True
         logger.info("Loading Bloom filter from database...")
-
         try:
             from sqlalchemy import select, func
             from models.wordlist import WordlistEntry
 
             async with db_session_factory() as session:
-                # Get total count first
-                count_result = await session.execute(
-                    select(func.count(WordlistEntry.id))
-                )
-                total = count_result.scalar() or 0
-
-                if total == 0:
-                    self._bloom = BloomFilter(capacity=1000)
-                    self._count = 0
-                    self._loaded = True
-                    self._loading = False
-                    logger.info("No wordlist entries found. Bloom filter initialized empty.")
-                    return
-
-                # Build bloom filter
+                total = (await session.execute(select(func.count(WordlistEntry.id)))).scalar() or 0
                 bloom = BloomFilter(capacity=max(total, 1000))
-                batch_size = 50000
-                offset = 0
                 loaded = 0
-
-                while offset < total:
-                    result = await session.execute(
-                        select(WordlistEntry.password)
-                        .offset(offset)
-                        .limit(batch_size)
+                if total:
+                    # Stream instead of OFFSET pages: OFFSET re-scans every
+                    # earlier row, quadratic over a 14M-row table.
+                    stream = await session.stream_scalars(
+                        select(WordlistEntry.password).execution_options(yield_per=50000)
                     )
-                    rows = result.scalars().all()
-                    if not rows:
-                        break
-                    for pw in rows:
+                    async for pw in stream:
                         if pw:
                             bloom.add(pw)
                             loaded += 1
-                    offset += batch_size
-                    logger.info(f"Bloom filter: loaded {loaded}/{total} entries...")
-
-                self._bloom = bloom
-                self._count = loaded
-                self._loaded = True
-                logger.info(f"Bloom filter ready with {loaded} entries (~{bloom.byte_count // 1024 // 1024}MB)")
-
+                            if loaded % 1_000_000 == 0:
+                                logger.info(f"Bloom filter: loaded {loaded}/{total} entries...")
+            await asyncio.to_thread(self.install, bloom, loaded)
+            logger.info(f"Bloom filter ready with {loaded} entries (~{bloom.byte_count // 1024 // 1024}MB)")
         except Exception as e:
             logger.error(f"Failed to load Bloom filter: {e}")
-            self._bloom = BloomFilter(capacity=1000)
-            self._loaded = True
+            if self._bloom is None and not self._loaded:
+                self._bloom = BloomFilter(capacity=1000)
+                self._loaded = True
         finally:
-            self._loading = False
+            await asyncio.to_thread(self.end_loading)
 
     def rebuild_sync_add(self, passwords: list):
-        """Add a batch of passwords to the current Bloom filter (used during import)."""
+        """Local-mode add (also the fallback for ``add_many``)."""
         if self._bloom is None:
             self._bloom = BloomFilter(capacity=max(len(passwords), 20_000_000))
             self._loaded = True

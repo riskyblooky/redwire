@@ -79,7 +79,7 @@ async def check_password(
     current_user: User = Depends(get_current_user),
 ):
     """Check if a plaintext password is in any uploaded wordlist (uses Bloom filter)."""
-    found = bloom_service.check_password(req.password)
+    found = await bloom_service.check_password_async(req.password)
     return CheckPasswordResponse(found=found)
 
 
@@ -157,10 +157,11 @@ async def get_wordlist_status(
             created_at=m.created_at.isoformat() if m.created_at else "",
         ))
 
+    bloom_loaded, bloom_loading, bloom_count = await bloom_service.status()
     return WordlistStatusResponse(
-        bloom_loaded=bloom_service.is_loaded,
-        bloom_loading=bloom_service._loading,
-        bloom_count=bloom_service.count,
+        bloom_loaded=bloom_loaded,
+        bloom_loading=bloom_loading,
+        bloom_count=bloom_count,
         wordlists=items,
     )
 
@@ -272,6 +273,7 @@ def _process_wordlist_sync(file_path: str, meta_id: str):
     try:
         with Session(sync_engine) as session:
             batch = []
+            batch_pw = []
 
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
@@ -288,12 +290,14 @@ def _process_wordlist_sync(file_path: str, meta_id: str):
                         source=meta_id,
                     ))
 
-                    bloom_service.rebuild_sync_add([password])
+                    batch_pw.append(password)
                     total_count += 1
 
                     if len(batch) >= batch_size:
                         session.add_all(batch)
                         session.commit()
+                        bloom_service.add_many(batch_pw)
+                        batch_pw = []
                         logger.info(f"Wordlist {meta_id}: inserted {total_count} entries...")
                         batch = []
 
@@ -301,6 +305,7 @@ def _process_wordlist_sync(file_path: str, meta_id: str):
             if batch:
                 session.add_all(batch)
                 session.commit()
+                bloom_service.add_many(batch_pw)
 
             # Update metadata
             meta = session.query(WordlistMeta).filter(WordlistMeta.id == meta_id).first()
@@ -337,49 +342,38 @@ def _process_wordlist_sync(file_path: str, meta_id: str):
 
 
 def _rebuild_bloom_sync():
-    """Background thread: rebuild Bloom filter from scratch using sync DB."""
-    from sqlalchemy import create_engine, select, func
+    """Background thread: rebuild the Bloom filter from scratch using sync DB
+    and install it (shared Redis copy when available, else this worker's)."""
+    import time
+    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
+    from utils.hash_utils import BloomFilter
+
+    # Another worker may be mid-build from rows read before this change;
+    # wait for it, then rebuild so the deletion is reflected.
+    deadline = time.monotonic() + 600
+    while not bloom_service.begin_loading():
+        if time.monotonic() > deadline:
+            logger.error("Bloom rebuild skipped: build lock held for over 10 minutes")
+            return
+        time.sleep(5)
 
     sync_url = _get_sync_database_url()
     sync_engine = create_engine(sync_url, pool_pre_ping=True)
-
     try:
-        bloom_service._loading = True
         with Session(sync_engine) as session:
             total = session.query(func.count(WordlistEntry.id)).scalar() or 0
-
-            if total == 0:
-                from utils.hash_utils import BloomFilter
-                bloom_service._bloom = BloomFilter(capacity=1000)
-                bloom_service._count = 0
-                bloom_service._loaded = True
-                bloom_service._loading = False
-                return
-
-            from utils.hash_utils import BloomFilter
             bloom = BloomFilter(capacity=max(total, 1000))
-            batch_size = 50000
-            offset = 0
             loaded = 0
-
-            while offset < total:
-                rows = session.query(WordlistEntry.password).offset(offset).limit(batch_size).all()
-                if not rows:
-                    break
-                for (pw,) in rows:
-                    if pw:
-                        bloom.add(pw)
-                        loaded += 1
-                offset += batch_size
-
-            bloom_service._bloom = bloom
-            bloom_service._count = loaded
-            bloom_service._loaded = True
-            logger.info(f"Bloom filter rebuilt with {loaded} entries")
+            for (pw,) in session.query(WordlistEntry.password).yield_per(50000):
+                if pw:
+                    bloom.add(pw)
+                    loaded += 1
+        bloom_service.install(bloom, loaded)
+        logger.info(f"Bloom filter rebuilt with {loaded} entries")
     except Exception as e:
         logger.error(f"Failed to rebuild Bloom filter: {e}")
     finally:
-        bloom_service._loading = False
+        bloom_service.end_loading()
         sync_engine.dispose()
 

@@ -3,6 +3,8 @@ Rate limiter configuration.
 
 Separated into its own module to avoid circular imports between main.py and routers.
 """
+import os
+
 from slowapi import Limiter
 
 
@@ -29,4 +31,19 @@ def _client_ip_for_rate_limit(request) -> str:
     return request.headers.get("X-Real-IP") or "no-trusted-proxy"
 
 
-limiter = Limiter(key_func=_client_ip_for_rate_limit)
+def _storage_uri() -> str:
+    """Counters live in Redis so every backend worker shares one budget per
+    client (in-memory storage gives each worker its own, multiplying the
+    allowed rate by the worker count). RATE_LIMIT_STORAGE_URI overrides;
+    the test suite sets it to memory://."""
+    return os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL") or "memory://"
+
+
+# in_memory_fallback_enabled: if Redis goes away, limits keep applying per
+# worker instead of failing requests or switching limiting off.
+limiter = Limiter(
+    key_func=_client_ip_for_rate_limit,
+    storage_uri=_storage_uri(),
+    in_memory_fallback_enabled=True,
+    key_prefix="rw:rl",
+)
