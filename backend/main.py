@@ -487,7 +487,14 @@ async def lifespan(app):
 
     bloom_task = asyncio.create_task(_load_bloom())
     intel_task = asyncio.create_task(_refresh_intel_feeds_background())
+    # Cross-worker WebSocket fan-out (Redis pub/sub). Degrades to
+    # single-process delivery if Redis is unreachable.
+    from utils.ws_bus import bus as ws_bus
+    import utils.collaboration  # noqa: F401  registers the bus handlers
+    import utils.yjs_server  # noqa: F401
+    await ws_bus.start()
     yield
+    await ws_bus.stop()
     bloom_task.cancel()
     intel_task.cancel()
     for task in (bloom_task, intel_task):

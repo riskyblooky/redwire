@@ -10,6 +10,11 @@ Architecture:
   Client A  ←→  WebSocket  ←→  YjsRoom (relay)  ←→  WebSocket  ←→  Client B
                                    ↓
                              DB (periodic save)
+
+Across workers, relayed frames and peer-disconnect notices also go over the
+Redis bus (utils/ws_bus.py) to the same note's room on other workers, room
+membership is counted cluster-wide (the ``peers`` bootstrap hint), and the
+debounced save is claimed by one worker at a time.
 """
 
 import asyncio
@@ -68,7 +73,14 @@ class YjsRoom:
 
     async def notify_peer_disconnected(self, yjs_client_id: int):
         """Tell remaining clients to remove a disconnected peer's awareness state."""
-        if not self.clients or yjs_client_id is None:
+        if yjs_client_id is None:
+            return
+        from utils.ws_bus import bus
+        await bus.publish("yjs_peer_gone", {"note": self.note_id, "client_id": yjs_client_id})
+        await self._send_peer_gone_local(yjs_client_id)
+
+    async def _send_peer_gone_local(self, yjs_client_id: int):
+        if not self.clients:
             return
         import json
         msg = json.dumps({
@@ -94,10 +106,19 @@ class YjsRoom:
         and awareness protocol data. The server does not interpret them —
         it simply forwards to all other connected peers.
         """
+        await self._relay_local(sender, data)
+
+        from utils.ws_bus import bus, b64
+        await bus.publish("yjs_frame", {"note": self.note_id, "data": b64(data)})
+
+        # Schedule a debounced DB save
+        self._schedule_save()
+
+    async def _relay_local(self, sender: Optional[WebSocket], data: bytes):
         self.last_activity = time.time()
 
         dead = []
-        for client in self.clients:
+        for client in list(self.clients):
             if client is sender:
                 continue
             try:
@@ -108,9 +129,6 @@ class YjsRoom:
         for d in dead:
             self.clients.discard(d)
             self.client_user_ids.pop(d, None)
-
-        # Schedule a debounced DB save
-        self._schedule_save()
 
     def _schedule_save(self):
         """Schedule a debounced save to the database."""
@@ -131,6 +149,11 @@ class YjsRoom:
     async def _request_save(self):
         """Ask a connected client to send markdown content for DB persistence."""
         if not self.clients:
+            return
+        # One save per debounce window cluster-wide, not one per worker
+        # that holds clients of this note.
+        from utils.ws_bus import bus
+        if not await bus.claim(f"yjs-save:{self.note_id}", 2):
             return
 
         saver = next(iter(self.clients))
@@ -192,6 +215,34 @@ class YjsDocumentStore:
 
 # Global singleton
 yjs_store = YjsDocumentStore()
+
+
+async def _on_remote_frame(payload: dict) -> None:
+    room = yjs_store.rooms.get(payload.get("note") or "")
+    if room is None or room.is_empty:
+        return
+    from utils.ws_bus import unb64
+    try:
+        data = unb64(payload.get("data") or "")
+    except Exception:
+        return
+    await room._relay_local(None, data)
+
+
+async def _on_remote_peer_gone(payload: dict) -> None:
+    room = yjs_store.rooms.get(payload.get("note") or "")
+    if room is None or payload.get("client_id") is None:
+        return
+    await room._send_peer_gone_local(payload["client_id"])
+
+
+def _register_bus_handlers() -> None:
+    from utils.ws_bus import bus
+    bus.register("yjs_frame", _on_remote_frame)
+    bus.register("yjs_peer_gone", _on_remote_peer_gone)
+
+
+_register_bus_handlers()
 
 
 async def save_note_content(note_id: str, content: str, user_id: str):

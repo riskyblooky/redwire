@@ -322,7 +322,7 @@ async def websocket_endpoint(
             resource_type, resource_id, user_id, type(exc).__name__, exc,
         )
     finally:
-        manager.disconnect(websocket, resource_type, resource_id)
+        await manager.leave(websocket, resource_type, resource_id)
         try:
             await manager.broadcast_to_resource(resource_type, resource_id, {
                 "type": "presence_update",
@@ -417,6 +417,10 @@ async def yjs_websocket_endpoint(
     # 3. Join the Y.js room
     room = yjs_store.get_or_create_room(note_id)
     await room.add_client(websocket, user_id)
+    from utils.ws_bus import bus as _bus
+    import uuid as _uuid
+    _yjs_conn = _uuid.uuid4().hex
+    await _bus.presence_add("yjs", note_id, _yjs_conn, {"id": user_id})
 
     # Start cleanup loop if not running
     yjs_store.start_cleanup_loop()
@@ -433,7 +437,7 @@ async def yjs_websocket_endpoint(
             "type": "initial_content",
             "content": initial_content,
             "note_id": note_id,
-            "peers": max(0, len(room.clients) - 1),
+            "peers": await _yjs_peer_count(note_id, room),
         }))
     except Exception:
         pass
@@ -491,4 +495,13 @@ async def yjs_websocket_endpoint(
         yjs_id = room.remove_client(websocket)
         if yjs_id is not None:
             await room.notify_peer_disconnected(yjs_id)
+    finally:
+        await _bus.presence_remove("yjs", note_id, _yjs_conn)
 
+
+async def _yjs_peer_count(note_id: str, room) -> int:
+    """Other clients editing this note on any worker (self already counted)."""
+    from utils.ws_bus import bus
+    members = await bus.presence_list("yjs", note_id)
+    total = len(members) if members is not None else len(room.clients)
+    return max(0, total - 1)

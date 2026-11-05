@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional, List, Dict, Any
 import asyncio
+import uuid
 import json
 import logging
 from fastapi import WebSocket
@@ -486,6 +487,9 @@ class ConnectionManager:
         self.active_connections: Dict[str, Dict[str, List[WebSocket]]] = {}
         # Store active users info: websocket -> user_info
         self.connection_info: Dict[WebSocket, dict] = {}
+        # websocket -> stable id for its entries in the cross-worker presence
+        # registry (utils/ws_bus.py)
+        self.connection_ids: Dict[WebSocket, str] = {}
 
     async def connect(self, websocket: WebSocket, resource_type: str, resource_id: str, user_info: dict):
         if resource_type not in self.active_connections:
@@ -501,7 +505,10 @@ class ConnectionManager:
         # infinite disconnect/reconnect loop.
         self.active_connections[resource_type][resource_id].append(websocket)
         self.connection_info[websocket] = user_info
-        
+        conn_id = self.connection_ids.setdefault(websocket, uuid.uuid4().hex)
+        from utils.ws_bus import bus
+        await bus.presence_add(resource_type, resource_id, conn_id, user_info)
+
         # Broadcast user joined
         await self.broadcast_to_resource(resource_type, resource_id, {
             "type": "presence_update",
@@ -520,10 +527,34 @@ class ConnectionManager:
                         del self.active_connections[resource_type][resource_id]
 
         user_info = self.connection_info.pop(websocket, None)
+        conn_id = self.connection_ids.pop(websocket, None)
+        if conn_id:
+            self._spawn_presence_remove([(resource_type, resource_id)], conn_id)
 
         # We can't await here directly if called from a non-async context,
         # but in FastAPI disconnects are typically handled in the endpoint loop.
         return user_info
+
+    async def leave(self, websocket: WebSocket, resource_type: str, resource_id: str):
+        """Async disconnect: removes the cross-worker presence entry before
+        returning, so a following "left" broadcast lists the right users."""
+        conn_id = self.connection_ids.get(websocket)
+        if conn_id:
+            from utils.ws_bus import bus
+            await bus.presence_remove(resource_type, resource_id, conn_id)
+        return self.disconnect(websocket, resource_type, resource_id)
+
+    @staticmethod
+    def _spawn_presence_remove(channels, conn_id: str) -> None:
+        from utils.ws_bus import bus
+        if not bus.active:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        for r_type, r_id in channels:
+            loop.create_task(bus.presence_remove(r_type, r_id, conn_id))
 
     def _purge_socket_everywhere(self, websocket: WebSocket) -> None:
         """Drop ``websocket`` from every channel it's registered in and from
@@ -534,15 +565,20 @@ class ConnectionManager:
         until that channel's next broadcast. The lingering entries were
         the leak the GHSA-c96m-c63f-3f2c follow-up flagged.
         """
+        removed = []
         for r_type, channels in list(self.active_connections.items()):
             for r_id, sockets in list(channels.items()):
                 if websocket in sockets:
                     sockets.remove(websocket)
+                    removed.append((r_type, r_id))
                     if not sockets:
                         del channels[r_id]
             if not channels:
                 del self.active_connections[r_type]
         self.connection_info.pop(websocket, None)
+        conn_id = self.connection_ids.pop(websocket, None)
+        if conn_id:
+            self._spawn_presence_remove(removed, conn_id)
 
     async def broadcast_to_resource(
         self,
@@ -576,22 +612,56 @@ class ConnectionManager:
                 "engagement-membership filter; refusing to broadcast unfiltered."
             )
 
+        from utils.ws_bus import bus
+
+        if message.get("type") == "presence_update":
+            # Users on this channel across every worker (Redis registry), or
+            # just this worker's sockets when the registry is unavailable.
+            infos = await bus.presence_list(resource_type, resource_id)
+            if infos is None:
+                infos = [
+                    self.connection_info.get(ws)
+                    for ws in self.active_connections.get(resource_type, {}).get(resource_id, [])
+                ]
+            # Deduplicate by user ID (a user may have multiple connections)
+            seen_ids = set()
+            active_users = []
+            for info in infos:
+                if info and info.get('id') not in seen_ids:
+                    seen_ids.add(info['id'])
+                    active_users.append(info)
+            # Sort by user ID for stable ordering (prevents icon flipping)
+            active_users.sort(key=lambda u: u.get('id', ''))
+            message["active_users"] = active_users
+
+        await self._deliver_local(resource_type, resource_id, message, db)
+        await bus.publish("resource", {"rt": resource_type, "rid": resource_id, "m": message})
+
+    async def _deliver_from_bus(self, payload: dict) -> None:
+        """Another worker's broadcast: deliver to this worker's sockets. The
+        dashboard:global membership gate runs here, per recipient, with a
+        session of our own (the origin's session doesn't cross processes)."""
+        resource_type, resource_id, message = payload.get("rt"), payload.get("rid"), payload.get("m")
+        if not resource_type or not resource_id or not isinstance(message, dict):
+            return
+        if resource_id not in self.active_connections.get(resource_type, {}):
+            return
+        if resource_type == "dashboard" and resource_id == "global" and message.get("engagement_id"):
+            from database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                await self._deliver_local(resource_type, resource_id, message, db)
+        else:
+            await self._deliver_local(resource_type, resource_id, message, None)
+
+    async def _deliver_local(
+        self,
+        resource_type: str,
+        resource_id: str,
+        message: dict,
+        db: Optional[AsyncSession],
+    ) -> None:
         if resource_type in self.active_connections:
             if resource_id in self.active_connections[resource_type]:
-                # Get current active users for this resource to include in presence updates
-                if message.get("type") == "presence_update":
-                    # Deduplicate by user ID (a user may have multiple connections)
-                    seen_ids = set()
-                    active_users = []
-                    for ws in self.active_connections[resource_type][resource_id]:
-                        info = self.connection_info.get(ws)
-                        if info and info.get('id') not in seen_ids:
-                            seen_ids.add(info['id'])
-                            active_users.append(info)
-                    # Sort by user ID for stable ordering (prevents icon flipping)
-                    active_users.sort(key=lambda u: u.get('id', ''))
-                    message["active_users"] = active_users
-
                 # dashboard:global is the cross-engagement notification stream.
                 # Subscribers are any authenticated user; the membership gate
                 # has to be applied per-recipient at broadcast time so a
@@ -650,3 +720,11 @@ class ConnectionManager:
                     self._purge_socket_everywhere(conn)
 
 manager = ConnectionManager()
+
+
+def _register_bus_handlers() -> None:
+    from utils.ws_bus import bus
+    bus.register("resource", manager._deliver_from_bus)
+
+
+_register_bus_handlers()

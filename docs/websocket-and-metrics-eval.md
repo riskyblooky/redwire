@@ -11,12 +11,11 @@ Status: evaluation + plan. Findings current as of the 1.5.6 cycle.
 
 - A capable WS layer already exists; **most list pages are already live** via the
   `activity_log` firehose. Don't rebuild it.
-- **The governing constraint:** the connection manager is an in-memory dict and
-  prod runs a **single uvicorn worker / single replica**. WS push works *only*
-  because everything shares one process. Redis is a dependency but is **not** a
-  WS broker. Scaling to `--workers >1` or multiple replicas silently fragments
-  all push. Fix (Redis pub/sub fan-out) is the precondition for scaling — not
-  urgent, but know it.
+- **Scaling (updated 1.7.0):** the connection manager and Y.js rooms are still
+  in-memory per process, but every broadcast now also goes over a **Redis
+  pub/sub bus** (`utils/ws_bus.py`), so push, presence and Y.js work across
+  `--workers >1` / multiple replicas. Prod still runs a single worker; see §2
+  for what else must change before turning workers on.
 - **Quick WS wins** (gaps 1–5 below): detail pages, the analytics page, and
   infrastructure aren't live; the admin user list polls; a couple of fallback
   polls are redundant.
@@ -58,19 +57,42 @@ the one true real-time delta surface.
 
 ## 2. The scaling ceiling (most important)
 
-- `ConnectionManager` / `yjs_store` are plain in-process objects — a broadcast
-  only reaches sockets in the **same process**.
-- Redis (`redis==5.0.1`) is used **only** for the JWT blacklist + SAML replay.
-  No `publish`/`subscribe` touches WS.
-- Prod = `uvicorn main:app` with **no `--workers`** (single worker), single
-  replica (documented in `docker-compose.yml`).
+**Done in 1.7.0 — Redis fan-out (`utils/ws_bus.py`).**
 
-**So push works today by virtue of single-process.** Any horizontal scale-out
-fragments activity-log/notes/presence/Yjs across workers. **Precondition for
-scaling:** add a Redis pub/sub layer to `broadcast_to_resource` (publish →
-per-worker subscriber re-emits to local sockets). Yjs is harder (y-redis or
-sticky sessions). Deferred while single-VPS is the deployment, but this is the
-gate before leaning harder on cross-user WS.
+- `broadcast_to_resource` delivers to local sockets, then publishes
+  `{origin worker, channel, message}` on `rw:ws:bus`. Each worker's subscriber
+  skips its own messages and delivers the rest to its local sockets.
+- `dashboard:global` is still filtered per recipient by engagement membership.
+  A remote worker runs that check itself with its own DB session.
+- **Presence** (`active_users`) comes from a Redis hash per channel
+  (`rw:ws:presence:<type>:<id>`, field `<worker>:<conn>`), so it covers every
+  worker. Each worker refreshes `rw:ws:worker:<id>` (30s TTL). Entries from a
+  worker whose key has expired, e.g. after a crash or OOM kill, are pruned
+  when presence is read.
+- **Y.js** is a pure relay with no server-side document, so frames and
+  `peer_disconnected` notices use the same bus. The `peers` bootstrap hint
+  counts room members across all workers (rooms register in the presence hash
+  as `yjs:<note>`). This prevents a client that is alone on its worker from
+  bootstrapping from the DB copy while a peer elsewhere holds the live
+  document, which would duplicate text. The debounced save is claimed by one
+  worker at a time with `SET NX`.
+- If Redis is down, everything degrades to single-process delivery.
+  `WS_FANOUT=false` turns the bus off.
+- Verified with two uvicorn processes: presence, cursors, activity-log push,
+  gated `dashboard:global`, Y.js frames and the peers hint all reach the
+  other worker.
+
+**Still per-process, to fix before running `--workers >1` in prod:**
+
+1. The slowapi limiter (`rate_limit.py`) uses in-memory storage. With N
+   workers each one has its own budget, so N times the allowed rate. Move it
+   to Redis storage.
+2. `_refresh_intel_feeds_background` runs in every worker, so feeds are
+   fetched N times. Elect one worker with a Redis lock.
+3. The wordlist bloom filter is loaded per worker, multiplying memory on the
+   4 GB VPS.
+4. The heartbeat/activity-ping throttles (`routers/users.py`) are per worker.
+   This is harmless and only allows slightly more writes.
 
 ## 3. WS push gaps (ranked) — the "gaps 1–5" work
 
@@ -131,8 +153,9 @@ scalar.
 2. **Activity-ping endpoint + hook** — highest leverage; unblocks effort metrics
    *and* upgrades presence; no scaling work.
 3. **Time-on-task aggregator** — session bucketing + anonymised lead dashboard.
-4. **Redis pub/sub WS fan-out** — only when horizontal scaling is actually on the
-   table; precondition for `--workers >1` / multi-replica.
+4. ~~**Redis pub/sub WS fan-out**~~ — done in 1.7.0 (see §2). The remaining
+   `--workers >1` blockers (rate limiter, intel refresh, bloom memory) are
+   listed there.
 
 ## Key references
 

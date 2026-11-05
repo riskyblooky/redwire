@@ -4,6 +4,16 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.7.0] — Unreleased
+
+### Added
+- **Live updates work across backend workers** — WebSocket events (activity
+  feed, notes, discussions, presence avatars, cursors and live note editing)
+  now go through Redis, so they reach every user even when the backend runs
+  more than one worker or replica. Single-worker installs behave as before,
+  and if Redis is unreachable the backend falls back to single-process
+  delivery. Set `WS_FANOUT=false` to turn it off.
+
 ## [1.6.2] — 2026-11-04
 
 ### Fixed
