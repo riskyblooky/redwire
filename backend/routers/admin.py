@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -803,3 +803,110 @@ async def update_scoring_policy(
 
     return StatsScopeModeResponse(mode=payload.mode)
 
+
+
+# ── Deleted-engagement audit logs ──────────────────────────────────────────
+# GHSA-9h56 keeps activity_logs rows when their engagement is deleted (with
+# engagement_id SET NULL), but every normal view filters by engagement_id, so
+# those rows were only reachable from psql. These two read-only endpoints list
+# deleted engagements (grouped by origin_engagement_id) and their rows.
+from datetime import datetime as _dt
+from typing import Optional as _Opt
+from sqlalchemy import func as _func
+from models.discussion import ActivityLog
+
+
+class DeletedEngagementLogGroupResponse(BaseModel):
+    engagement_id: str
+    engagement_name: _Opt[str] = None
+    deleted_at: _Opt[_dt] = None
+    deleted_by: _Opt[str] = None
+    log_count: int
+    first_at: _Opt[_dt] = None
+    last_at: _Opt[_dt] = None
+
+
+class DeletedEngagementLogEntryResponse(BaseModel):
+    id: str
+    created_at: _dt
+    username: _Opt[str] = None
+    action: str
+    resource_type: str
+    resource_id: str
+    resource_name: _Opt[str] = None
+    details: _Opt[str] = None
+
+
+_ORPHAN = (ActivityLog.engagement_id.is_(None), ActivityLog.origin_engagement_id.isnot(None))
+
+
+@router.get(
+    "/deleted-engagement-logs",
+    response_model=List[DeletedEngagementLogGroupResponse],
+    dependencies=[Depends(require_global_perm_read(Permission.VIEW_ALL_ENGAGEMENTS))],
+)
+async def list_deleted_engagement_logs(db: AsyncSession = Depends(get_db)):
+    """Deleted engagements whose audit rows survive, newest deletion first."""
+    groups = (await db.execute(
+        select(
+            ActivityLog.origin_engagement_id,
+            _func.count(ActivityLog.id),
+            _func.min(ActivityLog.created_at),
+            _func.max(ActivityLog.created_at),
+        ).where(*_ORPHAN).group_by(ActivityLog.origin_engagement_id)
+    )).all()
+    if not groups:
+        return []
+    ids = [g[0] for g in groups]
+    tombstones = {
+        t.origin_engagement_id: t for t in (await db.execute(
+            select(ActivityLog).where(
+                *_ORPHAN, ActivityLog.action == "deleted_engagement",
+                ActivityLog.origin_engagement_id.in_(ids),
+            )
+        )).scalars()
+    }
+    user_ids = {t.user_id for t in tombstones.values()}
+    names = {u.id: u.username for u in (await db.execute(
+        select(User).where(User.id.in_(user_ids)))).scalars()} if user_ids else {}
+    out = []
+    for eid, count, first_at, last_at in groups:
+        t = tombstones.get(eid)
+        out.append(DeletedEngagementLogGroupResponse(
+            engagement_id=eid,
+            engagement_name=t.resource_name if t else None,
+            deleted_at=t.created_at if t else None,
+            deleted_by=names.get(t.user_id) if t else None,
+            log_count=count, first_at=first_at, last_at=last_at,
+        ))
+    out.sort(key=lambda g: g.deleted_at or g.last_at or _dt.min, reverse=True)
+    return out
+
+
+@router.get(
+    "/deleted-engagement-logs/{engagement_id}",
+    response_model=List[DeletedEngagementLogEntryResponse],
+    dependencies=[Depends(require_global_perm_read(Permission.VIEW_ALL_ENGAGEMENTS))],
+)
+async def get_deleted_engagement_logs(
+    engagement_id: str,
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Audit rows of one deleted engagement, oldest first."""
+    rows = (await db.execute(
+        select(ActivityLog, User.username)
+        .outerjoin(User, User.id == ActivityLog.user_id)
+        .where(*_ORPHAN, ActivityLog.origin_engagement_id == engagement_id)
+        .order_by(ActivityLog.created_at.asc())
+        .limit(limit).offset(offset)
+    )).all()
+    return [
+        DeletedEngagementLogEntryResponse(
+            id=log.id, created_at=log.created_at, username=username, action=log.action,
+            resource_type=log.resource_type, resource_id=log.resource_id,
+            resource_name=log.resource_name, details=log.details,
+        )
+        for log, username in rows
+    ]

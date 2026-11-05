@@ -21,13 +21,14 @@ export const ADMIN_TAB_PERMISSIONS: Record<string, string[]> = {
     'custom-fields': ['manage_custom_fields'],
     plugins: [],                   // admin-only
     email: [],                     // admin-only
+    audit: ['view_all_engagements'], // deleted-engagement audit logs
 };
 
 /** Tab render order — matches the TabsList in the admin page. */
 export const ADMIN_TAB_ORDER = [
     'users', 'permissions', 'policies', 'registration-codes', 'types', 'authentication',
     'api-tokens', 'wordlists', 'ai', 'skills', 'widgets', 'custom-fields',
-    'plugins', 'email',
+    'plugins', 'email', 'audit',
 ];
 
 /** The union of delegatable admin-surface permissions — holding ANY of these

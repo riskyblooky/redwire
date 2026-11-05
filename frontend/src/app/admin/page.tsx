@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, Info, ListPlus, Filter, Search, X, SlidersHorizontal } from 'lucide-react';
+import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, History, Info, ListPlus, Filter, Search, X, SlidersHorizontal } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
     DropdownMenu,
@@ -90,6 +90,7 @@ import { WidgetManagement } from '@/components/admin/widget-management';
 import CustomFieldsManagement from '@/components/admin/custom-fields-management';
 import { PluginManagement } from '@/components/admin/plugin-management';
 import EmailSettings from '@/components/admin/email-settings';
+import { DeletedEngagementLogs } from '@/components/admin/deleted-engagement-logs';
 import { AboutPanel } from '@/components/admin/about-panel';
 import {
     Tabs,
@@ -365,6 +366,11 @@ export default function AdminPage() {
                         {show('email') && (
 <TabsTrigger value="email" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-400 data-[state=active]:shadow-[0_0_12px_rgba(59,130,246,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Mail className="h-3.5 w-3.5" /> Email
+                        </TabsTrigger>
+)}
+                        {show('audit') && (
+<TabsTrigger value="audit" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-slate-500/10 data-[state=active]:text-slate-200 data-[state=active]:shadow-[0_0_12px_rgba(148,163,184,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+                            <History className="h-3.5 w-3.5" /> Audit
                         </TabsTrigger>
 )}
                     </TabsList>
@@ -747,6 +753,11 @@ export default function AdminPage() {
                     {show('email') && (
 <TabsContent value="email" className="space-y-6">
                         <EmailSettings />
+                    </TabsContent>
+)}
+                    {show('audit') && (
+<TabsContent value="audit" className="space-y-6">
+                        <DeletedEngagementLogs />
                     </TabsContent>
 )}
 

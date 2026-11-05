@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean, Integer, Enum as SQLEnum
+from sqlalchemy import event
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -79,6 +80,10 @@ class ActivityLog(Base):
     # resource_id / resource_name / user_id / details fields keep the
     # forensic trail intact even after the parent row is gone.
     engagement_id = Column(String, ForeignKey("engagements.id", ondelete="SET NULL"), nullable=True)
+    # Copy of engagement_id taken at insert (see the before_insert hook below).
+    # No FK, so it survives the SET NULL above: lets the admin "deleted
+    # engagement logs" view group orphaned rows by the engagement they came from.
+    origin_engagement_id = Column(String, nullable=True, index=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     action = Column(String(100), nullable=False) # e.g., "created", "updated", "deleted", "resolved"
     resource_type = Column(String(50), nullable=False)  # Changed from Enum to String
@@ -90,3 +95,9 @@ class ActivityLog(Base):
     # Relationships
     engagement = relationship("Engagement", back_populates="activity_logs", foreign_keys="ActivityLog.engagement_id")
     user = relationship("User", foreign_keys="ActivityLog.user_id")
+
+
+@event.listens_for(ActivityLog, "before_insert")
+def _stamp_origin_engagement(_mapper, _conn, target: ActivityLog) -> None:
+    if target.origin_engagement_id is None and target.engagement_id:
+        target.origin_engagement_id = target.engagement_id
