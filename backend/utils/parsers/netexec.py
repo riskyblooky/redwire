@@ -278,3 +278,142 @@ def parse_netexec_log(content: str) -> ParsedSprayCampaign:
         campaign.target_host = None
 
     return campaign
+
+
+# ── Scanner import (host/service enumeration) ────────────────────────────────
+#
+# `nxc <proto> <targets>` without credentials prints one `[*]` banner line per
+# responding host, e.g.
+#   SMB  10.0.0.5  445  DC01  [*] Windows Server 2019 Build 17763 x64 (name:DC01) (domain:lab.local) (signing:True) (SMBv1:False)
+#   RDP  10.0.0.7  3389 WS01  [*] Windows 10 Build 19041 (name:WS01) (domain:lab.local) (nla:False)
+#   SSH  10.0.0.9  22   10.0.0.9 [*] SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1
+# parse() turns those into assets + ports, and the security-relevant flags into
+# findings. Credential lines ([+]/[-]) are not imported here — the spray import
+# is the place for those, and finding text is no place for passwords.
+
+_FLAG_RE = re.compile(r"\((\w[\w ]*?):([^)]*)\)")
+
+# (protocol, flag, bad value) → finding template. Values compare lowercased.
+_FLAG_FINDINGS = {
+    ("smb", "signing", "false"): (
+        "SMB Signing Not Required", "MEDIUM",
+        "The host does not require SMB message signing. An attacker in a position to "
+        "relay NTLM authentication (e.g. via LLMNR/NBT-NS poisoning or coerced "
+        "authentication) can relay it to this host's SMB service.",
+        "Require SMB signing on all hosts (Group Policy: \"Microsoft network server: "
+        "Digitally sign communications (always)\" = Enabled).",
+    ),
+    ("smb", "smbv1", "true"): (
+        "SMBv1 Enabled", "MEDIUM",
+        "The host accepts SMB version 1, a deprecated protocol with known remote code "
+        "execution vulnerabilities (e.g. MS17-010 / EternalBlue) and no modern security features.",
+        "Disable SMBv1 on the server and clients (Disable-WindowsOptionalFeature -Online "
+        "-FeatureName SMB1Protocol) after confirming no legacy dependencies.",
+    ),
+    ("smb", "null auth", "true"): (
+        "SMB Null Session Allowed", "MEDIUM",
+        "The host accepts unauthenticated (null) SMB sessions, which can expose domain "
+        "information such as users, groups and password policy to anonymous users.",
+        "Restrict anonymous access (RestrictAnonymous / RestrictAnonymousSAM, and "
+        "\"Network access: Allow anonymous SID/Name translation\" = Disabled).",
+    ),
+    ("rdp", "nla", "false"): (
+        "RDP Network Level Authentication Not Required", "LOW",
+        "Remote Desktop does not require Network Level Authentication, so the login "
+        "screen and pre-authentication attack surface are exposed to unauthenticated users.",
+        "Require NLA for Remote Desktop connections (System Properties → Remote, or the "
+        "\"Require user authentication for remote connections by using NLA\" policy).",
+    ),
+}
+
+
+def looks_like_netexec(text: str) -> bool:
+    """True when any of the first lines is an nxc/CME protocol line."""
+    for line in text.splitlines()[:200]:
+        if _LINE_RE.match(_LOG_PREFIX_RE.sub("", line.strip())):
+            return True
+    return False
+
+
+def parse(content: bytes):
+    """Parse nxc console/--log output into scanner-import data."""
+    from utils.parsers import ParsedAsset, ParsedFinding, ParsedImportData, ParsedPort
+
+    result = ParsedImportData(source_tool="nxc")
+    text = content.decode("utf-8", errors="ignore")
+    asset_index: dict[str, int] = {}
+    finding_index: dict[str, int] = {}
+    info: dict[int, list[str]] = {}
+    cred_lines = 0
+
+    for raw in text.splitlines():
+        line = _LOG_PREFIX_RE.sub("", raw.strip())
+        cmd = _COMMAND_PREAMBLE_RE.match(raw.strip())
+        if cmd and "command" not in result.raw_metadata:
+            # Strip credentials from the recorded command line.
+            result.raw_metadata["command"] = re.sub(r"(\s-(?:p|H|-password|-hash)\s+)\S+", r"\1****", cmd.group(1))
+            continue
+        m = _LINE_RE.match(line)
+        if not m:
+            continue
+        proto, ip, port_s, hostname, status, detail = m.groups()
+        proto = proto.lower()
+        if status in ("+", "-"):
+            cred_lines += 1
+            continue
+        if status != "*":
+            continue
+
+        if ip not in asset_index:
+            asset_index[ip] = len(result.assets)
+            name = hostname if hostname and hostname != ip else ip
+            result.assets.append(ParsedAsset(name=name, asset_type="IP Address", identifier=ip))
+            info[asset_index[ip]] = []
+        idx = asset_index[ip]
+        asset = result.assets[idx]
+
+        flags = {k.strip().lower(): v.strip() for k, v in _FLAG_RE.findall(detail)}
+        banner = _FLAG_RE.sub("", detail).strip()
+        port = int(port_s)
+        if not any(p.port_number == port for p in asset.ports):
+            asset.ports.append(ParsedPort(
+                port_number=port, protocol="TCP", service_name=proto, state="OPEN",
+                version=banner[:255] or None,
+            ))
+        if banner:
+            info[idx].append(f"- {proto.upper()} {port}: {banner}")
+        for key in ("domain", "name"):
+            if flags.get(key) and f"{key}:{flags[key]}" not in info[idx]:
+                info[idx].append(f"{key}:{flags[key]}")
+
+        for (fproto, flag, bad), (title, sev, desc, fix) in _FLAG_FINDINGS.items():
+            if proto == fproto and flags.get(flag, "").lower() == bad:
+                if title not in finding_index:
+                    finding_index[title] = len(result.findings)
+                    result.findings.append(ParsedFinding(
+                        title=title, severity=sev, description=desc, mitigations=fix,
+                        category="Network", affected_asset_indices=[],
+                    ))
+                f = result.findings[finding_index[title]]
+                if idx not in f.affected_asset_indices:
+                    f.affected_asset_indices.append(idx)
+
+    for idx, lines in info.items():
+        services = [l for l in lines if l.startswith("- ")]
+        meta = [l for l in lines if not l.startswith("- ")]
+        parts = ["Imported from NetExec (nxc)"]
+        if meta:
+            parts.append(" · ".join(meta))
+        if services:
+            parts.append("\n".join(services))
+        result.assets[idx].description = "\n\n".join(parts)
+
+    if cred_lines:
+        result.warnings.append(
+            f"Skipped {cred_lines} credential result line(s) — import nxc credential "
+            "output through the Spray import instead."
+        )
+    if not result.assets:
+        result.warnings.append("No nxc host banner ([*]) lines found.")
+    result.raw_metadata.update({"total_hosts": len(result.assets)})
+    return result

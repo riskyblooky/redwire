@@ -5,7 +5,7 @@
  * an engagement:
  *
  * **Step 1 — Upload**: Drag-and-drop zone with engagement selector
- * and supported format badges (Nessus, Burp, Nuclei, Nmap, CSV, XLSX).
+ * and supported format badges (Nessus, Burp, Nuclei, Nmap, httpx, NetExec, CSV, XLSX).
  *
  * **Step 2 — Preview**: Two-tab view (Assets / Findings) showing
  * parsed results with duplicate indicators, severity badges, and
@@ -66,6 +66,8 @@ const TOOL_BADGES: Record<string, { label: string; color: string }> = {
     burp: { label: 'Burp Suite', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
     nuclei: { label: 'Nuclei', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
     nmap: { label: 'Nmap', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' },
+    httpx: { label: 'httpx', color: 'bg-sky-500/20 text-sky-400 border-sky-500/30' },
+    nxc: { label: 'NetExec', color: 'bg-rose-500/20 text-rose-400 border-rose-500/30' },
 };
 
 /* ── Supported format badges ────────────────────────────────────── */
@@ -73,7 +75,8 @@ const TOOL_BADGES: Record<string, { label: string; color: string }> = {
 const FORMATS = [
     { ext: '.nessus', tool: 'Nessus / OpenVAS', color: 'text-green-400' },
     { ext: '.xml', tool: 'Burp Suite / Nmap', color: 'text-orange-400' },
-    { ext: '.json / .jsonl', tool: 'Nuclei', color: 'text-purple-400' },
+    { ext: '.json / .jsonl', tool: 'Nuclei / httpx', color: 'text-purple-400' },
+    { ext: '.txt / .log', tool: 'NetExec (nxc)', color: 'text-rose-400' },
     { ext: '.csv / .xlsx', tool: 'Spreadsheet', color: 'text-blue-400' },
 ];
 
@@ -525,7 +528,7 @@ export default function ImportsPage() {
                                 ref={fileInputRef}
                                 type="file"
                                 className="hidden"
-                                accept=".nessus,.xml,.json,.jsonl,.csv,.xlsx,.xls"
+                                accept=".nessus,.xml,.json,.jsonl,.txt,.log,.csv,.xlsx,.xls"
                                 onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) handleFile(file);
@@ -558,7 +561,7 @@ export default function ImportsPage() {
                                                 Drop a scanner output file here, or click to browse
                                             </p>
                                             <p className="text-slate-600 text-sm mt-1">
-                                                Supports Nessus, Burp Suite, Nuclei, Nmap, CSV, and XLSX
+                                                Supports Nessus, Burp Suite, Nuclei, Nmap, httpx, NetExec, CSV, and XLSX
                                             </p>
                                         </div>
                                     </>

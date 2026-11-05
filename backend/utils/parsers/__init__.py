@@ -53,11 +53,32 @@ class ParsedFinding:
 @dataclass
 class ParsedImportData:
     """Unified output from any scanner parser."""
-    source_tool: str             # "nessus", "burp", "nuclei", "nmap"
+    source_tool: str             # "nessus", "burp", "nuclei", "nmap", "httpx", "nxc"
     assets: list[ParsedAsset] = field(default_factory=list)
     findings: list[ParsedFinding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     raw_metadata: dict = field(default_factory=dict)
+
+
+def _first_json_object(content: bytes) -> dict:
+    """The first JSON object of a JSON array or JSONL file ({} if none)."""
+    import json
+    text = content[:65536].decode("utf-8", errors="ignore").lstrip()
+    if text.startswith("["):
+        try:
+            data = json.loads(content.decode("utf-8", errors="ignore"))
+            return data[0] if data and isinstance(data[0], dict) else {}
+        except (ValueError, IndexError):
+            return {}
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            try:
+                obj = json.loads(line)
+                return obj if isinstance(obj, dict) else {}
+            except ValueError:
+                return {}
+    return {}
 
 
 def detect_and_parse(content: bytes, filename: str) -> ParsedImportData:
@@ -67,7 +88,8 @@ def detect_and_parse(content: bytes, filename: str) -> ParsedImportData:
     Supports:
       - .nessus          → Nessus XML
       - .xml             → Burp XML or Nmap XML (auto-detected by root element)
-      - .json / .jsonl   → Nuclei JSONL
+      - .json / .jsonl   → Nuclei or httpx JSONL (sniffed from the first result)
+      - .txt / .log      → NetExec (nxc) console or --log output
     """
     lower = filename.lower()
 
@@ -98,7 +120,17 @@ def detect_and_parse(content: bytes, filename: str) -> ParsedImportData:
             return parse(content)
 
     if lower.endswith(".json") or lower.endswith(".jsonl"):
-        from utils.parsers.nuclei import parse
+        from utils.parsers.httpx import looks_like_httpx
+        if looks_like_httpx(_first_json_object(content)):
+            from utils.parsers.httpx import parse
+        else:
+            from utils.parsers.nuclei import parse
         return parse(content)
+
+    if lower.endswith(".txt") or lower.endswith(".log"):
+        from utils.parsers.netexec import looks_like_netexec, parse
+        if looks_like_netexec(content.decode("utf-8", errors="ignore")):
+            return parse(content)
+        raise ValueError(f"Unrecognised text output in {filename} (expected NetExec / nxc output).")
 
     raise ValueError(f"Unsupported file format: {filename}")

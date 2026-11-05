@@ -306,7 +306,8 @@ async def commit_import(
                 result.assets_skipped += 1
             else:
                 # Create new asset
-                is_nmap = parsed.source_tool == "nmap"
+                # Port/service discovery tools mark the asset as scanned.
+                is_port_scan = parsed.source_tool in ("nmap", "httpx", "nxc")
                 db_asset = Asset(
                     id=str(uuid.uuid4()),
                     engagement_id=engagement_id,
@@ -314,7 +315,7 @@ async def commit_import(
                     asset_type=parsed_asset.asset_type,
                     identifier=parsed_asset.identifier,
                     description=parsed_asset.description,
-                    is_scanned=is_nmap,
+                    is_scanned=is_port_scan,
                     created_by=current_user.id,
                 )
                 db.add(db_asset)
