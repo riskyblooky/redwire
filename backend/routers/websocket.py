@@ -151,6 +151,16 @@ async def _auth_via_first_frame(
 
     return user_row, user_row.role.value
 
+def _apply_identify(user_info: dict, claimed) -> None:
+    """Apply a presence ``identify`` frame. Only the client's edit/view mode is
+    taken: ``id`` and ``role`` gate per-recipient delivery (the
+    dashboard:global engagement check reads ``connection_info[ws]["id"]``), so
+    a client-supplied ``id`` would let anyone receive another user's feed; the
+    display fields are already set from the DB row at connect."""
+    if isinstance(claimed, dict) and claimed.get("mode") in ("edit", "view"):
+        user_info["mode"] = claimed["mode"]
+
+
 @router.websocket("/ws/{resource_type}/{resource_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -268,10 +278,16 @@ async def websocket_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-    # 3. Connect to manager
+    # 3. Connect to manager. Identity comes from the authenticated DB row;
+    # the client's `identify` frame may only set its edit/view mode (see
+    # _apply_identify).
     user_info = {
         "id": user_id,
         "role": role,
+        "username": user_row.username,
+        "full_name": user_row.full_name,
+        "profile_photo": user_row.profile_photo,
+        "mode": "view",
     }
     await manager.connect(websocket, resource_type, resource_id, user_info)
 
@@ -294,8 +310,8 @@ async def websocket_endpoint(
 
             # Handle client messages
             if data.get("type") == "identify":
-                # Update user info with name/etc provided by client
-                user_info.update(data.get("user", {}))
+                _apply_identify(user_info, data.get("user"))
+                await manager.refresh_presence(websocket, resource_type, resource_id)
                 # Broadcast the update to all users
                 await manager.broadcast_to_resource(resource_type, resource_id, {
                     "type": "presence_update",

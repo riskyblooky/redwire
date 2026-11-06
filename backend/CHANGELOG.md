@@ -4,6 +4,22 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.7.1] — 2026-11-05
+
+### Security
+- **Live activity feed identity** — a browser could change the user identity
+  on its live-update connection after signing in, and the dashboard's live
+  activity feed then delivered events meant for the user it claimed to be.
+  Since 1.7.0 gave admins the feed for every engagement, claiming an admin's
+  identity exposed activity across all engagements. The connection now keeps
+  the signed-in identity; the browser can only say whether it is viewing or
+  editing. Upgrade from 1.7.0 promptly.
+
+### Fixed
+- **Who's here avatars** — people viewing or editing a page show their name
+  and photo again instead of "??", and the "also editing" warning on edit
+  pages appears again (both broke with 1.7.0's multi-worker presence).
+
 ## [1.7.0] — 2026-11-05
 
 ### Added

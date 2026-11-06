@@ -535,6 +535,15 @@ class ConnectionManager:
         # but in FastAPI disconnects are typically handled in the endpoint loop.
         return user_info
 
+    async def refresh_presence(self, websocket: WebSocket, resource_type: str, resource_id: str):
+        """Re-publish this connection's (updated) user info to the cross-worker
+        presence registry, which ``active_users`` is read from."""
+        conn_id = self.connection_ids.get(websocket)
+        info = self.connection_info.get(websocket)
+        if conn_id and info is not None:
+            from utils.ws_bus import bus
+            await bus.presence_add(resource_type, resource_id, conn_id, info)
+
     async def leave(self, websocket: WebSocket, resource_type: str, resource_id: str):
         """Async disconnect: removes the cross-worker presence entry before
         returning, so a following "left" broadcast lists the right users."""
