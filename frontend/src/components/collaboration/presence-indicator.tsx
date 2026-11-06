@@ -63,8 +63,15 @@ export function PresenceIndicator({ users, maxDisplay = 5 }: PresenceIndicatorPr
 
     if (displayList.length === 0) return null;
 
-    const displayUsers = displayList.slice(0, maxDisplay);
-    const remainingCount = displayList.length - maxDisplay;
+    // Avatar stack convention: you sit at the far right; everyone else stacks
+    // leftwards in join order, so the newest arrival is leftmost and drawn on
+    // top. Rendered right-to-left (flex-row-reverse) so later DOM = on top.
+    const self = displayList.find(u => u.id === currentUser?.id);
+    const others = displayList.filter(u => u.id !== currentUser?.id);
+    const otherSlots = Math.max(0, maxDisplay - (self ? 1 : 0));
+    const shownOthers = otherSlots > 0 ? others.slice(-otherSlots) : [];  // keep the newest
+    const displayUsers = self ? [self, ...shownOthers] : shownOthers;
+    const remainingCount = displayList.length - displayUsers.length;
 
     const getInitials = (user: PresenceUser) => {
         if (user.full_name) {
@@ -103,11 +110,11 @@ export function PresenceIndicator({ users, maxDisplay = 5 }: PresenceIndicatorPr
     return (
         <div className="flex items-center px-1.5 py-1 bg-slate-900/60 rounded-full border border-slate-800/80 shadow-inner backdrop-blur-md h-9">
             <TooltipProvider delayDuration={0}>
-                <div className="flex items-center -space-x-2 mr-1">
+                <div className="flex flex-row-reverse items-center -space-x-2 space-x-reverse mr-1">
                     {displayUsers.map((user) => (
                         <Tooltip key={user.id}>
                             <TooltipTrigger asChild>
-                                <div className="relative group cursor-default">
+                                <div className="relative group cursor-default hover:z-30">
                                     <PresenceAvatar
                                         user={user}
                                         bgColor={getHexColor(user.id)}
