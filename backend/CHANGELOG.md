@@ -23,6 +23,14 @@ section becomes one release entry.
 - **Who's here avatars** — your own avatar is always the rightmost; others
   stack to its left, newest furthest left and on top.
 
+### Fixed
+- **Blank asset Type on edit** — assets saved with older type spellings
+  (`IP_ADDRESS`, `host`, `web_application`…) showed an empty Type dropdown
+  when edited. Existing assets are converted to the matching configured type
+  (unknown ones become *Other*), and new or edited assets, imports,
+  engagement transfers and spray-created hosts always use a configured type.
+  The API now rejects a type that matches none, listing the valid ones.
+
 ## [1.7.1] — 2026-11-05
 
 ### Security

@@ -15,6 +15,7 @@ from models.user import User, UserRole
 from models.permission import Permission
 from auth.rbac import check_engagement_permission
 from models.asset import Asset
+from utils.asset_types import canonical_name, configured_asset_types
 from models.asset_port import AssetPort, PortProtocol, PortState
 from models.finding import Finding, Severity, FindingStatus
 from auth.dependencies import get_current_user
@@ -267,6 +268,7 @@ async def commit_import(
     asset_map: dict[int, Asset] = {}
 
     if import_assets:
+        type_names = await configured_asset_types(db)
         for i, parsed_asset in enumerate(parsed.assets):
             if selected_asset_idx is not None and i not in selected_asset_idx:
                 continue
@@ -312,7 +314,7 @@ async def commit_import(
                     id=str(uuid.uuid4()),
                     engagement_id=engagement_id,
                     name=parsed_asset.name,
-                    asset_type=parsed_asset.asset_type,
+                    asset_type=canonical_name(parsed_asset.asset_type, type_names) or parsed_asset.asset_type,
                     identifier=parsed_asset.identifier,
                     description=parsed_asset.description,
                     is_scanned=is_port_scan,

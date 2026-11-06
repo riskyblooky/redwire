@@ -1298,12 +1298,15 @@ async def import_engagement(
 
         # ── 3. Assets ────────────────────────────────────────────────
         from models.asset import Asset
+        from utils.asset_types import canonical_name, configured_asset_types
+        type_names = await configured_asset_types(db)
         for a in data.get("assets", []):
             db.add(Asset(
                 id=new_id(a["id"]),
                 engagement_id=eng_new_id,
                 name=a["name"],
-                asset_type=a.get("asset_type", "Other"),
+                # Bundles from older versions carry legacy spellings.
+                asset_type=canonical_name(a.get("asset_type"), type_names) or canonical_name("Other", type_names) or "Other",
                 identifier=a.get("identifier", ""),
                 description=a.get("description"),
                 notes=a.get("notes"),

@@ -215,11 +215,13 @@ async def commit_spray(
     # Optionally inventory the hosts we sprayed but haven't seen before.
     created_assets = 0
     if data.create_missing_assets:
+        from utils.asset_types import resolve_asset_type
+        spray_asset_type = await resolve_asset_type("IP Address", db, fallback="Other") or "IP Address"
         for host in sorted(spray_hosts - asset_by_identifier.keys()):
             new_asset = Asset(
                 engagement_id=data.engagement_id,
                 name=host,
-                asset_type="IP_ADDRESS",
+                asset_type=spray_asset_type,
                 identifier=host,
                 description=f"Auto-created from spray campaign: {data.name}",
                 in_scope=True,

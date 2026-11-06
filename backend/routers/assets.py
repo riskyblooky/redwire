@@ -23,6 +23,7 @@ import defusedxml.ElementTree as ET
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.uploads import read_upload_capped
 from utils.custom_fields import validate_custom_fields
+from utils.asset_types import canonical_name, configured_asset_types, resolve_asset_type
 from models.discussion import ResourceType
 
 logger = logging.getLogger(__name__)
@@ -41,8 +42,8 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 # ─── Template Downloads ──────────────────────────────────────────────────────
 
 TEMPLATE_COLUMNS = ["name", "asset_type", "identifier", "description", "in_scope", "ports"]
-TEMPLATE_EXAMPLE = ["Web Server", "SERVER", "192.168.1.10", "Main web server", "true", "80/tcp,443/tcp,22/tcp"]
-ASSET_TYPES_HELP = "Valid asset_type values: IP_ADDRESS, DOMAIN, URL, APPLICATION, SERVER, NETWORK, OTHER"
+TEMPLATE_EXAMPLE = ["Web Server", "Server", "192.168.1.10", "Main web server", "true", "80/tcp,443/tcp,22/tcp"]
+ASSET_TYPES_HELP = "asset_type: one of the configured asset types (defaults: IP Address, Domain, URL, Application, Server, Network, Other). Unknown values import as Other."
 PORTS_HELP = "Ports format: port/protocol (comma-separated). Example: 80/tcp,443/tcp,53/udp"
 
 
@@ -172,21 +173,6 @@ def _parse_ports(ports_str: str) -> list:
         except ValueError:
             continue
     return ports
-
-
-def _resolve_asset_type(type_str: str) -> Optional[str]:
-    """Resolve an asset type string to a canonical name, with fuzzy matching."""
-    type_str = type_str.strip().upper().replace(" ", "_")
-    mapping = {
-        "IP_ADDRESS": "IP Address", "IP": "IP Address", "IPADDRESS": "IP Address",
-        "DOMAIN": "Domain", "DNS": "Domain",
-        "URL": "URL",
-        "APPLICATION": "Application", "APP": "Application",
-        "SERVER": "Server", "HOST": "Server",
-        "NETWORK": "Network", "SUBNET": "Network",
-        "OTHER": "Other",
-    }
-    return mapping.get(type_str)
 
 
 def _parse_csv_rows(content: bytes) -> list:
@@ -355,13 +341,12 @@ async def import_assets(
     # Detect format and parse
     parsed_assets = []
     is_nmap = False
+    type_names = await configured_asset_types(db)
 
     if filename.endswith(".csv"):
         rows = _parse_csv_rows(content)
         for row in rows:
-            asset_type = _resolve_asset_type(row.get("asset_type", "OTHER"))
-            if not asset_type:
-                asset_type = "Other"
+            asset_type = canonical_name(row.get("asset_type"), type_names) or "Other"
             in_scope = row.get("in_scope", "true").lower() not in ("false", "0", "no", "n")
             parsed_assets.append({
                 "name": row.get("name", "").strip(),
@@ -374,9 +359,7 @@ async def import_assets(
     elif filename.endswith(".xlsx") or filename.endswith(".xls"):
         rows = _parse_xlsx_rows(content)
         for row in rows:
-            asset_type = _resolve_asset_type(row.get("asset_type", "OTHER"))
-            if not asset_type:
-                asset_type = "Other"
+            asset_type = canonical_name(row.get("asset_type"), type_names) or "Other"
             in_scope = row.get("in_scope", "true").lower() not in ("false", "0", "no", "n")
             parsed_assets.append({
                 "name": row.get("name", "").strip(),
@@ -881,6 +864,19 @@ async def get_asset(
     asset_dict["created_by_profile_photo"] = creator_profile_photo
     return AssetResponse(**asset_dict)
 
+async def _require_asset_type(raw: str, db: AsyncSession) -> str:
+    """Canonical configured asset type for ``raw`` (legacy spellings such as
+    IP_ADDRESS or host are mapped), or 422 listing the valid types."""
+    resolved = await resolve_asset_type(raw, db)
+    if resolved is None:
+        valid = ", ".join(await configured_asset_types(db))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown asset type '{raw}'. Valid types: {valid}",
+        )
+    return resolved
+
+
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     asset_data: AssetCreate,
@@ -901,7 +897,7 @@ async def create_asset(
     db_asset = Asset(
         id=str(uuid.uuid4()),
         created_by=current_user.id,
-        **asset_data.model_dump()
+        **{**asset_data.model_dump(), "asset_type": await _require_asset_type(asset_data.asset_type, db)},
     )
     # Validate/coerce custom field values against the active definitions.
     db_asset.custom_fields = await validate_custom_fields("asset", asset_data.custom_fields, db)
@@ -965,6 +961,8 @@ async def update_asset(
     
     # Update fields
     update_data = asset_update.model_dump(exclude_unset=True)
+    if update_data.get("asset_type") is not None:
+        update_data["asset_type"] = await _require_asset_type(update_data["asset_type"], db)
 
     # Custom fields are validated + applied separately (full-replace on save)
     # so the raw dict doesn't flow through the change-summary/automation diff.
