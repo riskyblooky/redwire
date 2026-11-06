@@ -5,7 +5,7 @@ loader (``min_redwire_version`` enforcement). Bumping this here is
 the only change needed when cutting a new release.
 """
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 
 
 def _to_tuple(v: str) -> tuple[int, ...]:
