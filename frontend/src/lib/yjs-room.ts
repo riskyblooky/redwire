@@ -114,6 +114,11 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
     // loading overlay up until the content is actually present, not just the
     // WebSocket open.
     const [hasSynced, setHasSynced] = useState(false);
+    // Where the doc's real content came from, once it has some: seeded from
+    // the server's DB copy ('db') or synced from a peer ('peer'). Unlike
+    // hasSynced there's no timeout fallback — until this is set the doc may
+    // be a placeholder, and anything read from it must not be persisted.
+    const [contentSource, setContentSource] = useState<'db' | 'peer' | null>(null);
     const [peerCount, setPeerCount] = useState(0);
     const [socket, setSocket] = useState<WebSocket | null>(null);
 
@@ -243,8 +248,11 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
                                 initialContentTimer = setTimeout(seedFromDb, 50);
                                 return;
                             }
-                            if (ydoc.getXmlFragment('default').length === 0 && initialContentPending) {
-                                seedRef.current(ed, initialContentPending);
+                            if (ydoc.getXmlFragment('default').length === 0) {
+                                if (initialContentPending) seedRef.current(ed, initialContentPending);
+                                setContentSource((s) => s ?? 'db');
+                            } else {
+                                setContentSource((s) => s ?? 'peer');
                             }
                             initialContentPending = null;
                             setHasSynced(true);   // DB baseline settled — reveal the editor
@@ -284,6 +292,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
                         if (ydoc.getXmlFragment('default').length > 0 && initialContentPending !== null) {
                             clearTimeout(initialContentTimer);
                             initialContentPending = null;
+                            setContentSource((s) => s ?? 'peer');
                         }
                         break;
                     }
@@ -368,7 +377,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
         ydoc.destroy();
     }, [ydoc, awareness]);
 
-    return { ydoc, awareness, status, hasSynced, peerCount, socket };
+    return { ydoc, awareness, status, hasSynced, contentSource, peerCount, socket };
 }
 
 function useLatest<T>(value: T): MutableRefObject<T> {

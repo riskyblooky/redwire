@@ -14,8 +14,14 @@ section becomes one release entry.
   still kept by the page's Save, so versions, the activity log and review
   checks work as before. Severity, status and other non-text fields are still
   saved by whoever saves last, and the "also editing" banner says so.
+  Fields open instantly with their saved text while the live connection
+  starts.
 - **Who's editing an asset** — the asset edit page shows who else is viewing
   or editing it, like findings and test cases.
+
+### Changed
+- **Who's here avatars** — your own avatar is always the rightmost; others
+  stack to its left, newest furthest left and on top.
 
 ## [1.7.1] — 2026-11-05
 

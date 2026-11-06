@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import Collaboration from '@tiptap/extension-collaboration';
 import { useYjsRoom, createCollabCursorExtension } from '@/lib/yjs-room';
+import { MarkdownPreview } from './markdown-editor';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -892,9 +893,12 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     const dragRef = useRef<{ startY: number; startH: number } | null>(null);
     const editorRef = useRef<any>(null);
 
-    // Live co-editing (see `collab`). The doc is seeded without emitting an
-    // update, and onChange only fires when the text actually differs from
-    // `value`, so joining a room never marks the host form dirty by itself.
+    // Live co-editing (see `collab`). Until the room has real content the doc
+    // is a placeholder (the collaboration binding's own empty render fires an
+    // update), so onChange stays silent — passing that on would blank the
+    // host's field and Save would wipe it. The DB seed doesn't emit; content
+    // synced from a peer is reported once (below) so the form matches what's
+    // on screen. After that, onChange fires only on real text changes.
     const [collabPath] = useState(() => collab?.path ?? null);
     const valueRef = useRef(value);
     valueRef.current = value;
@@ -903,6 +907,8 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
         editorRef,
         seed: (ed, content) => { ed.commands.setContent(content, { emitUpdate: false }); },
     });
+    const collabSourceRef = useRef(room.contentSource);
+    collabSourceRef.current = room.contentSource;
 
     // Where pasted / dropped images go: the engagement, the shared library
     // (templates, intel), or nowhere (e.g. a not-yet-created engagement).
@@ -1028,7 +1034,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
         immediatelyRender: false,
         onUpdate: ({ editor }) => {
             const markdown = (editor.storage as any).markdown.getMarkdown();
-            if (collabPath && markdown === valueRef.current) return;
+            if (collabPath && (!collabSourceRef.current || markdown === valueRef.current)) return;
             onChange(markdown);
         },
         onSelectionUpdate: () => {
@@ -1136,10 +1142,19 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
 
     // In a live room, hold typing until the doc is seeded/synced — text typed
     // into the still-empty doc would stop the server copy from being applied.
-    const collabReady = !collabPath || room.hasSynced;
+    const collabReady = !collabPath || room.contentSource !== null;
     useEffect(() => {
         if (editor && collabPath) editor.setEditable(!disabled && collabReady);
     }, [editor, collabPath, disabled, collabReady]);
+
+    // Joined a room where a peer already had (possibly unsaved) text: report it
+    // once so the host form holds what's on screen.
+    useEffect(() => {
+        if (!editor || room.contentSource !== 'peer') return;
+        const markdown = (editor.storage as any).markdown.getMarkdown();
+        if (markdown !== valueRef.current) onChange(markdown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editor, room.contentSource]);
 
     // The active-line highlight is a ProseMirror decoration (see
     // createActiveLineExtension) so it survives re-renders instead of flickering.
@@ -1227,11 +1242,23 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                 style={(resizable || fillHeight) ? undefined : { minHeight }}
                 onClick={() => editor?.commands.focus()}
             >
-                {!collabReady && (
+                {!collabReady && (value ? (
+                    // Instant content: the host already loaded the saved text, so
+                    // show it read-only while the room connects (like Notes),
+                    // rather than an empty editor behind a spinner.
+                    <div className="absolute inset-0 z-10 overflow-y-auto bg-slate-950">
+                        <div className="p-4 prose prose-invert max-w-none">
+                            <MarkdownPreview value={value} />
+                        </div>
+                        <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Syncing…
+                        </div>
+                    </div>
+                ) : (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/60">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                     </div>
-                )}
+                ))}
                 <EditorContent editor={editor} />
             </div>
 
