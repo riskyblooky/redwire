@@ -41,9 +41,11 @@ interface MarkdownEditorProps {
     onEditorReady?: (editor: Editor) => void;
     onCommentClick?: (threadId: string) => void;
     onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
+    /** Live co-editing room (see TiptapEditor `collab`). */
+    collab?: { path: string };
 }
 
-export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable, fillHeight, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable, fillHeight, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover, collab }: MarkdownEditorProps) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -73,6 +75,7 @@ export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeig
             onEditorReady={onEditorReady}
             onCommentClick={onCommentClick}
             onCommentHover={onCommentHover}
+            collab={collab}
         />
     );
 }

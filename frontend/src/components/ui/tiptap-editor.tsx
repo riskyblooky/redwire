@@ -46,8 +46,10 @@ import {
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Table as TableIcon, Trash2, Plus, Minus, Workflow, TextSelect, ListChecks, ChevronsUpDown, Hash,
-    MoreHorizontal,
+    MoreHorizontal, Users, Wifi, WifiOff, Eye,
 } from 'lucide-react';
+import Collaboration from '@tiptap/extension-collaboration';
+import { useYjsRoom, createCollabCursorExtension } from '@/lib/yjs-room';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -190,6 +192,11 @@ interface TiptapEditorProps {
     onCommentClick?: (threadId: string) => void;
     /** Hovering a comment highlight → its thread id + bounding rect (null on out). */
     onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
+    /** Live co-editing: join the Y.js room at this relay path (e.g.
+     *  `field/finding/<id>/impact`). Fixed at mount. The room seeds from the
+     *  server's copy and `value` is then only an output — `onChange` still
+     *  fires (on real text changes) so the host's Save persists the text. */
+    collab?: { path: string };
 }
 
 const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any; showLineNumbers?: boolean; onToggleLineNumbers?: () => void }) => {
@@ -856,7 +863,7 @@ function parseInitialEditorHeight(minHeight?: string): number {
     return m ? Math.max(220, parseInt(m[1], 10)) : 360;
 }
 
-export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable = true, fillHeight = false, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover }: TiptapEditorProps) {
+export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable = true, fillHeight = false, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover, collab }: TiptapEditorProps) {
     const [, setForceUpdate] = useState(0);
     const [showLineNumbers, setShowLineNumbers] = useState(lineNumbers);
     const showLineNumbersRef = useRef(lineNumbers);
@@ -885,6 +892,18 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     const dragRef = useRef<{ startY: number; startH: number } | null>(null);
     const editorRef = useRef<any>(null);
 
+    // Live co-editing (see `collab`). The doc is seeded without emitting an
+    // update, and onChange only fires when the text actually differs from
+    // `value`, so joining a room never marks the host form dirty by itself.
+    const [collabPath] = useState(() => collab?.path ?? null);
+    const valueRef = useRef(value);
+    valueRef.current = value;
+    const room = useYjsRoom({
+        path: collabPath,
+        editorRef,
+        seed: (ed, content) => { ed.commands.setContent(content, { emitUpdate: false }); },
+    });
+
     // Where pasted / dropped images go: the engagement, the shared library
     // (templates, intel), or nowhere (e.g. a not-yet-created engagement).
     const imageTarget: ImageTarget | null = engagementId
@@ -896,6 +915,8 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
         extensions: [
             StarterKit.configure({
                 codeBlock: false, // We'll use CodeBlockLowlight instead
+                // Collaboration brings its own (per-user, CRDT-aware) undo.
+                ...(collabPath ? { undoRedo: false as const } : {}),
             }),
             CodeBlockLowlight.configure({
                 lowlight,
@@ -998,12 +1019,16 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                     getActiveId: () => activeCommentRef.current,
                 })]
                 : []),
+            ...(collabPath
+                ? [Collaboration.configure({ document: room.ydoc }), createCollabCursorExtension(room.awareness)]
+                : []),
         ],
-        content: value,
+        content: collabPath ? undefined : value,
         editable: !disabled,
         immediatelyRender: false,
         onUpdate: ({ editor }) => {
             const markdown = (editor.storage as any).markdown.getMarkdown();
+            if (collabPath && markdown === valueRef.current) return;
             onChange(markdown);
         },
         onSelectionUpdate: () => {
@@ -1095,9 +1120,10 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
         },
     });
 
-    // Update editor content when value changes externally
+    // Update editor content when value changes externally. (Not in a live
+    // room: there the shared doc is the source of truth.)
     useEffect(() => {
-        if (!editor) return;
+        if (!editor || collabPath) return;
         const currentMarkdown = (editor.storage as any).markdown.getMarkdown();
         // Only update if content is actually different (avoids cursor jumping from own edits)
         if (value !== currentMarkdown) {
@@ -1107,6 +1133,13 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
 
     // Keep editorRef in sync
     editorRef.current = editor;
+
+    // In a live room, hold typing until the doc is seeded/synced — text typed
+    // into the still-empty doc would stop the server copy from being applied.
+    const collabReady = !collabPath || room.hasSynced;
+    useEffect(() => {
+        if (editor && collabPath) editor.setEditable(!disabled && collabReady);
+    }, [editor, collabPath, disabled, collabReady]);
 
     // The active-line highlight is a ProseMirror decoration (see
     // createActiveLineExtension) so it survives re-renders instead of flickering.
@@ -1160,11 +1193,45 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             style={resizable && !fillHeight ? { height: editorHeight } : undefined}
         >
             <MenuBar editor={editor} showLineNumbers={showLineNumbers} onToggleLineNumbers={() => setShowLineNumbers(v => !v)} />
+            {collabPath && (
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-slate-800/60 px-2 py-0.5 text-[10px]">
+                    {disabled && (
+                        <span className="flex items-center gap-1 text-slate-400" title="You can't edit this field. Others' edits still appear live.">
+                            <Eye className="h-3 w-3" /> Read only
+                        </span>
+                    )}
+                    {room.peerCount > 0 && (
+                        <span className="flex items-center gap-1 text-emerald-400" title="Edits appear for everyone as they're typed. Saving keeps them.">
+                            <Users className="h-3 w-3" /> {room.peerCount + 1} editing
+                        </span>
+                    )}
+                    {room.status === 'connected' && (
+                        <span className="flex items-center gap-1 text-emerald-400/80" title="Live — others on this page see edits as you type">
+                            <Wifi className="h-3 w-3" /> Live
+                        </span>
+                    )}
+                    {room.status === 'connecting' && (
+                        <span className="flex items-center gap-1 text-amber-400" title="Connecting…">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                        </span>
+                    )}
+                    {room.status === 'disconnected' && (
+                        <span className="flex items-center gap-1 text-red-400" title="Disconnected — reconnecting. Your text is kept; Save still works.">
+                            <WifiOff className="h-3 w-3" /> Offline
+                        </span>
+                    )}
+                </div>
+            )}
             <div
-                className={cn("overflow-y-auto", (resizable || fillHeight) && "flex-1 min-h-0", showLineNumbers && "rw-linenumbers")}
+                className={cn("relative overflow-y-auto", (resizable || fillHeight) && "flex-1 min-h-0", showLineNumbers && "rw-linenumbers")}
                 style={(resizable || fillHeight) ? undefined : { minHeight }}
                 onClick={() => editor?.commands.focus()}
             >
+                {!collabReady && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/60">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    </div>
+                )}
                 <EditorContent editor={editor} />
             </div>
 

@@ -10,6 +10,12 @@
  * the thread list changes, dispatch a transaction carrying the plugin key's meta
  * (see `rebuildCommentHighlights`) to rebuild.
  *
+ * Whole-document replaces can't be mapped through — a collaborator's change
+ * arriving over Y.js (y-prosemirror re-renders the doc as one replace step) or
+ * content loaded into an empty editor. Those relocate every highlight instead,
+ * from its text as it stood just before the change (so a local edit inside a
+ * quote keeps its highlight), falling back to the stored anchor.
+ *
  * The offset↔position helpers and `anchorFromSelection` are also used by the
  * React layer to create anchors from a selection and to auto-refresh anchors on
  * save.
@@ -19,6 +25,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { Editor } from '@tiptap/react';
+import { ySyncPluginKey } from '@tiptap/y-tiptap';
 import { relocateAnchor, occurrenceIndexAt, type StoredAnchor } from '@/lib/anchor-relocate';
 
 export const commentHighlightKey = new PluginKey('rwCommentHighlight');
@@ -133,8 +140,32 @@ export function computeAnchorRanges(doc: PMNode, threads: AnchoredThreadLite[]):
 }
 
 function buildDecorationSet(doc: PMNode, threads: AnchoredThreadLite[], activeId: string | null): DecorationSet {
+    return decorationSetFromRanges(doc, computeAnchorRanges(doc, threads), activeId);
+}
+
+/** Relocate after a whole-doc replace: each highlight's pre-change text first,
+ *  then (for those that no longer match) the thread's stored anchor. */
+function relocateDecorationSet(
+    oldDoc: PMNode, oldSet: DecorationSet, doc: PMNode,
+    threads: AnchoredThreadLite[], activeId: string | null,
+): DecorationSet {
+    const live = new Map<string, StoredAnchor>();
+    for (const d of oldSet.find()) {
+        const id = (d.spec as { threadId?: string }).threadId;
+        if (id && d.to > d.from) live.set(id, anchorFromRange(oldDoc, d.from, d.to));
+    }
+    const ranges = computeAnchorRanges(doc, threads.map((t) => {
+        const a = live.get(t.id);
+        return a ? { ...t, anchor: a } : t;
+    }));
+    const retry = threads.filter((t) => live.has(t.id) && ranges.some((r) => r.id === t.id && r.orphaned));
+    const fallback = new Map(computeAnchorRanges(doc, retry).map((r) => [r.id, r]));
+    return decorationSetFromRanges(doc, ranges.map((r) => fallback.get(r.id) ?? r), activeId);
+}
+
+function decorationSetFromRanges(doc: PMNode, ranges: AnchorRange[], activeId: string | null): DecorationSet {
     const decos: Decoration[] = [];
-    for (const r of computeAnchorRanges(doc, threads)) {
+    for (const r of ranges) {
         if (r.orphaned) continue;
         if (r.resolved) continue; // resolved threads drop their highlight
         const cls = ['rw-comment-highlight'];
@@ -143,7 +174,7 @@ function buildDecorationSet(doc: PMNode, threads: AnchoredThreadLite[], activeId
             Decoration.inline(r.from, r.to, {
                 class: cls.join(' '),
                 'data-thread-id': r.id,
-            }),
+            }, { threadId: r.id }),
         );
     }
     return DecorationSet.create(doc, decos);
@@ -174,9 +205,15 @@ export function createCommentHighlightExtension(opts: {
                     state: {
                         init: (_config, state) =>
                             buildDecorationSet(state.doc, opts.getThreads(), getActiveId()),
-                        apply(tr, set, _oldState, newState) {
+                        apply(tr, set, oldState, newState) {
                             if (tr.getMeta(commentHighlightKey)?.rebuild) {
                                 return buildDecorationSet(newState.doc, opts.getThreads(), getActiveId());
+                            }
+                            if (tr.docChanged && (
+                                tr.getMeta(ySyncPluginKey)?.isChangeOrigin ||
+                                oldState.doc.textContent.length === 0
+                            )) {
+                                return relocateDecorationSet(oldState.doc, set, newState.doc, opts.getThreads(), getActiveId());
                             }
                             // Keep highlights glued to the text as it changes.
                             return set.map(tr.mapping, tr.doc);

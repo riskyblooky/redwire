@@ -25,16 +25,9 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import api, { apiErrorMessage } from '@/lib/api';
 import Collaboration from '@tiptap/extension-collaboration';
-import { fixedCursorPlugin } from '@/lib/fixed-cursor-plugin';
-import { yCursorPluginKey } from '@tiptap/y-tiptap';
-import { Extension } from '@tiptap/core';
 import { common, createLowlight } from 'lowlight';
-import * as Y from 'yjs';
-import * as syncProtocol from 'y-protocols/sync';
-import * as awarenessProtocol from 'y-protocols/awareness';
-import * as encoding from 'lib0/encoding';
-import * as decoding from 'lib0/decoding';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useYjsRoom, createCollabCursorExtension } from '@/lib/yjs-room';
 import { useAuthStore } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
 import { Wifi, WifiOff, Loader2, Users, Eye } from 'lucide-react';
@@ -75,24 +68,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const lowlight = createLowlight(common);
-
-// Binary message types (first varuint in the message)
-const MSG_SYNC = 0;
-const MSG_AWARENESS = 1;
-
-// Cursor colors — consistent per user via hash
-const CURSOR_COLORS = [
-    '#14b8a6', '#f97316', '#a855f7', '#ef4444',
-    '#3b82f6', '#22c55e', '#eab308', '#ec4899',
-];
-
-function getCursorColor(userId: string): string {
-    let hash = 0;
-    for (let i = 0; i < userId.length; i++) {
-        hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
-    }
-    return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
-}
 
 interface CollaborativeEditorProps {
     noteId: string;
@@ -530,352 +505,32 @@ export default function CollaborativeEditor({
     initialPreview,
 }: CollaborativeEditorProps) {
     const { user: currentUser } = useAuthStore();
-    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-    // True once the server's document state has been applied — used to keep the
-    // loading overlay up until the note content is actually present, not just
-    // the WebSocket open.
-    const [hasSynced, setHasSynced] = useState(false);
-    const [peerCount, setPeerCount] = useState(0);
     const [, setForceUpdate] = useState(0);
     const [showLineNumbers, setShowLineNumbers] = useState(false);
     const showLineNumbersRef = useRef(false);
     const wsRef = useRef<WebSocket | null>(null);
     const editorRef = useRef<any>(null);
 
-    // Stable Y.js doc + awareness — created once per mount.
-    // Parent uses key={noteId} to force full remount on note switch.
-    const ydoc = useMemo(() => new Y.Doc(), []); // eslint-disable-line react-hooks/exhaustive-deps
-    const awareness = useMemo(() => new awarenessProtocol.Awareness(ydoc), [ydoc]);
-
-    const userColor = useMemo(() => getCursorColor(currentUser?.id || 'anon'), [currentUser?.id]);
-
-    // Build WebSocket URL
-    const wsUrl = useMemo(() => {
-        if (typeof window === 'undefined') return '';
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-
-        let base: string;
-        if (apiUrl && !apiUrl.includes(host)) {
-            base = apiUrl.replace(/^http/, 'ws');
-        } else {
-            base = `${protocol}//${host}/api`;
-        }
-        // Token is intentionally NOT in the URL — backend reads it from
-        // the first message after accept(). CWE-598 (bearer-in-URL).
-        // Auth bearer is sent as the first WS frame in onopen below.
-        return `${base}/ws/yjs/note/${noteId}`;
-    }, [noteId]);
-
-    // ─── WebSocket + Y.js sync protocol ───────────────────────────────
-    useEffect(() => {
-        if (typeof window === 'undefined' || !wsUrl || !currentUser) return;
-
-        const token = localStorage.getItem('access_token');
-        if (!token) return;
-
-        let ws: WebSocket;
-        let reconnectTimeout: NodeJS.Timeout;
-        let retryCount = 0;
-        let isCleaningUp = false;
-        let initialContentPending: string | null = null;
-        let initialContentTimer: NodeJS.Timeout | undefined;
-        // Belt-and-suspenders: guarantees the loading overlay is dismissed even
-        // if neither a peer sync nor an initial_content frame ever arrives.
-        let readyFallbackTimer: NodeJS.Timeout | undefined;
-
-        // Track awareness changes → update peer count
-        const awarenessChangeHandler = () => {
-            const states = awareness.getStates();
-            // Count other users (exclude self)
-            let others = 0;
-            states.forEach((_state, clientID) => {
-                if (clientID !== ydoc.clientID) others++;
-            });
-            setPeerCount(others);
-        };
-        awareness.on('change', awarenessChangeHandler);
-
-        // Set local awareness user info.
-        // IMPORTANT: Use setLocalState (not setLocalStateField) because after
-        // cleanup calls removeAwarenessStates(), the local state is null, and
-        // setLocalStateField silently does nothing when state is null.
-        awareness.setLocalState({
-            user: {
-                name: currentUser.full_name || currentUser.username || 'Anonymous',
-                color: userColor,
-            },
-        });
-
-        // Send encoded binary message via WebSocket
-        const sendBinary = (msg: Uint8Array) => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(msg);
-            }
-        };
-
-        // Y.Doc update handler → send sync update to peers
-        const docUpdateHandler = (update: Uint8Array, origin: any) => {
-            if (origin === 'remote') return; // Don't echo remote updates
-            const encoder = encoding.createEncoder();
-            encoding.writeVarUint(encoder, MSG_SYNC);
-            syncProtocol.writeUpdate(encoder, update);
-            sendBinary(encoding.toUint8Array(encoder));
-        };
-        ydoc.on('update', docUpdateHandler);
-
-        // Awareness update handler → send to peers
-        const awarenessUpdateHandler = ({ added, updated, removed }: any) => {
-            const changedClients = [...added, ...updated, ...removed];
-            const encoder = encoding.createEncoder();
-            encoding.writeVarUint(encoder, MSG_AWARENESS);
-            encoding.writeVarUint8Array(encoder,
-                awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients)
-            );
-            const msg = encoding.toUint8Array(encoder);
-            sendBinary(msg);
-        };
-        awareness.on('update', awarenessUpdateHandler);
-
-        const connect = () => {
-            if (isCleaningUp) return;
-            setConnectionStatus('connecting');
-
-            ws = new WebSocket(wsUrl);
-            wsRef.current = ws;
-
-            ws.binaryType = 'arraybuffer';
-
-            ws.onopen = () => {
-                if (isCleaningUp) { ws.close(); return; }
-                setConnectionStatus('connected');
-                retryCount = 0;
-                clearTimeout(readyFallbackTimer);
-                readyFallbackTimer = setTimeout(() => setHasSynced(true), 2_000);
-
-                // FIRST frame MUST be the auth bearer. Backend has 5s
-                // to receive it before closing with 1008 (see
-                // _AUTH_FRAME_TIMEOUT_S in routers/websocket.py). The
-                // register/sync/awareness messages below all flow
-                // *after* auth succeeds.
-                ws.send(JSON.stringify({ type: 'auth', token }));
-
-                // 0. Register our Y.js clientID with the server so it can
-                //    notify peers when we disconnect (for cursor cleanup)
-                ws.send(JSON.stringify({
-                    type: 'register_client_id',
-                    client_id: ydoc.clientID,
+    // Y.js doc + room connection. Parent uses key={noteId} to force a full
+    // remount (fresh doc) on note switch.
+    const { ydoc, awareness, status: connectionStatus, hasSynced, peerCount, socket } = useYjsRoom({
+        path: `note/${noteId}`,
+        editorRef,
+        // Emits an update, so the seeded DB copy flows into the normal save path.
+        seed: (ed, content) => { ed.commands.setContent(content); },
+        // Server wants the current content for its debounced DB save.
+        onRequestSave: (data) => {
+            const ed = editorRef.current;
+            if (ed && wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                    type: 'save_content',
+                    content: (ed.storage as any).markdown?.getMarkdown?.() || '',
+                    note_id: data.note_id,
                 }));
-
-                // 1. Send Y.js sync step 1 (our state vector → peers respond with what we're missing)
-                const encoder = encoding.createEncoder();
-                encoding.writeVarUint(encoder, MSG_SYNC);
-                syncProtocol.writeSyncStep1(encoder, ydoc);
-                sendBinary(encoding.toUint8Array(encoder));
-
-                // 2. Broadcast our awareness state
-                const awarenessEncoder = encoding.createEncoder();
-                encoding.writeVarUint(awarenessEncoder, MSG_AWARENESS);
-                encoding.writeVarUint8Array(awarenessEncoder,
-                    awarenessProtocol.encodeAwarenessUpdate(awareness, [ydoc.clientID])
-                );
-                sendBinary(encoding.toUint8Array(awarenessEncoder));
-            };
-
-            ws.onmessage = (event) => {
-                if (typeof event.data === 'string') {
-                    // JSON control messages from server
-                    try {
-                        const data = JSON.parse(event.data);
-
-                        if (data.type === 'initial_content') {
-                            // Store it; only apply if no peer sync fills the doc
-                            initialContentPending = data.content || '';
-                            const seedFromDb = () => {
-                                const ed = editorRef.current;
-                                if (!ed) {
-                                    // Editor not mounted yet — retry shortly rather
-                                    // than dropping the pending DB content.
-                                    clearTimeout(initialContentTimer);
-                                    initialContentTimer = setTimeout(seedFromDb, 50);
-                                    return;
-                                }
-                                const fragment = ydoc.getXmlFragment('default');
-                                if (fragment.length === 0 && initialContentPending) {
-                                    ed.commands.setContent(initialContentPending);
-                                }
-                                initialContentPending = null;
-                                setHasSynced(true);   // DB baseline settled — reveal the editor
-                            };
-                            clearTimeout(initialContentTimer);
-                            if ((data.peers ?? 0) <= 0) {
-                                // We're alone in the room — no peer holds an
-                                // authoritative Y.js doc, so seed from the DB copy
-                                // right away instead of waiting. Removes the load
-                                // time in the common single-user case.
-                                seedFromDb();
-                            } else {
-                                // A peer is here — give them a brief window to sync
-                                // their (authoritative) state before falling back to
-                                // the DB copy, so we don't double-seed the doc.
-                                initialContentTimer = setTimeout(seedFromDb, 300);
-                            }
-                        } else if (data.type === 'request_save') {
-                            // Server wants us to save current content to DB
-                            const ed = editorRef.current;
-                            if (ed) {
-                                const markdown = (ed.storage as any).markdown?.getMarkdown?.() || '';
-                                ws.send(JSON.stringify({
-                                    type: 'save_content',
-                                    content: markdown,
-                                    note_id: data.note_id,
-                                }));
-                            }
-                        } else if (data.type === 'peer_disconnected') {
-                            const clientId = data.client_id;
-                            if (clientId != null && clientId !== ydoc.clientID) {
-                                awarenessProtocol.removeAwarenessStates(awareness, [clientId], 'peer_disconnect');
-                                // Also force-delete from map and dispatch decoration rebuild
-                                awareness.getStates().delete(clientId);
-                                const ed = editorRef.current;
-                                if (ed?.view) {
-                                    try {
-                                        ed.view.dispatch(ed.view.state.tr.setMeta(yCursorPluginKey, { awarenessUpdated: true }));
-                                    } catch { /* editor might be destroyed */ }
-                                }
-                            }
-                        }
-                    } catch { /* ignore */ }
-                } else {
-                    // Binary: Y.js sync protocol or awareness
-                    const data = new Uint8Array(event.data as ArrayBuffer);
-                    if (data.length < 1) return;
-
-                    const decoder = decoding.createDecoder(data);
-                    const messageType = decoding.readVarUint(decoder);
-
-                    switch (messageType) {
-                        case MSG_SYNC: {
-                            // Process sync message and potentially respond (e.g., sync step 2 reply)
-                            const responseEncoder = encoding.createEncoder();
-                            encoding.writeVarUint(responseEncoder, MSG_SYNC);
-                            syncProtocol.readSyncMessage(decoder, responseEncoder, ydoc, 'remote');
-                            setHasSynced(true);   // server doc state applied — content is ready
-                            // If a response was generated (sync step 2), send it back
-                            if (encoding.length(responseEncoder) > 1) {
-                                sendBinary(encoding.toUint8Array(responseEncoder));
-                            }
-                            // If we received peer state, cancel the initial_content fallback
-                            const fragment = ydoc.getXmlFragment('default');
-                            if (fragment.length > 0 && initialContentPending !== null) {
-                                clearTimeout(initialContentTimer);
-                                initialContentPending = null;
-                            }
-                            break;
-                        }
-                        case MSG_AWARENESS: {
-                            const update = decoding.readVarUint8Array(decoder);
-                            awarenessProtocol.applyAwarenessUpdate(awareness, update, 'remote');
-                            break;
-                        }
-                    }
-                }
-            };
-
-            ws.onclose = () => {
-                if (isCleaningUp) return;
-                setConnectionStatus('disconnected');
-                wsRef.current = null;
-
-                if (retryCount < 10) {
-                    const delay = Math.max(2000, Math.min(1000 * Math.pow(2, retryCount), 30000));
-                    reconnectTimeout = setTimeout(() => {
-                        retryCount++;
-                        connect();
-                    }, delay);
-                }
-            };
-
-            ws.onerror = () => { ws.close(); };
-        };
-
-        connect();
-
-        // ─── Aggressive stale awareness cleanup ──────────────────────
-        // y-protocols default timeout is 30s — too slow for cursor removal.
-        // Track when we last received an awareness update for each peer and
-        // evict any that go stale after 10s.
-        const STALE_THRESHOLD = 10_000; // 10 seconds
-        const peerLastSeen = new Map<number, number>();
-
-        // Update timestamp whenever we hear from a peer
-        const trackPeerActivity = ({ added, updated, removed }: any) => {
-            const now = Date.now();
-            for (const id of [...(added || []), ...(updated || [])]) {
-                if (id !== ydoc.clientID) peerLastSeen.set(id, now);
             }
-            // Clean removed peers from tracking
-            for (const id of (removed || [])) {
-                peerLastSeen.delete(id);
-            }
-        };
-        awareness.on('change', trackPeerActivity);
-
-        const staleCleanupInterval = setInterval(() => {
-            const now = Date.now();
-            const states = awareness.getStates();
-            const stale: number[] = [];
-            states.forEach((_state, clientID) => {
-                if (clientID !== ydoc.clientID) {
-                    const lastSeen = peerLastSeen.get(clientID);
-                    const age = lastSeen ? now - lastSeen : Infinity;
-                    if (age > STALE_THRESHOLD) {
-                        stale.push(clientID);
-                    }
-                }
-            });
-            if (stale.length > 0) {
-                awarenessProtocol.removeAwarenessStates(awareness, stale, 'timeout');
-                for (const id of stale) {
-                    peerLastSeen.delete(id);
-                    if (states.has(id)) {
-                        states.delete(id);
-                    }
-                }
-                // Force the editor to rebuild cursor decorations by dispatching
-                // directly to the view — the awareness.emit approach doesn't
-                // reliably trigger ProseMirror's plugin apply method.
-                const ed = editorRef.current;
-                if (ed?.view) {
-                    try {
-                        ed.view.dispatch(ed.view.state.tr.setMeta(yCursorPluginKey, { awarenessUpdated: true }));
-                    } catch { /* editor might be destroyed */ }
-                }
-            }
-        }, 5_000);
-
-        return () => {
-            isCleaningUp = true;
-            clearTimeout(initialContentTimer);
-            clearTimeout(readyFallbackTimer);
-            clearTimeout(reconnectTimeout);
-            clearInterval(staleCleanupInterval);
-            awareness.off('change', trackPeerActivity);
-            // 1. Remove our awareness state FIRST — while the update handler
-            //    is still attached so it can broadcast the removal to peers.
-            awarenessProtocol.removeAwarenessStates(awareness, [ydoc.clientID], 'local');
-            // 2. Now remove handlers (no more updates to send)
-            ydoc.off('update', docUpdateHandler);
-            awareness.off('update', awarenessUpdateHandler);
-            awareness.off('change', awarenessChangeHandler);
-            // 3. Close the WebSocket last
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
-        };
-    }, [wsUrl, currentUser, ydoc, awareness, userColor]);
+        },
+    });
+    wsRef.current = socket;
 
     // ─── TipTap Editor ────────────────────────────────────────────────
     const editor = useEditor({
@@ -919,41 +574,7 @@ export default function CollaborativeEditor({
             Collaboration.configure({
                 document: ydoc,
             }),
-            // Custom cursor extension using fixedCursorPlugin that corrects
-            // the off-by-one cursor position (assoc -1 → 0)
-            Extension.create({
-                name: 'collaborationCursor',
-                addProseMirrorPlugins() {
-                    return [
-                        fixedCursorPlugin(
-                            awareness,
-                            {
-                                cursorBuilder: (user: any) => {
-                                    const cursor = document.createElement('span');
-                                    cursor.classList.add('collaboration-cursor__caret');
-                                    // GHSA-82vg-f3qp-gv8v: `user.color` is peer-supplied via
-                                    // Y.js awareness and the backend relay forwards it byte-for-byte.
-                                    // Assigning to the typed CSSOM property makes the browser parse
-                                    // the value as a single CSS token \u2014 a multi-declaration payload
-                                    // like `red;position:fixed;\u2026` is rejected and the property is
-                                    // left unset. Do NOT go back to setAttribute('style', \u2026).
-                                    cursor.style.borderColor = user.color;
-                                    const wj1 = document.createTextNode('\u2060');
-                                    const wj2 = document.createTextNode('\u2060');
-                                    const label = document.createElement('div');
-                                    label.classList.add('collaboration-cursor__label');
-                                    label.style.backgroundColor = user.color;
-                                    label.textContent = user.name;
-                                    cursor.appendChild(wj1);
-                                    cursor.appendChild(label);
-                                    cursor.appendChild(wj2);
-                                    return cursor;
-                                },
-                            }
-                        ),
-                    ];
-                },
-            }),
+            createCollabCursorExtension(awareness),
             createActiveLineExtension(showLineNumbersRef),
         ],
         editable: !disabled,
@@ -1033,14 +654,6 @@ export default function CollaborativeEditor({
             editor.view.dispatch(editor.state.tr.setMeta(activeLineKey, Date.now()));
         }
     }, [editor, showLineNumbers]);
-
-    // Cleanup Y.Doc + Awareness on unmount
-    useEffect(() => {
-        return () => {
-            awareness.destroy();
-            ydoc.destroy();
-        };
-    }, [ydoc, awareness]);
 
     return (
         <div

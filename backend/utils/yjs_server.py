@@ -38,15 +38,18 @@ NOTE_UPDATE_LOG_DEBOUNCE = timedelta(minutes=10)
 
 class YjsRoom:
     """
-    A room represents a single Y.js document (one per note).
+    A room represents a single Y.js document: one per note, or one per
+    collaborative record field (``persist=False`` — the page's Save persists
+    those, so the room never asks a client for content).
 
     The server acts as a pure relay: it forwards all binary messages
     (sync protocol + awareness) between connected clients. The CRDT
     merging and awareness protocol happen entirely in the clients.
     """
 
-    def __init__(self, note_id: str):
-        self.note_id = note_id
+    def __init__(self, note_id: str, persist: bool = True):
+        self.note_id = note_id  # the room key (a note id, or collab_fields.room_key)
+        self.persist = persist
         self.clients: Set[WebSocket] = set()
         self.client_user_ids: Dict[WebSocket, str] = {}  # ws → user_id for save
         self.client_yjs_ids: Dict[WebSocket, int] = {}   # ws → Y.js clientID for awareness cleanup
@@ -132,6 +135,8 @@ class YjsRoom:
 
     def _schedule_save(self):
         """Schedule a debounced save to the database."""
+        if not self.persist:
+            return
         if self._save_task and not self._save_task.done():
             self._save_task.cancel()
         self._save_task = asyncio.create_task(self._debounced_save())
@@ -189,9 +194,9 @@ class YjsDocumentStore:
         self.rooms: Dict[str, YjsRoom] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
 
-    def get_or_create_room(self, note_id: str) -> YjsRoom:
+    def get_or_create_room(self, note_id: str, persist: bool = True) -> YjsRoom:
         if note_id not in self.rooms:
-            self.rooms[note_id] = YjsRoom(note_id)
+            self.rooms[note_id] = YjsRoom(note_id, persist=persist)
         return self.rooms[note_id]
 
     def remove_room(self, note_id: str):

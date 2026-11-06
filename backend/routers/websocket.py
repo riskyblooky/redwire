@@ -372,8 +372,7 @@ async def yjs_websocket_endpoint(
     Handles both binary Y.js sync protocol messages and JSON control
     messages (save responses, awareness updates).
     """
-    from utils.yjs_server import yjs_store, save_note_content
-    import json as _json
+    from utils.yjs_server import save_note_content
 
     await websocket.accept()
 
@@ -430,13 +429,75 @@ async def yjs_websocket_endpoint(
             user_id, note.engagement_id, edit_perm, db
         )
 
-    # 3. Join the Y.js room
-    room = yjs_store.get_or_create_room(note_id)
-    await room.add_client(websocket, user_id)
+    # 3. Join the Y.js room and relay until the client leaves.
+    async def _save(content: str):
+        await save_note_content(note_id, content, user_id)
+
+    await _serve_yjs_room(
+        websocket, note_id, user_id, can_edit,
+        initial_content=note.content or "", persist=True, on_save=_save,
+        extra_initial={"note_id": note_id},
+    )
+
+
+@router.websocket("/ws/yjs/field/{resource_type}/{resource_id}/{field}")
+async def yjs_field_websocket_endpoint(
+    websocket: WebSocket,
+    resource_type: str,
+    resource_id: str,
+    field: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Y.js sync for one rich-text field of a finding / test case / asset, or a
+    report builder text section — live co-editing on the edit pages.
+
+    Same first-frame auth and relay as the note socket, but the room is never
+    persisted from here: the page's Save (the REST PUT) writes the field. See
+    utils/collab_fields.py for the field allow-list and permission mapping.
+    """
+    from utils.collab_fields import resolve_collab_target, room_key
+
+    await websocket.accept()
+    authed = await _auth_via_first_frame(websocket, db)
+    if authed is None:
+        return
+    user_row, _role = authed
+
+    target = await resolve_collab_target(resource_type, resource_id, field, user_row, db)
+    if target is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await _serve_yjs_room(
+        websocket, room_key(resource_type, resource_id, field), user_row.id, target.can_edit,
+        initial_content=target.content, persist=False, on_save=None,
+    )
+
+
+async def _serve_yjs_room(
+    websocket: WebSocket,
+    key: str,
+    user_id: str,
+    can_edit: bool,
+    *,
+    initial_content: str,
+    persist: bool,
+    on_save,
+    extra_initial: Optional[dict] = None,
+):
+    """Join the Y.js room ``key``, send the bootstrap frame, and relay frames
+    until the client disconnects. ``on_save`` handles a client's
+    ``save_content`` (editors only); None ignores it."""
+    from utils.yjs_server import yjs_store
     from utils.ws_bus import bus as _bus
+    import json as _json
     import uuid as _uuid
+
+    room = yjs_store.get_or_create_room(key, persist=persist)
+    await room.add_client(websocket, user_id)
     _yjs_conn = _uuid.uuid4().hex
-    await _bus.presence_add("yjs", note_id, _yjs_conn, {"id": user_id})
+    await _bus.presence_add("yjs", key, _yjs_conn, {"id": user_id})
 
     # Start cleanup loop if not running
     yjs_store.start_cleanup_loop()
@@ -446,14 +507,13 @@ async def yjs_websocket_endpoint(
     # number of OTHER clients already in the room (self is already added), so
     # the client can skip the sync wait and reveal the DB copy immediately when
     # it's alone — and only pay the peer-sync latency when joining an occupied
-    # note, where a peer holds the authoritative Y.js doc to sync from.
-    initial_content = note.content or ""
+    # room, where a peer holds the authoritative Y.js doc to sync from.
     try:
         await websocket.send_text(_json.dumps({
             "type": "initial_content",
             "content": initial_content,
-            "note_id": note_id,
-            "peers": await _yjs_peer_count(note_id, room),
+            "peers": await _yjs_peer_count(key, room),
+            **(extra_initial or {}),
         }))
     except Exception:
         pass
@@ -461,6 +521,8 @@ async def yjs_websocket_endpoint(
     try:
         while True:
             message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000))
 
             if "bytes" in message and message["bytes"]:
                 # Binary Y.js sync/awareness message. Read-only viewers
@@ -484,10 +546,9 @@ async def yjs_websocket_endpoint(
                     data = _json.loads(message["text"])
 
                     if data.get("type") == "save_content":
-                        if not can_edit:
+                        if not can_edit or on_save is None:
                             continue
-                        content = data.get("content", "")
-                        await save_note_content(note_id, content, user_id)
+                        await on_save(data.get("content", ""))
                     elif data.get("type") == "register_client_id":
                         # Client tells us its Y.js clientID so we can notify
                         # peers when it disconnects (for cursor cleanup)
@@ -495,7 +556,7 @@ async def yjs_websocket_endpoint(
                         if yjs_id is not None:
                             room.set_client_yjs_id(websocket, int(yjs_id))
 
-                except _json.JSONDecodeError:
+                except (_json.JSONDecodeError, TypeError, ValueError):
                     pass
 
     except WebSocketDisconnect:
@@ -512,7 +573,7 @@ async def yjs_websocket_endpoint(
         if yjs_id is not None:
             await room.notify_peer_disconnected(yjs_id)
     finally:
-        await _bus.presence_remove("yjs", note_id, _yjs_conn)
+        await _bus.presence_remove("yjs", key, _yjs_conn)
 
 
 async def _yjs_peer_count(note_id: str, room) -> int:

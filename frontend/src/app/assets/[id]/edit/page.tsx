@@ -37,6 +37,11 @@ import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { apiErrorMessage } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth-store';
+import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
+import { EditLockBanner } from '@/components/collaboration/edit-lock-banner';
+import { collabFieldPath } from '@/components/discussions/annotation-surface';
 
 
 export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
@@ -55,6 +60,17 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     const updatePort = useUpdateAssetPort();
     const { data: assetTypes = [] } = useConfigurableTypes('asset');
     const [isDirty, setIsDirty] = useState(false);
+
+    // Live presence (shared with the view page). Description and notes are
+    // co-edited live; the other fields are saved by whoever saves last.
+    const currentUserId = useAuthStore(s => s.user?.id);
+    const { activeUsers } = useCollaboration({
+        resourceType: 'asset',
+        resourceId: id,
+        enabled: !!asset,
+        mode: 'edit',
+    });
+    const otherEditors = activeUsers.filter(u => u.mode === 'edit' && u.id !== currentUserId);
 
     // Port editing state
     const [editingPortId, setEditingPortId] = useState<string | null>(null);
@@ -236,12 +252,14 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <h1 className="text-2xl font-bold text-white tracking-tight">Edit Asset</h1>
                         <p className="text-slate-400 text-sm mt-0.5 truncate">{asset.name}</p>
                     </div>
+                    {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
                 </div>
             </div>
+            <EditLockBanner otherEditors={otherEditors} liveText />
             {/* Content — two-column grid: details left, ports right */}
             <div className="p-6 pb-24 flex-1">
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -335,6 +353,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                                     Description
                                 </Label>
                                 <MarkdownEditor engagementId={formData.engagement_id || undefined}
+                                    collab={{ path: collabFieldPath('asset', id, 'description') }}
                                     id="description"
                                     value={formData.description}
                                     onChange={(val) => handleChange('description', val)}
@@ -349,6 +368,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                                     Internal Notes
                                 </Label>
                                 <MarkdownEditor engagementId={formData.engagement_id || undefined}
+                                    collab={{ path: collabFieldPath('asset', id, 'notes') }}
                                     id="notes"
                                     value={formData.notes}
                                     onChange={(val) => handleChange('notes', val)}

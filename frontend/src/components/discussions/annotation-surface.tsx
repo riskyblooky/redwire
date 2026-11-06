@@ -45,7 +45,14 @@ export interface AnnotationSurfaceProps {
     /** Rendered in a footer row under the editor (e.g. a Save/Cancel bar). */
     footer?: React.ReactNode;
     outerClassName?: string;
+    /** Live co-editing of this field with others on the same page (room
+     *  `field/<resourceType>/<resourceId>/<field>`). Fixed at mount. */
+    collaborative?: boolean;
 }
+
+/** Relay path for a record field's live room (backend utils/collab_fields.py). */
+export const collabFieldPath = (resourceType: string, resourceId: string, field: string) =>
+    `field/${resourceType}/${encodeURIComponent(resourceId)}/${field}`;
 
 const toLite = (t: Thread): AnchoredThreadLite => ({
     id: t.id,
@@ -69,7 +76,7 @@ const toLite = (t: Thread): AnchoredThreadLite => ({
  */
 export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationSurfaceProps>(function AnnotationSurface({
     value, onChange, canEdit = false, engagementId, resourceType, resourceId, field,
-    fieldContext, minHeight = '260px', placeholder, focusThreadId, footer, outerClassName,
+    fieldContext, minHeight = '260px', placeholder, focusThreadId, footer, outerClassName, collaborative,
 }, ref) {
     const [editor, setEditor] = useState<Editor | null>(null);
     const [activeId, setActiveId] = useState<string | null>(null);
@@ -312,6 +319,7 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                                 document.querySelector(`[data-thread-item="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                             }}
                             onCommentHover={onHover}
+                            collab={collaborative ? { path: collabFieldPath(resourceType, resourceId, field) } : undefined}
                         />
                     </div>
                     {footer}

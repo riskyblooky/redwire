@@ -524,6 +524,11 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     // has no id for threads to attach to, so it's a plain editor.
     const renderTextContent = (section: LocalSection, idx: number) => section.id ? (
         <AnnotationSurface
+            // Live co-editing with everyone on this layout; the layout's Save
+            // still persists it. The room is fixed at mount, so key by section
+            // to remount (and switch rooms) when the selected section changes.
+            key={section.id}
+            collaborative
             ref={(h) => {
                 if (h) surfaceRefs.current.set(section.id!, h);
                 else surfaceRefs.current.delete(section.id!);

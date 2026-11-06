@@ -4,6 +4,19 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.8.0] — Unreleased
+
+### Added
+- **Edit together, live** — the text fields on the finding, test case and
+  asset edit pages, and text sections in the report builder, now update for
+  everyone on the page as they type, with each person's cursor shown by name.
+  Review-comment highlights stay in place while others edit. Changes are
+  still kept by the page's Save, so versions, the activity log and review
+  checks work as before. Severity, status and other non-text fields are still
+  saved by whoever saves last, and the "also editing" banner says so.
+- **Who's editing an asset** — the asset edit page shows who else is viewing
+  or editing it, like findings and test cases.
+
 ## [1.7.1] — 2026-11-05
 
 ### Security
