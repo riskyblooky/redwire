@@ -499,6 +499,27 @@ async def lifespan(app):
     except Exception as e:
         print(f"[auth-settings] WARN: backfill failed: {e}")
 
+    # ── One-shot plugin_settings.value at-rest encryption backfill ──
+    # PluginSetting.value is now EncryptedText; re-encrypt rows written in
+    # plaintext before that (plugin API keys / passwords included).
+    try:
+        from utils.plugin_settings_field_migration import (
+            count_legacy_plugin_settings_rows,
+            backfill_legacy_plugin_settings,
+        )
+        async with AsyncSessionLocal() as _db:
+            pending = await count_legacy_plugin_settings_rows(_db)
+            if pending:
+                print(f"[plugin-settings] backfilling {pending} row(s) with unencrypted value...")
+                stats = await backfill_legacy_plugin_settings(_db)
+                print(
+                    f"[plugin-settings] done: rows_checked={stats['rows_checked']} "
+                    f"already_encrypted={stats['already_encrypted']} "
+                    f"re_encrypted={stats['re_encrypted']} skipped={stats['skipped']}"
+                )
+    except Exception as e:
+        print(f"[plugin-settings] WARN: backfill failed: {e}")
+
     await release_startup_lock(_startup_lock)
 
     bloom_task = asyncio.create_task(_load_bloom())

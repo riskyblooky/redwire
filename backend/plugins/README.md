@@ -12,7 +12,7 @@ directory under `backend/plugins/<slug>/`.
 | Sidebar entries | `plugin.yaml::nav_items` | Icon name resolved from `frontend/src/lib/plugin-icons.tsx` (falls back to `Plug`) |
 | Extension slots | `plugin.yaml::extensions` + `frontend/extensions/*.tsx` | Core pages render `<PluginSlot slot="..." />`; plugins register components against named slots |
 | Dashboard widgets | `plugin.yaml::widgets` | data_source strings the widget renderer resolves |
-| Admin settings | `plugin.yaml::settings` | Encrypted at rest when `type: secret` |
+| Admin settings | `plugin.yaml::settings` | Every value is encrypted at rest (`plugin_settings.value` is `EncryptedText`); `type: secret` values are also masked in the admin UI |
 | DB migrations | `alembic/versions/*.py` | Own Alembic branch — see below |
 | Frontend pages | `frontend/*.tsx` | Synced into the Next.js app tree at build — see below |
 | RBAC | `plugin.yaml::required_permissions` | **Global** permissions, applied to all routes; nav items and extensions can override per-entry. For engagement-scoped data (assets, findings…) check the engagement permission inside the route — see the sample plugins |

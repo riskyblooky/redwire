@@ -537,7 +537,6 @@ async def _posture(db: AsyncSession, refresh: bool = False) -> dict:
     from auth.jwt import SECRET_KEY
     from auth.password import verify_password
     from models.auth_settings import AuthSetting
-    from models.plugin import PluginSetting
     from models.registration_code import RegistrationCode
     from utils.cluster import async_redis
     from version import VERSION
@@ -570,14 +569,13 @@ async def _posture(db: AsyncSession, refresh: bool = False) -> dict:
             checks.append(_check(env.lower(), title, "fail", f"{env} is missing or not a valid Fernet key.",
                                  f"Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`.", "Secrets"))
 
-    secrets_plain = (await db.execute(
-        select(func.count()).select_from(PluginSetting)
-        .where(PluginSetting.is_secret.is_(True), PluginSetting.value.isnot(None), PluginSetting.value != "")
-    )).scalar_one()
-    checks.append(_check("plugin_secrets", "Plugin secret settings", "warn" if secrets_plain else "pass",
-                         f"{secrets_plain} plugin secret value(s) stored unencrypted in the database." if secrets_plain
-                         else "No plugin secrets stored.",
-                         "Plugin secrets (API keys, passwords) are masked in the UI but stored in plaintext; limit database access accordingly." if secrets_plain else "",
+    from utils.plugin_settings_field_migration import count_legacy_plugin_settings_rows
+    secrets_plain = await count_legacy_plugin_settings_rows(db, secrets_only=True)
+    checks.append(_check("plugin_secrets", "Plugin secret settings", "fail" if secrets_plain else "pass",
+                         f"{secrets_plain} plugin secret value(s) aren't encrypted under the current key." if secrets_plain
+                         else "Plugin settings (API keys, passwords) are encrypted at rest.",
+                         "They're re-encrypted at startup — restart the backend and check its log for "
+                         "'[plugin-settings]' warnings (a skipped row means it was encrypted with a different key)." if secrets_plain else "",
                          "Secrets"))
 
     # Accounts

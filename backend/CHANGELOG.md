@@ -27,6 +27,14 @@ section becomes one release entry.
   `nginx/nginx.conf` — nginx now also writes a JSON access log to a new
   `nginx_logs` volume shared with the backend.
 
+### Security
+- **Plugin settings are encrypted at rest.** Plugin secrets such as the
+  ServiceNow password and the Shodan API key were masked in the admin UI
+  but stored unencrypted in the database. Every plugin setting value is
+  now encrypted with the vault key, and existing values are encrypted
+  automatically on the first start after upgrading. The Security Center's
+  posture check reports any that couldn't be.
+
 ### Fixed
 - **A sign-in completed with a 2FA code now fires the `auth.login.success`
   plugin event** — previously only password-only sign-ins did.
