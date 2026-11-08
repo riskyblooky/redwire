@@ -35,6 +35,9 @@ class ServiceNowClient:
         """
         # Build a ServiceNow encoded query:
         # nameLIKE<query> OR ip_addressLIKE<query> OR fqdnLIKE<query>
+        # `^` separates encoded-query terms — strip it so the search text
+        # can't add its own conditions.
+        query = query.replace("^", "").strip()
         encoded_query = (
             f"nameLIKE{query}"
             f"^ORip_addressLIKE{query}"
@@ -45,7 +48,7 @@ class ServiceNowClient:
         fields = "sys_id,name,ip_address,fqdn,host_name,sys_class_name,operational_status,os,os_version,category,subcategory,asset_tag,serial_number,company,department,location,sys_updated_on"
 
         try:
-            async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(
                     f"{self.instance_url}/api/now/table/{self.table}",
                     params={

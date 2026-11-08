@@ -61,10 +61,10 @@ class ShodanEnricher:
 
     async def handle_asset_event(self, event: dict[str, Any]):
         """Handle asset.created/updated events — enrich if it's an IP."""
-        resource_name = event.get("resource_name", "")
         resource_id = event.get("resource_id", "")
-
-        if not resource_name or not self._is_ip_address(resource_name):
+        # Events carry the display name; the IP is the asset's identifier.
+        resource_name = await self.asset_ip(resource_id) if resource_id else None
+        if not resource_name:
             return  # Not an IP address, skip
 
         if not await self._is_auto_enrich_enabled():
@@ -85,6 +85,20 @@ class ShodanEnricher:
         except Exception as e:
             print(f"[Shodan] Error enriching {resource_name}: {e}")
             traceback.print_exc()
+
+    async def asset_ip(self, asset_id: str) -> str | None:
+        """The asset's identifier (or name) if it's an IPv4 address."""
+        from sqlalchemy import select
+        from models.asset import Asset
+
+        async with self.db_factory() as db:
+            asset = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
+        if asset is None:
+            return None
+        for candidate in (asset.identifier, asset.name):
+            if candidate and self._is_ip_address(candidate):
+                return candidate.strip()
+        return None
 
     async def lookup(self, ip: str, api_key: str) -> dict | None:
         """Query Shodan API for host information."""

@@ -37,8 +37,10 @@ settings:
     default: "true"
     description: "Automatically look up assets in ServiceNow CMDB when they are created"
 
-required_permissions:
-  - ASSET_VIEW
+# Plugin-level required_permissions must be GLOBAL permissions (they gate
+# every route for every user). Asset access is engagement-scoped, so the
+# routes check ASSET_VIEW on the asset's engagement themselves instead.
+required_permissions: []
 
 # Extension slots this plugin registers into. See PluginRegistry.get_extensions.
 extensions:

@@ -317,9 +317,22 @@ class PluginRegistry:
         dispatch when ``plugin.manifest.enabled`` is False.
         """
         from auth.dependencies import get_current_user
+        from models.permission import GLOBAL_PERMISSIONS
 
         for plugin in self.plugins.values():
             if plugin.has_routes and plugin.manifest.enabled and not plugin.error:
+                # The route gate checks GLOBAL permissions; an engagement
+                # permission here (e.g. asset_view) locks out everyone but
+                # admins. Say so at startup rather than via mystery 403s.
+                for name in plugin.manifest.required_permissions or []:
+                    try:
+                        perm = _resolve_permission(name)
+                    except ValueError:
+                        continue  # reported per request by _make_permission_check
+                    if perm not in GLOBAL_PERMISSIONS:
+                        print(f"  ⚠️  Plugin '{plugin.id}' requires '{perm.value}', which is an "
+                              f"engagement permission — only admins will reach its routes. "
+                              f"Check it per engagement inside the route instead.")
                 prefix = f"/plugins/{plugin.slug}"
                 app.include_router(
                     plugin.router,

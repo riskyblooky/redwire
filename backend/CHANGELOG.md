@@ -4,6 +4,22 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.9.0] — Unreleased
+
+### Fixed
+- **Plugin events for creates, updates and deletes now fire** — plugins
+  subscribed to the documented `<resource>.created` / `.updated` /
+  `.deleted` events (e.g. `asset.created`) never received them; they were
+  sent under the internal activity names (`asset.created_asset`). Login,
+  status-change and report events were unaffected.
+- **Sample plugins work** — the Shodan and ServiceNow samples now react to
+  new assets, use the asset's identifier (IP / hostname) rather than its
+  display name, and their routes work for anyone who can view the asset
+  instead of admins only. Shodan's manual enrich no longer errors.
+  ServiceNow keeps TLS verification on and can't have its search widened by
+  query syntax in the search text. Plugin authors get a startup warning if
+  a plugin requires an engagement-level permission for all its routes.
+
 ## [1.8.1] — 2026-11-08
 
 ### Security

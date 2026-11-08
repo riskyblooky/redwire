@@ -15,6 +15,26 @@ from database import AsyncSessionLocal
 router = APIRouter()
 
 
+async def _viewable_asset(asset_id: str, user: User):
+    """The asset, if the caller may view it (ASSET_VIEW on its engagement;
+    admin / read-only admin / team lead bypass) — else 404, so asset ids
+    from other engagements aren't confirmed."""
+    from sqlalchemy import select
+    from auth.rbac import check_engagement_permission
+    from models.asset import Asset
+    from models.permission import Permission
+    from models.user import UserRole
+
+    async with AsyncSessionLocal() as db:
+        asset = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
+        if asset and (
+            user.role in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
+            or await check_engagement_permission(user.id, asset.engagement_id, Permission.ASSET_VIEW.value, db)
+        ):
+            return asset
+    raise HTTPException(404, "Asset not found")
+
+
 async def _get_client():
     """Build a ServiceNowClient from stored plugin settings."""
     from sqlalchemy import select
@@ -77,14 +97,7 @@ async def lookup_asset(
     current_user: User = Depends(get_current_user),
 ):
     """Look up a RedWire asset in ServiceNow CMDB using its identifier."""
-    from sqlalchemy import select
-    from models.asset import Asset
-
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Asset).where(Asset.id == asset_id))
-        asset = result.scalar_one_or_none()
-        if not asset:
-            raise HTTPException(404, "Asset not found")
+    asset = await _viewable_asset(asset_id, current_user)
 
     # Use the asset's identifier (IP, domain, hostname, etc.)
     query = asset.identifier or asset.name
@@ -111,6 +124,8 @@ async def get_enrichment(
     import json
     from sqlalchemy import select
     from models.plugin import PluginSetting
+
+    await _viewable_asset(asset_id, current_user)
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(

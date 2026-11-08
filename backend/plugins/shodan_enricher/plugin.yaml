@@ -37,5 +37,7 @@ widgets:
     icon: "Globe"
     description: "Total assets enriched with Shodan intel"
 
-required_permissions:
-  - ASSET_VIEW
+# Plugin-level required_permissions must be GLOBAL permissions (they gate
+# every route for every user). Asset access is engagement-scoped, so the
+# routes check ASSET_VIEW on the asset's engagement themselves instead.
+required_permissions: []

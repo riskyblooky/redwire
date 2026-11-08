@@ -357,6 +357,23 @@ def compute_changes_dict(old_obj: Any, update_data: dict) -> dict[str, dict[str,
     return changes
 
 
+_CRUD_VERBS = ("created", "updated", "deleted")
+
+
+def plugin_event_name(resource_type: str, action: str) -> str:
+    """Plugin event-bus name for an activity-log action.
+
+    Activity actions are spelled ``created_asset`` / ``updated_finding`` etc.;
+    the documented plugin hooks are ``<resource>.created`` / ``.updated`` /
+    ``.deleted``, so a leading CRUD verb is normalized (``created_vault_item``
+    with resource type ``vault`` → ``vault.created``). Other actions pass
+    through as ``<resource>.<action>`` (e.g. ``asset.imported_assets``)."""
+    for verb in _CRUD_VERBS:
+        if action == verb or action.startswith(f"{verb}_"):
+            return f"{resource_type}.{verb}"
+    return f"{resource_type}.{action}"
+
+
 async def create_activity_log(
     db: AsyncSession,
     engagement_id: str,
@@ -420,8 +437,7 @@ async def create_activity_log(
     # ── 3. Plugin event bus ────────────────────────────────────────────
     try:
         from utils.event_bus import event_bus
-        event_name = f"{resource_type}.{action}"
-        await event_bus.emit(event_name, {
+        await event_bus.emit(plugin_event_name(resource_type, action), {
             "resource_id": resource_id,
             "resource_name": resource_name,
             "resource_type": resource_type,

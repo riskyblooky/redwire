@@ -39,14 +39,24 @@ async def _get_setting(key: str) -> str | None:
         return setting.value if setting else None
 
 
+async def _asset_identifier(asset_id: str) -> str | None:
+    """The asset's identifier (IP / hostname / URL), falling back to its name.
+    Events carry only the display name, so read the row."""
+    from sqlalchemy import select
+    from models.asset import Asset
+
+    async with _db_factory() as db:
+        asset = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
+        return (asset.identifier or asset.name) if asset else None
+
+
 async def _handle_asset_event(event: dict):
     """Handle asset.created — look up the asset in ServiceNow CMDB."""
     import json
     import traceback
 
-    resource_name = event.get("resource_name", "")
     resource_id = event.get("resource_id", "")
-
+    resource_name = await _asset_identifier(resource_id) if resource_id else None
     if not resource_name:
         return
 

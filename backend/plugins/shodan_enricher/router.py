@@ -77,16 +77,24 @@ async def manual_enrich(
         if not key_setting or not key_setting.value:
             raise HTTPException(400, "Shodan API key not configured")
 
-        # Get asset
+        # Get asset — and only one the caller may view.
+        from auth.rbac import check_engagement_permission
+        from models.permission import Permission
+        from models.user import UserRole
         asset_result = await db.execute(select(Asset).where(Asset.id == asset_id))
         asset = asset_result.scalar_one_or_none()
-        if not asset:
+        if not asset or not (
+            current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)
+            or await check_engagement_permission(current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db)
+        ):
             raise HTTPException(404, "Asset not found")
 
     from .enricher import ShodanEnricher
     enricher = ShodanEnricher(db_factory=AsyncSessionLocal)
 
-    ip = asset.hostname or asset.name
+    ip = await enricher.asset_ip(asset_id)
+    if not ip:
+        raise HTTPException(400, "Asset has no IPv4 identifier to look up")
     data = await enricher.lookup(ip, key_setting.value)
     if data:
         await enricher._store_enrichment(asset_id, ip, data)

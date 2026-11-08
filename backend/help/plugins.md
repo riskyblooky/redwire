@@ -15,7 +15,7 @@ directory under `backend/plugins/<slug>/`.
 | Admin settings | `plugin.yaml::settings` | Encrypted at rest when `type: secret` |
 | DB migrations | `alembic/versions/*.py` | Own Alembic branch — see below |
 | Frontend pages | `frontend/*.tsx` | Synced into the Next.js app tree at build — see below |
-| RBAC | `plugin.yaml::required_permissions` | Applied to all routes; nav items and extensions can override per-entry |
+| RBAC | `plugin.yaml::required_permissions` | **Global** permissions, applied to all routes; nav items and extensions can override per-entry. For engagement-scoped data (assets, findings…) check the engagement permission inside the route — see the sample plugins |
 
 ## Layout
 
