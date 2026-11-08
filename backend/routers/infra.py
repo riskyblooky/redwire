@@ -68,8 +68,9 @@ async def _check_vault_access(
     _check_vault_membership_manage gate below — without that split,
     every grantee was implicitly a granter (GHSA-58q3-f33p-w84m).
     """
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if is_admin:
+    # READ_ONLY_ADMIN bypasses viewing only; managing needs the grant + ACL.
+    bypass = [UserRole.ADMIN, UserRole.TEAM_LEAD] if require_manage else [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if current_user.role in bypass:
         return
 
     perm = Permission.INFRA_VAULT_MANAGE if require_manage else Permission.INFRA_VAULT_VIEW

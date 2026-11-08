@@ -1070,7 +1070,8 @@ async def _require_asset(asset_id: str, db: AsyncSession, current_user: User) ->
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await check_engagement_permission(
             current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db

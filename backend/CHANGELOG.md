@@ -4,6 +4,16 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.8.1] — 2026-11-08
+
+### Security
+- **Read-only admins can no longer make changes** in a few places that
+  still let them: saving or creating report layouts, importing scans,
+  linking and unlinking findings / test cases / assets / notes / vault
+  items / cleanup artifacts, editing cleanup-artifact links, and managing
+  infrastructure vault items. The role can still view all of these, and
+  can still edit where an engagement role explicitly grants it.
+
 ## [1.8.0] — 2026-11-07
 
 ### Added

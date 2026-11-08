@@ -471,7 +471,8 @@ async def _get_note_with_perm_check(note_id: str, db: AsyncSession, current_user
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, note.engagement_id, Permission.NOTE_EDIT.value, db

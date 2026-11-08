@@ -26,6 +26,11 @@ def _is_admin(user: User) -> bool:
     return user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
 
 
+def _is_write_admin(user: User) -> bool:
+    # READ_ONLY_ADMIN views everything but only writes with an explicit grant.
+    return user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+
+
 async def _require_artifact_view(
     artifact: CleanupArtifact, current_user: User, db: AsyncSession
 ) -> None:
@@ -44,7 +49,7 @@ async def _require_artifact_edit(
     artifact: CleanupArtifact, current_user: User, db: AsyncSession
 ) -> None:
     """Owner -> CLEANUP_EDIT, otherwise CLEANUP_EDIT_ANY (matches PATCH/DELETE)."""
-    if _is_admin(current_user):
+    if _is_write_admin(current_user):
         return
     perm = (
         Permission.CLEANUP_EDIT.value

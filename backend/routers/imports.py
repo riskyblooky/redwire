@@ -114,7 +114,8 @@ def _parsed_to_preview(
 
 async def _check_import_permission(current_user: User, engagement_id: str, db: AsyncSession):
     """Ensure the user can import (i.e. has asset_create access)."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_permission = await check_engagement_permission(
             current_user.id, engagement_id, Permission.ASSET_CREATE.value, db

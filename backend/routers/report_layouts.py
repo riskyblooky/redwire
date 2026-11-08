@@ -30,7 +30,8 @@ async def _check_report_read(user: User, engagement_id: str, db: AsyncSession):
 
 
 async def _check_report_write(user: User, engagement_id: str, db: AsyncSession):
-    is_admin = user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
+    is_admin = user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         has_perm = await check_engagement_permission(user.id, engagement_id, Permission.REPORT_GENERATE.value, db)
         if not has_perm:
