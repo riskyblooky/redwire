@@ -32,6 +32,7 @@ from models.ai_settings import AiSetting
 from models.api_token import ApiToken
 from models.version_history import VersionHistory
 from models.activity_ping import ActivityPing
+from models.security_event import SecurityEvent, HttpRequestLog, HttpTrafficHourly, HttpLogCursor
 from models.finding_review import FindingReview
 from models.attack_graph_layout import AttackGraphLayout
 from models.attacker_node import AttackerNode, AttackerNodeEdge
@@ -117,6 +118,10 @@ __all__ = [
     "ApiToken",
     "VersionHistory",
     "ActivityPing",
+    "SecurityEvent",
+    "HttpRequestLog",
+    "HttpTrafficHourly",
+    "HttpLogCursor",
     "FindingReview",
     "ConfigurableType",
     "AttackGraphLayout",

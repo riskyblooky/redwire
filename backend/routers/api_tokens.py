@@ -27,6 +27,7 @@ import uuid
 import hashlib
 import secrets
 import logging
+from utils.security_events import record_security_event
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,9 @@ async def create_own_token(
     await db.refresh(token)
 
     logger.info(f"API token created: {token_prefix}... for user {current_user.username}")
+    await record_security_event("api_token_created", request=request, user=current_user,
+                                details={"token_prefix": token_prefix, "permission": token.permission,
+                                         "expires_at": expires.isoformat() if expires else None})
 
     return ApiTokenCreated(
         id=token.id,
@@ -181,6 +185,7 @@ async def create_own_token(
 )
 async def revoke_own_token(
     token_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -194,6 +199,8 @@ async def revoke_own_token(
 
     token.is_active = False
     await db.commit()
+    await record_security_event("api_token_revoked", request=request, user=current_user,
+                                details={"token_prefix": token.token_prefix})
 
 
 # ─── Admin endpoints ─────────────────────────────────────────────────────────
@@ -295,6 +302,9 @@ async def admin_create_token(
     logger.info(
         f"Admin {current_user.username} created API token {token_prefix}... for user {target_user.username}"
     )
+    await record_security_event("api_token_created", request=request, user=target_user, actor=current_user,
+                                details={"token_prefix": token_prefix, "permission": token.permission,
+                                         "expires_at": token.expires_at.isoformat() if token.expires_at else None})
 
     return ApiTokenCreated(
         id=token.id,
@@ -319,6 +329,7 @@ async def admin_create_token(
 )
 async def admin_revoke_token(
     token_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -333,3 +344,5 @@ async def admin_revoke_token(
 
     token.is_active = False
     await db.commit()
+    await record_security_event("api_token_revoked", request=request, user_id=token.user_id,
+                                actor=current_user, details={"token_prefix": token.token_prefix})

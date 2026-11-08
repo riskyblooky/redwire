@@ -165,6 +165,40 @@ def _test_db_url() -> str:
     return f"{base}/{name}_test"
 
 
+@pytest.fixture(autouse=True)
+def _no_security_event_recording(monkeypatch):
+    """record_security_event writes through the app's own session factory —
+    the real database, not the test one. Off by default; tests that check
+    events use the ``security_events_on`` fixture."""
+    from utils import security_events
+    monkeypatch.setattr(security_events, "_enabled", False)
+
+
+@pytest.fixture
+def security_events_on(db_session, monkeypatch):
+    """Record security events into the test session."""
+    from utils import security_events
+
+    class _Session:
+        """Writes into the test session; ``commit`` only flushes — a real
+        commit would expire the request's own ORM objects, which production
+        (a separate session) never does."""
+        add = staticmethod(db_session.add)
+
+        async def commit(self):
+            await db_session.flush()
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, *exc):
+            return False
+    monkeypatch.setattr(security_events, "_enabled", True)
+    monkeypatch.setattr(security_events, "_session_factory", lambda: _Ctx())
+    return db_session
+
+
 @pytest_asyncio.fixture(scope="session")
 async def db_engine():
     """Session-scoped engine against the test database.

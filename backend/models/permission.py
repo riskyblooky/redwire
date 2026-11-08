@@ -164,6 +164,10 @@ class Permission(str, enum.Enum):
     MANAGE_MARKING_PROFILES = "manage_marking_profiles"  # Classification / portion-marking profiles
     MANAGE_CUSTOM_FIELDS = "manage_custom_fields"  # Custom field definitions per entity
 
+    # Security Center
+    VIEW_SECURITY_CENTER = "view_security_center"  # Sign-in / web-traffic logs, posture, accounts
+    MANAGE_SECURITY_CENTER = "manage_security_center"  # Revoke tokens, force sign-out, disable users, retention
+
 
 class GroupPermissions(Base):
     """Stores permissions for site-wide groups."""
@@ -282,6 +286,10 @@ PERMISSION_CATEGORIES = {
         Permission.MANAGE_MARKING_PROFILES,
         Permission.MANAGE_CUSTOM_FIELDS,
     ],
+    "Security Center": [
+        Permission.VIEW_SECURITY_CENTER,
+        Permission.MANAGE_SECURITY_CENTER,
+    ],
     "Notes": [
         Permission.NOTE_VIEW,
         Permission.NOTE_CREATE,
@@ -393,6 +401,8 @@ GLOBAL_PERMISSIONS = [
     Permission.MANAGE_CONFIGURABLE_TYPES,
     Permission.MANAGE_MARKING_PROFILES,
     Permission.MANAGE_CUSTOM_FIELDS,
+    Permission.VIEW_SECURITY_CENTER,
+    Permission.MANAGE_SECURITY_CENTER,
 ]
 
 ENGAGEMENT_PERMISSIONS = [

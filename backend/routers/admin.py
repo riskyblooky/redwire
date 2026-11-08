@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from utils.security_events import record_security_event
 from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -117,6 +118,8 @@ async def list_users(
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def create_local_user(
     user_data: "AdminUserCreate",
+    request: Request,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a local user account directly (admin-only). Bypasses invite codes."""
@@ -159,13 +162,18 @@ async def create_local_user(
     result = await db.execute(
         select(User).where(User.id == new_user.id).options(selectinload(User.groups))
     )
-    return result.scalar_one()
+    created = result.scalar_one()
+    await record_security_event("user_created", request=request, user=created, actor=current_user,
+                                details={"role": getattr(created.role, "value", created.role)})
+    return created
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def update_user(
     user_id: str,
     user_update: UserUpdate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Update a user's role, status, or group memberships."""
@@ -197,6 +205,13 @@ async def update_user(
         and user.is_active is True
     )
 
+    _sv = lambda v: getattr(v, "value", v)  # noqa: E731
+    changes = {k: {"old": _sv(getattr(user, k, None)), "new": _sv(v)}
+               for k, v in update_data.items()
+               if k in ("role", "is_active") and _sv(getattr(user, k, None)) != _sv(v)}
+    if user_update.group_ids is not None:
+        changes["groups"] = {"old": sorted(g.id for g in user.groups), "new": sorted(user_update.group_ids)}
+
     for key, value in update_data.items():
         setattr(user, key, value)
 
@@ -219,11 +234,15 @@ async def update_user(
                 detail="Session revocation failed. Please retry.",
             )
 
+    if changes:
+        await record_security_event("user_updated", request=request, user=user, actor=current_user,
+                                    details={"changes": changes, "sessions_revoked": deactivating})
     return user
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def delete_user(
     user_id: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -243,13 +262,18 @@ async def delete_user(
             detail="User not found"
         )
         
+    deleted_name = user.username
     await db.delete(user)
     await db.commit()
+    await record_security_event("user_deleted", request=request, username=deleted_name,
+                                actor=current_user, details={"user_id": user_id})
     return None
 
 @router.post("/users/{user_id}/reset-password", dependencies=[Depends(require_global_perm(Permission.MANAGE_USERS))])
 async def reset_password(
     user_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Reset a user's password to a temporary one."""
@@ -310,6 +334,8 @@ async def reset_password(
         actor_id=None,
     )
     await db.commit()
+    await record_security_event("password_reset", request=request, user=user, actor=current_user,
+                                details={"via": "admin"})
     
     return {"temporary_password": temp_password}
 

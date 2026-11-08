@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, History, Info, ListPlus, Filter, Search, X, SlidersHorizontal } from 'lucide-react';
+import { Shield, Users, AlertTriangle, CheckCircle2, XCircle, MoreVertical, Trash2, Edit, UserMinus, UserCheck, Settings, Check, Key, Clock, Activity, Ticket, Layers, Lock, KeyRound, BookOpen, Brain, Radar, Plus, Loader2, LayoutGrid, Plug, Mail, History, Info, ListPlus, Filter, Search, X, SlidersHorizontal, ShieldAlert } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
     DropdownMenu,
@@ -91,6 +91,7 @@ import CustomFieldsManagement from '@/components/admin/custom-fields-management'
 import { PluginManagement } from '@/components/admin/plugin-management';
 import EmailSettings from '@/components/admin/email-settings';
 import { DeletedEngagementLogs } from '@/components/admin/deleted-engagement-logs';
+import { SecurityCenter } from '@/components/admin/security-center';
 import { AboutPanel } from '@/components/admin/about-panel';
 import {
     Tabs,
@@ -301,6 +302,11 @@ export default function AdminPage() {
                         {show('users') && (
 <TabsTrigger value="users" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-indigo-500/10 data-[state=active]:text-indigo-400 data-[state=active]:shadow-[0_0_12px_rgba(99,102,241,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
                             <Users className="h-3.5 w-3.5" /> Operators
+                        </TabsTrigger>
+)}
+                        {show('security') && (
+<TabsTrigger value="security" className="rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 data-[state=active]:bg-red-500/10 data-[state=active]:text-red-400 data-[state=active]:shadow-[0_0_12px_rgba(239,68,68,0.15)] hover:bg-slate-800/60 hover:text-slate-200 gap-1.5">
+                            <ShieldAlert className="h-3.5 w-3.5" /> Security
                         </TabsTrigger>
 )}
                         {show('permissions') && (
@@ -673,6 +679,12 @@ export default function AdminPage() {
                                 </Table>
                             </CardContent>
                         </Card>
+                    </TabsContent>
+)}
+
+                    {show('security') && (
+<TabsContent value="security" className="space-y-6">
+                        <SecurityCenter />
                     </TabsContent>
 )}
 

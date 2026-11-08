@@ -59,6 +59,7 @@ def _reserved_usernames() -> frozenset[str]:
     return _BASE_RESERVED_USERNAMES | extra
 import logging
 from rate_limit import limiter
+from utils.security_events import record_security_event, client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -365,6 +366,11 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
             })
         except Exception as _e:
             print(f"[auth] failed-login event emit error (non-fatal): {_e}")
+        await record_security_event(
+            "login", request=request, outcome="failure", reason="invalid_credentials",
+            user_id=user.id if user else None, username=credentials.username,
+            details={"known_user": bool(user)},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -372,6 +378,8 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
         )
     
     if not user.is_active:
+        await record_security_event("login", request=request, outcome="failure",
+                                    reason="inactive_account", user=user)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user account"
@@ -399,6 +407,8 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
             decrypted_secret, credentials.totp_code, user.totp_last_timestep
         )
         if matched_step is None:
+            await record_security_event("login", request=request, outcome="failure",
+                                        reason="mfa_invalid", user=user)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or already-used two-factor authentication code",
@@ -431,6 +441,10 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
         })
     except Exception as _e:
         print(f"[auth] success-login event emit error (non-fatal): {_e}")
+    await record_security_event(
+        "login", request=request, outcome="success", user=user,
+        details={"provider": user.auth_provider or "local", "mfa": bool(user.totp_enabled)},
+    )
 
     return {
         "access_token": access_token,
@@ -524,6 +538,8 @@ async def verify_2fa(
                 break
 
         if matched is None:
+            await record_security_event("mfa_challenge", request=request, outcome="failure",
+                                        reason="invalid_recovery_code", user=user)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or already-used two-factor authentication code",
@@ -554,6 +570,8 @@ async def verify_2fa(
             decrypted_secret, body.code, user.totp_last_timestep
         )
         if matched_step is None:
+            await record_security_event("mfa_challenge", request=request, outcome="failure",
+                                        reason="invalid_totp_code", user=user)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or already-used two-factor authentication code",
@@ -578,6 +596,24 @@ async def verify_2fa(
     refresh_token = create_refresh_token(data={"sub": user.id})
 
     _set_refresh_cookie(response, request, refresh_token)
+    # A sign-in completed through 2FA is a sign-in — record + emit it too
+    # (previously only the password-only path fired auth.login.success).
+    try:
+        from utils.event_bus import event_bus
+        await event_bus.emit("auth.login.success", {
+            "user_id": user.id,
+            "username": user.username,
+            "role": user.role.value,
+            "auth_provider": (user.auth_provider or "local"),
+            "client_ip": client_ip(request),
+        })
+    except Exception as _e:
+        print(f"[auth] success-login event emit error (non-fatal): {_e}")
+    await record_security_event(
+        "login", request=request, outcome="success", user=user,
+        details={"provider": user.auth_provider or "local", "mfa": True,
+                 "method": "recovery_code" if looks_like_recovery_code(body.code) else "totp"},
+    )
     return {
         "access_token": access_token,
         "refresh_token": "",
@@ -661,6 +697,7 @@ async def refresh_token_endpoint(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
     response: Response,
     refresh_token: Optional[str] = Cookie(default=None),
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -685,6 +722,7 @@ async def logout(
             if user:
                 user.last_active = None
                 await db.commit()
+                await record_security_event("logout", request=request, user=user)
     except Exception:
         pass  # Don't fail logout if this errors
 
@@ -774,6 +812,8 @@ async def force_change_password(
     refresh_token = create_refresh_token(data={"sub": current_user.id})
 
     _set_refresh_cookie(response, request, refresh_token)
+    await record_security_event("password_changed", request=request, user=current_user,
+                                details={"forced": True})
     return {
         "access_token": access_token,
         "refresh_token": "",
@@ -880,6 +920,7 @@ async def totp_verify_setup(
     current_user.totp_last_timestep = matched_step
 
     current_user.totp_enabled = True
+    await record_security_event("mfa_enabled", request=request, user=current_user)
     current_user.totp_verified_at = datetime.utcnow()
 
     # Issue recovery codes. Plaintext is in `codes`; only the bcrypt
@@ -972,6 +1013,7 @@ async def totp_disable(
 
     current_user.totp_secret = None
     current_user.totp_enabled = False
+    await record_security_event("mfa_disabled", request=request, user=current_user)
     current_user.totp_verified_at = None
 
     # Clear recovery codes — disabling 2FA invalidates the entire
@@ -1092,6 +1134,7 @@ async def regenerate_recovery_codes(
     except Exception:
         pass
 
+    await record_security_event("mfa_recovery_regenerated", request=request, user=current_user)
     return RecoveryCodesResponse(recovery_codes=codes)
 
 
@@ -1237,6 +1280,8 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
     if not user_info:
         logger.error("SAML ACS: process_saml_response returned None — auth failed")
+        await record_security_event("sso_error", request=request, outcome="failure",
+                                    reason="saml_response_rejected")
         raise HTTPException(status_code=401, detail="SAML authentication failed")
 
     email = user_info.get("email", "")
@@ -1389,6 +1434,8 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     response = RedirectResponse(url=redirect_url, status_code=302)
     response.delete_cookie("saml_request_id")
     _set_refresh_cookie(response, request, refresh_token)
+    await record_security_event("login", request=request, outcome="success", user=user,
+                                details={"provider": "saml", "mfa": False})
     return response
 
 
@@ -1496,6 +1543,10 @@ async def forgot_password(
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
 
+    await record_security_event("password_reset_requested", request=request,
+                                user_id=user.id if user else None,
+                                username=user.username if user else None,
+                                details={"known_email": bool(user)})
     if user and user.auth_provider == "local":
         # Generate a short-lived reset token (30 minutes)
         reset_token = create_access_token(
@@ -1582,6 +1633,8 @@ async def reset_password(
         )
 
     logger.info(f"Password reset completed for user {user.username}")
+    await record_security_event("password_reset", request=request, user=user,
+                                details={"via": "email_link", "mfa_cleared": True})
 
     # Post-reset security notice (off the request path; best-effort). Tells the
     # account owner the password changed so an unauthorized reset is noticed.

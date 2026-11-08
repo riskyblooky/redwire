@@ -8,6 +8,7 @@
  */
 export const ADMIN_TAB_PERMISSIONS: Record<string, string[]> = {
     users: ['view_all_users', 'manage_users'],
+    security: ['view_security_center', 'manage_security_center'],
     permissions: ['manage_groups', 'manage_engagement_roles'],
     policies: [],                  // site-wide policy toggles — admin-only
     'registration-codes': ['manage_registration_codes'],
@@ -26,7 +27,7 @@ export const ADMIN_TAB_PERMISSIONS: Record<string, string[]> = {
 
 /** Tab render order — matches the TabsList in the admin page. */
 export const ADMIN_TAB_ORDER = [
-    'users', 'permissions', 'policies', 'registration-codes', 'types', 'authentication',
+    'users', 'security', 'permissions', 'policies', 'registration-codes', 'types', 'authentication',
     'api-tokens', 'wordlists', 'ai', 'skills', 'widgets', 'custom-fields',
     'plugins', 'email', 'audit',
 ];

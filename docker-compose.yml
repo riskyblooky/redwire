@@ -127,6 +127,9 @@ services:
       # Docker auto-creates the directory on first `up` if it
       # doesn't exist yet.
       - ./backend/uploads:/app/uploads
+      # nginx's JSON access log (written by the nginx service) — ingested
+      # for the admin Security Center, truncated once read.
+      - nginx_logs:/var/log/redwire-nginx
     depends_on:
       postgres:
         condition: service_healthy
@@ -191,6 +194,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/templates:ro
       - ./nginx/certbot/conf:/etc/letsencrypt:ro
       - ./nginx/certbot/www:/var/www/certbot:ro
+      - nginx_logs:/var/log/nginx/security
     environment:
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
     # Reload every 6h so certs renewed by the certbot container are picked up;
@@ -231,6 +235,7 @@ services:
     restart: always
 
 volumes:
+  nginx_logs:
   postgres_data:
   redis_data:
   minio_data:

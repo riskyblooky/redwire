@@ -1,4 +1,4 @@
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
@@ -16,6 +16,7 @@ from routers import auth, engagements, engagements_transfer, findings, users, as
 from routers import imports as imports_router
 from routers import spray as spray_router
 from routers import help as help_router
+from routers import security_center as security_center_router
 from routers import attack_techniques as attack_techniques_router
 from routers import markdown_images as markdown_images_router
 from plugin_loader import plugin_registry
@@ -31,6 +32,7 @@ openapi_tags = [
     {"name": "authentication", "description": "Login, registration, token refresh, logout, 2FA (TOTP), and SAML SSO"},
     {"name": "users", "description": "User profile and account management"},
     {"name": "admin", "description": "User administration, role management, registration codes"},
+    {"name": "security-center", "description": "Admin Security Center: sign-in events, web traffic, accounts, posture, audit"},
     {"name": "permissions", "description": "Groups, roles, and RBAC management"},
     {"name": "api-tokens", "description": "Long-lived API tokens for scripting and automation. Supports read-only (ro) and read-write (rw) permissions"},
     {"name": "admin-auth-settings", "description": "LDAP and SAML SSO configuration (admin only)"},
@@ -523,12 +525,17 @@ async def lifespan(app):
             await plugin_registry.apply_persisted_states(AsyncSessionLocal, quiet=True)
     plugin_sync_task = asyncio.create_task(_plugin_state_resync())
 
+    # Security Center: ingest nginx's JSON access log + prune by retention.
+    from utils import http_log_ingest
+    security_log_task = asyncio.create_task(http_log_ingest.run_forever())
+
     yield
     await ws_bus.stop()
     bloom_task.cancel()
     intel_task.cancel()
     plugin_sync_task.cancel()
-    for task in (bloom_task, intel_task, plugin_sync_task):
+    security_log_task.cancel()
+    for task in (bloom_task, intel_task, plugin_sync_task, security_log_task):
         try:
             await task
         except asyncio.CancelledError:
@@ -547,7 +554,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+async def _rate_limited(request: Request, exc: RateLimitExceeded):
+    """slowapi's 429 response, plus a security event so throttled clients
+    show up in the Security Center — at most one per client IP and path per
+    minute, so a client hammering a throttled endpoint can't flood the log."""
+    from utils.cluster import claim
+    from utils.security_events import client_ip, record_security_event
+    if await claim(f"sec:429:{client_ip(request)}:{request.url.path}", 60):
+        await record_security_event(
+            "rate_limited", request=request, outcome="failure",
+            reason=str(getattr(exc, "detail", "") or "rate limit exceeded"),
+            details={"path": request.url.path, "method": request.method},
+        )
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limited)
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/profile_photos", exist_ok=True)
@@ -647,6 +669,10 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "X-Marking-Warnings", "X-Archive-Root-Digest", "X-Total-Count"],
 )
 
+# Security Center: record successful writes to admin configuration endpoints.
+from utils.security_events import AdminAuditMiddleware
+app.add_middleware(AdminAuditMiddleware)
+
 # NOTE: `last_active` is intentionally NOT updated per-request anymore. Bumping
 # it on any Bearer request made an idle open tab (background polling: notifications,
 # refetch intervals, token refresh) look permanently "active/online". It is now
@@ -661,6 +687,7 @@ app.include_router(users.router)
 app.include_router(changelog.router)
 app.include_router(help_router.router)
 app.include_router(admin.router)
+app.include_router(security_center_router.router)
 app.include_router(permissions.router)
 app.include_router(engagements.router)
 app.include_router(engagements_transfer.router)

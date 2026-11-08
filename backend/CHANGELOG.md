@@ -6,7 +6,30 @@ section becomes one release entry.
 
 ## [1.9.0] — Unreleased
 
+### Added
+- **Security Center** (Admin → Security) — one place to watch the
+  instance's own security. Sign-ins: every successful and failed sign-in
+  (with the reason), failed 2FA codes, sign-outs, password and 2FA changes,
+  API-token changes, rate-limit hits and SSO errors, with IP and browser,
+  plus top failing IPs and most-targeted usernames. Web traffic: every
+  request nginx served — the web app as well as the API — with status mix,
+  top client IPs, scanner probes (`/wp-login.php`, `/.env`, `/.git/…`),
+  scanner and tool user agents, and a searchable request log. Accounts &
+  tokens: who lacks 2FA, dormant accounts, risky API tokens, with sign-out-
+  everywhere, disable and revoke actions. Posture: a configuration
+  checklist (keys, admin 2FA, default passwords, LDAP/SMTP TLS, CORS, TLS
+  certificate expiry, …) with fixes. Admin audit: every admin
+  configuration change and sensitive action such as vault secret reveals.
+  New `view_security_center` / `manage_security_center` permissions
+  (read-only admins can view). Retention is configurable (raw web requests
+  14 days by default).
+- **Upgrading:** redeploy with the new `docker-compose.yml` and
+  `nginx/nginx.conf` — nginx now also writes a JSON access log to a new
+  `nginx_logs` volume shared with the backend.
+
 ### Fixed
+- **A sign-in completed with a 2FA code now fires the `auth.login.success`
+  plugin event** — previously only password-only sign-ins did.
 - **Plugin events for creates, updates and deletes now fire** — plugins
   subscribed to the documented `<resource>.created` / `.updated` /
   `.deleted` events (e.g. `asset.created`) never received them; they were

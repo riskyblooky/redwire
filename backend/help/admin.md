@@ -434,6 +434,36 @@ Admin → Auth Settings → SMTP:
 
 ---
 
+## Security Center
+
+**Admin → Security** is the one place to watch the instance itself:
+
+| Tab | What it shows |
+|---|---|
+| Overview | 24-hour headline numbers and a "needs attention" list (failing posture checks, IPs with repeated sign-in failures, server errors) |
+| Sign-ins | Every sign-in, failed sign-in (with the reason), failed 2FA code, sign-out, password and 2FA change, API-token change, rate-limit hit and SSO error — with the user, IP and browser. Top failing IPs and most-targeted usernames. |
+| Web traffic | Every request that reached nginx — the web app as well as the API — from nginx's access log: status mix, top client IPs, probe paths (scanners looking for `/wp-login.php`, `/.env`, `/.git/config`…), scanner and tool user agents, 404s and 5xx, and a searchable request log. |
+| Accounts & tokens | Privileged accounts, who lacks 2FA, dormant accounts, failed sign-ins per user, every API token with risk flags (never expires, read-write, unused). Sign a user out everywhere, disable an account, or revoke a token. |
+| Posture | A configuration checklist with how to fix each item: signing and encryption keys, admin 2FA, default passwords, LDAP/SMTP TLS, SAML signing, CORS, Redis, TLS certificate expiry, open registration codes, plugin secrets, log ingestion. |
+| Admin audit | Who changed what in admin configuration (groups, roles, registration codes, authentication / SMTP / SAML, plugins, AI, types, custom fields…), account changes, and sensitive actions such as vault secret reveals and exports with secrets. Retention settings. |
+
+**Access.** Viewing needs the `view_security_center` permission (read-only
+admins have it automatically); the actions and retention settings need
+`manage_security_center`. Both are grantable to a group (Admin →
+Permissions). Only an admin can sign out or disable another admin.
+
+**Web traffic logging.** nginx writes a second, JSON copy of its access log to
+the `nginx_logs` volume, which the backend reads every few seconds and then
+truncates (at 50 MB). Query strings are never recorded. If the Web traffic tab
+says the log isn't mounted, redeploy with the current `docker-compose.yml`.
+Behind another reverse proxy, every request shows that proxy's address unless
+nginx is configured to take the client IP from it (`set_real_ip_from` /
+`real_ip_header`).
+
+**Retention.** Raw web requests are kept 14 days by default; hourly traffic
+totals and security events a year. Change it under Admin audit → Retention.
+Old rows are pruned hourly.
+
 ## Plugins
 
 RedWire ships two example plugins (`servicenow_cmdb`, `shodan_enricher`)

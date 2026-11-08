@@ -92,6 +92,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - nginx_logs:/var/log/redwire-nginx
     # --forwarded-allow-ips: trust X-Forwarded-* / X-Real-IP only from
     # private docker bridge subnets (where nginx lives), not '*' which
     # let any TCP peer claim to be the proxy. GHSA-xg53-8wgq-w9cw.
@@ -152,6 +153,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/templates:ro
       - ./nginx/certbot/conf:/etc/letsencrypt
       - ./nginx/certbot/www:/var/www/certbot:ro
+      - nginx_logs:/var/log/nginx/security
     environment:
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
     depends_on:
@@ -195,6 +197,7 @@ services:
 
 
 volumes:
+  nginx_logs:
   postgres_data:
   redis_data:
   minio_data:

@@ -98,6 +98,7 @@ async def get_current_user(
     if _is_api_token(token):
         user, permission = await _resolve_api_token(token, db)
         request.state.api_token_permission = permission
+        request.state.auth_user_id = user.id  # read by the admin-audit middleware
 
         # Enforce read-only: reject mutating HTTP methods
         if permission == "ro" and request.method in ("POST", "PUT", "PATCH", "DELETE"):
@@ -169,6 +170,7 @@ async def get_current_user(
             detail="Inactive user",
         )
 
+    request.state.auth_user_id = user.id  # read by the admin-audit middleware
     return user
 
 
