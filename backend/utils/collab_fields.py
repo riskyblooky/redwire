@@ -5,9 +5,13 @@ Live editing of a rich-text field on the finding / test case / asset edit
 pages and the report builder's text sections goes through
 ``/ws/yjs/field/{resource_type}/{resource_id}/{field}``: one Y.js room per
 (record, field), relayed like notes. Unlike notes the server never persists
-the room — the text is saved by the page's normal Save (the REST PUT), which
-keeps versioning, the activity log, review gates and automation events tied
-to an explicit save. See docs/collaborative-edit-pages.md.
+the room on a timer; instead the editing client sends the field's Markdown
+a moment after the author stops typing (and when the editor closes), and
+``save_collab_field`` writes that one field. Each live-editing session (see
+LIVE_SESSION_WINDOW) gets one version snapshot and one activity-log entry,
+like notes. Only text is written here: status changes, review gates,
+notifications and automation events stay on the page's Save (the REST PUT).
+See docs/collaborative-edit-pages.md §4.2.
 
 Access mirrors the REST endpoints: view needs the resource's VIEW permission
 on its engagement (admin / read-only admin / team lead bypass); edit needs
@@ -16,7 +20,9 @@ findings, test cases and assets; REPORT_GENERATE for report sections), with
 only admin / team lead bypassing. Read-only admins can watch, not write.
 """
 
+import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import select
@@ -31,6 +37,19 @@ COLLAB_FIELDS = {
     "testcase": {"description", "steps", "expected_result", "notes", "actual_result"},
     "asset": {"description", "notes"},
     "report_section": {"content"},
+}
+
+logger = logging.getLogger(__name__)
+
+# One version snapshot + activity-log entry per field per window of live
+# editing (matches notes' NOTE_UPDATE_LOG_DEBOUNCE).
+LIVE_SESSION_WINDOW = timedelta(minutes=10)
+
+_FIELD_LABELS = {
+    "description": "Description", "impact": "Impact", "steps_to_reproduce": "Steps to Reproduce",
+    "technical_details": "Technical Details", "mitigations": "Mitigations", "references": "References",
+    "steps": "Steps", "expected_result": "Expected Result", "notes": "Notes",
+    "actual_result": "Actual Result", "content": "Content",
 }
 
 _VIEW_BYPASS = (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
@@ -108,3 +127,107 @@ async def resolve_collab_target(
         user.id, engagement_id, edit_perm.value, db
     )
     return CollabTarget(engagement_id=engagement_id, content=content, can_edit=can_edit)
+
+
+def _record_model(resource_type: str):
+    if resource_type == "finding":
+        from models.finding import Finding
+        return Finding
+    if resource_type == "testcase":
+        from models.testcase import TestCase
+        return TestCase
+    from models.asset import Asset
+    return Asset
+
+
+async def save_collab_field(
+    resource_type: str, resource_id: str, field: str, content: str, user_id: str,
+) -> bool:
+    """Persist one live-edited field (the caller has checked the user may
+    edit it). Returns False if the record is gone. The first write of a
+    live-editing session snapshots the pre-edit state and logs the edit; the
+    rest of the session just writes."""
+    if field not in COLLAB_FIELDS.get(resource_type, ()):
+        return False
+    from database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        if resource_type == "report_section":
+            from models.report_layout import ReportSection
+            sec = (await db.execute(
+                select(ReportSection).where(ReportSection.id == resource_id)
+            )).scalar_one_or_none()
+            if sec is None:
+                return False
+            if (sec.content or "") != content:
+                sec.content = content
+                await db.commit()
+            return True
+
+        model = _record_model(resource_type)
+        obj = (await db.execute(select(model).where(model.id == resource_id))).scalar_one_or_none()
+        if obj is None:
+            return False
+        if (getattr(obj, field) or "") == content:
+            return True
+
+        from models.discussion import ActivityLog
+        from utils.versioning import create_version_snapshot
+
+        action = f"updated_{resource_type}"
+        details = f"Edited {_FIELD_LABELS.get(field, field)} (live)"
+        in_session = (await db.execute(
+            select(ActivityLog.id).where(
+                ActivityLog.resource_type == resource_type,
+                ActivityLog.resource_id == resource_id,
+                ActivityLog.action == action,
+                ActivityLog.details == details,
+                ActivityLog.created_at >= datetime.utcnow() - LIVE_SESSION_WINDOW,
+            ).limit(1)
+        )).scalar_one_or_none() is not None
+
+        if not in_session:
+            # Pre-edit state, so history and the activity feed's diff show
+            # what the session changed.
+            await create_version_snapshot(db, obj, resource_type, {field: content}, user_id)
+        setattr(obj, field, content)
+        obj.updated_by = user_id
+        engagement_id = obj.engagement_id
+        name = getattr(obj, "title", None) or getattr(obj, "name", None)
+        await db.commit()
+
+        if not in_session:
+            from utils.collaboration import create_activity_log
+            await create_activity_log(
+                db, engagement_id=engagement_id, user_id=user_id, action=action,
+                resource_type=resource_type, resource_id=resource_id,
+                resource_name=name, details=details,
+            )
+        return True
+
+
+async def assert_no_other_live_editors(resource_type: str, resource_id: str, user_id: str) -> None:
+    """409 if someone else has one of the record's text fields open live.
+
+    A version restore rewrites the stored text, but an open live editor still
+    holds the old text and would auto-save it back on the next keystroke."""
+    from fastapi import HTTPException, status as http_status
+    from utils.ws_bus import bus
+    from utils.yjs_server import yjs_store
+
+    others = 0
+    for field in COLLAB_FIELDS.get(resource_type, ()):
+        key = room_key(resource_type, resource_id, field)
+        members = await bus.presence_list("yjs", key)
+        if members is None:  # no registry — this worker's sockets only
+            room = yjs_store.rooms.get(key)
+            ids = list(room.client_user_ids.values()) if room else []
+        else:
+            ids = [m.get("id") for m in members]
+        others += sum(1 for uid in ids if uid and uid != user_id)
+    if others:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Someone else is editing this live. Restore once they've left the edit page "
+                   "— otherwise their open editor would save the old text back.",
+        )

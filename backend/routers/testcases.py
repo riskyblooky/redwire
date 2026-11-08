@@ -501,6 +501,8 @@ async def restore_testcase_version(
     snap = v.snapshot or {}
     update_data = {f: snap[f] for f in TESTCASE_VERSIONED_FIELDS if f in snap}
 
+    from utils.collab_fields import assert_no_other_live_editors
+    await assert_no_other_live_editors("testcase", tc.id, current_user.id)
     await create_version_snapshot(db, tc, "testcase", update_data, current_user.id)
     for field, value in update_data.items():
         setattr(tc, field, value)

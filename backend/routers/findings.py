@@ -977,6 +977,8 @@ async def restore_finding_version(
         update_data["status"] = FindingStatus(update_data["status"])
 
     # Snapshot the current state first, then apply the restored values.
+    from utils.collab_fields import assert_no_other_live_editors
+    await assert_no_other_live_editors("finding", finding.id, current_user.id)
     await create_version_snapshot(db, finding, "finding", update_data, current_user.id)
     for field, value in update_data.items():
         setattr(finding, field, value)

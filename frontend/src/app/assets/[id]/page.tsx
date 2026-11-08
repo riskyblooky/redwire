@@ -44,6 +44,7 @@ import DiscussionSection from '@/components/discussions/discussion-section';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
+import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserName } from '@/components/ui/user-name';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
@@ -296,6 +297,7 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div className="flex items-center gap-4 relative z-30">
                         {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
+                        {asset && <VersionHistoryPanel entityType="asset" entityId={id} currentData={asset} />}
                         <div className="h-8 w-px bg-slate-800" />
                         <div className="flex gap-2">
                             {canEdit && (

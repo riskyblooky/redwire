@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useVersionHistory, useVersionSnapshot, useRestoreVersion, VersionSummary } from '@/lib/hooks/use-versions';
+import { useVersionHistory, useVersionSnapshot, useRestoreVersion, VersionSummary, type VersionedEntity } from '@/lib/hooks/use-versions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -34,6 +34,11 @@ const FIELD_LABELS: Record<string, string> = {
     is_executed: 'Executed',
     is_successful: 'Successful',
     notes: 'Notes',
+    name: 'Name',
+    asset_type: 'Type',
+    identifier: 'Identifier',
+    is_pwned: 'Pwned',
+    in_scope: 'In Scope',
 };
 
 // Severity / status badge colors
@@ -187,13 +192,16 @@ function DiffField({ field, oldValue, newValue }: DiffFieldProps) {
 
 
 interface VersionHistoryPanelProps {
-    entityType: 'finding' | 'testcase';
+    entityType: VersionedEntity;
     entityId: string;
     /** Current entity data for diffing */
     currentData: Record<string, any>;
+    /** On an edit page with live text fields: reload after a restore so the
+     *  open editors pick up the restored text instead of auto-saving the old. */
+    liveEdit?: boolean;
 }
 
-export function VersionHistoryPanel({ entityType, entityId, currentData }: VersionHistoryPanelProps) {
+export function VersionHistoryPanel({ entityType, entityId, currentData, liveEdit = false }: VersionHistoryPanelProps) {
     const [selectorOpen, setSelectorOpen] = useState(false);
     const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
     const [diffOpen, setDiffOpen] = useState(false);
@@ -221,6 +229,7 @@ export function VersionHistoryPanel({ entityType, entityId, currentData }: Versi
             await restoreVersion.mutateAsync(selectedVersion.id);
             toast.success(`Restored to version ${selectedVersion.version}`);
             setDiffOpen(false);
+            if (liveEdit) setTimeout(() => window.location.reload(), 700);
         } catch (e) {
             toast.error(getErrorMessage(e, 'Failed to restore version'));
         }

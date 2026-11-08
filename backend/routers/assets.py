@@ -23,6 +23,8 @@ import defusedxml.ElementTree as ET
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.uploads import read_upload_capped
 from utils.custom_fields import validate_custom_fields
+from utils.versioning import create_version_snapshot, ASSET_VERSIONED_FIELDS
+from models.version_history import VersionHistory
 from utils.asset_types import canonical_name, configured_asset_types, resolve_asset_type
 from models.discussion import ResourceType
 
@@ -976,6 +978,9 @@ async def update_asset(
     # Structured changes for automation matching (GHSA-88hm follow-up).
     changes = compute_changes_dict(db_asset, update_data)
 
+    # Pre-edit snapshot for version history (no-op when nothing versioned changes).
+    await create_version_snapshot(db, db_asset, "asset", update_data, current_user.id)
+
     for field, value in update_data.items():
         setattr(db_asset, field, value)
     
@@ -1076,6 +1081,130 @@ async def _require_asset(asset_id: str, db: AsyncSession, current_user: User) ->
 
 
 # ── Asset ↔ Finding ──
+
+# ── Version History ────────────────────────────────────────────────────
+
+async def _asset_for_view(asset_id: str, current_user: User, db: AsyncSession) -> Asset:
+    asset = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin and not await check_engagement_permission(
+        current_user.id, asset.engagement_id, Permission.ASSET_VIEW.value, db
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. You need the 'asset_view' permission to view assets.",
+        )
+    return asset
+
+
+def _version_row(v: VersionHistory, username: Optional[str], snapshot: bool = False) -> dict:
+    out = {
+        "id": v.id,
+        "version": v.version,
+        "changed_fields": v.changed_fields,
+        "changed_by": v.changed_by,
+        "changed_by_username": username,
+        "created_at": v.created_at.isoformat(),
+    }
+    if snapshot:
+        out["snapshot"] = v.snapshot
+    return out
+
+
+@router.get("/{asset_id}/versions")
+async def get_asset_versions(
+    asset_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all versions for an asset (most recent first)."""
+    await _asset_for_view(asset_id, current_user, db)
+    rows = (await db.execute(
+        select(VersionHistory, User.username)
+        .outerjoin(User, VersionHistory.changed_by == User.id)
+        .where(VersionHistory.entity_type == "asset")
+        .where(VersionHistory.entity_id == asset_id)
+        .order_by(VersionHistory.version.desc())
+    )).all()
+    return [_version_row(v, username) for v, username in rows]
+
+
+@router.get("/{asset_id}/versions/{version_id}")
+async def get_asset_version(
+    asset_id: str,
+    version_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get the full snapshot of a specific asset version."""
+    await _asset_for_view(asset_id, current_user, db)
+    row = (await db.execute(
+        select(VersionHistory, User.username)
+        .outerjoin(User, VersionHistory.changed_by == User.id)
+        .where(VersionHistory.id == version_id)
+        .where(VersionHistory.entity_type == "asset")
+        .where(VersionHistory.entity_id == asset_id)
+    )).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return _version_row(row[0], row[1], snapshot=True)
+
+
+@router.post("/{asset_id}/versions/{version_id}/restore")
+async def restore_asset_version(
+    asset_id: str,
+    version_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Restore an asset to a prior version's field values (snapshotting the
+    current state first, so a restore is reversible)."""
+    asset = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    if not is_admin:
+        perm = Permission.ASSET_EDIT.value if asset.created_by == current_user.id else Permission.ASSET_EDIT_ANY.value
+        if not await check_engagement_permission(current_user.id, asset.engagement_id, perm, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. You need the '{perm}' permission to restore an asset version.",
+            )
+
+    v = (await db.execute(
+        select(VersionHistory).where(
+            VersionHistory.id == version_id,
+            VersionHistory.entity_type == "asset",
+            VersionHistory.entity_id == asset_id,
+        )
+    )).scalar_one_or_none()
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+
+    snap = v.snapshot or {}
+    update_data = {f: snap[f] for f in ASSET_VERSIONED_FIELDS if f in snap}
+    if update_data.get("asset_type") is not None:
+        # The taxonomy may have changed since the snapshot.
+        update_data["asset_type"] = await resolve_asset_type(update_data["asset_type"], db, fallback="Other") or update_data["asset_type"]
+
+    from utils.collab_fields import assert_no_other_live_editors
+    await assert_no_other_live_editors("asset", asset.id, current_user.id)
+    await create_version_snapshot(db, asset, "asset", update_data, current_user.id)
+    for field, value in update_data.items():
+        setattr(asset, field, value)
+    asset.updated_by = current_user.id
+    await db.commit()
+
+    await create_activity_log(
+        db, engagement_id=asset.engagement_id, user_id=current_user.id,
+        action="restored_version", resource_type="asset", resource_id=asset.id,
+        resource_name=asset.name, details=f"Restored asset to version {v.version}",
+    )
+    return {"status": "ok", "restored_version": v.version}
+
 
 @router.post("/{asset_id}/findings/{finding_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def link_asset_to_finding(asset_id: str, finding_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):

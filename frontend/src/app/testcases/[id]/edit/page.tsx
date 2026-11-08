@@ -12,6 +12,7 @@
  */
 'use client';
 
+import type { EditorChangeMeta } from '@/components/ui/tiptap-editor';
 import { useParams } from '@/lib/hooks/use-params';
 import { buildTestcaseContext } from '@/lib/ai-entity-context';
 
@@ -145,9 +146,11 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
         }
     }, [testcase]);
 
-    const handleChange = (field: string, value: any) => {
+    // Live text fields auto-save themselves (meta.autosaved) — only other
+    // edits leave the form needing Save.
+    const handleChange = (field: string, value: any, meta?: EditorChangeMeta) => {
         setFormData(prev => ({ ...prev, [field]: value }));
-        setIsDirty(true);
+        if (!meta?.autosaved) setIsDirty(true);
     };
 
     const applyTemplate = (template: any) => {
@@ -235,7 +238,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                     </div>
                     <div className="flex items-center gap-3 relative z-30">
                         {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
-                        {testcase && <VersionHistoryPanel entityType="testcase" entityId={id} currentData={testcase} />}
+                        {testcase && <VersionHistoryPanel entityType="testcase" entityId={id} currentData={testcase} liveEdit />}
                         <div className="h-8 w-px bg-slate-800" />
                         <Button
                             type="button" variant="outline"
@@ -343,7 +346,7 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Description *</Label>
-                                                <AnnotationSurface collaborative value={formData.description} onChange={(val) => handleChange('description', val)} canEdit ref={(h) => { surfaceRefs.current['description'] = h; }} resourceType="testcase" resourceId={id} field="description" minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.description} onChange={(val, m) => handleChange('description', val, m)} canEdit ref={(h) => { surfaceRefs.current['description'] = h; }} resourceType="testcase" resourceId={id} field="description" minHeight="250px" fieldContext={{ resourceType: 'testcase', fieldName: 'Description', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -355,12 +358,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
                                         <CardContent className="space-y-6 pt-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Steps</Label>
-                                                <AnnotationSurface collaborative value={formData.steps} onChange={(val) => handleChange('steps', val)} canEdit ref={(h) => { surfaceRefs.current['steps'] = h; }} resourceType="testcase" resourceId={id} field="steps" minHeight="300px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.steps} onChange={(val, m) => handleChange('steps', val, m)} canEdit ref={(h) => { surfaceRefs.current['steps'] = h; }} resourceType="testcase" resourceId={id} field="steps" minHeight="300px" fieldContext={{ resourceType: 'testcase', fieldName: 'Steps', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Expected Result</Label>
-                                                <AnnotationSurface collaborative value={formData.expected_result} onChange={(val) => handleChange('expected_result', val)} canEdit ref={(h) => { surfaceRefs.current['expected_result'] = h; }} resourceType="testcase" resourceId={id} field="expected_result" minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.expected_result} onChange={(val, m) => handleChange('expected_result', val, m)} canEdit ref={(h) => { surfaceRefs.current['expected_result'] = h; }} resourceType="testcase" resourceId={id} field="expected_result" minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Expected Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-3 border-t border-slate-800 pt-5">
@@ -392,12 +395,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Actual Result</Label>
-                                                <MarkdownEditor collab={{ path: collabFieldPath('testcase', id, 'actual_result') }} value={formData.actual_result} onChange={(val) => handleChange('actual_result', val)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Actual Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <MarkdownEditor collab={{ path: collabFieldPath('testcase', id, 'actual_result') }} value={formData.actual_result} onChange={(val, m) => handleChange('actual_result', val, m)} minHeight="150px" fieldContext={{ resourceType: 'testcase', fieldName: 'Actual Result', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
 
                                             <div className="space-y-4">
                                                 <Label className="text-slate-200">Notes</Label>
-                                                <AnnotationSurface collaborative value={formData.notes} onChange={(val) => handleChange('notes', val)} canEdit ref={(h) => { surfaceRefs.current['notes'] = h; }} resourceType="testcase" resourceId={id} field="notes" minHeight="120px" fieldContext={{ resourceType: 'testcase', fieldName: 'Notes', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.notes} onChange={(val, m) => handleChange('notes', val, m)} canEdit ref={(h) => { surfaceRefs.current['notes'] = h; }} resourceType="testcase" resourceId={id} field="notes" minHeight="120px" fieldContext={{ resourceType: 'testcase', fieldName: 'Notes', entityContext: buildTestcaseContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>

@@ -452,11 +452,13 @@ async def yjs_field_websocket_endpoint(
     Y.js sync for one rich-text field of a finding / test case / asset, or a
     report builder text section — live co-editing on the edit pages.
 
-    Same first-frame auth and relay as the note socket, but the room is never
-    persisted from here: the page's Save (the REST PUT) writes the field. See
+    Same first-frame auth and relay as the note socket. Editors send the
+    field's Markdown (``save_content``) after a pause in typing; it's written
+    by ``save_collab_field`` and acknowledged with ``content_saved``. See
     utils/collab_fields.py for the field allow-list and permission mapping.
     """
-    from utils.collab_fields import resolve_collab_target, room_key
+    from utils.collab_fields import resolve_collab_target, room_key, save_collab_field
+    import json as _json_mod
 
     await websocket.accept()
     authed = await _auth_via_first_frame(websocket, db)
@@ -469,9 +471,20 @@ async def yjs_field_websocket_endpoint(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
+    async def _save(content: str):
+        if not isinstance(content, str):
+            return
+        ok = await save_collab_field(resource_type, resource_id, field, content, user_row.id)
+        try:
+            await websocket.send_text(_json_mod.dumps({"type": "content_saved", "ok": ok}))
+        except Exception:
+            pass
+
+    # persist=False: no server-initiated save requests — the author's client
+    # decides when to send (a viewer could otherwise be asked to save).
     await _serve_yjs_room(
         websocket, room_key(resource_type, resource_id, field), user_row.id, target.can_edit,
-        initial_content=target.content, persist=False, on_save=None,
+        initial_content=target.content, persist=False, on_save=_save,
     )
 
 

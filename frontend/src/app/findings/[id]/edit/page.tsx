@@ -14,6 +14,7 @@
  */
 'use client';
 
+import type { EditorChangeMeta } from '@/components/ui/tiptap-editor';
 import { useParams } from '@/lib/hooks/use-params';
 import { buildFindingContext } from '@/lib/ai-entity-context';
 
@@ -251,9 +252,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
         }
     }, [finding]);
 
-    const handleChange = (field: string, value: any) => {
+    // Live text fields auto-save themselves (meta.autosaved) — only other
+    // edits leave the form needing Save.
+    const handleChange = (field: string, value: any, meta?: EditorChangeMeta) => {
         setFormData(prev => ({ ...prev, [field]: value }));
-        setIsDirty(true);
+        if (!meta?.autosaved) setIsDirty(true);
     };
 
     const toggleAsset = (assetId: string) => {
@@ -442,7 +445,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div className="flex items-center gap-3 relative z-30">
                         {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
-                        {finding && <VersionHistoryPanel entityType="finding" entityId={id} currentData={finding} />}
+                        {finding && <VersionHistoryPanel entityType="finding" entityId={id} currentData={finding} liveEdit />}
                         <div className="h-8 w-px bg-slate-800" />
                         <Button
                             variant="outline"
@@ -531,11 +534,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                             />
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Description *</Label>
-                                                <AnnotationSurface collaborative value={formData.description} onChange={(val) => handleChange('description', val)} canEdit ref={(h) => { surfaceRefs.current['description'] = h; }} resourceType="finding" resourceId={id} field="description" minHeight="400px" fieldContext={{ resourceType: 'finding', fieldName: 'Description', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.description} onChange={(val, m) => handleChange('description', val, m)} canEdit ref={(h) => { surfaceRefs.current['description'] = h; }} resourceType="finding" resourceId={id} field="description" minHeight="400px" fieldContext={{ resourceType: 'finding', fieldName: 'Description', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Impact</Label>
-                                                <AnnotationSurface collaborative value={formData.impact} onChange={(val) => handleChange('impact', val)} canEdit ref={(h) => { surfaceRefs.current['impact'] = h; }} resourceType="finding" resourceId={id} field="impact" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Impact', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.impact} onChange={(val, m) => handleChange('impact', val, m)} canEdit ref={(h) => { surfaceRefs.current['impact'] = h; }} resourceType="finding" resourceId={id} field="impact" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Impact', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -546,11 +549,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                         <CardContent className="pt-6 space-y-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Steps to Reproduce</Label>
-                                                <AnnotationSurface collaborative value={formData.steps_to_reproduce} onChange={(val) => handleChange('steps_to_reproduce', val)} canEdit ref={(h) => { surfaceRefs.current['steps_to_reproduce'] = h; }} resourceType="finding" resourceId={id} field="steps_to_reproduce" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.steps_to_reproduce} onChange={(val, m) => handleChange('steps_to_reproduce', val, m)} canEdit ref={(h) => { surfaceRefs.current['steps_to_reproduce'] = h; }} resourceType="finding" resourceId={id} field="steps_to_reproduce" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Steps to Reproduce', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Technical Details</Label>
-                                                <AnnotationSurface collaborative value={formData.technical_details} onChange={(val) => handleChange('technical_details', val)} canEdit ref={(h) => { surfaceRefs.current['technical_details'] = h; }} resourceType="finding" resourceId={id} field="technical_details" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.technical_details} onChange={(val, m) => handleChange('technical_details', val, m)} canEdit ref={(h) => { surfaceRefs.current['technical_details'] = h; }} resourceType="finding" resourceId={id} field="technical_details" minHeight="300px" fieldContext={{ resourceType: 'finding', fieldName: 'Technical Details', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -561,11 +564,11 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                         <CardContent className="pt-6 space-y-6">
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">Mitigations</Label>
-                                                <AnnotationSurface collaborative value={formData.mitigations} onChange={(val) => handleChange('mitigations', val)} canEdit ref={(h) => { surfaceRefs.current['mitigations'] = h; }} resourceType="finding" resourceId={id} field="mitigations" minHeight="250px" fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.mitigations} onChange={(val, m) => handleChange('mitigations', val, m)} canEdit ref={(h) => { surfaceRefs.current['mitigations'] = h; }} resourceType="finding" resourceId={id} field="mitigations" minHeight="250px" fieldContext={{ resourceType: 'finding', fieldName: 'Mitigations', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                             <div className="space-y-4">
                                                 <Label className="text-slate-300 uppercase text-[10px]">References</Label>
-                                                <AnnotationSurface collaborative value={formData.references} onChange={(val) => handleChange('references', val)} canEdit ref={(h) => { surfaceRefs.current['references'] = h; }} resourceType="finding" resourceId={id} field="references" minHeight="200px" fieldContext={{ resourceType: 'finding', fieldName: 'References', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
+                                                <AnnotationSurface collaborative value={formData.references} onChange={(val, m) => handleChange('references', val, m)} canEdit ref={(h) => { surfaceRefs.current['references'] = h; }} resourceType="finding" resourceId={id} field="references" minHeight="200px" fieldContext={{ resourceType: 'finding', fieldName: 'References', entityContext: buildFindingContext(formData) }} engagementId={formData.engagement_id} />
                                             </div>
                                         </CardContent>
                                     </Card>

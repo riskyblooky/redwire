@@ -9,6 +9,7 @@
  */
 'use client';
 
+import type { EditorChangeMeta } from '@/components/ui/tiptap-editor';
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
@@ -40,6 +41,7 @@ import { apiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
+import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { EditLockBanner } from '@/components/collaboration/edit-lock-banner';
 import { collabFieldPath } from '@/components/discussions/annotation-surface';
 
@@ -194,9 +196,11 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [assetTypes.length]);
 
-    const handleChange = (field: string, value: string) => {
+    // Live text fields auto-save themselves (meta.autosaved) — only other
+    // edits leave the form needing Save.
+    const handleChange = (field: string, value: string, meta?: EditorChangeMeta) => {
         setFormData(prev => ({ ...prev, [field]: value }));
-        setIsDirty(true);
+        if (!meta?.autosaved) setIsDirty(true);
     };
 
     const handleSubmit = async (e?: React.FormEvent) => {
@@ -257,6 +261,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                         <p className="text-slate-400 text-sm mt-0.5 truncate">{asset.name}</p>
                     </div>
                     {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
+                    <VersionHistoryPanel entityType="asset" entityId={id} currentData={asset} liveEdit />
                 </div>
             </div>
             <EditLockBanner otherEditors={otherEditors} liveText />
@@ -356,7 +361,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                                     collab={{ path: collabFieldPath('asset', id, 'description') }}
                                     id="description"
                                     value={formData.description}
-                                    onChange={(val) => handleChange('description', val)}
+                                    onChange={(val, m) => handleChange('description', val, m)}
                                     placeholder="Brief description of the asset..."
                                     minHeight="100px"
                                 />
@@ -371,7 +376,7 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                                     collab={{ path: collabFieldPath('asset', id, 'notes') }}
                                     id="notes"
                                     value={formData.notes}
-                                    onChange={(val) => handleChange('notes', val)}
+                                    onChange={(val, m) => handleChange('notes', val, m)}
                                     placeholder="Any internal notes about this asset..."
                                     minHeight="100px"
                                 />

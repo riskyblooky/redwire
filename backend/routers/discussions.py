@@ -987,7 +987,7 @@ async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
     from models.cleanup_artifact import CleanupArtifact
     from models.vault import VaultItem
     from models.version_history import VersionHistory
-    from utils.versioning import FINDING_VERSIONED_FIELDS, TESTCASE_VERSIONED_FIELDS
+    from utils.versioning import FINDING_VERSIONED_FIELDS, TESTCASE_VERSIONED_FIELDS, ASSET_VERSIONED_FIELDS
 
     by_type: dict = {}
     for it in items:
@@ -1066,12 +1066,28 @@ async def _enrich_feed_items(db: AsyncSession, items: List[dict]):
                 it["content_kind"] = "text"
                 it["content"] = _feed_cap(ent.content)
 
-    # Assets — identifier + description/notes.
+    # Assets — field diff on update (versioned since 1.8); otherwise
+    # identifier + description/notes.
     group = by_type.get("asset", [])
     if group:
         emap = await load_map(Asset, {it.get("resource_id") for it in group})
+        clean_ids = [i for i in {it.get("resource_id") for it in group} if i]
+        vmap: dict = {}
+        for v in ((await db.execute(
+            select(VersionHistory)
+            .where(VersionHistory.entity_type == "asset")
+            .where(VersionHistory.entity_id.in_(clean_ids))
+            .order_by(VersionHistory.entity_id, VersionHistory.version.asc())
+        )).scalars().all() if clean_ids else []):
+            vmap.setdefault(v.entity_id, []).append(v)
         for it in group:
             ent = emap.get(it.get("resource_id"))
+            if it.get("action_category") == "updated":
+                changes = _feed_diff_for_update(it, vmap.get(it.get("resource_id"), []), ent, ASSET_VERSIONED_FIELDS)
+                if changes:
+                    it["content_kind"] = "diff"
+                    it["changes"] = changes
+                    continue
             if ent is not None and it.get("action_category") in ("created", "updated"):
                 body = ent.description or ent.notes
                 if body:

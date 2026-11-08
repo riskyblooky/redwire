@@ -2,6 +2,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
+import type { EditorChangeMeta } from '@/components/ui/tiptap-editor';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,7 +32,7 @@ export interface AnnotationSurfaceHandle {
 
 export interface AnnotationSurfaceProps {
     value: string;
-    onChange: (v: string) => void;
+    onChange: (v: string, meta?: EditorChangeMeta) => void;
     canEdit?: boolean;
     engagementId: string;
     resourceType: ResourceType;

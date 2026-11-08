@@ -46,8 +46,9 @@ import {
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Table as TableIcon, Trash2, Plus, Minus, Workflow, TextSelect, ListChecks, ChevronsUpDown, Hash,
-    MoreHorizontal, Users, Wifi, WifiOff, Eye,
+    MoreHorizontal, Users, Wifi, WifiOff, Eye, Check, AlertTriangle,
 } from 'lucide-react';
+import { ySyncPluginKey } from '@tiptap/y-tiptap';
 import Collaboration from '@tiptap/extension-collaboration';
 import { useYjsRoom, createCollabCursorExtension } from '@/lib/yjs-room';
 import { MarkdownPreview } from './markdown-editor';
@@ -151,9 +152,16 @@ const mentionSuggestion = {
     },
 };
 
+/** With `collab`: `autosaved` means the room persists this change itself
+ *  (the author's editor auto-saves it), so the host needn't mark its form
+ *  dirty. False while offline — then only the host's Save keeps it. */
+export interface EditorChangeMeta {
+    autosaved?: boolean;
+}
+
 interface TiptapEditorProps {
     value: string;
-    onChange: (value: string) => void;
+    onChange: (value: string, meta?: EditorChangeMeta) => void;
     placeholder?: string;
     disabled?: boolean;
     minHeight?: string;
@@ -195,8 +203,9 @@ interface TiptapEditorProps {
     onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
     /** Live co-editing: join the Y.js room at this relay path (e.g.
      *  `field/finding/<id>/impact`). Fixed at mount. The room seeds from the
-     *  server's copy and `value` is then only an output — `onChange` still
-     *  fires (on real text changes) so the host's Save persists the text. */
+     *  server's copy and `value` is then only an output. Your edits save
+     *  automatically a moment after you stop typing; `onChange` still fires
+     *  on every real text change (see EditorChangeMeta). */
     collab?: { path: string };
 }
 
@@ -906,9 +915,13 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
         path: collabPath,
         editorRef,
         seed: (ed, content) => { ed.commands.setContent(content, { emitUpdate: false }); },
+        autosave: collabPath ? () => (editorRef.current?.storage as any)?.markdown?.getMarkdown?.() ?? '' : undefined,
     });
     const collabSourceRef = useRef(room.contentSource);
     collabSourceRef.current = room.contentSource;
+    const collabStatusRef = useRef(room.status);
+    collabStatusRef.current = room.status;
+    const scheduleSave = room.scheduleSave;
 
     // Where pasted / dropped images go: the engagement, the shared library
     // (templates, intel), or nowhere (e.g. a not-yet-created engagement).
@@ -1032,10 +1045,15 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
         content: collabPath ? undefined : value,
         editable: !disabled,
         immediatelyRender: false,
-        onUpdate: ({ editor }) => {
+        onUpdate: ({ editor, transaction }) => {
             const markdown = (editor.storage as any).markdown.getMarkdown();
-            if (collabPath && (!collabSourceRef.current || markdown === valueRef.current)) return;
-            onChange(markdown);
+            if (!collabPath) { onChange(markdown); return; }
+            if (!collabSourceRef.current) return;
+            // A peer's change arrives through y-sync; they save it, not us.
+            const remote = !!transaction.getMeta(ySyncPluginKey)?.isChangeOrigin;
+            if (!remote) scheduleSave();
+            if (markdown === valueRef.current) return;
+            onChange(markdown, { autosaved: remote || collabStatusRef.current === 'connected' });
         },
         onSelectionUpdate: () => {
             // Force re-render of MenuBar when selection changes. (The AI panel
@@ -1152,7 +1170,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     useEffect(() => {
         if (!editor || room.contentSource !== 'peer') return;
         const markdown = (editor.storage as any).markdown.getMarkdown();
-        if (markdown !== valueRef.current) onChange(markdown);
+        if (markdown !== valueRef.current) onChange(markdown, { autosaved: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editor, room.contentSource]);
 
@@ -1216,8 +1234,23 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                         </span>
                     )}
                     {room.peerCount > 0 && (
-                        <span className="flex items-center gap-1 text-emerald-400" title="Edits appear for everyone as they're typed. Saving keeps them.">
+                        <span className="flex items-center gap-1 text-emerald-400" title="Edits appear for everyone as they're typed and save automatically.">
                             <Users className="h-3 w-3" /> {room.peerCount + 1} editing
+                        </span>
+                    )}
+                    {(room.saveState === 'pending' || room.saveState === 'saving') && (
+                        <span className="flex items-center gap-1 text-muted-foreground" title="Saving your edits to this field">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+                        </span>
+                    )}
+                    {room.saveState === 'saved' && (
+                        <span className="flex items-center gap-1 text-muted-foreground" title="Your edits to this field are saved">
+                            <Check className="h-3 w-3" /> Saved
+                        </span>
+                    )}
+                    {room.saveState === 'error' && (
+                        <span className="flex items-center gap-1 text-red-400" title="This field couldn't be saved (was the record deleted?). Copy your text before leaving.">
+                            <AlertTriangle className="h-3 w-3" /> Not saved
                         </span>
                     )}
                     {room.status === 'connected' && (
@@ -1231,7 +1264,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                         </span>
                     )}
                     {room.status === 'disconnected' && (
-                        <span className="flex items-center gap-1 text-red-400" title="Disconnected — reconnecting. Your text is kept; Save still works.">
+                        <span className="flex items-center gap-1 text-red-400" title="Disconnected — reconnecting. Your text is kept and saves when the connection is back; Save also keeps it.">
                             <WifiOff className="h-3 w-3" /> Offline
                         </span>
                     )}

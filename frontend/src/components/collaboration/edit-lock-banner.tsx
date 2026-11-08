@@ -10,7 +10,7 @@ import type { PresenceUser } from '@/lib/hooks/use-collaboration';
  * button on the host page should colour itself differently when
  * `otherEditors.length > 0` to reinforce the "this may overwrite"
  * implication. With `liveText` the page's rich-text fields are co-edited
- * live, so only the other fields can still be overwritten.
+ * live and save themselves, so only the other fields can be overwritten.
  */
 export function EditLockBanner({ otherEditors, liveText = false }: { otherEditors: PresenceUser[]; liveText?: boolean }) {
     if (otherEditors.length === 0) return null;
@@ -37,7 +37,7 @@ export function EditLockBanner({ otherEditors, liveText = false }: { otherEditor
                 <span>
                     <strong className="font-semibold text-amber-100">{names}</strong>{' '}
                     {otherEditors.length === 1 ? 'is' : 'are'} also editing — {liveText
-                        ? 'text fields update live for everyone; other fields are saved by whoever saves last.'
+                        ? 'text fields update live and save automatically; other fields are saved by whoever saves last.'
                         : 'saving will overwrite their unsaved work.'}
                 </span>
             </div>

@@ -13,7 +13,7 @@
  * doc is still empty.
  */
 
-import { useEffect, useMemo, useState, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import type { Editor } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import { yCursorPluginKey } from '@tiptap/y-tiptap';
@@ -101,13 +101,26 @@ interface UseYjsRoomOptions {
     seed: (editor: Editor, content: string) => void;
     /** Server asked for the doc's content (notes' debounced persistence). */
     onRequestSave?: (data: any) => void;
+    /** Record-field auto-save: returns the doc's Markdown. When set,
+     *  `scheduleSave()` sends it (`save_content`) after a pause in typing,
+     *  again after a reconnect, and on close / page hide. */
+    autosave?: () => string;
 }
+
+/** Auto-save progress of a record field (see `autosave`). */
+export type FieldSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+
+// Quiet time after the author's last keystroke before the field is sent.
+const AUTOSAVE_DEBOUNCE_MS = 1_200;
+// After a reconnect, let the peer sync land before sending our copy, so a
+// stale offline doc doesn't overwrite text others saved meanwhile.
+const AUTOSAVE_RECONNECT_MS = 1_500;
 
 /**
  * Creates the Y.Doc + awareness (stable for the component's lifetime; remount
  * with a new key to switch rooms) and keeps them synced with the room.
  */
-export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomOptions) {
+export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: UseYjsRoomOptions) {
     const currentUser = useAuthStore((s) => s.user);
     const [status, setStatus] = useState<YjsConnectionStatus>('connecting');
     // True once the server's document state has been applied — used to keep the
@@ -130,6 +143,53 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
     // Latest callbacks without re-running the connection effect.
     const seedRef = useLatest(seed);
     const onRequestSaveRef = useLatest(onRequestSave);
+
+    // ── Record-field auto-save ──
+    const autosaveRef = useLatest(autosave);
+    const [saveState, setSaveState] = useState<FieldSaveState>('idle');
+    const socketRef = useRef<WebSocket | null>(null);
+    const savePending = useRef(false);
+    const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    // The doc's Markdown as last loaded or sent. Only a difference is sent:
+    // editor housekeeping on load can fire "local" updates that change
+    // nothing, and those mustn't count as edits (or show "Saved").
+    const lastSent = useRef<string | null>(null);
+    const hasSaved = useRef(false);
+    const flushSave = useCallback(() => {
+        clearTimeout(saveTimer.current);
+        const get = autosaveRef.current;
+        const ws = socketRef.current;
+        // Not open → stays pending; onopen retries.
+        if (!savePending.current || !get || !ws || ws.readyState !== WebSocket.OPEN) return;
+        savePending.current = false;
+        const content = get();
+        if (content === lastSent.current) {
+            setSaveState(hasSaved.current ? 'saved' : 'idle');
+            return;
+        }
+        try {
+            ws.send(JSON.stringify({ type: 'save_content', content }));
+            lastSent.current = content;
+            hasSaved.current = true;
+            setSaveState('saving');
+        } catch {
+            savePending.current = true;
+        }
+    }, [autosaveRef]);
+    const scheduleSave = useCallback((delay = AUTOSAVE_DEBOUNCE_MS) => {
+        const get = autosaveRef.current;
+        if (!get) return;
+        if (!savePending.current && lastSent.current !== null && get() === lastSent.current) return;
+        savePending.current = true;
+        setSaveState('pending');
+        clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(flushSave, delay);
+    }, [autosaveRef, flushSave]);
+    const flushSaveRef = useLatest(flushSave);
+    // Baseline once the doc holds real content (DB seed or peer sync).
+    useEffect(() => {
+        if (contentSource && lastSent.current === null) lastSent.current = autosaveRef.current?.() ?? null;
+    }, [contentSource, autosaveRef]);
 
     useEffect(() => {
         if (typeof window === 'undefined' || !wsUrl || !currentUser) return;
@@ -203,6 +263,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
             ws = new WebSocket(wsUrl);
             ws.binaryType = 'arraybuffer';
             current = ws;
+            socketRef.current = ws;
             setSocket(ws);
 
             ws.onopen = () => {
@@ -229,6 +290,11 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
                 encoding.writeVarUint(aw, MSG_AWARENESS);
                 encoding.writeVarUint8Array(aw, awarenessProtocol.encodeAwarenessUpdate(awareness, [ydoc.clientID]));
                 sendBinary(encoding.toUint8Array(aw));
+
+                if (savePending.current) {
+                    clearTimeout(saveTimer.current);
+                    saveTimer.current = setTimeout(() => flushSaveRef.current(), AUTOSAVE_RECONNECT_MS);
+                }
             };
 
             ws.onmessage = (event) => {
@@ -267,6 +333,8 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
                         }
                     } else if (data.type === 'request_save') {
                         onRequestSaveRef.current?.(data);
+                    } else if (data.type === 'content_saved') {
+                        setSaveState(savePending.current ? 'pending' : data.ok ? 'saved' : 'error');
                     } else if (data.type === 'peer_disconnected') {
                         const clientId = data.client_id;
                         if (clientId != null && clientId !== ydoc.clientID) {
@@ -350,7 +418,15 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
             }
         }, 5_000);
 
+        // Closing the tab skips React cleanup — send what's pending now.
+        const onPageHide = () => flushSaveRef.current();
+        window.addEventListener('pagehide', onPageHide);
+
         return () => {
+            // 0. Send any unsaved field text while the socket is still open
+            //    (close() delivers queued frames before the close handshake).
+            flushSaveRef.current();
+            window.removeEventListener('pagehide', onPageHide);
             isCleaningUp = true;
             clearTimeout(initialContentTimer);
             clearTimeout(readyFallbackTimer);
@@ -369,7 +445,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
             current = null;
             setSocket(null);
         };
-    }, [wsUrl, currentUser, ydoc, awareness, userColor, editorRef, seedRef, onRequestSaveRef]);
+    }, [wsUrl, currentUser, ydoc, awareness, userColor, editorRef, seedRef, onRequestSaveRef, flushSaveRef]);
 
     // Y.Doc + awareness live as long as the component.
     useEffect(() => () => {
@@ -377,7 +453,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave }: UseYjsRoomO
         ydoc.destroy();
     }, [ydoc, awareness]);
 
-    return { ydoc, awareness, status, hasSynced, contentSource, peerCount, socket };
+    return { ydoc, awareness, status, hasSynced, contentSource, peerCount, socket, saveState, scheduleSave };
 }
 
 function useLatest<T>(value: T): MutableRefObject<T> {

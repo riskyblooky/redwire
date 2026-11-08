@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { processMentionsInMarkdown } from '@/lib/mention-utils';
 import { EditorFieldContext } from '@/lib/types';
 import type { Editor } from '@tiptap/react';
+import type { EditorChangeMeta } from '@/components/ui/tiptap-editor';
 import type { AnchoredThreadLite } from './comment-highlight-extension';
 
 import "@uiw/react-markdown-preview/markdown.css";
@@ -20,7 +21,7 @@ import MDPreview from "./markdown-preview-wrapper";
 
 interface MarkdownEditorProps {
     value: string;
-    onChange: (value: string) => void;
+    onChange: (value: string, meta?: EditorChangeMeta) => void;
     placeholder?: string;
     disabled?: boolean;
     minHeight?: string;

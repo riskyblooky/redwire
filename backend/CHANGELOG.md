@@ -10,12 +10,22 @@ section becomes one release entry.
 - **Edit together, live** — the text fields on the finding, test case and
   asset edit pages, and text sections in the report builder, now update for
   everyone on the page as they type, with each person's cursor shown by name.
-  Review-comment highlights stay in place while others edit. Changes are
-  still kept by the page's Save, so versions, the activity log and review
-  checks work as before. Severity, status and other non-text fields are still
-  saved by whoever saves last, and the "also editing" banner says so.
-  Fields open instantly with their saved text while the live connection
-  starts.
+  Review-comment highlights stay in place while others edit. Fields open
+  instantly with their saved text while the live connection starts.
+- **Text fields save themselves** — those live fields save a moment after
+  you stop typing (and when you leave the page), shown as *Saving…* /
+  *Saved* above the field, so text edits alone no longer need Save. Each
+  editing session adds one entry to the record's version history and
+  activity feed, not one per save. Severity, status and other fields still
+  need Save, which keeps review checks, notifications and automations tied
+  to it; the "also editing" banner says those are saved by whoever saves
+  last. Restoring an old version is refused while someone else has the
+  record open for live editing, since their editor would save the old text
+  back.
+- **Asset version history** — assets now keep versions like findings and
+  test cases: see what changed (name, type, identifier, description,
+  notes, pwned, in scope) and restore an earlier version from the asset
+  page or its edit page. Asset updates in the activity feed show the change.
 - **Who's editing an asset** — the asset edit page shows who else is viewing
   or editing it, like findings and test cases.
 

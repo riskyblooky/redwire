@@ -31,10 +31,15 @@ TESTCASE_VERSIONED_FIELDS = [
 
 NOTE_VERSIONED_FIELDS = ["title", "content"]
 
+ASSET_VERSIONED_FIELDS = [
+    "name", "asset_type", "identifier", "description", "notes", "is_pwned", "in_scope",
+]
+
 _VERSIONED_FIELDS_BY_TYPE = {
     "finding": FINDING_VERSIONED_FIELDS,
     "testcase": TESTCASE_VERSIONED_FIELDS,
     "note": NOTE_VERSIONED_FIELDS,
+    "asset": ASSET_VERSIONED_FIELDS,
 }
 
 

@@ -1,6 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
+export type VersionedEntity = 'finding' | 'testcase' | 'asset';
+
+const BASE_PATHS: Record<VersionedEntity, string> = {
+    finding: 'findings',
+    testcase: 'testcases',
+    asset: 'assets',
+};
+
 export interface VersionSummary {
     id: string;
     version: number;
@@ -17,8 +25,8 @@ export interface VersionSnapshot extends VersionSummary {
 /**
  * Fetch list of all versions for an entity.
  */
-export function useVersionHistory(entityType: 'finding' | 'testcase', entityId: string) {
-    const basePath = entityType === 'finding' ? 'findings' : 'testcases';
+export function useVersionHistory(entityType: VersionedEntity, entityId: string) {
+    const basePath = BASE_PATHS[entityType];
     return useQuery<VersionSummary[]>({
         queryKey: ['versions', entityType, entityId],
         queryFn: async () => {
@@ -33,11 +41,11 @@ export function useVersionHistory(entityType: 'finding' | 'testcase', entityId: 
  * Fetch the full snapshot of a specific version.
  */
 export function useVersionSnapshot(
-    entityType: 'finding' | 'testcase',
+    entityType: VersionedEntity,
     entityId: string,
     versionId: string | null,
 ) {
-    const basePath = entityType === 'finding' ? 'findings' : 'testcases';
+    const basePath = BASE_PATHS[entityType];
     return useQuery<VersionSnapshot>({
         queryKey: ['version-snapshot', entityType, entityId, versionId],
         queryFn: async () => {
@@ -50,9 +58,9 @@ export function useVersionSnapshot(
 
 /** Restore an entity to a prior version. The backend snapshots the current
  *  state first, so this is reversible. */
-export function useRestoreVersion(entityType: 'finding' | 'testcase', entityId: string) {
+export function useRestoreVersion(entityType: VersionedEntity, entityId: string) {
     const qc = useQueryClient();
-    const basePath = entityType === 'finding' ? 'findings' : 'testcases';
+    const basePath = BASE_PATHS[entityType];
     return useMutation({
         mutationFn: async (versionId: string) => {
             const { data } = await api.post(`/${basePath}/${entityId}/versions/${versionId}/restore`);
