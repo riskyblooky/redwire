@@ -373,6 +373,8 @@ async def reset_password(
     # Update user's password and force them to change it on next login
     user.hashed_password = get_password_hash(temp_password)
     user.must_change_password = True
+    from auth.jwt import revoke_user_api_tokens
+    await revoke_user_api_tokens(db, user.id)
     await db.commit()
     
     # Revoke all existing sessions. Surface failure rather than silently

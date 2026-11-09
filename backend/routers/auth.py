@@ -491,6 +491,14 @@ async def verify_2fa(
             detail="Token is not a 2FA-pending token",
         )
 
+    # Single use: it's blacklisted after a successful verify below, and a
+    # revoke-all for the user invalidates it too — but only if checked.
+    if is_token_blacklisted(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(
@@ -794,6 +802,8 @@ async def force_change_password(
     current_user.hashed_password = get_password_hash(body.new_password)
     current_user.must_change_password = False
     current_user.updated_at = datetime.utcnow()
+    from auth.jwt import revoke_user_api_tokens
+    await revoke_user_api_tokens(db, current_user.id)
     await db.commit()
     
     # Revoke all existing sessions so old tokens become invalid. The
@@ -1587,6 +1597,12 @@ async def reset_password(
     if payload.get("type") != "password_reset":
         raise HTTPException(status_code=400, detail="Invalid token type")
 
+    # Single use: the link is blacklisted once used (below), and the reset
+    # also revokes everything issued before it — only effective if checked.
+    from auth.jwt import is_token_blacklisted as _is_blacklisted
+    if _is_blacklisted(req.token):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
     user_id = payload.get("sub")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -1615,6 +1631,8 @@ async def reset_password(
     user.totp_enabled = False
     user.totp_secret = None
     user.totp_verified_at = None
+    from auth.jwt import revoke_user_api_tokens
+    await revoke_user_api_tokens(db, user.id)
     await db.commit()
     
     # Blacklist the reset token so it cannot be replayed, then revoke

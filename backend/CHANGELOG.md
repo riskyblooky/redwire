@@ -71,6 +71,12 @@ section becomes one release entry.
   detail listed every linked finding, test case and note by title across
   all engagements, and anyone with `intel_edit` could unlink them. Both
   now require view access to the linked record's engagement.
+- **Password changes end API tokens, and reset and 2FA links are single
+  use.** Changing or resetting a password (yourself, forced, by an admin,
+  or by email link) now deactivates the account's API tokens as well as
+  its sessions, as email and 2FA changes already did. A used
+  password-reset link, and the short-lived token between password and 2FA
+  code at sign-in, can no longer be replayed.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is
@@ -79,6 +85,9 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- After a forced password change, the new session was sometimes signed
+  out on its next request. The sign-out-everywhere cutoff and token issue
+  times are now compared in whole seconds.
 - **A sign-in completed with a 2FA code now fires the `auth.login.success`
   plugin event** — previously only password-only sign-ins did.
 - **Plugin events for creates, updates and deletes now fire** — plugins

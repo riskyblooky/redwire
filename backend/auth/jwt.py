@@ -4,6 +4,7 @@ from jose import JWTError, jwt
 import os
 import redis
 import logging
+import time
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -173,12 +174,28 @@ def revoke_all_user_tokens(user_id: str) -> bool:
     try:
         # TTL matches our max refresh token lifetime (hours -> seconds)
         ttl = REFRESH_TOKEN_EXPIRE_HOURS * 3600
-        # Store current timestamp
-        r.setex(f"token_revocation:{user_id}", ttl, str(datetime.utcnow().timestamp()))
+        # Whole-second epoch: JWT iat is whole seconds (python-jose truncates),
+        # so a fractional cutoff made tokens issued later in the same second
+        # — e.g. the fresh pair force-change-password hands out right after
+        # revoking — compare as older than the cutoff and get rejected.
+        r.setex(f"token_revocation:{user_id}", ttl, str(int(time.time())))
         return True
     except Exception as e:
         logger.error(f"Failed to revoke user tokens: {e}")
         return False
+
+
+async def revoke_user_api_tokens(db, user_id: str) -> None:
+    """Deactivate every API token the user holds: the long-lived-bearer
+    counterpart of revoke_all_user_tokens, for credential changes. The
+    caller commits."""
+    from sqlalchemy import update
+    from models.api_token import ApiToken
+    await db.execute(
+        update(ApiToken)
+        .where(ApiToken.user_id == user_id, ApiToken.is_active == True)  # noqa: E712
+        .values(is_active=False)
+    )
 
 
 def is_token_blacklisted(token: str) -> bool:

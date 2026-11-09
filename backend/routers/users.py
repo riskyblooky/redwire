@@ -314,7 +314,7 @@ async def change_password(
     from auth.password import verify_password
     from auth.totp import verify_totp_code
     from auth.crypto import decrypt_totp_secret
-    from auth.jwt import revoke_all_user_tokens
+    from auth.jwt import revoke_all_user_tokens, revoke_user_api_tokens
 
     if not verify_password(password_data.old_password, current_user.hashed_password):
         raise HTTPException(
@@ -340,6 +340,9 @@ async def change_password(
         current_user.totp_last_timestep = matched_step
 
     current_user.hashed_password = get_password_hash(password_data.new_password)
+    # A stolen session could have minted an rw_ token; a password change
+    # must end that too (email and 2FA changes already do).
+    await revoke_user_api_tokens(db, current_user.id)
     await db.commit()
 
     if not revoke_all_user_tokens(current_user.id):

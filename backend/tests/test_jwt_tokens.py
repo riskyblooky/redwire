@@ -229,3 +229,12 @@ def test_is_token_blacklisted_fails_closed_on_decode_error():
     not fall through to 'not blacklisted'."""
     # Real Redis is up here, so the fail-closed path is the decode exception.
     assert authjwt.is_token_blacklisted("garbage-not-a-jwt") is True
+
+
+def test_revoke_cutoff_keeps_tokens_issued_in_the_same_second():
+    """The cutoff is whole seconds like iat, so a token minted right after a
+    revoke (force-change-password does exactly this) isn't born revoked."""
+    user_id = str(uuid.uuid4())
+    assert authjwt.revoke_all_user_tokens(user_id) is True
+    fresh = authjwt.create_access_token({"sub": user_id})
+    assert authjwt.is_token_blacklisted(fresh) is False
