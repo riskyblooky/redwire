@@ -28,13 +28,15 @@ class InfraVaultItemUpdate(BaseModel):
 
 
 class InfraVaultItemResponse(BaseModel):
+    """List / write response — never carries the secret fields; only
+    ``GET .../vault/{id}/reveal`` does (audited), as on the engagement vault."""
     id: str
     infra_item_id: str
     name: str
     item_type: str
     username: Optional[str] = None
-    password: Optional[str] = None
-    note: Optional[str] = None
+    has_password: bool = False
+    has_note: bool = False
     filename: Optional[str] = None
     description: Optional[str] = None
     created_by: Optional[str] = None
@@ -45,6 +47,11 @@ class InfraVaultItemResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class InfraVaultItemRevealResponse(InfraVaultItemResponse):
+    password: Optional[str] = None
+    note: Optional[str] = None
 
 
 class InfraVaultAccessResponse(BaseModel):

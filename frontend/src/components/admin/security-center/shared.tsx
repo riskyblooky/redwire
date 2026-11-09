@@ -186,6 +186,7 @@ export const EVENT_LABELS: Record<string, string> = {
     rate_limited: 'Rate limited',
     sso_error: 'SSO error',
     config_changed: 'Config changed',
+    infra_vault_accessed: 'Infra vault accessed',
 };
 
 export function eventLabel(type: string) {
@@ -209,6 +210,8 @@ export function describeEvent(e: { event_type: string; reason: string | null; de
             return `${d.method ?? ''} ${d.path ?? ''} — ${e.reason ?? ''}`.trim();
         case 'config_changed':
             return e.reason ?? '';
+        case 'infra_vault_accessed':
+            return [d.name, d.via].filter(Boolean).join(' · ');
         default:
             return e.reason?.replace(/_/g, ' ') ?? '';
     }

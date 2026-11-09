@@ -52,6 +52,12 @@ section becomes one release entry.
   colleague's finding without `finding_edit_any`, or an author could
   restore their own finding to an earlier VERIFIED or CLOSED snapshot and
   skip the separate-reviewer and peer-review rules. Both now apply.
+- **Infrastructure vault secrets are no longer sent in the item list.**
+  Listing an infrastructure item's vault returned every decrypted
+  password and note at once, with no record of who looked. The list now
+  shows only whether a secret is set; the value comes from a separate
+  reveal request (used by the Show, Copy and Edit buttons), and each
+  reveal or file download is recorded in the Security Center.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

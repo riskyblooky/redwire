@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Form, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, Form, File, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -37,8 +37,10 @@ from schemas.infra import (
 )
 from schemas.infra_vault import (
     InfraVaultItemCreate, InfraVaultItemUpdate, InfraVaultItemResponse,
-    InfraVaultAccessResponse,
+    InfraVaultItemRevealResponse, InfraVaultAccessResponse,
 )
+from utils.security_events import record_security_event
+from utils.vault_access_log import should_log_vault_access
 # EncryptedText on InfraVaultItem handles vault-secret column crypt
 # transparently — encrypt_vault_fields / decrypt_vault_item are no
 # longer needed in this router. encrypt_bytes / decrypt_bytes still
@@ -448,6 +450,15 @@ async def get_infra_by_entity(
 # Infra Vault — Per-item credential storage
 # ══════════════════════════════════════════════════════════════════
 
+def _vault_response(vi: InfraVaultItem, cls=InfraVaultItemResponse):
+    # EncryptedText already decrypts on ORM read; the secret fields only
+    # leave the server on the reveal response.
+    resp = cls.model_validate(vi)
+    resp.has_password = bool(vi.password)
+    resp.has_note = bool(vi.note)
+    return resp
+
+
 @router.get("/items/{item_id}/vault", response_model=List[InfraVaultItemResponse])
 async def list_infra_vault(
     item_id: str,
@@ -477,8 +488,7 @@ async def list_infra_vault(
 
     responses = []
     for vi in items:
-        # EncryptedText already decrypts on ORM read.
-        resp = InfraVaultItemResponse.model_validate(vi)
+        resp = _vault_response(vi)
         if vi.created_by:
             user = await db.get(User, vi.created_by)
             if user:
@@ -512,7 +522,7 @@ async def create_infra_vault_item(
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
-    return db_item
+    return _vault_response(db_item)
 
 
 # ── Fixed-path routes MUST come before {vault_id} routes ─────────
@@ -561,7 +571,7 @@ async def upload_infra_vault_file(
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
-    return db_item
+    return _vault_response(db_item)
 
 
 @router.get("/items/{item_id}/vault/access", response_model=List[InfraVaultAccessResponse])
@@ -715,6 +725,39 @@ async def revoke_vault_access(
 
 # ── Parameterized {vault_id} routes ──────────────────────────────
 
+async def _get_vault_item(db: AsyncSession, item_id: str, vault_id: str) -> Optional[InfraVaultItem]:
+    return (await db.execute(
+        select(InfraVaultItem).where(
+            InfraVaultItem.id == vault_id,
+            InfraVaultItem.infra_item_id == item_id,
+        )
+    )).scalar_one_or_none()
+
+
+@router.get("/items/{item_id}/vault/{vault_id}/reveal", response_model=InfraVaultItemRevealResponse)
+async def reveal_infra_vault_item(
+    item_id: str,
+    vault_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The decrypted password / note for one infra vault item. The only
+    endpoint that returns them; each reveal is recorded as a Security
+    Center event (deduped per user+item over 5 minutes, like the engagement
+    vault). Infra items have no engagement, so this isn't an activity-log
+    row — those broadcast to every dashboard subscriber when unscoped."""
+    await _check_vault_access(item_id, current_user, db)
+    vi = await _get_vault_item(db, item_id, vault_id)
+    if not vi:
+        raise HTTPException(status_code=404, detail="Vault item not found")
+    if should_log_vault_access(current_user.id, vi.id):
+        await record_security_event("infra_vault_accessed", request=request, actor=current_user,
+                                    user=current_user, details={"infra_item_id": item_id,
+                                    "vault_item_id": vi.id, "name": vi.name, "via": "reveal"})
+    return _vault_response(vi, InfraVaultItemRevealResponse)
+
+
 @router.put("/items/{item_id}/vault/{vault_id}", response_model=InfraVaultItemResponse)
 async def update_infra_vault_item(
     item_id: str,
@@ -745,7 +788,7 @@ async def update_infra_vault_item(
     vi.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(vi)
-    return vi
+    return _vault_response(vi)
 
 
 @router.delete("/items/{item_id}/vault/{vault_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -782,6 +825,7 @@ async def delete_infra_vault_item(
 async def download_infra_vault_file(
     item_id: str,
     vault_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -797,6 +841,10 @@ async def download_infra_vault_file(
     vi = result.scalar_one_or_none()
     if not vi or vi.item_type != "FILE" or not vi.file_path:
         raise HTTPException(status_code=404, detail="File not found")
+    if should_log_vault_access(current_user.id, vi.id):
+        await record_security_event("infra_vault_accessed", request=request, actor=current_user,
+                                    user=current_user, details={"infra_item_id": item_id,
+                                    "vault_item_id": vi.id, "name": vi.name, "via": "download"})
 
     # decrypt_bytes falls back to the raw payload if the stored blob
     # isn't Fernet-shaped — covers legacy plaintext files uploaded

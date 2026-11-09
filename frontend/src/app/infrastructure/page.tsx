@@ -216,6 +216,8 @@ import {
     useRevokeInfraVaultAccess,
     useCheckPassword,
     type InfraVaultItem as IVaultItem,
+    type InfraVaultSecret,
+    revealInfraVaultSecret,
 } from '@/lib/hooks/use-infra-vault';
 import { useUsers } from '@/lib/hooks/use-users';
 import {
@@ -266,7 +268,8 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
     const [vaultOpen, setVaultOpen] = useState(true);
     const [accessOpen, setAccessOpen] = useState(false);
     const [addVaultOpen, setAddVaultOpen] = useState(false);
-    const [revealedPasswords, setRevealedPasswords] = useState<Set<string>>(new Set());
+    // Revealed secrets, held only while shown (masking drops them).
+    const [revealed, setRevealed] = useState<Record<string, InfraVaultSecret>>({});
     const [newVault, setNewVault] = useState({ name: '', item_type: 'CREDENTIAL', username: '', password: '', note: '', description: '' });
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -280,17 +283,32 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
     const canDelegateManage = user?.role === 'admin' || user?.role === 'team_lead';
     const [grantAsManager, setGrantAsManager] = useState(false);
 
-    const toggleReveal = (id: string) => {
-        setRevealedPasswords(prev => {
-            const next = new Set(prev);
-            next.has(id) ? next.delete(id) : next.add(id);
-            return next;
-        });
+    const fetchSecret = async (vi: IVaultItem): Promise<InfraVaultSecret | null> => {
+        try {
+            return revealed[vi.id] ?? await revealInfraVaultSecret(itemId, vi.id);
+        } catch (err) {
+            toast.error(apiErrorMessage(err, 'Failed to reveal'));
+            return null;
+        }
+    };
+
+    const toggleReveal = async (vi: IVaultItem) => {
+        if (revealed[vi.id]) {
+            setRevealed(({ [vi.id]: _, ...rest }) => rest);
+            return;
+        }
+        const secret = await fetchSecret(vi);
+        if (secret) setRevealed(prev => ({ ...prev, [vi.id]: secret }));
     };
 
     const copyToClipboard = (text: string, label: string) => {
         navigator.clipboard.writeText(text);
         toast.success(`${label} copied`);
+    };
+
+    const copySecret = async (vi: IVaultItem, field: keyof InfraVaultSecret, label: string) => {
+        const value = (await fetchSecret(vi))?.[field];
+        if (value) copyToClipboard(value, label);
     };
 
     const handleAddVault = async () => {
@@ -344,9 +362,11 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
         } catch { toast.error('Download failed'); }
     };
 
-    const startEditing = (vi: IVaultItem) => {
+    const startEditing = async (vi: IVaultItem) => {
+        const secret = (vi.has_password || vi.has_note) ? await fetchSecret(vi) : {};
+        if (!secret) return;
         setEditingId(vi.id);
-        setEditForm({ name: vi.name, username: vi.username || '', password: vi.password || '', note: vi.note || '', description: vi.description || '' });
+        setEditForm({ name: vi.name, username: vi.username || '', password: secret.password || '', note: secret.note || '', description: vi.description || '' });
     };
 
     const handleSaveEdit = async () => {
@@ -492,7 +512,8 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                 {vaultItems.map(vi => {
                                                     const conf = VAULT_TYPE_CONFIG[vi.item_type] || VAULT_TYPE_CONFIG.NOTE;
                                                     const VIcon = conf.icon;
-                                                    const isRevealed = revealedPasswords.has(vi.id);
+                                                    const secret = revealed[vi.id];
+                                                    const isRevealed = !!secret;
                                                     return (
                                                         <div key={vi.id} className="bg-slate-950/50 rounded-lg border border-slate-800 p-3 group">
                                                             {editingId === vi.id ? (
@@ -625,16 +646,16 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                                             </button>
                                                                         </div>
                                                                     )}
-                                                                    {vi.password && (
+                                                                    {vi.has_password && (
                                                                         <div className="mt-1 flex items-center gap-2 text-xs">
                                                                             <span className="text-slate-500 w-16 shrink-0">Pass</span>
                                                                             <code className="text-slate-300 font-mono bg-slate-900 px-2 py-0.5 rounded flex-1 truncate">
-                                                                                {isRevealed ? vi.password : '•'.repeat(Math.min(vi.password.length, 20))}
+                                                                                {isRevealed ? secret.password : '••••••••••••'}
                                                                             </code>
-                                                                            <button onClick={() => toggleReveal(vi.id)} className="p-1 text-slate-600 hover:text-white">
+                                                                            <button onClick={() => toggleReveal(vi)} className="p-1 text-slate-600 hover:text-white">
                                                                                 {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                                                                             </button>
-                                                                            <button onClick={() => copyToClipboard(vi.password!, 'Password')} className="p-1 text-slate-600 hover:text-white">
+                                                                            <button onClick={() => copySecret(vi, 'password', 'Password')} className="p-1 text-slate-600 hover:text-white">
                                                                                 <Copy className="h-3 w-3" />
                                                                             </button>
                                                                         </div>
@@ -654,37 +675,37 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                                             </button>
                                                                         </div>
                                                                     )}
-                                                                    {vi.password && (
+                                                                    {vi.has_password && (
                                                                         <div className="mt-2">
                                                                             <div className="flex items-center justify-between mb-1">
                                                                                 <span className="text-[10px] text-slate-500">Private Key</span>
                                                                                 <div className="flex items-center gap-1">
-                                                                                    <button onClick={() => toggleReveal(vi.id)} className="p-1 text-slate-600 hover:text-white" title={isRevealed ? 'Hide' : 'Show'}>
+                                                                                    <button onClick={() => toggleReveal(vi)} className="p-1 text-slate-600 hover:text-white" title={isRevealed ? 'Hide' : 'Show'}>
                                                                                         {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                                                                                     </button>
-                                                                                    <button onClick={() => copyToClipboard(vi.password!, 'Key')} className="p-1 text-slate-600 hover:text-white" title="Copy">
+                                                                                    <button onClick={() => copySecret(vi, 'password', 'Key')} className="p-1 text-slate-600 hover:text-white" title="Copy">
                                                                                         <Copy className="h-3 w-3" />
                                                                                     </button>
                                                                                 </div>
                                                                             </div>
                                                                             {isRevealed ? (
                                                                                 <pre className="text-[10px] font-mono text-green-400 bg-slate-900 border border-slate-800 rounded-lg p-2 overflow-x-auto max-h-[200px] overflow-y-auto whitespace-pre leading-relaxed">
-                                                                                    {vi.password}
+                                                                                    {secret.password}
                                                                                 </pre>
                                                                             ) : (
                                                                                 <div className="text-xs text-slate-500 bg-slate-900 border border-slate-800 rounded-lg p-2 font-mono">
-                                                                                    •••••• ({vi.password.length} chars)
+                                                                                    ••••••••••••
                                                                                 </div>
                                                                             )}
                                                                         </div>
                                                                     )}
-                                                                    {vi.note && (
+                                                                    {vi.has_note && (
                                                                         <div className="mt-1 flex items-center gap-2 text-xs">
                                                                             <span className="text-slate-500 w-16 shrink-0">Phrase</span>
                                                                             <code className="text-slate-300 font-mono bg-slate-900 px-2 py-0.5 rounded flex-1 truncate">
-                                                                                {isRevealed ? vi.note : '•'.repeat(Math.min(vi.note.length, 12))}
+                                                                                {isRevealed ? secret.note : '••••••••'}
                                                                             </code>
-                                                                            <button onClick={() => copyToClipboard(vi.note!, 'Passphrase')} className="p-1 text-slate-600 hover:text-white">
+                                                                            <button onClick={() => copySecret(vi, 'note', 'Passphrase')} className="p-1 text-slate-600 hover:text-white">
                                                                                 <Copy className="h-3 w-3" />
                                                                             </button>
                                                                         </div>
@@ -693,8 +714,19 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                                                             )}
 
                                                             {/* ─ NOTE view ─ */}
-                                                            {vi.item_type === 'NOTE' && vi.note && (
-                                                                <div className="mt-2 text-xs text-slate-300 whitespace-pre-wrap bg-slate-900/50 p-2 rounded border border-slate-800">{vi.note}</div>
+                                                            {vi.item_type === 'NOTE' && vi.has_note && (
+                                                                isRevealed ? (
+                                                                    <div className="mt-2 flex items-start gap-2">
+                                                                        <div className="flex-1 text-xs text-slate-300 whitespace-pre-wrap bg-slate-900/50 p-2 rounded border border-slate-800">{secret.note}</div>
+                                                                        <button onClick={() => toggleReveal(vi)} className="p-1 text-slate-600 hover:text-white" title="Hide">
+                                                                            <EyeOff className="h-3 w-3" />
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button onClick={() => toggleReveal(vi)} className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 hover:text-white">
+                                                                        <Eye className="h-3 w-3" /> Show note
+                                                                    </button>
+                                                                )
                                                             )}
 
                                                             {/* ─ FILE view ─ */}

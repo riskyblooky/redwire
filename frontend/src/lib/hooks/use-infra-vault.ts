@@ -9,8 +9,10 @@ export interface InfraVaultItem {
     name: string;
     item_type: string; // CREDENTIAL, KEY, FILE, NOTE
     username?: string;
-    password?: string;
-    note?: string;
+    // The list never carries the secret values — fetch them with
+    // revealInfraVaultSecret (audited server-side).
+    has_password: boolean;
+    has_note: boolean;
     filename?: string;
     description?: string;
     created_by?: string;
@@ -18,6 +20,16 @@ export interface InfraVaultItem {
     created_by_username?: string;
     created_at: string;
     updated_at: string;
+}
+
+export interface InfraVaultSecret {
+    password?: string | null;
+    note?: string | null;
+}
+
+export async function revealInfraVaultSecret(infraItemId: string, vaultId: string): Promise<InfraVaultSecret> {
+    const { data } = await api.get<InfraVaultSecret>(`/infra/items/${infraItemId}/vault/${vaultId}/reveal`);
+    return { password: data.password, note: data.note };
 }
 
 export interface InfraVaultAccess {
