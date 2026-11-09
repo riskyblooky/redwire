@@ -97,6 +97,9 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Large file uploads and downloads no longer freeze the app for everyone
+  else on the same server worker while they transfer. Evidence downloads
+  now stream instead of loading the whole file into memory first.
 - Saving plugin settings twice at the same moment could store a setting
   twice, after which that setting and the plugin's settings page errored.
   Settings are now unique per plugin and key (migration removes any

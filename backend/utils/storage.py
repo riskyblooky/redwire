@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import boto3
@@ -112,23 +113,27 @@ class StorageService:
             extra_args['ContentType'] = content_type
             
         file_obj = io.BytesIO(file_content)
-        self.s3.upload_fileobj(
+        # boto3 is synchronous; every network call goes to a worker thread so
+        # a large transfer doesn't stall this worker's event loop (and with it
+        # every other request, WebSocket and background task on the worker).
+        await asyncio.to_thread(
+            self.s3.upload_fileobj,
             file_obj,
             self.bucket_name,
             filename,
-            ExtraArgs=extra_args
+            ExtraArgs=extra_args,
         )
         return filename
 
     async def download_file(self, filename: str) -> bytes:
         """Download a file from MinIO."""
         file_obj = io.BytesIO()
-        self.s3.download_fileobj(self.bucket_name, filename, file_obj)
+        await asyncio.to_thread(self.s3.download_fileobj, self.bucket_name, filename, file_obj)
         return file_obj.getvalue()
 
     async def delete_file(self, filename: str):
         """Delete a file from MinIO."""
-        self.s3.delete_object(Bucket=self.bucket_name, Key=filename)
+        await asyncio.to_thread(self.s3.delete_object, Bucket=self.bucket_name, Key=filename)
 
     async def head_object(self, filename: str) -> Optional[dict]:
         """Return object metadata (size, etag, last-modified, content-type)
@@ -140,7 +145,7 @@ class StorageService:
         operator with direct MinIO access could have swapped in a
         larger file after upload (GHSA-q8q6-22jx-7rjj follow-up)."""
         try:
-            resp = self.s3.head_object(Bucket=self.bucket_name, Key=filename)
+            resp = await asyncio.to_thread(self.s3.head_object, Bucket=self.bucket_name, Key=filename)
             return {
                 "size": resp.get("ContentLength"),
                 "etag": resp.get("ETag"),
@@ -185,9 +190,21 @@ class StorageService:
             
         return url
 
-    async def get_file_stream(self, filename: str):
-        """Get a file stream from MinIO."""
-        response = self.s3.get_object(Bucket=self.bucket_name, Key=filename)
-        return response['Body']
+    async def get_file_stream(self, filename: str, chunk_size: int = 64 * 1024):
+        """Stream a file from MinIO as an async iterator of chunks, each read
+        in a worker thread. A missing key raises here, before any bytes."""
+        response = await asyncio.to_thread(self.s3.get_object, Bucket=self.bucket_name, Key=filename)
+        body = response['Body']
+
+        async def _chunks():
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(body.read, chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                body.close()
+        return _chunks()
 
 storage_service = StorageService()
