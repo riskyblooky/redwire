@@ -55,6 +55,9 @@ export function AnnotatableMarkdownField({
     // Done saves them over REST. And until the page refetches the record, show
     // what was just written rather than the stale `value`.
     const unsyncedRef = useRef(false);
+    // The live room can take edit away mid-session; follow it in the bar.
+    const [roomCanEdit, setRoomCanEdit] = useState(true);
+    const liveCanEdit = canEdit && roomCanEdit;
     const [shownAfterClose, setShownAfterClose] = useState<string | null>(null);
     useEffect(() => { setShownAfterClose(null); }, [value]);
     const shown = shownAfterClose ?? value;
@@ -73,6 +76,7 @@ export function AnnotatableMarkdownField({
     const enterAnnotate = useCallback((focusId?: string) => {
         setDraft(shown || '');
         unsyncedRef.current = false;
+        setRoomCanEdit(true);
         setPendingActive(focusId ?? null);
         setMode('annotate');
     }, [shown]);
@@ -89,7 +93,7 @@ export function AnnotatableMarkdownField({
     // text; only offline edits need the REST save.
     const done = async () => {
         if (saving) return;
-        if (canEdit && unsyncedRef.current && draft !== (shown || '')) {
+        if (liveCanEdit && unsyncedRef.current && draft !== (shown || '')) {
             setSaving(true);
             try {
                 await onSave(draft);
@@ -100,7 +104,7 @@ export function AnnotatableMarkdownField({
                 setSaving(false);
             }
         }
-        if (canEdit) setShownAfterClose(draft);
+        if (liveCanEdit) setShownAfterClose(draft);
         surfaceRef.current?.refreshAnchors();
         setMode('view');
     };
@@ -173,6 +177,7 @@ export function AnnotatableMarkdownField({
             onChange={collaborative ? onDraftChange : setDraft}
             canEdit={canEdit}
             collaborative={collaborative}
+            onCollabAccess={setRoomCanEdit}
             engagementId={engagementId}
             resourceType={resourceType}
             resourceId={resourceId}
@@ -184,11 +189,11 @@ export function AnnotatableMarkdownField({
             footer={collaborative ? (
                 <div className="flex items-center justify-between mt-2">
                     <span className="text-[10px] text-slate-500">
-                        {canEdit ? 'Live — saves as you type and syncs with anyone else editing this field · ' : 'Read-only — others’ edits appear live · '}
+                        {liveCanEdit ? 'Live — saves as you type and syncs with anyone else editing this field · ' : 'Read-only — others’ edits appear live · '}
                         select text to comment
                     </span>
                     <Button size="sm" className="h-7 bg-primary hover:bg-primary/90 text-white" onClick={done} disabled={saving}>
-                        {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Saving</> : canEdit ? 'Done' : 'Close'}
+                        {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Saving</> : liveCanEdit ? 'Done' : 'Close'}
                     </Button>
                 </div>
             ) : (

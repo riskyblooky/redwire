@@ -205,8 +205,10 @@ interface TiptapEditorProps {
      *  `field/finding/<id>/impact`). Fixed at mount. The room seeds from the
      *  server's copy and `value` is then only an output. Your edits save
      *  automatically a moment after you stop typing; `onChange` still fires
-     *  on every real text change (see EditorChangeMeta). */
-    collab?: { path: string };
+     *  on every real text change (see EditorChangeMeta). `onAccess` hears
+     *  the server's mid-session verdict (false once edit is taken away or
+     *  access is revoked), for hosts that show their own editing hints. */
+    collab?: { path: string; onAccess?: (canEdit: boolean) => void };
 }
 
 const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any; showLineNumbers?: boolean; onToggleLineNumbers?: () => void }) => {
@@ -1167,6 +1169,11 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     useEffect(() => {
         if (editor && collabPath) editor.setEditable(!disabled && collabReady && !serverReadOnly);
     }, [editor, collabPath, disabled, collabReady, serverReadOnly]);
+    const onCollabAccessRef = useRef(collab?.onAccess);
+    onCollabAccessRef.current = collab?.onAccess;
+    useEffect(() => {
+        if (collabPath) onCollabAccessRef.current?.(!serverReadOnly);
+    }, [collabPath, serverReadOnly]);
 
     // Joined a room where a peer already had (possibly unsaved) text: report it
     // once so the host form holds what's on screen.

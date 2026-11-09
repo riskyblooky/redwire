@@ -49,6 +49,8 @@ export interface AnnotationSurfaceProps {
     /** Live co-editing of this field with others on the same page (room
      *  `field/<resourceType>/<resourceId>/<field>`). Fixed at mount. */
     collaborative?: boolean;
+    /** Live mode: the server's verdict on edit rights (see TiptapEditor collab.onAccess). */
+    onCollabAccess?: (canEdit: boolean) => void;
 }
 
 /** Relay path for a record field's live room (backend utils/collab_fields.py). */
@@ -77,7 +79,7 @@ const toLite = (t: Thread): AnchoredThreadLite => ({
  */
 export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationSurfaceProps>(function AnnotationSurface({
     value, onChange, canEdit = false, engagementId, resourceType, resourceId, field,
-    fieldContext, minHeight = '260px', placeholder, focusThreadId, footer, outerClassName, collaborative,
+    fieldContext, minHeight = '260px', placeholder, focusThreadId, footer, outerClassName, collaborative, onCollabAccess,
 }, ref) {
     const [editor, setEditor] = useState<Editor | null>(null);
     const [activeId, setActiveId] = useState<string | null>(null);
@@ -320,7 +322,7 @@ export const AnnotationSurface = forwardRef<AnnotationSurfaceHandle, AnnotationS
                                 document.querySelector(`[data-thread-item="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                             }}
                             onCommentHover={onHover}
-                            collab={collaborative ? { path: collabFieldPath(resourceType, resourceId, field) } : undefined}
+                            collab={collaborative ? { path: collabFieldPath(resourceType, resourceId, field), onAccess: onCollabAccess } : undefined}
                         />
                     </div>
                     {footer}

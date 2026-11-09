@@ -43,7 +43,7 @@ interface MarkdownEditorProps {
     onCommentClick?: (threadId: string) => void;
     onCommentHover?: (threadId: string | null, rect?: DOMRect) => void;
     /** Live co-editing room (see TiptapEditor `collab`). */
-    collab?: { path: string };
+    collab?: { path: string; onAccess?: (canEdit: boolean) => void };
 }
 
 export function MarkdownEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable, fillHeight, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover, collab }: MarkdownEditorProps) {

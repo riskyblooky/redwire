@@ -96,6 +96,8 @@ function PlainInlineMarkdownField({
     // Live mode (see AnnotatableMarkdownField): offline edits need the REST
     // save on Done; show the just-written text until the record refetches.
     const unsyncedRef = useRef(false);
+    // The live room can take edit away mid-session; follow it in the bar.
+    const [roomCanEdit, setRoomCanEdit] = useState(true);
     const [shownAfterClose, setShownAfterClose] = useState<string | null>(null);
     useEffect(() => { setShownAfterClose(null); }, [value]);
     const shown = shownAfterClose ?? value;
@@ -104,6 +106,7 @@ function PlainInlineMarkdownField({
         if (!canEdit || saving) return;
         setDraft(shown || '');
         unsyncedRef.current = false;
+        setRoomCanEdit(true);
         setEditing(true);
     };
 
@@ -114,7 +117,7 @@ function PlainInlineMarkdownField({
 
     const done = async () => {
         if (saving) return;
-        if (unsyncedRef.current && draft !== (shown || '')) {
+        if (roomCanEdit && unsyncedRef.current && draft !== (shown || '')) {
             setSaving(true);
             try {
                 await onSave(draft);
@@ -125,7 +128,7 @@ function PlainInlineMarkdownField({
                 setSaving(false);
             }
         }
-        setShownAfterClose(draft);
+        if (roomCanEdit) setShownAfterClose(draft);
         setEditing(false);
     };
 
@@ -167,13 +170,17 @@ function PlainInlineMarkdownField({
                         minHeight={minHeight}
                         resizable
                         disabled={saving}
-                        collab={{ path: collabFieldPath(resourceType, resourceId, field) }}
+                        collab={{ path: collabFieldPath(resourceType, resourceId, field), onAccess: setRoomCanEdit }}
                     />
                 </div>
                 <div className="flex items-center justify-between mt-2">
-                    <span className="text-[10px] text-slate-500">Live — saves as you type and syncs with anyone else editing this field · Esc or ⌘/Ctrl+Enter to finish</span>
+                    <span className="text-[10px] text-slate-500">
+                        {roomCanEdit
+                            ? 'Live — saves as you type and syncs with anyone else editing this field · Esc or ⌘/Ctrl+Enter to finish'
+                            : 'Read-only — your edit access was removed; others’ edits appear live · Esc to close'}
+                    </span>
                     <Button size="sm" className="h-7 bg-primary hover:bg-primary/90 text-white" onClick={done} disabled={saving}>
-                        {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Saving</> : 'Done'}
+                        {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Saving</> : roomCanEdit ? 'Done' : 'Close'}
                     </Button>
                 </div>
             </div>
