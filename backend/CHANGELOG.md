@@ -42,6 +42,11 @@ section becomes one release entry.
   access only could send a crafted sync message that an editor's browser
   merged and then auto-saved. Those messages are now dropped for
   view-only users.
+- **Cleanup artifacts can only be linked within their own engagement.**
+  Linking one to a finding, test case or asset from a different
+  engagement was accepted and then showed that record's name and
+  identifier on the artifact. It now returns 400, like the other link
+  endpoints.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

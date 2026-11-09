@@ -315,6 +315,8 @@ async def link_cleanup_to_finding(
     finding = result.scalar_one_or_none()
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+    if finding.engagement_id != artifact.engagement_id:
+        raise HTTPException(status_code=400, detail="Finding belongs to a different engagement")
 
     if finding not in artifact.findings:
         artifact.findings.append(finding)
@@ -393,6 +395,8 @@ async def link_cleanup_to_testcase(
     testcase = result.scalar_one_or_none()
     if not testcase:
         raise HTTPException(status_code=404, detail="Test case not found")
+    if testcase.engagement_id != artifact.engagement_id:
+        raise HTTPException(status_code=400, detail="Test case belongs to a different engagement")
 
     if testcase not in artifact.testcases:
         artifact.testcases.append(testcase)
@@ -471,6 +475,8 @@ async def link_cleanup_to_asset(
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
+    if asset.engagement_id != artifact.engagement_id:
+        raise HTTPException(status_code=400, detail="Asset belongs to a different engagement")
 
     if asset not in artifact.assets:
         artifact.assets.append(asset)
