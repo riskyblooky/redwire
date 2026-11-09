@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 
 from database import get_db
 from models.user import User, UserRole
@@ -16,7 +16,7 @@ from schemas.rbac import (
     EngagementRoleResponse, EngagementRoleCreate, EngagementRoleUpdate
 )
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES, WRITE_ADMIN_ROLES
-from auth.permissions import require_global_permission
+from auth.permissions import require_global_permission, global_permission_set, group_permission_set
 from models.permission import Permission
 
 router = APIRouter(
@@ -55,6 +55,57 @@ def require_global_perm_read(permission: Permission):
             return
         await require_global_permission(permission, current_user, db)
     return _checker
+
+# Roles a delegated (non-ADMIN) user manager may hand out or act on: the
+# ordinary ones, plus their own role. ADMIN / READ_ONLY_ADMIN / TEAM_LEAD
+# all carry role-level bypasses, so granting one is an escalation.
+_ORDINARY_ROLES = {UserRole.OPERATOR, UserRole.READ_ONLY}
+
+
+async def _guard_user_admin_action(
+    actor: User,
+    db: AsyncSession,
+    *,
+    target: Optional[User] = None,
+    new_role: Optional[UserRole] = None,
+    added_group_ids=None,
+) -> None:
+    """Least-privilege ceiling for MANAGE_USERS holders (mirrors the group
+    permission ceiling in routers/permissions.py). A non-ADMIN user manager
+    may not assign a role above their own, may not act on an account that
+    holds a role or global permissions they don't (resetting its password
+    or editing its groups would hand them that access), and may only add
+    users to groups whose permissions they already hold."""
+    if actor.role == UserRole.ADMIN:
+        return
+    allowed_roles = _ORDINARY_ROLES | {actor.role}
+    if new_role is not None and new_role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Only an admin can assign the {new_role.value} role",
+        )
+    actor_perms = None
+    if target is not None:
+        if target.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Only an admin can manage a {target.role.value} account",
+            )
+        actor_perms = await global_permission_set(actor, db)
+        if not await global_permission_set(target, db) <= actor_perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot manage an account that holds permissions you do not",
+            )
+    if added_group_ids:
+        if actor_perms is None:
+            actor_perms = await global_permission_set(actor, db)
+        if not await group_permission_set(added_group_ids, db) <= actor_perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot add a user to a group that grants permissions you do not hold",
+            )
+
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Annotated, Optional
@@ -126,6 +177,8 @@ async def create_local_user(
     from auth import get_password_hash
     from models.group import Group, user_groups
 
+    await _guard_user_admin_action(current_user, db, new_role=user_data.role)
+
     # Check username/email uniqueness
     existing = await db.execute(
         select(User).where(
@@ -191,6 +244,13 @@ async def update_user(
         )
         
     update_data = user_update.model_dump(exclude={'group_ids'}, exclude_unset=True)
+    await _guard_user_admin_action(
+        current_user, db,
+        target=user,
+        new_role=update_data.get("role"),
+        added_group_ids=(set(user_update.group_ids) - {g.id for g in user.groups})
+        if user_update.group_ids is not None else None,
+    )
     # Detect deactivation BEFORE we mutate the row, so we can force-revoke
     # outstanding tokens after the commit. Role and group changes are
     # already reflected on every REST and (post-fix) WebSocket call by the
@@ -261,7 +321,8 @@ async def delete_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-        
+    await _guard_user_admin_action(current_user, db, target=user)
+
     deleted_name = user.username
     await db.delete(user)
     await db.commit()
@@ -289,6 +350,7 @@ async def reset_password(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+    await _guard_user_admin_action(current_user, db, target=user)
 
     # SSO/LDAP-bound accounts authenticate against their IdP — planting
     # a hashed_password here would create a permanent IdP bypass for

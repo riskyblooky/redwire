@@ -8,9 +8,9 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from database import get_db
 from models.user import User, UserRole
-from schemas.user import UserResponse, UserSummary, UserCreate, UserUpdate, UserPasswordUpdate, ALLOWED_THEMES, ALLOWED_PALETTES
+from schemas.user import UserResponse, UserSummary, UserUpdate, UserPasswordUpdate, ALLOWED_THEMES, ALLOWED_PALETTES
 from auth.dependencies import get_current_user
-from auth.permissions import has_global_permission, require_global_permission
+from auth.permissions import has_global_permission
 from models.permission import Permission
 from auth.password import get_password_hash
 from utils.paths import ensure_within
@@ -494,134 +494,7 @@ async def get_user(
     
     return user
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(
-    user_data: UserCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Create a new user. Requires the assignable MANAGE_USERS permission."""
-    await require_global_permission(Permission.MANAGE_USERS, current_user, db)
-    
-    # Check if username/email already exists
-    result = await db.execute(
-        select(User).where((User.username == user_data.username) | (User.email == user_data.email))
-    )
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username or email already registered"
-        )
-    
-    new_user = User(
-        username=user_data.username,
-        email=user_data.email,
-        full_name=user_data.full_name,
-        role=user_data.role,
-        hashed_password=get_password_hash(user_data.password)
-    )
-    
-    db.add(new_user)
-    await db.flush()
-    
-    # Auto-assign to default group
-    from models.group import Group, user_groups
-    default_group_result = await db.execute(
-        select(Group).where(Group.is_default == True)
-    )
-    default_group = default_group_result.scalar_one_or_none()
-    if default_group:
-        await db.execute(
-            user_groups.insert().values(user_id=new_user.id, group_id=default_group.id)
-        )
-    
-    await db.commit()
 
-    # Lifecycle hook — plugins can subscribe for provisioning
-    # (Slack invite, LDAP mirror, welcome email). Fired after commit
-    # so subscribers can safely re-fetch the user. Password hash and
-    # any secrets are deliberately omitted from the payload.
-    try:
-        from utils.event_bus import event_bus
-        await event_bus.emit("user.created", {
-            "resource_id": new_user.id,
-            "resource_type": "user",
-            "user_id": new_user.id,
-            "username": new_user.username,
-            "email": new_user.email,
-            "full_name": new_user.full_name,
-            "role": new_user.role.value if new_user.role else None,
-            "actor_id": current_user.id,
-        })
-    except Exception as _e:
-        print(f"[users] user.created event emit error (non-fatal): {_e}")
-
-    # Re-fetch with groups loaded
-    from sqlalchemy.orm import selectinload
-    result = await db.execute(
-        select(User)
-        .where(User.id == new_user.id)
-        .options(selectinload(User.groups))
-    )
-    new_user = result.scalar_one()
-    
-    return new_user
-
-@router.put("/{user_id}", response_model=UserResponse)
-
-async def update_user(
-    user_id: str,
-    user_data: UserUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Update a user. Requires the assignable MANAGE_USERS permission."""
-    await require_global_permission(Permission.MANAGE_USERS, current_user, db)
-    
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    # Update fields
-    update_data = user_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(user, field, value)
-    
-    await db.commit()
-    await db.refresh(user)
-    
-    return user
-
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(
-    user_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Delete a user. Requires the assignable MANAGE_USERS permission."""
-    await require_global_permission(Permission.MANAGE_USERS, current_user, db)
-
-    if user_id == current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete your own account"
-        )
-    
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    await db.delete(user)
-    await db.commit()
-    
-    return None
+# User create / update / delete live in routers/admin.py (/admin/users),
+# which enforces the MANAGE_USERS least-privilege ceiling. The duplicate
+# POST / PUT / DELETE routes that used to sit here skipped it.

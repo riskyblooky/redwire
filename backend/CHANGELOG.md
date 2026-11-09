@@ -28,6 +28,15 @@ section becomes one release entry.
   `nginx_logs` volume shared with the backend.
 
 ### Security
+- **Delegated user managers can no longer escalate.** Anyone holding
+  `manage_users` without being an admin (Team Leads have it by default)
+  could make themselves or anyone else an admin, add themselves to any
+  group, or reset an admin's password and sign in as them. They can now
+  only assign Operator, Read-Only or their own role, only act on accounts
+  that hold no permissions they lack, and only add users to groups whose
+  permissions they already have. The duplicate `PUT/DELETE /users/{id}`
+  and `POST /users` routes, which skipped these checks, are removed; use
+  `/admin/users`.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

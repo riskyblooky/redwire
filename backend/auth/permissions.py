@@ -143,6 +143,38 @@ async def has_engagement_permission(
     return False
 
 
+async def global_permission_set(user: User, db: AsyncSession) -> set:
+    """Every global permission value the user effectively holds — the set
+    form of has_global_permission, for subset ("ceiling") checks."""
+    from models.user import UserRole
+    if user.role == UserRole.ADMIN:
+        return {p.value for p in GLOBAL_PERMISSIONS}
+    held = set()
+    if user.role == UserRole.READ_ONLY_ADMIN:
+        held = {p.value for p in GLOBAL_PERMISSIONS if _is_read_permission(p)}
+    result = await db.execute(
+        select(GroupPermissions.permissions)
+        .join(user_groups, GroupPermissions.group_id == user_groups.c.group_id)
+        .where(user_groups.c.user_id == user.id)
+    )
+    for perms in result.scalars().all():
+        held.update(perms or [])
+    return held & {p.value for p in GLOBAL_PERMISSIONS}
+
+
+async def group_permission_set(group_ids, db: AsyncSession) -> set:
+    """Union of the global permissions granted by the given groups."""
+    if not group_ids:
+        return set()
+    result = await db.execute(
+        select(GroupPermissions.permissions).where(GroupPermissions.group_id.in_(list(group_ids)))
+    )
+    held = set()
+    for perms in result.scalars().all():
+        held.update(perms or [])
+    return held
+
+
 async def require_global_permission(
     permission: Permission,
     user: User,

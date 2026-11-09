@@ -48,7 +48,7 @@ export function useUpdateUser() {
 
     return useMutation({
         mutationFn: async ({ id, ...update }: UserUpdate & { id: string }) => {
-            const { data } = await api.put<User>(`/users/${id}`, update);
+            const { data } = await api.patch<User>(`/admin/users/${id}`, update);
             return data;
         },
         onSuccess: () => {
@@ -62,7 +62,7 @@ export function useCreateUser() {
 
     return useMutation({
         mutationFn: async (user: UserCreate) => {
-            const { data } = await api.post<User>('/users', user);
+            const { data } = await api.post<User>('/admin/users', user);
             return data;
         },
         onSuccess: () => {
