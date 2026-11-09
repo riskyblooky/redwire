@@ -1054,8 +1054,12 @@ async def delete_finding(
     from utils.thread_cleanup import sweep_threads
     await sweep_threads(db, ["finding", "finding_remediation"], finding.id)
 
+    # Evidence rows go with the finding (cascade); their objects don't.
+    from utils.storage_cleanup import delete_objects, finding_object_keys
+    object_keys = await finding_object_keys(db, finding.id)
     await db.delete(finding)
     await db.commit()
+    await delete_objects(object_keys)
 
     return None
 

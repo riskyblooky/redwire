@@ -970,9 +970,12 @@ async def delete_engagement(
         details=f"Deleted engagement: {engagement_name}"
     )
 
+    from utils.storage_cleanup import delete_objects, engagement_object_keys
+    object_keys = await engagement_object_keys(db, engagement_id_val)
     await db.delete(engagement)
     await db.commit()
-    
+    await delete_objects(object_keys)
+
     return None
 
 @router.get("/{engagement_id}/evidence", response_model=List[EvidenceResponse])

@@ -97,6 +97,9 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Deleting an engagement or a finding now also deletes its stored files
+  (evidence, vault files, embedded images). They used to stay in object
+  storage indefinitely after the records were gone.
 - Deleting a user who had any history (activity, notes, comments, threads,
   templates, registration codes) failed with a server error. Their records
   are now kept with the author shown as a deleted user. Includes a
