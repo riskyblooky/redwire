@@ -12,5 +12,5 @@ class AttackGraphLayout(Base):
     name = Column(String, nullable=False, default="Default")
     positions = Column(Text, nullable=False)  # JSON string: { "node-id": { "x": number, "y": number } }
     is_active = Column(Boolean, nullable=False, default=False)
-    pinned_by = Column(String, ForeignKey("users.id"), nullable=False)
+    pinned_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     pinned_at = Column(DateTime, default=datetime.utcnow, nullable=False)

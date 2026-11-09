@@ -14,7 +14,7 @@ class RegistrationCode(Base):
     used_count = Column(Integer, default=0, nullable=False)
     expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
     # Relationships

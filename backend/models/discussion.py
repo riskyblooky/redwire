@@ -29,7 +29,7 @@ class Thread(Base):
     resource_type = Column(String(50), nullable=False)  # Changed from Enum to String
     resource_id = Column(String, nullable=True, index=True) # ID of specific finding/asset/testcase
     title = Column(String(255), nullable=False)
-    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_resolved = Column(Boolean, default=False)
 
@@ -57,13 +57,13 @@ class Comment(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     thread_id = Column(String, ForeignKey("threads.id"), nullable=False)
     content = Column(Text, nullable=False)
-    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Resolvable features (for peer review)
     is_resolvable = Column(Boolean, default=False)
     is_resolved = Column(Boolean, default=False)
-    resolved_by = Column(String, ForeignKey("users.id"), nullable=True)
+    resolved_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     resolved_at = Column(DateTime, nullable=True)
     
     # Relationships
@@ -84,7 +84,7 @@ class ActivityLog(Base):
     # No FK, so it survives the SET NULL above: lets the admin "deleted
     # engagement logs" view group orphaned rows by the engagement they came from.
     origin_engagement_id = Column(String, nullable=True, index=True)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action = Column(String(100), nullable=False) # e.g., "created", "updated", "deleted", "resolved"
     resource_type = Column(String(50), nullable=False)  # Changed from Enum to String
     resource_id = Column(String, nullable=False)

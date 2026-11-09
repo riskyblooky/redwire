@@ -52,6 +52,6 @@ class DashboardWidget(Base):
     config = Column(JSON, nullable=True, default=dict)  # Chart-specific config
     is_system = Column(Boolean, default=False)  # Built-in widgets can't be deleted
     is_active = Column(Boolean, default=True)
-    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -14,7 +14,7 @@ class IntelAttachment(Base):
     original_filename = Column(String(255), nullable=False)
     file_size = Column(Integer, nullable=False)  # Size in bytes
     mime_type = Column(String(100), nullable=True)
-    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

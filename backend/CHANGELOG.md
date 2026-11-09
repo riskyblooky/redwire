@@ -97,6 +97,10 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Deleting a user who had any history (activity, notes, comments, threads,
+  templates, registration codes) failed with a server error. Their records
+  are now kept with the author shown as a deleted user. Includes a
+  database migration.
 - After a forced password change, the new session was sometimes signed
   out on its next request. The sign-out-everywhere cutoff and token issue
   times are now compared in whole seconds.

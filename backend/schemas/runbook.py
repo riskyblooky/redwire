@@ -70,7 +70,7 @@ class RunbookResponse(BaseModel):
     items: List[RunbookItemResponse] = []
     created_at: datetime
     updated_at: datetime
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
     updated_by: Optional[str] = None
     status: TemplateStatus
     submitted_at: Optional[datetime] = None

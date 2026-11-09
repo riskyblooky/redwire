@@ -67,7 +67,7 @@ class NoteResponse(BaseModel):
     parent_id: Optional[str] = None
     title: str
     content: Optional[str] = ""
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
     created_by_username: Optional[str] = None
     created_by_profile_photo: Optional[str] = None
     updated_by: Optional[str] = None

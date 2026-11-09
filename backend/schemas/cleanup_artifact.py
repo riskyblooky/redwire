@@ -70,7 +70,7 @@ class CleanupArtifactResponse(CleanupArtifactBase):
     cleaned_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
     updated_by: Optional[str] = None
     created_by_username: Optional[str] = None
     created_by_full_name: Optional[str] = None

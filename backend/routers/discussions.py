@@ -856,7 +856,7 @@ async def get_activity_log(
     response_logs = []
     for log in logs:
         log_dict = ActivityLogResponse.model_validate(log).model_dump()
-        log_dict["user_name"] = (log.user.full_name or log.user.username) if log.user else "System"
+        log_dict["user_name"] = (log.user.full_name or log.user.username) if log.user else "Deleted user"
         log_dict["user_profile_photo"] = log.user.profile_photo if log.user else None
         response_logs.append(log_dict)
     
@@ -1285,7 +1285,7 @@ async def get_activity_feed(
     items = []
     for log in logs:
         d = ActivityLogResponse.model_validate(log).model_dump()
-        d["user_name"] = (log.user.full_name or log.user.username) if log.user else "System"
+        d["user_name"] = (log.user.full_name or log.user.username) if log.user else "Deleted user"
         d["user_profile_photo"] = log.user.profile_photo if log.user else None
         d["action_category"] = _feed_action_category(log.action or "")
         d["content_kind"] = "none"

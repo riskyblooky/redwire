@@ -13,8 +13,8 @@ class Note(Base):
     parent_id = Column(String, ForeignKey("notes.id", ondelete="SET NULL"), nullable=True, index=True)
     title = Column(String(255), nullable=False)
     content = Column(Text, nullable=True, default="")
-    created_by = Column(String, ForeignKey("users.id"), nullable=False)
-    updated_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

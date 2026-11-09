@@ -35,7 +35,7 @@ class ThreadResponse(BaseModel):
     resource_type: ResourceType
     resource_id: Optional[str]
     title: str
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
     created_at: datetime
     is_resolved: bool
     comment_count: Optional[int] = 0
@@ -62,7 +62,7 @@ class CommentResponse(BaseModel):
     id: str
     thread_id: str
     content: str
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
     created_at: datetime
     is_resolvable: bool
     is_resolved: bool
@@ -79,7 +79,7 @@ class CommentResponse(BaseModel):
 class ActivityLogResponse(BaseModel):
     id: str
     engagement_id: str
-    user_id: str
+    user_id: Optional[str] = None  # NULL once the user is deleted
     action: str
     # Stored as a free String on the model (many loggers use types outside the
     # ResourceType enum: spray, user, stats_page, import, …). Typing this as the

@@ -18,7 +18,7 @@ class IntelFeed(Base):
     # LDAP/SMTP tls_verify escape hatch). SSRF validation still runs regardless.
     verify_tls = Column(Boolean, default=True, nullable=False)
     last_fetched_at = Column(DateTime, nullable=True)
-    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

@@ -27,7 +27,7 @@ class RegistrationCodeResponse(RegistrationCodeBase):
     id: str
     used_count: int
     created_at: datetime
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
 
     class Config:
         from_attributes = True

@@ -97,7 +97,7 @@ class EngagementUpdate(BaseModel):
 class EngagementResponse(EngagementBase):
     id: str
     status: EngagementStatus
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
     created_at: datetime
     updated_at: datetime
     updated_by: Optional[str] = None

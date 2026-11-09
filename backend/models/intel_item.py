@@ -36,7 +36,7 @@ class IntelItem(Base):
     cve_id = Column(String(50), nullable=True, index=True)  # e.g. CVE-2024-1234
     published_at = Column(DateTime, nullable=True)
     feed_id = Column(String, ForeignKey("intel_feeds.id", ondelete="SET NULL"), nullable=True)
-    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

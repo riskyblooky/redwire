@@ -26,7 +26,7 @@ class EvidenceResponse(EvidenceBase):
     mime_type: Optional[str]
     created_at: datetime
     updated_at: datetime
-    created_by: str
+    created_by: Optional[str] = None  # NULL once the user is deleted
     created_by_username: Optional[str] = None
     created_by_full_name: Optional[str] = None
     created_by_profile_photo: Optional[str] = None

@@ -23,7 +23,7 @@ class ApiToken(Base):
     last_used_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id], backref="api_tokens")

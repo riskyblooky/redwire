@@ -31,7 +31,7 @@ class TestCaseTemplate(Base, AuditMixin):
     )
     submitted_at = Column(DateTime, nullable=True)
     published_at = Column(DateTime, nullable=True)
-    published_by = Column(String, ForeignKey("users.id"), nullable=True)
+    published_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     review_note = Column(Text, nullable=True)
 
     # Relationships
