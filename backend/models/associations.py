@@ -10,7 +10,7 @@ class ClientUserAccess(Base):
     __tablename__ = "client_user_access"
 
     client_id = Column(String, ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
     granted_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -18,7 +18,7 @@ class EngagementAssignment(Base):
     __tablename__ = "engagement_assignments"
     
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), primary_key=True)
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), primary_key=True, index=True)
     role_id = Column(String, ForeignKey("engagement_roles.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
@@ -30,7 +30,7 @@ class FindingAsset(Base):
     __tablename__ = "finding_assets"
     
     finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
-    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True, index=True)
     port_ids = Column(Text, nullable=True)  # JSON array of port IDs
     remediated = Column(Boolean, default=False, nullable=False)
     remediated_at = Column(DateTime, nullable=True)
@@ -50,13 +50,13 @@ class FindingTag(Base):
     __tablename__ = "finding_tags"
     
     finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
-    tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class TestCaseTag(Base):
     __tablename__ = "testcase_tags"
 
     testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
-    tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class EngagementTag(Base):
     """Many-to-many join between engagements and the global tags table.
@@ -65,55 +65,55 @@ class EngagementTag(Base):
     __tablename__ = "engagement_tags"
 
     engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), primary_key=True)
-    tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = Column(String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class FindingTestCase(Base):
     __tablename__ = "finding_testcases"
     
     finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
-    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
+    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class VaultItemFinding(Base):
     __tablename__ = "vault_item_findings"
     
     vault_item_id = Column(String, ForeignKey("vault_items.id", ondelete="CASCADE"), primary_key=True)
-    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
+    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class VaultItemTestCase(Base):
     __tablename__ = "vault_item_testcases"
     
     vault_item_id = Column(String, ForeignKey("vault_items.id", ondelete="CASCADE"), primary_key=True)
-    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
+    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class VaultItemAsset(Base):
     __tablename__ = "vault_item_assets"
 
     vault_item_id = Column(String, ForeignKey("vault_items.id", ondelete="CASCADE"), primary_key=True)
-    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class CleanupArtifactFinding(Base):
     __tablename__ = "cleanup_artifact_findings"
     
     cleanup_artifact_id = Column(String, ForeignKey("cleanup_artifacts.id", ondelete="CASCADE"), primary_key=True)
-    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
+    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class CleanupArtifactTestCase(Base):
     __tablename__ = "cleanup_artifact_testcases"
     
     cleanup_artifact_id = Column(String, ForeignKey("cleanup_artifacts.id", ondelete="CASCADE"), primary_key=True)
-    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
+    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class CleanupArtifactAsset(Base):
     __tablename__ = "cleanup_artifact_assets"
     
     cleanup_artifact_id = Column(String, ForeignKey("cleanup_artifacts.id", ondelete="CASCADE"), primary_key=True)
-    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class TestCaseAsset(Base):
     __tablename__ = "testcase_assets"
 
     testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
-    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True, index=True)
     port_ids = Column(Text, nullable=True)  # JSON array of port IDs
 
     @property
@@ -130,19 +130,19 @@ class NoteAsset(Base):
     __tablename__ = "note_assets"
 
     note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True)
-    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class NoteTestCase(Base):
     __tablename__ = "note_testcases"
 
     note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True)
-    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
+    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class NoteFinding(Base):
     __tablename__ = "note_findings"
 
     note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True)
-    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
+    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class NoteVaultItem(Base):
     __tablename__ = "note_vault_items"
@@ -160,13 +160,13 @@ class IntelItemFinding(Base):
     __tablename__ = "intel_item_findings"
 
     intel_item_id = Column(String, ForeignKey("intel_items.id", ondelete="CASCADE"), primary_key=True)
-    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
+    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class IntelItemTestCase(Base):
     __tablename__ = "intel_item_testcases"
 
     intel_item_id = Column(String, ForeignKey("intel_items.id", ondelete="CASCADE"), primary_key=True)
-    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
+    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class IntelItemNote(Base):
     __tablename__ = "intel_item_notes"
@@ -178,13 +178,13 @@ class InfraItemFinding(Base):
     __tablename__ = "infra_item_findings"
 
     infra_item_id = Column(String, ForeignKey("infra_items.id", ondelete="CASCADE"), primary_key=True)
-    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True)
+    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class InfraItemTestCase(Base):
     __tablename__ = "infra_item_testcases"
 
     infra_item_id = Column(String, ForeignKey("infra_items.id", ondelete="CASCADE"), primary_key=True)
-    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True)
+    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class InfraItemNote(Base):
     __tablename__ = "infra_item_notes"
@@ -205,7 +205,7 @@ class InfraVaultAccess(Base):
     __tablename__ = "infra_vault_access"
 
     infra_item_id = Column(String, ForeignKey("infra_items.id", ondelete="CASCADE"), primary_key=True)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
     granted_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     can_manage = Column(Boolean, default=False, server_default="false", nullable=False)

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean, Integer, Enum as SQLEnum
-from sqlalchemy import event
+from sqlalchemy import event, Index
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -25,7 +25,7 @@ class Thread(Base):
     __tablename__ = "threads"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False)
+    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False, index=True)
     resource_type = Column(String(50), nullable=False)  # Changed from Enum to String
     resource_id = Column(String, nullable=True, index=True) # ID of specific finding/asset/testcase
     title = Column(String(255), nullable=False)
@@ -55,7 +55,7 @@ class Comment(Base):
     __tablename__ = "comments"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    thread_id = Column(String, ForeignKey("threads.id"), nullable=False)
+    thread_id = Column(String, ForeignKey("threads.id"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -84,13 +84,17 @@ class ActivityLog(Base):
     # No FK, so it survives the SET NULL above: lets the admin "deleted
     # engagement logs" view group orphaned rows by the engagement they came from.
     origin_engagement_id = Column(String, nullable=True, index=True)
-    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     action = Column(String(100), nullable=False) # e.g., "created", "updated", "deleted", "resolved"
     resource_type = Column(String(50), nullable=False)  # Changed from Enum to String
     resource_id = Column(String, nullable=False)
     resource_name = Column(String(255), nullable=True) # Friendly name of the resource
     details = Column(Text, nullable=True) # JSON or descriptive string of changes
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Feeds filter on engagement and sort newest-first; this also serves
+    # plain engagement_id lookups, so there's no separate index for it.
+    __table_args__ = (Index("ix_activity_logs_engagement_created", "engagement_id", "created_at"),)
 
     # Relationships
     engagement = relationship("Engagement", back_populates="activity_logs", foreign_keys="ActivityLog.engagement_id")

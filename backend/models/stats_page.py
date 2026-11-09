@@ -21,7 +21,7 @@ class StatsPage(Base, AuditMixin):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(120), nullable=False)
     icon = Column(String(50), nullable=True)          # lucide icon name
-    position = Column(Integer, nullable=False, default=0)  # tab order, ascending
+    position = Column(Integer, nullable=False, default=0, index=True)  # tab order, ascending
     # Shared layout: list of {widget_id, x, y, w, h}. Page-owned, not
     # per-user — an editor's change is what every viewer sees.
     layout = Column(JSON, nullable=False, default=list)

@@ -15,7 +15,7 @@ class Notification(Base):
     link = Column(String(512), nullable=True)  # e.g. /engagements/abc
     is_read = Column(Boolean, default=False, nullable=False)
     actor_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="SET NULL"), nullable=True)
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 

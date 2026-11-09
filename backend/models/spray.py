@@ -10,7 +10,7 @@ class SprayCampaign(Base, AuditMixin):
     __tablename__ = "spray_campaigns"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False)
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
 
     # Target info (extracted from nxc output)

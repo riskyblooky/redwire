@@ -8,7 +8,7 @@ class VaultItem(Base, AuditMixin):
     __tablename__ = "vault_items"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False)
+    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     item_type = Column(String(100), nullable=False)
 

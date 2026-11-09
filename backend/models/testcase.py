@@ -9,7 +9,7 @@ class TestCase(Base, AuditMixin):
     __tablename__ = "testcases"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id"))
+    engagement_id = Column(String, ForeignKey("engagements.id"), index=True)
     parent_id = Column(String, ForeignKey("testcases.id", ondelete="SET NULL"), nullable=True, index=True)
     title = Column(String(500), nullable=False, index=True)
     category = Column(String(100), nullable=False)

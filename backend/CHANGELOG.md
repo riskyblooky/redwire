@@ -97,6 +97,10 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Engagement pages, lists, feeds and deletes are faster on large
+  databases: the most-used foreign key columns are now indexed. The
+  indexes are built without locking tables, so the upgrade doesn't block
+  normal use.
 - Large file uploads and downloads no longer freeze the app for everyone
   else on the same server worker while they transfer. Evidence downloads
   now stream instead of loading the whole file into memory first.

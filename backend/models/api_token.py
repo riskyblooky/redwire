@@ -18,7 +18,7 @@ class ApiToken(Base):
     token_hash = Column(String(64), unique=True, nullable=False, index=True)
     token_prefix = Column(String(12), nullable=False)  # e.g. "rw_a1b2c3d4"
     permission = Column(String(4), nullable=False, default="ro")  # "ro" or "rw"
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_used_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)

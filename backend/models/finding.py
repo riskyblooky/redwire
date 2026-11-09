@@ -40,7 +40,7 @@ class Finding(Base, AuditMixin):
     __tablename__ = "findings"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False)
+    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False, index=True)
     title = Column(String(500), nullable=False, index=True)
     category = Column(String(255), nullable=True, index=True)
     description = Column(Text, nullable=False)
