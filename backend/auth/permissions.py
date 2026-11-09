@@ -162,6 +162,39 @@ async def global_permission_set(user: User, db: AsyncSession) -> set:
     return held & {p.value for p in GLOBAL_PERMISSIONS}
 
 
+_VIEW_ALL_GRANTS = (
+    Permission.ENGAGEMENT_VIEW, Permission.FINDING_VIEW, Permission.ASSET_VIEW,
+    Permission.TESTCASE_VIEW, Permission.EVIDENCE_VIEW, Permission.VAULT_VIEW,
+    Permission.DISCUSSION_VIEW, Permission.REPORT_VIEW,
+)
+
+
+async def engagement_permission_ceiling(user: User, db: AsyncSession) -> set:
+    """The engagement permissions a user may put on (or take off) an
+    engagement role: everything for ADMIN and TEAM_LEAD (both bypass
+    engagement permissions everywhere), otherwise the union of what they
+    hold in any engagement they're assigned to, plus the view permissions
+    their role / VIEW_ALL_ENGAGEMENTS grant. Roles are global templates, so
+    "held somewhere" is the only meaningful comparison."""
+    from models.user import UserRole
+    every = {p.value for p in ENGAGEMENT_PERMISSIONS}
+    if user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD):
+        return every
+    held = set()
+    if user.role == UserRole.READ_ONLY_ADMIN:
+        held = {p.value for p in ENGAGEMENT_PERMISSIONS if _is_read_permission(p)}
+    if Permission.VIEW_ALL_ENGAGEMENTS.value in await global_permission_set(user, db):
+        held.update(p.value for p in _VIEW_ALL_GRANTS)
+    result = await db.execute(
+        select(EngagementRolePermissions.permissions)
+        .join(EngagementAssignment, EngagementRolePermissions.role_id == EngagementAssignment.role_id)
+        .where(EngagementAssignment.user_id == user.id)
+    )
+    for perms in result.scalars().all():
+        held.update(perms or [])
+    return held & every
+
+
 async def group_permission_set(group_ids, db: AsyncSession) -> set:
     """Union of the global permissions granted by the given groups."""
     if not group_ids:

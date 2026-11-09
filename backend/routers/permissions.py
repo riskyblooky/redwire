@@ -8,7 +8,9 @@ from sqlalchemy import select, delete
 from typing import List
 from database import get_db
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES
-from auth.permissions import has_global_permission, require_global_permission
+from auth.permissions import (
+    require_global_permission, global_permission_set, engagement_permission_ceiling,
+)
 from models.user import User, UserRole
 from models.group import Group
 from models.engagement_role import EngagementRole
@@ -24,6 +26,15 @@ from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/admin/permissions", tags=["admin", "permissions"])
 
+
+
+def _assert_within_ceiling(changed: set, held: set, action: str) -> None:
+    beyond = sorted(changed - held)
+    if beyond:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Cannot {action} {', '.join(repr(p) for p in beyond)}, which you do not hold",
+        )
 
 # ============ Schemas ============
 
@@ -289,7 +300,11 @@ async def delete_group(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot delete a system or default group"
         )
-    
+    # Deleting a group removes its permissions from every member, so it's
+    # held to the same ceiling as removing them one by one.
+    perms = set(group.permission_set.permissions or []) if group.permission_set else set()
+    _assert_within_ceiling(perms, await global_permission_set(current_user, db), "delete a group granting")
+
     await db.delete(group)
     await db.commit()
 
@@ -304,9 +319,6 @@ async def update_group_permissions(
     """Update permissions for a group."""
     await require_global_permission(Permission.MANAGE_GROUPS, current_user, db)
 
-    # GHSA-v2j8-mw59-w33v: least-privilege ceiling. A caller may only grant
-    # permissions they themselves hold. has_global_permission already returns
-    # True unconditionally for UserRole.ADMIN so admins are unaffected.
     for perm_value in perm_data.permissions:
         try:
             perm = Permission(perm_value)
@@ -319,11 +331,6 @@ async def update_group_permissions(
             raise HTTPException(
                 status_code=400,
                 detail=f"Permission '{perm_value}' is not a global permission"
-            )
-        if not await has_global_permission(current_user, perm, db):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Cannot grant permission '{perm_value}' which you do not hold"
             )
 
     # Get group
@@ -347,6 +354,15 @@ async def update_group_permissions(
                 detail="Cannot modify permissions on a system or default group"
             )
     
+    # GHSA-v2j8-mw59-w33v ceiling, both directions: a caller may only add
+    # or remove permissions they hold themselves. (Removal used to be
+    # unchecked, so a group manager could strip e.g. manage_users from a
+    # group they could never have granted it to.) Unchanged permissions are
+    # left alone either way. ADMIN holds everything.
+    current = set(group.permission_set.permissions or []) if group.permission_set else set()
+    _assert_within_ceiling(current ^ set(perm_data.permissions), await global_permission_set(current_user, db),
+                           "change permission")
+
     # Update or create permissions
     if group.permission_set:
         group.permission_set.permissions = perm_data.permissions
@@ -501,7 +517,10 @@ async def delete_engagement_role(
     
     if not role:
         raise HTTPException(status_code=404, detail="Engagement role not found")
-    
+    perms = set(role.permission_set.permissions or []) if role.permission_set else set()
+    _assert_within_ceiling(perms, await engagement_permission_ceiling(current_user, db),
+                           "delete a role granting")
+
     await db.delete(role)
     await db.commit()
 
@@ -540,7 +559,13 @@ async def update_engagement_role_permissions(
     
     if not role:
         raise HTTPException(status_code=404, detail="Engagement role not found")
-    
+
+    # Ceiling: only add or remove engagement permissions you hold yourself
+    # (ADMIN / TEAM_LEAD hold all of them). See engagement_permission_ceiling.
+    current = set(role.permission_set.permissions or []) if role.permission_set else set()
+    _assert_within_ceiling(current ^ set(perm_data.permissions),
+                           await engagement_permission_ceiling(current_user, db), "change permission")
+
     # Update or create permissions
     if role.permission_set:
         role.permission_set.permissions = perm_data.permissions

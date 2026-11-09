@@ -105,6 +105,15 @@ section becomes one release entry.
   still worked for every API call and live-edit connection. Until the
   password is changed, the account can now only load its profile, change
   the password, or sign out.
+- **Permission ceilings now cover removals and engagement roles.** A group
+  manager could only grant permissions they held, but could remove any
+  permission from a group or delete any non-system group. Now adding or
+  removing a group permission, or deleting a group, requires holding the
+  permissions involved. Engagement roles had no ceiling at all: anyone
+  with `manage_engagement_roles` could put any permission on any role.
+  Editing or deleting a role now requires holding the permissions
+  involved in at least one of your engagements. Admins and team leads
+  hold every engagement permission.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is
