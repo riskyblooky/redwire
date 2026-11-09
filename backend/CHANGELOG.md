@@ -47,6 +47,11 @@ section becomes one release entry.
   engagement was accepted and then showed that record's name and
   identifier on the artifact. It now returns 400, like the other link
   endpoints.
+- **Restoring a finding version follows the same rules as editing it.**
+  It needed only basic edit permission, so a member could rewrite a
+  colleague's finding without `finding_edit_any`, or an author could
+  restore their own finding to an earlier VERIFIED or CLOSED snapshot and
+  skip the separate-reviewer and peer-review rules. Both now apply.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

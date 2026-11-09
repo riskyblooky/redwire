@@ -551,6 +551,53 @@ async def create_finding(
 
     return new_finding
 
+async def _require_finding_edit(finding: Finding, current_user: User, db: AsyncSession) -> tuple[bool, bool]:
+    """Owner -> FINDING_EDIT, otherwise FINDING_EDIT_ANY. Returns
+    (is_admin, is_owner) for the status-transition rules."""
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    is_owner = finding.created_by == current_user.id
+    if not is_admin:
+        required_perm = Permission.FINDING_EDIT.value if is_owner else Permission.FINDING_EDIT_ANY.value
+        if not await check_engagement_permission(current_user.id, finding.engagement_id, required_perm, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this finding."
+            )
+    return is_admin, is_owner
+
+
+async def _assert_status_change_allowed(
+    db: AsyncSession, finding: Finding, new_status, *, is_admin: bool, is_owner: bool, user_id: str,
+) -> None:
+    """Rules for moving a finding to ``new_status`` (shared by update and
+    version restore)."""
+    # Two-person rule: a finding's author cannot self-attest the terminal-state
+    # transitions that downstream reports + dashboards treat as reviewed work.
+    # Admins and team-leads still can, matching the existing global bypass; a
+    # future configurable layer (see todo "Configurable chain-of-custody admin
+    # tab") will replace the role check with an engagement-scoped permission.
+    if (
+        is_owner
+        and not is_admin
+        and new_status in (FindingStatus.VERIFIED, FindingStatus.REMEDIATED, FindingStatus.CLOSED)
+    ):
+        logger.warning(
+            "Blocked self-attestation on finding %s by author %s: status→%s",
+            finding.id, user_id, new_status,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Finding authors cannot set their own finding to VERIFIED/REMEDIATED/CLOSED. A separate reviewer must approve the status change.",
+        )
+
+    # Peer-review gate: when enabled, a finding needs enough non-author approvals
+    # before it can transition to VERIFIED — enforced for everyone (leads/admins
+    # included), since the point is to gate the verify action itself.
+    if new_status == FindingStatus.VERIFIED and finding.status != FindingStatus.VERIFIED:
+        from utils.peer_review import assert_finding_verifiable
+        await assert_finding_verifiable(db, finding)
+
+
 @router.put("/{finding_id}", response_model=FindingResponse)
 async def update_finding(
     finding_id: str,
@@ -573,24 +620,8 @@ async def update_finding(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = finding.created_by == current_user.id
-    
-    if not is_admin:
-        if is_owner:
-            # Owner needs base edit permission
-            has_permission = await check_engagement_permission(current_user.id, finding.engagement_id, Permission.FINDING_EDIT.value, db)
-        else:
-            # Non-owner needs edit_any permission
-            has_permission = await check_engagement_permission(current_user.id, finding.engagement_id, Permission.FINDING_EDIT_ANY.value, db)
-        
-        if not has_permission:
-            required_perm = Permission.FINDING_EDIT.value if is_owner else Permission.FINDING_EDIT_ANY.value
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this finding."
-            )
-    
+    is_admin, is_owner = await _require_finding_edit(finding, current_user, db)
+
     # Update fields
     update_data = finding_data.model_dump(exclude_unset=True, exclude={"asset_ids", "asset_port_ids", "tag_ids", "attack_technique_ids"})
 
@@ -609,32 +640,10 @@ async def update_finding(
         await assert_model_allowed(db, finding.engagement_id, update_data["score_model"])
     _apply_scoring(update_data, existing=finding)
 
-    # Two-person rule: a finding's author cannot self-attest the terminal-state
-    # transitions that downstream reports + dashboards treat as reviewed work.
-    # Admins and team-leads still can, matching the existing global bypass; a
-    # future configurable layer (see todo "Configurable chain-of-custody admin
-    # tab") will replace the role check with an engagement-scoped permission.
-    if (
-        "status" in update_data
-        and is_owner
-        and not is_admin
-        and update_data["status"] in (FindingStatus.VERIFIED, FindingStatus.REMEDIATED, FindingStatus.CLOSED)
-    ):
-        logger.warning(
-            "Blocked self-attestation on finding %s by author %s: status→%s",
-            finding.id, current_user.id, update_data["status"],
+    if "status" in update_data:
+        await _assert_status_change_allowed(
+            db, finding, update_data["status"], is_admin=is_admin, is_owner=is_owner, user_id=current_user.id,
         )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Finding authors cannot set their own finding to VERIFIED/REMEDIATED/CLOSED. A separate reviewer must approve the status change.",
-        )
-
-    # Peer-review gate: when enabled, a finding needs enough non-author approvals
-    # before it can transition to VERIFIED — enforced for everyone (leads/admins
-    # included), since the point is to gate the verify action itself.
-    if update_data.get("status") == FindingStatus.VERIFIED and finding.status != FindingStatus.VERIFIED:
-        from utils.peer_review import assert_finding_verifiable
-        await assert_finding_verifiable(db, finding)
 
     # Capture old status before applying updates (for notification)
     old_status = finding.status.value if finding.status else None
@@ -946,16 +955,9 @@ async def restore_finding_version(
     if not finding:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, finding.engagement_id, Permission.FINDING_EDIT.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'finding_edit' permission to restore a finding version.",
-            )
+    # Same gates as PATCH: a restore rewrites the finding's content and can
+    # move its status, so it must not be a way around either.
+    is_admin, is_owner = await _require_finding_edit(finding, current_user, db)
 
     v = (await db.execute(
         select(VersionHistory).where(
@@ -975,6 +977,10 @@ async def restore_finding_version(
         update_data["severity"] = Severity(update_data["severity"])
     if update_data.get("status") is not None:
         update_data["status"] = FindingStatus(update_data["status"])
+        if update_data["status"] != finding.status:
+            await _assert_status_change_allowed(
+                db, finding, update_data["status"], is_admin=is_admin, is_owner=is_owner, user_id=current_user.id,
+            )
 
     # Snapshot the current state first, then apply the restored values.
     from utils.collab_fields import assert_no_other_live_editors
