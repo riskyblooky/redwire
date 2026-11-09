@@ -168,12 +168,35 @@ fi
 #       user just cloned) and the extract (nothing to extract).
 if [ -f redwire_migration_package.zip ]; then
     echo -e "\n${BLUE}[3/8] Cleaning stale source files...${NC}"
-    for dir in frontend/src frontend/public backend/app backend/alembic; do
+    # Refuse to wipe anything unless the zip actually carries a full tree.
+    if ! python3 -c "
+import sys, zipfile
+names = {n.replace(chr(92), '/') for n in zipfile.ZipFile('redwire_migration_package.zip').namelist()}
+sys.exit(0 if {'backend/main.py', 'backend/alembic/env.py', 'frontend/package.json'} <= names else 1)
+"; then
+        echo -e "${RED}redwire_migration_package.zip is missing backend/ or frontend/ sources — aborting before wiping anything.${NC}"
+        exit 1
+    fi
+    for dir in frontend/src frontend/public; do
         if [ -d "$dir" ]; then
             echo "  Removing old $dir/"
             rm -rf "$dir"
         fi
     done
+    # Backend code lives directly in backend/ (there is no backend/app), so
+    # clear all of it except runtime data the zip never carries — otherwise
+    # files deleted or renamed in a release linger and get baked into the
+    # image (a removed plugin dir would still be discovered and mounted).
+    if [ -d backend ]; then
+        echo "  Removing old backend/ sources (keeping uploads/, evidence/, .env*)"
+        for entry in backend/* backend/.[!.]*; do
+            [ -e "$entry" ] || continue
+            case "$(basename "$entry")" in
+                uploads|evidence|.env|.env.*) continue ;;
+            esac
+            rm -rf "$entry"
+        done
+    fi
     for f in frontend/tailwind.config.ts frontend/tailwind.config.js; do
         if [ -f "$f" ]; then
             echo "  Removing stale $f"
