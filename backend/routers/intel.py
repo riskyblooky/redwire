@@ -122,6 +122,16 @@ async def create_intel_item(
     return item
 
 
+async def _can_view_linked(current_user: User, eng_id: str, perm: Permission, db: AsyncSession) -> bool:
+    """Intel items are global but what they link to isn't: a linked finding /
+    test case / note is only shown (or unlinkable) for callers who can view
+    it in its engagement."""
+    from auth.rbac import check_engagement_permission
+    if current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+        return True
+    return await check_engagement_permission(current_user.id, eng_id, perm.value, db)
+
+
 @router.get("/items/{item_id}", response_model=IntelItemDetail)
 async def get_intel_item(
     item_id: str,
@@ -144,18 +154,30 @@ async def get_intel_item(
     if not item:
         raise HTTPException(status_code=404, detail="Intel item not found")
 
+    seen: dict = {}
+
+    async def visible(entities, perm: Permission):
+        out = []
+        for e in entities:
+            key = (e.engagement_id, perm)
+            if key not in seen:
+                seen[key] = await _can_view_linked(current_user, e.engagement_id, perm, db)
+            if seen[key]:
+                out.append(e)
+        return out
+
     detail = IntelItemDetail.model_validate(item)
     detail.linked_findings = [
         LinkedEntitySummary(id=f.id, title=f.title, type="finding")
-        for f in item.findings
+        for f in await visible(item.findings, Permission.FINDING_VIEW)
     ]
     detail.linked_testcases = [
         LinkedEntitySummary(id=tc.id, title=tc.title, type="testcase")
-        for tc in item.testcases
+        for tc in await visible(item.testcases, Permission.TESTCASE_VIEW)
     ]
     detail.linked_notes = [
         LinkedEntitySummary(id=n.id, title=n.title, type="note")
-        for n in item.notes
+        for n in await visible(item.notes, Permission.NOTE_VIEW)
     ]
     detail.linked_count = len(detail.linked_findings) + len(detail.linked_testcases) + len(detail.linked_notes)
     detail.attachments = [
@@ -205,6 +227,16 @@ async def delete_intel_item(
 
 # ── Linking ──────────────────────────────────────────────────────
 
+def _require_linked_view(current_user: User, db: AsyncSession):
+    async def _require_view(eng_id: str, perm: Permission, label: str):
+        if not await _can_view_linked(current_user, eng_id, perm, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions on this {label}'s engagement.",
+            )
+    return _require_view
+
+
 @router.post("/items/{item_id}/link", status_code=status.HTTP_201_CREATED)
 async def link_intel_item(
     item_id: str,
@@ -213,7 +245,6 @@ async def link_intel_item(
     current_user: User = Depends(get_current_user),
 ):
     """Link an intel item to a finding, testcase, or note."""
-    from auth.rbac import check_engagement_permission
     await require_global_permission(Permission.INTEL_EDIT, current_user, db)
     # Verify item exists
     result = await db.execute(select(IntelItem).where(IntelItem.id == item_id))
@@ -221,17 +252,8 @@ async def link_intel_item(
         raise HTTPException(status_code=404, detail="Intel item not found")
 
     # IntelItem is global (no engagement_id), so per-link the caller must have
-    # at least view permission on the target entity's engagement. Admins bypass.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-
-    async def _require_view(eng_id: str, perm: Permission, label: str):
-        if is_admin:
-            return
-        if not await check_engagement_permission(current_user.id, eng_id, perm.value, db):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions on this {label}'s engagement.",
-            )
+    # at least view permission on the target entity's engagement.
+    _require_view = _require_linked_view(current_user, db)
 
     if data.entity_type == "finding":
         finding = (await db.execute(select(Finding).where(Finding.id == data.entity_id))).scalar_one_or_none()
@@ -291,6 +313,17 @@ async def unlink_intel_item(
 ):
     """Unlink an intel item from a finding, testcase, or note."""
     await require_global_permission(Permission.INTEL_EDIT, current_user, db)
+    # Same engagement check as linking — otherwise anyone with intel_edit
+    # could strip links off findings in engagements they can't see.
+    model, perm, label = {
+        "finding": (Finding, Permission.FINDING_VIEW, "finding"),
+        "testcase": (TestCase, Permission.TESTCASE_VIEW, "test case"),
+        "note": (Note, Permission.NOTE_VIEW, "note"),
+    }.get(data.entity_type, (None, None, None))
+    if model is not None:
+        entity = await db.get(model, data.entity_id)
+        if entity is not None:
+            await _require_linked_view(current_user, db)(entity.engagement_id, perm, label)
     if data.entity_type == "finding":
         result = await db.execute(
             select(IntelItemFinding).where(

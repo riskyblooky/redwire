@@ -127,3 +127,35 @@ async def test_engagement_evidence_list_needs_evidence_view(client, db_session, 
     user, eng, _ = member_without_finding_view
     authenticate_as(user)
     assert (await client.get(f"/engagements/{eng.id}/evidence")).status_code == 403
+
+
+# ── #7 intel item linked entities ────────────────────────────────────────
+
+async def test_intel_detail_hides_and_unlink_guards_other_engagements(client, db_session, make_user,
+                                                                      authenticate_as):
+    from models.associations import IntelItemFinding
+    from models.group import Group, user_groups
+    from models.intel_item import IntelItem
+    from models.permission import GroupPermissions
+    mine, theirs = await _make_engagement(db_session), await _make_engagement(db_session)
+    user = await make_user()
+    await _assign(db_session, user, mine, await _make_engagement_role(db_session, ["finding_view"]))
+    g = Group(id=str(uuid.uuid4()), name=f"intel_{uuid.uuid4().hex[:6]}")
+    db_session.add(g)
+    await db_session.flush()
+    db_session.add(GroupPermissions(group_id=g.id, permissions=["intel_view", "intel_edit"]))
+    await db_session.execute(user_groups.insert().values(user_id=user.id, group_id=g.id))
+    item = IntelItem(id=str(uuid.uuid4()), title="CVE-2099-0001")
+    db_session.add(item)
+    visible, hidden = await _make_finding(db_session, mine), await _make_finding(db_session, theirs, title="ACME DC01")
+    await db_session.flush()
+    for f in (visible, hidden):
+        db_session.add(IntelItemFinding(intel_item_id=item.id, finding_id=f.id))
+    await db_session.flush()
+
+    authenticate_as(user)
+    detail = (await client.get(f"/intel/items/{item.id}")).json()
+    assert [f["id"] for f in detail["linked_findings"]] == [visible.id]
+    r = await client.request("DELETE", f"/intel/items/{item.id}/link",
+                             json={"entity_type": "finding", "entity_id": hidden.id})
+    assert r.status_code == 403

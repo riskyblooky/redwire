@@ -67,6 +67,10 @@ section becomes one release entry.
   `search` and `get_field_examples` tools only checked membership. They
   now apply the same view permission as the single-item page. The built-in
   roles hold all view permissions, so they see no change.
+- **Intel items only show linked records you can see.** An intel item's
+  detail listed every linked finding, test case and note by title across
+  all engagements, and anyone with `intel_edit` could unlink them. Both
+  now require view access to the linked record's engagement.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is
