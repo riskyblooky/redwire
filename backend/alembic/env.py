@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 from pathlib import Path
 from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from alembic import context
 import importlib
 import importlib.util
@@ -115,6 +115,9 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+_MIGRATION_LOCK_KEY = 0x5277_4D67  # "RwMg"
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     connectable = engine_from_config(
@@ -123,14 +126,26 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata
-        )
+    # Serialize concurrent runs: the backend container's command and deploy
+    # step 7 both run `migrate.py upgrade heads`, seconds apart. A
+    # session-level lock on its own connection (not a transaction lock —
+    # migrations with an autocommit_block commit mid-run) makes the second
+    # run wait, then find the database already at head.
+    with connectable.connect() as lock_conn:
+        lock_conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _MIGRATION_LOCK_KEY})
+        lock_conn.commit()
+        try:
+            with connectable.connect() as connection:
+                context.configure(
+                    connection=connection,
+                    target_metadata=target_metadata
+                )
 
-        with context.begin_transaction():
-            context.run_migrations()
+                with context.begin_transaction():
+                    context.run_migrations()
+        finally:
+            lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _MIGRATION_LOCK_KEY})
+            lock_conn.commit()
 
 if context.is_offline_mode():
     run_migrations_offline()
