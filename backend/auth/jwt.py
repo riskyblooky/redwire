@@ -9,17 +9,23 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
-SECRET_KEY = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
+_INSECURE_DEFAULT_SECRET = "your-secret-key-change-in-production"
+_MIN_SECRET_LENGTH = 32
+SECRET_KEY = os.getenv("JWT_SECRET", _INSECURE_DEFAULT_SECRET)
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_HOURS = int(os.getenv("REFRESH_TOKEN_EXPIRE_HOURS", "24"))
 
-# Warn loudly if using the insecure default secret
-if SECRET_KEY == "your-secret-key-change-in-production":
-    logger.critical(
-        "JWT_SECRET is set to the insecure default! "
-        "Set a strong JWT_SECRET environment variable before deploying."
-    )
+
+
+def validate_secret() -> None:
+    """Fail closed at startup on a missing, published-default or short
+    JWT_SECRET: anyone who knows the signing key can mint an admin token."""
+    if not SECRET_KEY or SECRET_KEY == _INSECURE_DEFAULT_SECRET or len(SECRET_KEY) < _MIN_SECRET_LENGTH:
+        raise RuntimeError(
+            f"JWT_SECRET is unset, the published default, or shorter than {_MIN_SECRET_LENGTH} "
+            "characters. Set a strong random JWT_SECRET (e.g. `openssl rand -hex 32`) in .env."
+        )
 
 # Redis connection for token blacklist
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

@@ -81,6 +81,14 @@ section becomes one release entry.
   Edit access on one engagement's attack graph was enough to add or
   delete attacker edges on another engagement's graph, given its attacker
   node id.
+- **The backend refuses to start with a weak `JWT_SECRET`.** It used to
+  fall back to the default published in the repo with only a log warning,
+  so anyone could sign their own admin token. It now stops at startup if
+  `JWT_SECRET` is unset, the default, or shorter than 32 characters. The
+  production compose file also requires `POSTGRES_PASSWORD`,
+  `REDIS_PASSWORD`, `MINIO_ROOT_PASSWORD`, `JWT_SECRET` and
+  `ADMIN_PASSWORD` to be set instead of defaulting to `changeme` /
+  `minioadmin`. `deploy_server.sh` already generates all of them.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

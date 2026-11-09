@@ -238,3 +238,15 @@ def test_revoke_cutoff_keeps_tokens_issued_in_the_same_second():
     assert authjwt.revoke_all_user_tokens(user_id) is True
     fresh = authjwt.create_access_token({"sub": user_id})
     assert authjwt.is_token_blacklisted(fresh) is False
+
+
+@pytest.mark.parametrize("secret", ["", "your-secret-key-change-in-production", "short-secret"])
+def test_validate_secret_refuses_weak_keys(monkeypatch, secret):
+    monkeypatch.setattr(authjwt, "SECRET_KEY", secret)
+    with pytest.raises(RuntimeError):
+        authjwt.validate_secret()
+
+
+def test_validate_secret_accepts_strong_key(monkeypatch):
+    monkeypatch.setattr(authjwt, "SECRET_KEY", "a" * 64)
+    authjwt.validate_secret()

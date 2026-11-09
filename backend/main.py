@@ -330,6 +330,9 @@ async def lifespan(app):
     from auth import crypto as totp_crypto
     vault_crypto.validate_key()
     totp_crypto.validate_key()
+    # Same for the JWT signing key — the default is published in the repo.
+    from auth import jwt as auth_jwt
+    auth_jwt.validate_secret()
 
     # Load Bloom filter in background (it loads millions of rows, don't block startup)
     from utils.hash_utils import bloom_service
