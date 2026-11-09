@@ -77,6 +77,10 @@ section becomes one release entry.
   its sessions, as email and 2FA changes already did. A used
   password-reset link, and the short-lived token between password and 2FA
   code at sign-in, can no longer be replayed.
+- **Attack-graph edges can only be changed within your own engagement.**
+  Edit access on one engagement's attack graph was enough to add or
+  delete attacker edges on another engagement's graph, given its attacker
+  node id.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

@@ -914,6 +914,18 @@ async def delete_attacker_node(
     return {"status": "ok"}
 
 
+async def _require_attacker_in_engagement(db: AsyncSession, attacker_id: str, engagement_id: str) -> None:
+    """The permission check above is on the path's engagement, so the
+    attacker node must belong to it — else an edit right on Z would reach W's
+    graph through W's attacker id (the update / delete-node routes already
+    filter this way)."""
+    found = (await db.execute(
+        select(AttackerNode.id).where(AttackerNode.id == attacker_id, AttackerNode.engagement_id == engagement_id)
+    )).scalar_one_or_none()
+    if not found:
+        raise HTTPException(status_code=404, detail="Attacker node not found")
+
+
 @router.post("/{engagement_id}/attack-graph/attacker/{attacker_id}/edge")
 async def create_attacker_edge(
     engagement_id: str,
@@ -930,6 +942,7 @@ async def create_attacker_edge(
         )
         if not has_permission:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await _require_attacker_in_engagement(db, attacker_id, engagement_id)
 
     target_node_id = body.get("target_node_id")
     target_node_type = body.get("target_node_type", "testcase")
@@ -1051,6 +1064,7 @@ async def delete_attacker_edge(
         )
         if not has_permission:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await _require_attacker_in_engagement(db, attacker_id, engagement_id)
 
     await db.execute(
         sa_delete(AttackerNodeEdge).where(

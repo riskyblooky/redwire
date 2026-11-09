@@ -159,3 +159,26 @@ async def test_intel_detail_hides_and_unlink_guards_other_engagements(client, db
     r = await client.request("DELETE", f"/intel/items/{item.id}/link",
                              json={"entity_type": "finding", "entity_id": hidden.id})
     assert r.status_code == 403
+
+
+# ── #9 attack-graph attacker edges ───────────────────────────────────────
+
+async def test_attacker_edges_need_attacker_in_path_engagement(client, db_session, make_user, authenticate_as):
+    from sqlalchemy import select
+    from models.attacker_node import AttackerNode, AttackerNodeEdge
+    mine, theirs = await _make_engagement(db_session), await _make_engagement(db_session)
+    user = await make_user()
+    await _assign(db_session, user, mine, await _make_engagement_role(db_session, ["engagement_view", "engagement_edit"]))
+    foreign = AttackerNode(id=str(uuid.uuid4()), engagement_id=theirs.id)
+    db_session.add(foreign)
+    await db_session.flush()
+    edge = AttackerNodeEdge(id=str(uuid.uuid4()), attacker_node_id=foreign.id,
+                            target_node_id="testcase-x", target_node_type="testcase")
+    db_session.add(edge)
+    await db_session.flush()
+
+    authenticate_as(user)
+    base = f"/engagements/{mine.id}/attack-graph/attacker/{foreign.id}/edge"
+    assert (await client.delete(f"{base}/{edge.id}")).status_code == 404
+    assert (await client.post(base, json={"target_node_id": "testcase-x"})).status_code == 404
+    assert (await db_session.execute(select(AttackerNodeEdge).where(AttackerNodeEdge.id == edge.id))).scalar_one_or_none()
