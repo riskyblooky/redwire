@@ -2,6 +2,7 @@ from logging.config import fileConfig
 from pathlib import Path
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool, text
+import time
 from alembic import context
 import importlib
 import importlib.util
@@ -131,9 +132,19 @@ def run_migrations_online() -> None:
     # session-level lock on its own connection (not a transaction lock —
     # migrations with an autocommit_block commit mid-run) makes the second
     # run wait, then find the database already at head.
+    #
+    # Poll pg_try_advisory_lock rather than blocking in pg_advisory_lock: a
+    # session stuck inside a blocking SELECT holds a snapshot, and CREATE
+    # INDEX CONCURRENTLY in the running migration waits for every snapshot
+    # to go away — so the waiter and the holder deadlock. Between polls the
+    # waiter's connection is idle with no snapshot.
     with connectable.connect() as lock_conn:
-        lock_conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _MIGRATION_LOCK_KEY})
-        lock_conn.commit()
+        while True:
+            got = lock_conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _MIGRATION_LOCK_KEY}).scalar()
+            lock_conn.commit()
+            if got:
+                break
+            time.sleep(1)
         try:
             with connectable.connect() as connection:
                 context.configure(
