@@ -332,6 +332,17 @@ async def update_note(
                 parent_result = await db.execute(select(Note).where(Note.id == note_data.parent_id))
                 parent_note = parent_result.scalar_one_or_none()
                 if parent_note and parent_note.engagement_id == note.engagement_id:
+                    # Moving a note under its own descendant would make a cycle
+                    # (the tree would never render a root for it).
+                    seen = {note.id}
+                    ancestor_id = parent_note.parent_id
+                    while ancestor_id is not None and ancestor_id not in seen:
+                        seen.add(ancestor_id)
+                        ancestor_id = (await db.execute(
+                            select(Note.parent_id).where(Note.id == ancestor_id)
+                        )).scalar_one_or_none()
+                    if ancestor_id == note.id:
+                        raise HTTPException(status_code=400, detail="A note cannot be moved under one of its own sub-notes")
                     note.parent_id = note_data.parent_id
 
     note.updated_by = current_user.id

@@ -348,6 +348,17 @@ async def update_testcase(
                 raise HTTPException(status_code=400, detail="Parent test case not found")
             if parent_tc.engagement_id != db_testcase.engagement_id:
                 raise HTTPException(status_code=400, detail="Parent test case must be in the same engagement")
+            # No cycles: the new parent must not be this test case's own
+            # descendant (A→B→A loops the tree and the cascade delete).
+            seen = {testcase_id}
+            ancestor_id = parent_tc.parent_id
+            while ancestor_id is not None and ancestor_id not in seen:
+                seen.add(ancestor_id)
+                ancestor_id = (await db.execute(
+                    select(TestCase.parent_id).where(TestCase.id == ancestor_id)
+                )).scalar_one_or_none()
+            if ancestor_id == testcase_id:
+                raise HTTPException(status_code=400, detail="A test case cannot be moved under one of its own sub-cases")
     
     await db.commit()
     await db.refresh(db_testcase)
@@ -571,6 +582,7 @@ async def delete_testcase(
         # BFS to find all descendants
         descendants = []
         queue = [testcase_id]
+        visited = {testcase_id}  # guards against a parent cycle already in the data
         while queue:
             parent_id = queue.pop(0)
             children_result = await db.execute(
@@ -587,6 +599,9 @@ async def delete_testcase(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Cascade delete includes test cases owned by other users; you need the 'testcase_delete_any' permission.",
                     )
+                if child.id in visited:
+                    continue
+                visited.add(child.id)
                 descendants.append(child)
                 queue.append(child.id)
         # Delete descendants in reverse (leaves first)

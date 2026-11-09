@@ -97,6 +97,9 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- A test case or note can no longer be moved under one of its own sub-items.
+  For test cases this made a loop that hung "delete with sub-cases"
+  forever; that delete now also stops safely if such a loop already exists.
 - Deleting an engagement or a finding now also deletes its stored files
   (evidence, vault files, embedded images). They used to stay in object
   storage indefinitely after the records were gone.
