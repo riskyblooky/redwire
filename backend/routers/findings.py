@@ -23,7 +23,7 @@ from models.evidence import Evidence
 from schemas.finding import FindingCreate, FindingUpdate, FindingResponse, TagResponse
 from schemas.evidence import EvidenceResponse
 from auth.dependencies import get_current_user
-from auth.rbac import can_modify_resource, check_engagement_permission
+from auth.rbac import can_modify_resource, check_engagement_permission, is_engagement_member
 from models.user import UserRole
 from models.permission import Permission
 from utils.storage import storage_service
@@ -1087,14 +1087,24 @@ async def upload_evidence(
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     is_creator = finding.created_by == current_user.id
     
-    if not (is_admin or is_creator):
-        has_permission = await check_engagement_permission(current_user.id, finding.engagement_id, Permission.EVIDENCE_CREATE.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this finding."
-            )
-    
+    if not is_admin:
+        # GHSA-7x2f-ff7r-h388 #1 (the finding-side path it missed): the
+        # creator bypass must still require current membership, or an
+        # ex-member keeps adding evidence to findings they created.
+        if is_creator:
+            if not await is_engagement_member(current_user.id, finding.engagement_id, db):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are no longer a member of this engagement.",
+                )
+        else:
+            has_permission = await check_engagement_permission(current_user.id, finding.engagement_id, Permission.EVIDENCE_CREATE.value, db)
+            if not has_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this finding."
+                )
+
     content = await read_upload_capped(
         file, MAX_EVIDENCE_BYTES,
         detail=f"Evidence upload exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",

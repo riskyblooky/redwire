@@ -95,6 +95,10 @@ section becomes one release entry.
   permission-grant ceiling or the system/default-group protection, so a
   group manager could, for example, delete the Default group. Use
   `/admin/permissions/groups*` and `/admin/permissions/engagement-roles*`.
+- **Removed members can no longer add evidence to findings they created.**
+  The test-case upload path was fixed in GHSA-7x2f-ff7r-h388, but the
+  finding upload path still let a finding's creator upload after being
+  removed from the engagement.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is
