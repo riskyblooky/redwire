@@ -103,6 +103,8 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Saving an engagement team with an unknown user or role, or with the same
+  user listed twice, now gives a clear error instead of a server error.
 - Engagement pages, lists, feeds and deletes are faster on large
   databases: the most-used foreign key columns are now indexed. The
   indexes are built without locking tables, so the upgrade doesn't block

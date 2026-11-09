@@ -121,6 +121,34 @@ _SORTABLE = {
 }
 
 
+
+async def _validate_assignments(db: AsyncSession, assignments_data, user_ids) -> None:
+    """400 on an unknown user, unknown role or a user listed twice, rather
+    than letting the FK / primary key fail as a 500 on commit.
+
+    Any existing engagement role may be assigned, including to yourself:
+    ENGAGEMENT_MANAGE_MEMBERS deliberately confers the right to hand out
+    any role, and the assignment is always scoped to this one engagement
+    (engagement_id comes from the path, never the body)."""
+    from models.engagement_role import EngagementRole
+    if assignments_data:
+        uids = [a["user_id"] for a in assignments_data]
+        role_ids = {a["role_id"] for a in assignments_data if a.get("role_id")}
+    else:
+        uids = list(user_ids or [])
+        role_ids = set()
+    if not uids:
+        return
+    if len(set(uids)) != len(uids):
+        raise HTTPException(status_code=400, detail="A user is listed more than once in the team.")
+    found = set((await db.execute(select(User.id).where(User.id.in_(uids)))).scalars().all())
+    if missing := set(uids) - found:
+        raise HTTPException(status_code=400, detail=f"Unknown user id(s): {', '.join(sorted(missing))}")
+    if role_ids:
+        found = set((await db.execute(select(EngagementRole.id).where(EngagementRole.id.in_(role_ids)))).scalars().all())
+        if missing := role_ids - found:
+            raise HTTPException(status_code=400, detail=f"Unknown engagement role id(s): {', '.join(sorted(missing))}")
+
 @router.get("", response_model=List[EngagementResponse])
 async def get_engagements(
     db: AsyncSession = Depends(get_db),
@@ -599,6 +627,7 @@ async def create_engagement(
     await db.flush() # Get ID
 
     # Handle assignments
+    await _validate_assignments(db, assignments_data, user_ids)
     if assignments_data:
         for assign in assignments_data:
             new_assign = EngagementAssignment(
@@ -761,6 +790,9 @@ async def update_engagement(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions. You need the 'engagement_manage_members' permission to change team membership.",
             )
+
+    if assignments_data is not None or user_ids is not None:
+        await _validate_assignments(db, assignments_data, user_ids)
 
     # Capture old status before applying updates (for notification)
     old_eng_status = engagement.status if engagement.status else None
