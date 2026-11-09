@@ -765,12 +765,13 @@ async def get_assets(
         else:
             query = query.where(AssetPort.state == PortState.OPEN)
     
-    # Restrict to assigned engagements for non-admins
+    # Restrict to engagements where the caller's role can view these
+    # (same rule as the single-item GET) for non-admins
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        from models.engagement import Engagement
-        query = query.join(Engagement, Asset.engagement_id == Engagement.id).where(
-            Engagement.assigned_users.any(User.id == current_user.id)
-        )
+        from auth.rbac import engagements_with_permission
+        query = query.where(Asset.engagement_id.in_(
+            engagements_with_permission(current_user.id, Permission.ASSET_VIEW.value)
+        ))
     
     # Get total count before pagination
     count_query = select(func.count()).select_from(query.subquery())

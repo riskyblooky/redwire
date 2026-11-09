@@ -54,12 +54,13 @@ async def get_testcases(
     if engagement_id:
         query = query.where(TestCase.engagement_id == engagement_id)
     
-    # Restrict to assigned engagements for non-admins
+    # Restrict to engagements where the caller's role can view these
+    # (same rule as the single-item GET) for non-admins
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        from models.engagement import Engagement
-        query = query.join(Engagement, TestCase.engagement_id == Engagement.id).where(
-            Engagement.assigned_users.any(User.id == current_user.id)
-        )
+        from auth.rbac import engagements_with_permission
+        query = query.where(TestCase.engagement_id.in_(
+            engagements_with_permission(current_user.id, Permission.TESTCASE_VIEW.value)
+        ))
     
     query = query.offset(skip).limit(limit).order_by(TestCase.created_at.desc())
     

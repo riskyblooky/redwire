@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update, delete as sql_delete, or_
+from sqlalchemy import select, func, update, delete as sql_delete, or_, false as sa_false
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from database import get_db
@@ -15,6 +15,7 @@ from schemas.discussion import (
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission, is_engagement_member
 from models.permission import Permission
+from models.associations import EngagementAssignment
 from datetime import datetime, timedelta
 from utils.collaboration import create_activity_log
 from utils.collaboration import manager
@@ -118,14 +119,14 @@ async def get_threads(
     if resource_id:
         query = query.where(Thread.resource_id == resource_id)
     
-    # Restrict to assigned engagements for non-admins
+    # Restrict to engagements where the caller holds discussion_view (the
+    # per-engagement check above only runs when engagement_id is given)
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        from models.engagement import Engagement
-        from models.user import User
-        query = query.join(Engagement).where(
-            Engagement.assigned_users.any(User.id == current_user.id)
-        )
-    
+        from auth.rbac import engagements_with_permission
+        query = query.where(Thread.engagement_id.in_(
+            engagements_with_permission(current_user.id, Permission.DISCUSSION_VIEW.value)
+        ))
+
     query = query.order_by(Thread.created_at.desc())
     result = await db.execute(query)
     
@@ -875,6 +876,42 @@ FEED_CONTENT_TYPES = {
     "cleanup_artifact", "vault",
 }
 
+# The view permission each feed resource type needs, matching that
+# resource's own GET. Anything unlisted needs engagement_view.
+_FEED_TYPE_VIEW_PERM = {
+    "finding": Permission.FINDING_VIEW,
+    "testcase": Permission.TESTCASE_VIEW,
+    "note": Permission.NOTE_VIEW,
+    "asset": Permission.ASSET_VIEW,
+    "evidence": Permission.EVIDENCE_VIEW,
+    "cleanup_artifact": Permission.CLEANUP_VIEW,
+    "vault": Permission.VAULT_VIEW,
+    "comment": Permission.DISCUSSION_VIEW,
+    "thread": Permission.DISCUSSION_VIEW,
+}
+
+
+async def _feed_visibility_clause(db: AsyncSession, user_id: str, engagement_id: str):
+    """WHERE clause limiting an engagement's activity rows to the resource
+    types the caller's engagement role may view, or None when they hold no
+    role there (not a member). The feed attaches each row's content, so
+    membership alone isn't enough."""
+    from models.permission import EngagementRolePermissions
+    perms = (await db.execute(
+        select(EngagementRolePermissions.permissions)
+        .join(EngagementAssignment, EngagementAssignment.role_id == EngagementRolePermissions.role_id)
+        .where(EngagementAssignment.user_id == user_id, EngagementAssignment.engagement_id == engagement_id)
+    )).scalar_one_or_none()
+    if perms is None:
+        return None
+    held = set(perms or [])
+    allowed = [t for t, p in _FEED_TYPE_VIEW_PERM.items() if p.value in held]
+    clauses = [ActivityLog.resource_type.in_(allowed)] if allowed else []
+    if Permission.ENGAGEMENT_VIEW.value in held:
+        clauses.append(ActivityLog.resource_type.notin_(list(_FEED_TYPE_VIEW_PERM)))
+    return or_(*clauses) if clauses else sa_false()
+
+
 # Coarse action buckets → the action-string prefixes they cover.
 _FEED_ACTION_PREFIXES = {
     "created": ("created", "uploaded", "imported"),
@@ -1234,10 +1271,10 @@ async def get_activity_feed(
         base_query = base_query.where(ActivityLog.created_at <= date_to)
 
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        from models.engagement import Engagement
-        base_query = base_query.join(Engagement).where(
-            Engagement.assigned_users.any(User.id == current_user.id)
-        )
+        visible = await _feed_visibility_clause(db, current_user.id, engagement_id)
+        if visible is None:
+            return {"items": [], "total": 0}
+        base_query = base_query.where(visible)
 
     total = (await db.execute(select(func.count()).select_from(base_query.subquery()))).scalar() or 0
 

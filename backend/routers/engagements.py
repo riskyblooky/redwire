@@ -991,9 +991,9 @@ async def get_engagement_evidence(
     # Check permissions
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db)
+        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.EVIDENCE_VIEW.value, db)
         if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions. You need the 'engagement_view' permission to view evidence.")
+            raise HTTPException(status_code=403, detail="Insufficient permissions. You need the 'evidence_view' permission to view evidence.")
 
     # Fetch evidence: directly linked OR linked to any finding in this engagement
     # Fetch evidence: directly linked OR linked to any finding in this engagement

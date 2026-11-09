@@ -38,7 +38,7 @@ from sqlalchemy import and_, cast, func, not_, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, engagements_with_permission
 from models.permission import Permission
 from database import get_db
 from models.asset import Asset
@@ -649,9 +649,13 @@ async def global_search(
     text_terms = _extract_text_terms(ast) if ast else []
     accessible_ids = await _get_accessible_engagement_ids(current_user, db)
 
-    def scope_to_engagements(query, engagement_col):
+    def scope_to_engagements(query, engagement_col, permission: Permission):
+        # Membership isn't enough: each category needs the same view
+        # permission its own GET does.
         if accessible_ids is not None:
-            return query.where(engagement_col.in_(accessible_ids))
+            return query.where(engagement_col.in_(
+                engagements_with_permission(current_user.id, permission.value)
+            ))
         return query
 
     results = []
@@ -708,7 +712,7 @@ async def global_search(
         ).join(Engagement, Finding.engagement_id == Engagement.id)
         if clause is not None:
             find_q = find_q.where(clause)
-        find_q = scope_to_engagements(find_q, Finding.engagement_id)
+        find_q = scope_to_engagements(find_q, Finding.engagement_id, Permission.FINDING_VIEW)
         find_q = find_q.order_by(Finding.updated_at.desc()).limit(limit)
         rows = (await db.execute(find_q)).all()
         items = []
@@ -746,7 +750,7 @@ async def global_search(
         ).join(Engagement, Asset.engagement_id == Engagement.id)
         if clause is not None:
             asset_q = asset_q.where(clause)
-        asset_q = scope_to_engagements(asset_q, Asset.engagement_id)
+        asset_q = scope_to_engagements(asset_q, Asset.engagement_id, Permission.ASSET_VIEW)
         asset_q = asset_q.order_by(Asset.updated_at.desc()).limit(limit)
         rows = (await db.execute(asset_q)).all()
         items = []
@@ -784,7 +788,7 @@ async def global_search(
         ).join(Engagement, TestCase.engagement_id == Engagement.id)
         if clause is not None:
             tc_q = tc_q.where(clause)
-        tc_q = scope_to_engagements(tc_q, TestCase.engagement_id)
+        tc_q = scope_to_engagements(tc_q, TestCase.engagement_id, Permission.TESTCASE_VIEW)
         tc_q = tc_q.order_by(TestCase.updated_at.desc()).limit(limit)
         rows = (await db.execute(tc_q)).all()
         items = []
@@ -909,7 +913,7 @@ async def global_search(
         ).join(Engagement, Note.engagement_id == Engagement.id)
         if clause is not None:
             note_q = note_q.where(clause)
-        note_q = scope_to_engagements(note_q, Note.engagement_id)
+        note_q = scope_to_engagements(note_q, Note.engagement_id, Permission.NOTE_VIEW)
         note_q = note_q.order_by(Note.updated_at.desc()).limit(limit)
         rows = (await db.execute(note_q)).all()
         items = []
@@ -945,7 +949,7 @@ async def global_search(
         ).join(Thread, Comment.thread_id == Thread.id).join(Engagement, Thread.engagement_id == Engagement.id)
         if clause is not None:
             comment_q = comment_q.where(clause)
-        comment_q = scope_to_engagements(comment_q, Thread.engagement_id)
+        comment_q = scope_to_engagements(comment_q, Thread.engagement_id, Permission.DISCUSSION_VIEW)
         comment_q = comment_q.order_by(Comment.created_at.desc()).limit(limit)
         rows = (await db.execute(comment_q)).all()
         items = []

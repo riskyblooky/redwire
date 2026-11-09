@@ -102,6 +102,26 @@ async def check_engagement_permission(user_id: str, engagement_id: str, required
     # Check if the required permission is in the user's role permissions
     return required_permission in permissions
 
+def engagements_with_permission(user_id: str, permission: str):
+    """Scalar subquery of the engagement ids where the user's engagement role
+    grants ``permission`` — the set form of check_engagement_permission, for
+    scoping list / search / feed queries with ``column.in_(...)``. Membership
+    alone is not enough: a role without e.g. finding_view must not see
+    findings through a list when the single-item GET refuses them."""
+    from sqlalchemy import cast
+    from sqlalchemy.dialects.postgresql import JSONB
+    from models.permission import EngagementRolePermissions
+    return (
+        select(EngagementAssignment.engagement_id)
+        .join(EngagementRolePermissions, EngagementRolePermissions.role_id == EngagementAssignment.role_id)
+        .where(
+            EngagementAssignment.user_id == user_id,
+            cast(EngagementRolePermissions.permissions, JSONB).contains([permission]),
+        )
+        .scalar_subquery()
+    )
+
+
 _ADMIN_ROLES = (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
 
 

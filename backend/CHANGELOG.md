@@ -58,6 +58,15 @@ section becomes one release entry.
   shows only whether a secret is set; the value comes from a separate
   reveal request (used by the Show, Copy and Edit buttons), and each
   reveal or file download is recorded in the Security Center.
+- **Lists, search and the activity feed respect per-resource view
+  permissions.** Engagement roles can withhold e.g. `finding_view` or
+  `note_view`, and opening a single finding or note honoured that, but the
+  findings, test cases, assets and threads lists, global search, the
+  engagement activity feed (which includes note text, finding descriptions
+  and comments), the engagement evidence list, and the AI assistant's
+  `search` and `get_field_examples` tools only checked membership. They
+  now apply the same view permission as the single-item page. The built-in
+  roles hold all view permissions, so they see no change.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

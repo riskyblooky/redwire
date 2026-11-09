@@ -1413,6 +1413,14 @@ async def _execute_mcp_tool(
             return query
         return query.where(eid_col.in_(accessible_ids))
 
+    def _scope_by_permission(query, eid_col, perm: str):
+        """Like _scope_by_engagement, but to the engagements where the user's
+        role grants ``perm`` — for tools that read across engagements."""
+        if is_privileged:
+            return query
+        from auth.rbac import engagements_with_permission
+        return query.where(eid_col.in_(engagements_with_permission(user.id, perm)))
+
     async def _require_perm(eid: str, perm: str) -> None:
         """GHSA-m9p9-2ccq-2348: tool layer must honor per-permission grants,
         not just engagement membership."""
@@ -1555,7 +1563,6 @@ async def _execute_mcp_tool(
         q = args.get("query", "")
         if not q:
             raise HTTPException(400, "query required")
-        accessible = await _get_accessible_engagement_ids()
         results = []
 
         eng_query = select(Engagement).where(Engagement.name.ilike(f"%{q}%")).limit(10)
@@ -1565,7 +1572,7 @@ async def _execute_mcp_tool(
             results.append({"type": "engagement", "id": e.id, "title": e.name})
 
         find_query = select(Finding).where(Finding.title.ilike(f"%{q}%")).limit(10)
-        find_query = _scope_by_engagement(find_query, Finding.engagement_id, accessible)
+        find_query = _scope_by_permission(find_query, Finding.engagement_id, Permission.FINDING_VIEW.value)
         find_result = await db.execute(find_query)
         for f in find_result.scalars().all():
             results.append({"type": "finding", "id": f.id, "title": f.title})
@@ -1648,8 +1655,10 @@ async def _execute_mcp_tool(
         if Model is Engagement:
             query = _scope_engagement_query(query)
         else:
-            accessible = await _get_accessible_engagement_ids()
-            query = _scope_by_engagement(query, Model.engagement_id, accessible)
+            view_perm = {
+                Finding: Permission.FINDING_VIEW, TestCase: Permission.TESTCASE_VIEW, Asset: Permission.ASSET_VIEW,
+            }[Model]
+            query = _scope_by_permission(query, Model.engagement_id, view_perm.value)
         # Fetch a few extra to absorb whitespace-only rows we drop below.
         query = query.order_by(Model.created_at.desc()).limit(limit * 3)
         rows = (await db.execute(query)).scalars().all()

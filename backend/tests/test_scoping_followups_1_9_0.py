@@ -77,3 +77,53 @@ async def test_author_cannot_restore_to_verified(client, db_session, make_user, 
     verified = await _version(db_session, f, status="VERIFIED")
     r = await client.post(f"/findings/{f.id}/versions/{verified.id}/restore")
     assert r.status_code == 403 and "VERIFIED" in r.json()["detail"]
+
+
+# ── #6 lists / search / feed need the per-resource view permission ───────
+
+@pytest.fixture
+async def member_without_finding_view(db_session, make_user):
+    eng = await _make_engagement(db_session)
+    user = await make_user()
+    await _assign(db_session, user, eng, await _make_engagement_role(db_session, ["engagement_view", "note_view"]))
+    finding = await _make_finding(db_session, eng, title="ZZsecretADCS finding")
+    return user, eng, finding
+
+
+async def test_finding_list_and_search_need_finding_view(client, db_session, member_without_finding_view,
+                                                         authenticate_as):
+    user, eng, finding = member_without_finding_view
+    authenticate_as(user)
+    assert (await client.get("/findings", params={"engagement_id": eng.id})).json() == []
+    assert (await client.get("/findings")).json() == []
+    body = (await client.get("/search", params={"q": "ZZsecretADCS"})).json()
+    assert finding.id not in str(body)
+
+
+async def test_finding_list_allowed_with_finding_view(client, db_session, make_user, authenticate_as):
+    eng = await _make_engagement(db_session)
+    user = await make_user()
+    await _assign(db_session, user, eng, await _make_engagement_role(db_session, ["finding_view"]))
+    finding = await _make_finding(db_session, eng)
+    authenticate_as(user)
+    assert [f["id"] for f in (await client.get("/findings", params={"engagement_id": eng.id})).json()] == [finding.id]
+
+
+async def test_activity_feed_drops_types_without_view(client, db_session, member_without_finding_view,
+                                                      authenticate_as):
+    from models.discussion import ActivityLog
+    user, eng, finding = member_without_finding_view
+    for rtype, rid in (("finding", finding.id), ("note", str(uuid.uuid4()))):
+        db_session.add(ActivityLog(engagement_id=eng.id, user_id=user.id, action=f"created_{rtype}",
+                                   resource_type=rtype, resource_id=rid, resource_name=rtype))
+    await db_session.flush()
+    authenticate_as(user)
+    feed = (await client.get("/discussions/activity/feed", params={"engagement_id": eng.id})).json()
+    assert [i["resource_type"] for i in feed["items"]] == ["note"] and feed["total"] == 1
+
+
+async def test_engagement_evidence_list_needs_evidence_view(client, db_session, member_without_finding_view,
+                                                            authenticate_as):
+    user, eng, _ = member_without_finding_view
+    authenticate_as(user)
+    assert (await client.get(f"/engagements/{eng.id}/evidence")).status_code == 403
