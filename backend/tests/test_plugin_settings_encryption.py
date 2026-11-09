@@ -75,3 +75,15 @@ async def test_posture_flags_plaintext_plugin_secret(client, db_session, make_us
     assert (await check())["status"] == "pass"
     await _insert_raw(db_session, "plain-secret")
     assert (await check())["status"] == "fail"
+
+
+async def test_upsert_is_single_row_and_encrypted(db_session):
+    from models.plugin import upsert_plugin_setting
+    await upsert_plugin_setting(db_session, "p_up", "API_KEY", "first", True)
+    await upsert_plugin_setting(db_session, "p_up", "API_KEY", "second", True)
+    rows = (await db_session.execute(
+        text("SELECT value FROM plugin_settings WHERE plugin_id = 'p_up'"))).scalars().all()
+    assert len(rows) == 1 and rows[0].startswith("gAAAAA")
+    got = (await db_session.execute(select(PluginSetting).where(PluginSetting.plugin_id == "p_up")
+                                    .execution_options(populate_existing=True))).scalar_one()
+    assert got.value == "second"

@@ -97,6 +97,10 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Saving plugin settings twice at the same moment could store a setting
+  twice, after which that setting and the plugin's settings page errored.
+  Settings are now unique per plugin and key (migration removes any
+  existing duplicates, keeping the newest).
 - A test case or note can no longer be moved under one of its own sub-items.
   For test cases this made a loop that hung "delete with sub-cases"
   forever; that delete now also stops safely if such a loop already exists.

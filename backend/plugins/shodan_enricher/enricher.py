@@ -151,27 +151,10 @@ class ShodanEnricher:
     async def _store_enrichment(self, asset_id: str, ip: str, data: dict):
         """Store enrichment data in plugin_settings keyed by asset ID."""
         import json
-        from sqlalchemy import select
 
         async with self.db_factory() as db:
-            from models.plugin import PluginSetting
-            key = f"enrich:{asset_id}"
-            result = await db.execute(
-                select(PluginSetting).where(
-                    PluginSetting.plugin_id == "shodan_enricher",
-                    PluginSetting.key == key,
-                )
-            )
-            existing = result.scalar_one_or_none()
-            if existing:
-                existing.value = json.dumps(data)
-            else:
-                db.add(PluginSetting(
-                    plugin_id="shodan_enricher",
-                    key=key,
-                    value=json.dumps(data),
-                    is_secret=False,
-                ))
+            from models.plugin import upsert_plugin_setting
+            await upsert_plugin_setting(db, "shodan_enricher", f"enrich:{asset_id}", json.dumps(data))
             await db.commit()
 
     async def get_enrichment(self, asset_id: str) -> dict | None:

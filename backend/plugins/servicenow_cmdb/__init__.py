@@ -87,28 +87,11 @@ async def _handle_asset_event(event: dict):
             return
 
         # Store the result as enrichment data
-        from sqlalchemy import select
-        from models.plugin import PluginSetting
+        from models.plugin import upsert_plugin_setting
 
         async with _db_factory() as db:
             key = f"cmdb:{resource_id}"
-            existing = (await db.execute(
-                select(PluginSetting).where(
-                    PluginSetting.plugin_id == "servicenow_cmdb",
-                    PluginSetting.key == key,
-                )
-            )).scalar_one_or_none()
-
-            data = json.dumps(result)
-            if existing:
-                existing.value = data
-            else:
-                db.add(PluginSetting(
-                    plugin_id="servicenow_cmdb",
-                    key=key,
-                    value=data,
-                    is_secret=False,
-                ))
+            await upsert_plugin_setting(db, "servicenow_cmdb", key, json.dumps(result))
             await db.commit()
 
         count = result.get("count", 0)

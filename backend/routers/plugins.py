@@ -19,7 +19,7 @@ from typing import Optional
 from database import get_db
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES
 from models.user import User
-from models.plugin import PluginSetting, PluginState
+from models.plugin import PluginSetting, PluginState, upsert_plugin_setting
 from plugin_loader import plugin_registry
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
@@ -227,24 +227,7 @@ async def update_plugin_settings(
 
         is_secret = schema_map[setting.key].get("type") == "secret"
 
-        # Upsert
-        result = await db.execute(
-            select(PluginSetting).where(
-                PluginSetting.plugin_id == plugin_id,
-                PluginSetting.key == setting.key,
-            )
-        )
-        existing = result.scalar_one_or_none()
-        if existing:
-            existing.value = setting.value
-            existing.is_secret = is_secret
-        else:
-            db.add(PluginSetting(
-                plugin_id=plugin_id,
-                key=setting.key,
-                value=setting.value,
-                is_secret=is_secret,
-            ))
+        await upsert_plugin_setting(db, plugin_id, setting.key, setting.value, is_secret)
 
     await db.commit()
     return {"status": "saved", "plugin_id": plugin_id}
