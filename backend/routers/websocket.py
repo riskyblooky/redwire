@@ -146,7 +146,9 @@ async def _auth_via_first_frame(
     user_row = (
         await db.execute(select(User).where(User.id == user_id))
     ).scalar_one_or_none()
-    if not user_row or not user_row.is_active:
+    # must_change_password: same gate as get_current_user — no live feeds or
+    # live-edit saves until the forced change is done.
+    if not user_row or not user_row.is_active or user_row.must_change_password:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None
 

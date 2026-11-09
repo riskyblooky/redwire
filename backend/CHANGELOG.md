@@ -99,6 +99,12 @@ section becomes one release entry.
   The test-case upload path was fixed in GHSA-7x2f-ff7r-h388, but the
   finding upload path still let a finding's creator upload after being
   removed from the engagement.
+- **A required password change is now enforced by the server.** After an
+  admin password reset (or on the first admin login), the "change your
+  password" prompt was only a screen overlay: the temporary password
+  still worked for every API call and live-edit connection. Until the
+  password is changed, the account can now only load its profile, change
+  the password, or sign out.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

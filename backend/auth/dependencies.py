@@ -86,6 +86,30 @@ async def _resolve_api_token(raw: str, db: AsyncSession) -> tuple[User, str]:
     return user, api_token.permission
 
 
+# Routes a user flagged must_change_password may still reach: enough to load
+# the forced-change modal, change the password, or sign out. Everything else
+# is refused server-side (the modal alone was only a UI overlay — a temp
+# password set by an admin reset was otherwise fully usable via the API).
+_PASSWORD_CHANGE_ALLOWED = {
+    ("GET", "/auth/me"),
+    ("GET", "/users/me"),
+    ("POST", "/auth/force-change-password"),
+    ("POST", "/auth/logout"),
+}
+
+
+def _enforce_password_change(request: Request, user: User) -> None:
+    if not user.must_change_password:
+        return
+    route = request.scope.get("route")
+    path = getattr(route, "path", request.url.path)
+    if (request.method, path) not in _PASSWORD_CHANGE_ALLOWED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change required",
+        )
+
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -107,6 +131,7 @@ async def get_current_user(
                 detail="This API token is read-only",
             )
 
+        _enforce_password_change(request, user)
         return user
 
     # ── JWT path (existing) ───────────────────────────────────────────────
@@ -171,6 +196,7 @@ async def get_current_user(
         )
 
     request.state.auth_user_id = user.id  # read by the admin-audit middleware
+    _enforce_password_change(request, user)
     return user
 
 
