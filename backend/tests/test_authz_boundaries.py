@@ -157,14 +157,14 @@ async def test_admin_read_route_read_only_admin_distinction(
     client, make_user, authenticate_as
 ):
     """READ_ONLY_ADMIN bypasses read-style global permissions only
-    (auth/permissions.py). Reads — GET /admin/groups and GET /admin/users
+    (auth/permissions.py). Reads — GET /admin/permissions/groups and GET /admin/users
     (VIEW_ALL_USERS) — are allowed; the write route POST /admin/users
     (MANAGE_USERS) is denied. Pinning both sides with the same role proves
     the read/write split is enforced, not incidental."""
     roa = await make_user(role="read_only_admin")
     authenticate_as(roa)
 
-    assert (await client.get("/admin/groups")).status_code == 200
+    assert (await client.get("/admin/permissions/groups")).status_code == 200
     assert (await client.get("/admin/users")).status_code == 200
 
     denied = await client.post("/admin/users", json={
@@ -180,7 +180,7 @@ async def test_admin_read_route_denies_operator(client, make_user, authenticate_
     is a real boundary, not open-to-all."""
     operator = await make_user(role="operator")
     authenticate_as(operator)
-    resp = await client.get("/admin/groups")
+    resp = await client.get("/admin/permissions/groups")
     assert resp.status_code == 403
 
 

@@ -89,6 +89,12 @@ section becomes one release entry.
   `REDIS_PASSWORD`, `MINIO_ROOT_PASSWORD`, `JWT_SECRET` and
   `ADMIN_PASSWORD` to be set instead of defaulting to `changeme` /
   `minioadmin`. `deploy_server.sh` already generates all of them.
+- **Removed unguarded duplicate group and engagement-role routes.**
+  `/admin/groups*` and `/admin/engagement-roles*` repeated the
+  `/admin/permissions/...` routes the UI uses, but without the
+  permission-grant ceiling or the system/default-group protection, so a
+  group manager could, for example, delete the Default group. Use
+  `/admin/permissions/groups*` and `/admin/permissions/engagement-roles*`.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

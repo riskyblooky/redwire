@@ -94,3 +94,15 @@ async def test_admin_unrestricted(db_session, make_user):
     other = await make_user(role="admin")
     await _guard_user_admin_action(admin, db_session, target=other, new_role=UserRole.ADMIN,
                                    added_group_ids={(await _group(db_session, "manage_groups")).id})
+
+
+async def test_unguarded_group_and_role_duplicates_removed(client, db_session, make_user, authenticate_as):
+    from models.group import Group
+    from sqlalchemy import select
+    authenticate_as(await make_user(role="admin"))
+    default = (await db_session.execute(select(Group).where(Group.is_default == True))).scalars().first()  # noqa: E712
+    for method, path in (("post", "/admin/groups"), ("patch", "/admin/groups/x"), ("delete", "/admin/groups/x"),
+                         ("post", "/admin/engagement-roles"), ("patch", "/admin/engagement-roles/x")):
+        assert (await getattr(client, method)(path)).status_code in (404, 405), path
+    if default:
+        assert (await client.delete(f"/admin/permissions/groups/{default.id}")).status_code == 403

@@ -86,12 +86,12 @@ async def test_no_op_user_update_records_nothing(make_user, security_events_on):
 async def test_config_write_audited_by_middleware(client, make_user, authenticate_as, security_events_on):
     admin = await make_user(role="admin")
     authenticate_as(admin)
-    r = await client.post("/admin/groups", json={"name": f"g_{uuid.uuid4().hex[:6]}"})
-    assert r.status_code == 200, r.text
-    r = await client.get("/admin/groups")  # reads aren't audited
+    r = await client.post("/admin/permissions/groups", json={"name": f"g_{uuid.uuid4().hex[:6]}"})
+    assert r.status_code == 201, r.text
+    r = await client.get("/admin/permissions/groups")  # reads aren't audited
     assert r.status_code == 200
     (ev,) = await _events(security_events_on, "config_changed")
-    assert ev.details == {"method": "POST", "path": "/admin/groups", "status": 200}
+    assert ev.details == {"method": "POST", "path": "/admin/permissions/groups", "status": 201}
 
 
 def test_audited_write_paths():

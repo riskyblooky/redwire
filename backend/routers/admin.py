@@ -9,12 +9,7 @@ from typing import List, Optional
 from database import get_db
 from models.user import User, UserRole
 from models.group import Group
-from models.engagement_role import EngagementRole
 from schemas.user import UserResponse, UserUpdate
-from schemas.rbac import (
-    GroupResponse, GroupCreate, GroupUpdate,
-    EngagementRoleResponse, EngagementRoleCreate, EngagementRoleUpdate
-)
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES, WRITE_ADMIN_ROLES
 from auth.permissions import require_global_permission, global_permission_set, group_permission_set
 from models.permission import Permission
@@ -403,92 +398,10 @@ async def reset_password(
     
     return {"temporary_password": temp_password}
 
-# --- Group Management ---
-
-@router.get("/groups", response_model=List[GroupResponse], dependencies=[Depends(require_global_perm_read(Permission.MANAGE_GROUPS))])
-async def list_groups(db: AsyncSession = Depends(get_db)):
-    """List all user groups."""
-    result = await db.execute(select(Group).order_by(Group.name))
-    return result.scalars().all()
-
-@router.post("/groups", response_model=GroupResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_GROUPS))])
-async def create_group(group: GroupCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new user group."""
-    new_group = Group(**group.model_dump())
-    db.add(new_group)
-    try:
-        await db.commit()
-        await db.refresh(new_group)
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail="Group name must be unique")
-    return new_group
-
-@router.patch("/groups/{group_id}", response_model=GroupResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_GROUPS))])
-async def update_group(group_id: str, group_update: GroupUpdate, db: AsyncSession = Depends(get_db)):
-    """Update a group's details."""
-    result = await db.execute(select(Group).where(Group.id == group_id))
-    group = result.scalar_one_or_none()
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
-    
-    for key, value in group_update.model_dump(exclude_unset=True).items():
-        setattr(group, key, value)
-    
-    await db.commit()
-    await db.refresh(group)
-    return group
-
-@router.delete("/groups/{group_id}", status_code=204, dependencies=[Depends(require_global_perm(Permission.MANAGE_GROUPS))])
-async def delete_group(group_id: str, db: AsyncSession = Depends(get_db)):
-    """Delete a user group."""
-    result = await db.execute(select(Group).where(Group.id == group_id))
-    group = result.scalar_one_or_none()
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
-    await db.delete(group)
-    await db.commit()
-    return None
-
-# --- Engagement Role Management ---
-
-@router.get("/engagement-roles", response_model=List[EngagementRoleResponse], dependencies=[Depends(require_global_perm_read(Permission.MANAGE_ENGAGEMENT_ROLES))])
-async def list_engagement_roles(db: AsyncSession = Depends(get_db)):
-    """List all defined engagement roles."""
-    result = await db.execute(select(EngagementRole).order_by(EngagementRole.name))
-    return result.scalars().all()
-
-@router.post("/engagement-roles", response_model=EngagementRoleResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_ENGAGEMENT_ROLES))])
-async def create_engagement_role(role: EngagementRoleCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new engagement role."""
-    new_role = EngagementRole(**role.model_dump())
-    db.add(new_role)
-    try:
-        await db.commit()
-        await db.refresh(new_role)
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail="Role name must be unique")
-    return new_role
-
-@router.patch("/engagement-roles/{role_id}", response_model=EngagementRoleResponse, dependencies=[Depends(require_global_perm(Permission.MANAGE_ENGAGEMENT_ROLES))])
-async def update_engagement_role(role_id: str, role_update: EngagementRoleUpdate, db: AsyncSession = Depends(get_db)):
-    """Update an engagement role's details."""
-    result = await db.execute(select(EngagementRole).where(EngagementRole.id == role_id))
-    role = result.scalar_one_or_none()
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    
-    for key, value in role_update.model_dump(exclude_unset=True).items():
-        setattr(role, key, value)
-    
-    await db.commit()
-    await db.refresh(role)
-    return role
-
-    await db.delete(role)
-    await db.commit()
-    return None
+# Groups and engagement roles are managed through routers/permissions.py
+# (/admin/permissions/groups*, /admin/permissions/engagement-roles*), which
+# carries the grant ceiling and the system/default-group guards. The
+# unguarded duplicates that used to live here were removed.
 
 # --- Registration Code Management ---
 
