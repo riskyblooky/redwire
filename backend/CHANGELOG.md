@@ -121,6 +121,13 @@ section becomes one release entry.
   Editing or deleting a role now requires holding the permissions
   involved in at least one of your engagements. Admins and team leads
   hold every engagement permission.
+- **Live editing now follows access changes immediately.** A live-edit
+  session (notes, finding / test case / asset text fields, report
+  sections) checked permissions only when it connected, so someone
+  removed from an engagement, demoted, or deactivated could keep editing
+  and saving until they closed the page. Open sessions now re-check
+  access every 15 seconds and before every save. Losing edit rights
+  turns the editor read-only, and losing view access closes it.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

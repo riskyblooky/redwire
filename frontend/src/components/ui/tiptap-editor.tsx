@@ -1161,9 +1161,12 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     // In a live room, hold typing until the doc is seeded/synced — text typed
     // into the still-empty doc would stop the server copy from being applied.
     const collabReady = !collabPath || room.contentSource !== null;
+    // The room can take edit away mid-session (role removed, account
+    // disabled): follow the server, not just the page's own canEdit.
+    const serverReadOnly = !!collabPath && (room.serverCanEdit === false || room.revoked);
     useEffect(() => {
-        if (editor && collabPath) editor.setEditable(!disabled && collabReady);
-    }, [editor, collabPath, disabled, collabReady]);
+        if (editor && collabPath) editor.setEditable(!disabled && collabReady && !serverReadOnly);
+    }, [editor, collabPath, disabled, collabReady, serverReadOnly]);
 
     // Joined a room where a peer already had (possibly unsaved) text: report it
     // once so the host form holds what's on screen.
@@ -1228,8 +1231,12 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             <MenuBar editor={editor} showLineNumbers={showLineNumbers} onToggleLineNumbers={() => setShowLineNumbers(v => !v)} />
             {collabPath && (
                 <div className="flex shrink-0 items-center justify-end gap-2 border-b border-slate-800/60 px-2 py-0.5 text-[10px]">
-                    {disabled && (
-                        <span className="flex items-center gap-1 text-slate-400" title="You can't edit this field. Others' edits still appear live.">
+                    {room.revoked ? (
+                        <span className="flex items-center gap-1 text-red-400" title="Your access to this record was removed. Reload the page.">
+                            <AlertTriangle className="h-3 w-3" /> Access removed
+                        </span>
+                    ) : (disabled || serverReadOnly) && (
+                        <span className="flex items-center gap-1 text-slate-400" title={serverReadOnly && !disabled ? "Your edit access to this field was removed. Others' edits still appear live." : "You can't edit this field. Others' edits still appear live."}>
                             <Eye className="h-3 w-3" /> Read only
                         </span>
                     )}
@@ -1263,7 +1270,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                             <Loader2 className="h-3 w-3 animate-spin" />
                         </span>
                     )}
-                    {room.status === 'disconnected' && (
+                    {room.status === 'disconnected' && !room.revoked && (
                         <span className="flex items-center gap-1 text-red-400" title="Disconnected — reconnecting. Your text is kept and saves when the connection is back; Save also keeps it.">
                             <WifiOff className="h-3 w-3" /> Offline
                         </span>

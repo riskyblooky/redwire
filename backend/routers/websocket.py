@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status
 from typing import Optional, Tuple
 import asyncio
 import json
+import time as _time
 import logging
 from utils.collaboration import manager
 from auth import decode_token
@@ -358,6 +359,11 @@ async def websocket_endpoint(
 
 # ─── Y.js Collaborative Editing WebSocket ────────────────────────────
 
+# How often an open live-edit socket re-checks the user's access (see
+# _serve_yjs_room). Saves always re-check.
+_ACCESS_RECHECK_S = 15
+
+
 @router.websocket("/ws/yjs/note/{note_id}")
 async def yjs_websocket_endpoint(
     websocket: WebSocket,
@@ -406,41 +412,51 @@ async def yjs_websocket_endpoint(
     #     Previously this treated all three view-bypass roles as edit-
     #     capable, which let read-only-admin save note content and
     #     broadcast CRDT updates even though REST would 403 them.
+    can_edit = await _note_access(user_row, note, db)
+    if can_edit is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # 3. Join the Y.js room and relay until the client leaves.
+    async def _save(content: str):
+        await save_note_content(note_id, content, user_id)
+
+    async def _recheck(rdb: AsyncSession, live_user: User) -> Optional[bool]:
+        live_note = (await rdb.execute(select(Note).where(Note.id == note_id))).scalar_one_or_none()
+        return None if live_note is None else await _note_access(live_user, live_note, rdb)
+
+    await _serve_yjs_room(
+        websocket, note_id, user_id, can_edit,
+        initial_content=note.content or "", persist=True, on_save=_save,
+        extra_initial={"note_id": note_id}, recheck=_recheck,
+    )
+
+
+async def _note_access(user_row: User, note, db: AsyncSession) -> Optional[bool]:
+    """None = may not view the note; otherwise whether they may edit it."""
+    role = user_row.role.value
+    # Mirrors routers/notes.py:
+    #   - VIEW bypass: admin / read-only-admin / team-lead (three roles).
+    #     Previously an admin who wasn't a direct engagement member
+    #     couldn't open the Y.js sync socket at all — the WS was a
+    #     *stricter* door than the REST fetch, so the note metadata
+    #     loaded fine and the collab handshake silently hung.
+    #   - WRITE bypass: admin / team-lead only (two roles — no
+    #     read-only-admin). read-only-admin passes VIEW but must not
+    #     write, matching notes.py and every other REST edit gate.
     is_admin_view = role in (
         UserRole.ADMIN.value,
         UserRole.READ_ONLY_ADMIN.value,
         UserRole.TEAM_LEAD.value,
     )
     if not is_admin_view and not await check_engagement_permission(
-        user_id, note.engagement_id, Permission.NOTE_VIEW.value, db
+        user_row.id, note.engagement_id, Permission.NOTE_VIEW.value, db
     ):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    is_admin_write = role in (
-        UserRole.ADMIN.value,
-        UserRole.TEAM_LEAD.value,
-    )
-    if is_admin_write:
-        can_edit = True
-    else:
-        is_owner = note.created_by == user_id
-        edit_perm = (
-            Permission.NOTE_EDIT.value if is_owner else Permission.NOTE_EDIT_ANY.value
-        )
-        can_edit = await check_engagement_permission(
-            user_id, note.engagement_id, edit_perm, db
-        )
-
-    # 3. Join the Y.js room and relay until the client leaves.
-    async def _save(content: str):
-        await save_note_content(note_id, content, user_id)
-
-    await _serve_yjs_room(
-        websocket, note_id, user_id, can_edit,
-        initial_content=note.content or "", persist=True, on_save=_save,
-        extra_initial={"note_id": note_id},
-    )
+        return None
+    if role in (UserRole.ADMIN.value, UserRole.TEAM_LEAD.value):
+        return True
+    edit_perm = Permission.NOTE_EDIT.value if note.created_by == user_row.id else Permission.NOTE_EDIT_ANY.value
+    return await check_engagement_permission(user_row.id, note.engagement_id, edit_perm, db)
 
 
 @router.websocket("/ws/yjs/field/{resource_type}/{resource_id}/{field}")
@@ -483,11 +499,15 @@ async def yjs_field_websocket_endpoint(
         except Exception:
             pass
 
+    async def _recheck(rdb: AsyncSession, live_user: User) -> Optional[bool]:
+        live = await resolve_collab_target(resource_type, resource_id, field, live_user, rdb)
+        return None if live is None else live.can_edit
+
     # persist=False: no server-initiated save requests — the author's client
     # decides when to send (a viewer could otherwise be asked to save).
     await _serve_yjs_room(
         websocket, room_key(resource_type, resource_id, field), user_row.id, target.can_edit,
-        initial_content=target.content, persist=False, on_save=_save,
+        initial_content=target.content, persist=False, on_save=_save, recheck=_recheck,
     )
 
 
@@ -501,10 +521,21 @@ async def _serve_yjs_room(
     persist: bool,
     on_save,
     extra_initial: Optional[dict] = None,
+    recheck=None,
 ):
     """Join the Y.js room ``key``, send the bootstrap frame, and relay frames
     until the client disconnects. ``on_save`` handles a client's
-    ``save_content`` (editors only); None ignores it."""
+    ``save_content`` (editors only); None ignores it.
+
+    ``recheck(db, user) -> None | bool`` re-evaluates access mid-session (None
+    = can no longer view, else can_edit), so revoking someone's engagement
+    role, deactivating them or demoting them takes effect on an open socket
+    instead of at their next connect. It runs before every save, at most
+    every ``_ACCESS_RECHECK_S`` on other frames, and on a timer every
+    ``_ACCESS_RECHECK_S`` — an idle client sends nothing, so frames alone
+    would leave a revoked viewer watching indefinitely. Edit lost →
+    the socket becomes read-only (``access_changed``); view lost →
+    ``access_revoked`` and close."""
     from utils.yjs_server import yjs_store
     from utils.ws_bus import bus as _bus
     import json as _json
@@ -537,11 +568,61 @@ async def _serve_yjs_room(
     except Exception:
         pass
 
+    last_check = _time.monotonic()
+
+    async def _refresh_access(force: bool) -> bool:
+        """Re-check access; False if the socket was closed for lost view."""
+        nonlocal can_edit, last_check
+        if recheck is None or (not force and _time.monotonic() - last_check < _ACCESS_RECHECK_S):
+            return True
+        last_check = _time.monotonic()
+        try:
+            from database import AsyncSessionLocal
+            async with AsyncSessionLocal() as rdb:
+                live_user = (await rdb.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+                if live_user is None or not live_user.is_active or live_user.must_change_password:
+                    allowed = None
+                else:
+                    allowed = await recheck(rdb, live_user)
+        except Exception as e:  # noqa: BLE001
+            # Fail closed for writes only: a transient DB error shouldn't
+            # kick viewers, but nobody saves on an unverified right.
+            logger.warning("yjs access recheck failed for %s on %s: %s", user_id, key, e)
+            if can_edit:
+                can_edit = False
+                await _send_json({"type": "access_changed", "can_edit": False})
+            last_check = 0.0  # try again on the next frame
+            return True
+        if allowed is None:
+            await _send_json({"type": "access_revoked"})
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return False
+        if allowed != can_edit:
+            can_edit = allowed
+            await _send_json({"type": "access_changed", "can_edit": can_edit})
+        return True
+
+    async def _send_json(payload: dict) -> None:
+        try:
+            await websocket.send_text(_json.dumps(payload))
+        except Exception:
+            pass
+
+    async def _recheck_timer() -> None:
+        while True:
+            await asyncio.sleep(_ACCESS_RECHECK_S or 1)
+            if not await _refresh_access(force=True):
+                return  # socket closed; the receive loop sees the disconnect
+
+    timer = asyncio.create_task(_recheck_timer()) if recheck is not None else None
+
     try:
         while True:
             message = await websocket.receive()
             if message.get("type") == "websocket.disconnect":
                 raise WebSocketDisconnect(message.get("code", 1000))
+            if not await _refresh_access(force=False):
+                raise WebSocketDisconnect(status.WS_1008_POLICY_VIOLATION)
 
             if "bytes" in message and message["bytes"]:
                 # Binary Y.js sync/awareness message. Read-only viewers
@@ -563,7 +644,13 @@ async def _serve_yjs_room(
                     data = _json.loads(message["text"])
 
                     if data.get("type") == "save_content":
-                        if not can_edit or on_save is None:
+                        if on_save is None:
+                            continue
+                        if not await _refresh_access(force=True):
+                            raise WebSocketDisconnect(status.WS_1008_POLICY_VIOLATION)
+                        if not can_edit:
+                            # Tell the client, so it stops showing "Saving…".
+                            await _send_json({"type": "content_saved", "ok": False})
                             continue
                         await on_save(data.get("content", ""))
                     elif data.get("type") == "register_client_id":
@@ -590,6 +677,8 @@ async def _serve_yjs_room(
         if yjs_id is not None:
             await room.notify_peer_disconnected(yjs_id)
     finally:
+        if timer is not None:
+            timer.cancel()
         await _bus.presence_remove("yjs", key, _yjs_conn)
 
 

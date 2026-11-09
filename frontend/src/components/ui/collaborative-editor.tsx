@@ -30,7 +30,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useYjsRoom, createCollabCursorExtension } from '@/lib/yjs-room';
 import { useAuthStore } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
-import { Wifi, WifiOff, Loader2, Users, Eye } from 'lucide-react';
+import { Wifi, WifiOff, Loader2, Users, Eye, AlertTriangle } from 'lucide-react';
 import {
     Bold, Italic, List as ListIcon, ListOrdered, Quote,
     Undo, Redo, Code, Heading as HeadingIcon, Strikethrough,
@@ -513,7 +513,7 @@ export default function CollaborativeEditor({
 
     // Y.js doc + room connection. Parent uses key={noteId} to force a full
     // remount (fresh doc) on note switch.
-    const { ydoc, awareness, status: connectionStatus, hasSynced, peerCount, socket } = useYjsRoom({
+    const { ydoc, awareness, status: connectionStatus, hasSynced, peerCount, socket, serverCanEdit, revoked } = useYjsRoom({
         path: `note/${noteId}`,
         editorRef,
         // Emits an update, so the seeded DB copy flows into the normal save path.
@@ -646,6 +646,11 @@ export default function CollaborativeEditor({
     // Keep ref in sync
     editorRef.current = editor;
 
+    // The room re-checks access mid-session and can take edit away.
+    useEffect(() => {
+        editor?.setEditable(!disabled && serverCanEdit !== false && !revoked);
+    }, [editor, disabled, serverCanEdit, revoked]);
+
     // Sync the line-numbers toggle into the active-line decoration and nudge a
     // transaction so it recomputes immediately (see active-line-extension).
     useEffect(() => {
@@ -666,7 +671,13 @@ export default function CollaborativeEditor({
 
                 {/* Connection status + peer count */}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                    {disabled && (
+                    {revoked && (
+                        <span className="flex items-center gap-1 text-[10px] font-medium text-red-400" title="Your access to this note was removed. Reload the page.">
+                            <AlertTriangle className="h-3 w-3" />
+                            Access removed
+                        </span>
+                    )}
+                    {!revoked && (disabled || serverCanEdit === false) && (
                         <span
                             className="flex items-center gap-1 text-[10px] font-medium text-slate-300 bg-slate-800/70 border border-slate-700 rounded-full px-2 py-0.5"
                             title="You don't have permission to edit this note. Live edits from others still appear as they happen."

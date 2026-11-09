@@ -148,6 +148,12 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
     // ── Record-field auto-save ──
     const autosaveRef = useLatest(autosave);
     const [saveState, setSaveState] = useState<FieldSaveState>('idle');
+    // The server's verdict on this user's rights in the room, which can change
+    // mid-session (it re-checks access; see routers/websocket.py
+    // _serve_yjs_room): null until known, false once edit is taken away.
+    // `revoked` = view access was removed and the server closed the room.
+    const [serverCanEdit, setServerCanEdit] = useState<boolean | null>(null);
+    const [revoked, setRevoked] = useState(false);
     const socketRef = useRef<WebSocket | null>(null);
     const savePending = useRef(false);
     const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -311,6 +317,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                         // Store it; only apply if no peer sync fills the doc.
                         initialContentPending = data.content || '';
                         const canEdit = data.can_edit !== false;
+                        setServerCanEdit(canEdit);
                         const seedFromDb = () => {
                             const ed = editorRef.current;
                             if (!ed) {
@@ -340,6 +347,20 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                             // A peer is here — let them sync first so we don't double-seed.
                             initialContentTimer = setTimeout(seedFromDb, 300);
                         }
+                    } else if (data.type === 'access_changed') {
+                        setServerCanEdit(data.can_edit !== false);
+                        if (data.can_edit === false) {
+                            clearTimeout(saveTimer.current);
+                            savePending.current = false;
+                        }
+                    } else if (data.type === 'access_revoked') {
+                        // Don't reconnect: the next connect would be refused too.
+                        isCleaningUp = true;
+                        clearTimeout(saveTimer.current);
+                        savePending.current = false;
+                        setRevoked(true);
+                        setServerCanEdit(false);
+                        setStatus('disconnected');
                     } else if (data.type === 'request_save') {
                         onRequestSaveRef.current?.(data);
                     } else if (data.type === 'content_saved') {
@@ -468,7 +489,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         ydoc.destroy();
     }, [ydoc, awareness]);
 
-    return { ydoc, awareness, status, hasSynced, contentSource, peerCount, socket, saveState, scheduleSave };
+    return { ydoc, awareness, status, hasSynced, contentSource, peerCount, socket, saveState, scheduleSave, serverCanEdit, revoked };
 }
 
 function useLatest<T>(value: T): MutableRefObject<T> {
