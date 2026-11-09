@@ -46,9 +46,10 @@ _YJS_SYNC_UPDATE = 2
 
 def _is_viewer_safe_binary(data: bytes) -> bool:
     """True if a binary Y.js message is safe to relay from a read-only
-    client — awareness (cursor / presence) or SYNC step 1/2 (query
-    or state response). Blocks SYNC UPDATE, which would let a viewer
-    inject CRDT writes into peers' live ydoc.
+    client — awareness (cursor / presence) or SYNC step 1 (a state-vector
+    query). Blocks SYNC step 2 and UPDATE: both carry a document update
+    that peers apply, so either would let a viewer inject CRDT writes into
+    an editor's live ydoc, which the editor's next autosave persists.
 
     Rejects a leading zero-length or truncated message (defensive
     against a client dumping empty frames)."""
@@ -61,7 +62,7 @@ def _is_viewer_safe_binary(data: bytes) -> bool:
         if len(data) < 2:
             return False
         subtype = data[1]
-        return subtype in (_YJS_SYNC_STEP1, _YJS_SYNC_STEP2)
+        return subtype == _YJS_SYNC_STEP1
     return False
 
 
@@ -526,6 +527,9 @@ async def _serve_yjs_room(
             "type": "initial_content",
             "content": initial_content,
             "peers": await _yjs_peer_count(key, room),
+            # Lets a read-only client drop its own DB seed once an editor's
+            # content arrives (its seed never reaches peers, see below).
+            "can_edit": can_edit,
             **(extra_initial or {}),
         }))
     except Exception:
@@ -541,15 +545,13 @@ async def _serve_yjs_room(
                 # Binary Y.js sync/awareness message. Read-only viewers
                 # may still emit query messages (Y.js sync step 1 asks
                 # peers for their state) and awareness messages (cursor
-                # / presence). Without at least step 1 going through,
-                # a read-only viewer never bootstraps from active peers
-                # — they see the DB snapshot from initial_content and
-                # then diverge from live edits. Blocking only Y.js
-                # UPDATE (write) messages preserves the CRDT integrity
-                # gate; the save_content JSON path below is still
-                # gated on can_edit so a forged UPDATE couldn't survive
-                # a reload either, but this stops it from polluting
-                # peers' live ydoc in the first place.
+                # / presence). Without step 1 going through, a read-only
+                # viewer never bootstraps from active peers — they see
+                # the DB snapshot from initial_content and then diverge
+                # from live edits. Step 2 and UPDATE both carry document
+                # content, so a viewer's are dropped: relayed, an editor
+                # would merge them and its next save_content would
+                # persist the viewer's text.
                 if can_edit or _is_viewer_safe_binary(message["bytes"]):
                     await room.relay_binary(websocket, message["bytes"])
 

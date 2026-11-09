@@ -46,3 +46,16 @@ async def test_refresh_presence_republishes_current_info(monkeypatch):
     _apply_identify(info, {"mode": "edit"})
     await mgr.refresh_presence(ws, "finding", "f1")
     assert added == [("finding", "f1", "c1", {**_info(), "mode": "edit"})]
+
+
+def test_viewer_binary_filter_blocks_document_content():
+    """Read-only Y.js clients may query (sync step 1) and send presence, but
+    not sync step 2 or update — both carry a document update an editor would
+    merge and then autosave."""
+    from routers.websocket import _is_viewer_safe_binary
+    assert _is_viewer_safe_binary(bytes([1, 5, 0]))        # awareness
+    assert _is_viewer_safe_binary(bytes([0, 0, 1, 0]))     # sync step 1
+    assert not _is_viewer_safe_binary(bytes([0, 1, 3, 1, 2, 3]))  # sync step 2
+    assert not _is_viewer_safe_binary(bytes([0, 2, 3, 1, 2, 3]))  # update
+    assert not _is_viewer_safe_binary(b"")
+    assert not _is_viewer_safe_binary(bytes([0]))

@@ -37,6 +37,11 @@ section becomes one release entry.
   permissions they already have. The duplicate `PUT/DELETE /users/{id}`
   and `POST /users` routes, which skipped these checks, are removed; use
   `/admin/users`.
+- **View-only users can no longer change live-edited text.** On the
+  live-editing connection for notes and record fields, a user with view
+  access only could send a crafted sync message that an editor's browser
+  merged and then auto-saved. Those messages are now dropped for
+  view-only users.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

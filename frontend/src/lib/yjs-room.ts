@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/auth-store';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
+const SYNC_STEP1 = 0;
 
 // Cursor colors — consistent per user via hash.
 const CURSOR_COLORS = [
@@ -206,6 +207,10 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         // if neither a peer sync nor an initial_content frame ever arrives.
         let readyFallbackTimer: ReturnType<typeof setTimeout> | undefined;
         let current: WebSocket | null = null;
+        // A read-only client's own writes never reach peers (the server drops
+        // them), so its DB seed is local-only. Once an editor's content
+        // arrives it's dropped first, or the viewer would show both copies.
+        let viewerSeeded = false;
 
         const rebuildCursors = () => {
             const ed = editorRef.current;
@@ -305,6 +310,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                     if (data.type === 'initial_content') {
                         // Store it; only apply if no peer sync fills the doc.
                         initialContentPending = data.content || '';
+                        const canEdit = data.can_edit !== false;
                         const seedFromDb = () => {
                             const ed = editorRef.current;
                             if (!ed) {
@@ -315,7 +321,10 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                                 return;
                             }
                             if (ydoc.getXmlFragment('default').length === 0) {
-                                if (initialContentPending) seedRef.current(ed, initialContentPending);
+                                if (initialContentPending) {
+                                    seedRef.current(ed, initialContentPending);
+                                    viewerSeeded = !canEdit;
+                                }
                                 setContentSource((s) => s ?? 'db');
                             } else {
                                 setContentSource((s) => s ?? 'peer');
@@ -351,6 +360,12 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                 const decoder = decoding.createDecoder(bytes);
                 switch (decoding.readVarUint(decoder)) {
                     case MSG_SYNC: {
+                        if (viewerSeeded && bytes.length > 1 && bytes[1] !== SYNC_STEP1) {
+                            viewerSeeded = false;
+                            const fragment = ydoc.getXmlFragment('default');
+                            // 'remote' origin: not echoed (the server would drop it anyway).
+                            ydoc.transact(() => fragment.delete(0, fragment.length), 'remote');
+                        }
                         const reply = encoding.createEncoder();
                         encoding.writeVarUint(reply, MSG_SYNC);
                         syncProtocol.readSyncMessage(decoder, reply, ydoc, 'remote');
