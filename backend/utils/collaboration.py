@@ -420,6 +420,7 @@ async def create_activity_log(
             "type": "activity_log",
             "action": action,
             "resource_type": resource_type,
+            "resource_id": resource_id,
             "resource_name": resource_name,
             "user_id": user_id,
             "engagement_id": engagement_id,

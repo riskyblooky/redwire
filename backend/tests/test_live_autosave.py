@@ -120,3 +120,26 @@ async def test_asset_versions_and_restore(client, db_session, make_user, authent
     assert r.status_code == 200, r.text
     assert (await client.get(f"/assets/{a.id}")).json()["name"] == "web01"
     assert len((await client.get(f"/assets/{a.id}/versions")).json()) == 2
+
+
+async def test_every_live_save_announces_record_updated(shared_session, make_user, monkeypatch):
+    """Each save (not just a session's first, which also logs activity) tells
+    the record's presence channel, so view pages refetch the field."""
+    from utils.collaboration import manager
+    sent = []
+
+    async def capture(rtype, rid, message, db=None):
+        sent.append((rtype, rid, message))
+    monkeypatch.setattr(manager, "broadcast_to_resource", capture)
+    db = shared_session
+    user, eng = await _engagement(db, make_user)
+    f = Finding(id=str(uuid.uuid4()), engagement_id=eng.id, title="F", description="a",
+                severity="LOW", created_by=user.id)
+    db.add(f)
+    await db.flush()
+    for text in ("ab", "abc", "abc"):  # last one is a no-op and announces nothing
+        await save_collab_field("finding", f.id, "description", text, user.id)
+    updates = [m for rt, rid, m in sent if (rt, rid) == ("finding", f.id) and m["type"] == "record_updated"]
+    assert [u["field"] for u in updates] == ["description", "description"]
+    activity = [m for _rt, _rid, m in sent if m["type"] == "activity_log"]
+    assert activity and activity[0]["resource_id"] == f.id

@@ -35,7 +35,7 @@ import { EvidenceCard } from '@/components/findings/evidence-card';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
-import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import { useTags } from '@/lib/hooks/use-findings';
@@ -112,9 +112,11 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
     const { data: infraItems = [] } = useInfraByEntity('testcase', testcaseId || '');
 
     // Real-time presence + live content refresh (mirrors the full page).
+    const onRecordUpdated = useRecordUpdatedRefresh(['testcases', testcaseId || '']);
     const { activeUsers } = useCollaboration({
         resourceType: 'testcase',
         resourceId: testcaseId || '',
+        onMessage: onRecordUpdated,
         enabled: !!testcase && open,
     });
     useCollaboration({

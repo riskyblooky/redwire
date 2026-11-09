@@ -76,7 +76,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import Link from 'next/link';
 import { EvidenceUpload } from '@/components/findings/evidence-upload';
 import { EvidenceCard } from '@/components/findings/evidence-card';
-import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { useRightPaneCollapsed, RightPaneCollapseButton, RightPaneExpandTab } from '@/components/ui/right-pane-collapse';
@@ -286,9 +286,11 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     const { data: linkedIntel = [] } = useIntelByEntity('finding', id);
     const [intelDetailId, setIntelDetailId] = useState<string | null>(null);
 
+    const onRecordUpdated = useRecordUpdatedRefresh(['findings', id]);
     const { activeUsers } = useCollaboration({
         resourceType: 'finding',
         resourceId: id,
+        onMessage: onRecordUpdated,
         enabled: !!finding
     });
     // Live content updates: a teammate's edit to this finding (broadcast to the

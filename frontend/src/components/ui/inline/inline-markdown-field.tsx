@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, KeyboardEvent } from 'react';
 import { MarkdownEditor, MarkdownPreview } from '@/components/ui/markdown-editor';
 import { Button } from '@/components/ui/button';
 import { Loader2, Pencil } from 'lucide-react';
@@ -9,6 +9,9 @@ import { cn } from '@/lib/utils';
 import { EditorFieldContext } from '@/lib/types';
 import { AnnotatableMarkdownField } from '@/components/discussions/annotatable-markdown-field';
 import type { ResourceType } from '@/lib/hooks/use-discussions';
+import type { EditorChangeMeta } from '@/components/ui/tiptap-editor';
+import { isLiveField } from '@/lib/collab-fields';
+import { collabFieldPath } from '@/components/discussions/annotation-surface';
 
 interface InlineMarkdownFieldProps {
     value: string;
@@ -29,6 +32,10 @@ interface InlineMarkdownFieldProps {
     resourceType?: ResourceType;
     resourceId?: string;
     field?: string;
+    /** Live co-editing. Defaults on whenever resourceType/resourceId/field
+     *  name a live field (lib/collab-fields.ts) — the editor then shares the
+     *  full edit page's room for that field. Pass false to opt out. */
+    collaborative?: boolean;
 }
 
 /**
@@ -36,8 +43,13 @@ interface InlineMarkdownFieldProps {
  * users who can edit), swaps to the shared MarkdownEditor with Save/Cancel.
  * Esc cancels, ⌘/Ctrl+Enter saves. Saves a single field via the caller's
  * onSave; on failure it stays in edit mode so the draft isn't lost.
+ *
+ * For live fields the editor joins the field's room instead: edits sync with
+ * the edit page and other inline editors and save themselves as you type,
+ * and the bar shows Done (the REST onSave only covers edits made offline).
  */
 export function InlineMarkdownField(props: InlineMarkdownFieldProps) {
+    const live = props.collaborative !== false && !!props.resourceId && isLiveField(props.resourceType, props.field);
     // Anchored peer-review comments are a self-contained superset; delegate to it
     // when the caller opts in. Kept as a separate component (not an early return
     // inside the body) so the plain path's hooks are never conditional.
@@ -56,10 +68,11 @@ export function InlineMarkdownField(props: InlineMarkdownFieldProps) {
                 emptyText={props.emptyText}
                 placeholder={props.placeholder}
                 minHeight={props.minHeight}
+                collaborative={live}
             />
         );
     }
-    return <PlainInlineMarkdownField {...props} />;
+    return <PlainInlineMarkdownField {...props} collaborative={live} />;
 }
 
 function PlainInlineMarkdownField({
@@ -72,15 +85,48 @@ function PlainInlineMarkdownField({
     emptyText = 'Double-click to add…',
     placeholder,
     minHeight = '180px',
+    resourceType,
+    resourceId,
+    field,
+    collaborative = false,
 }: InlineMarkdownFieldProps) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState('');
     const [saving, setSaving] = useState(false);
+    // Live mode (see AnnotatableMarkdownField): offline edits need the REST
+    // save on Done; show the just-written text until the record refetches.
+    const unsyncedRef = useRef(false);
+    const [shownAfterClose, setShownAfterClose] = useState<string | null>(null);
+    useEffect(() => { setShownAfterClose(null); }, [value]);
+    const shown = shownAfterClose ?? value;
 
     const start = () => {
         if (!canEdit || saving) return;
-        setDraft(value || '');
+        setDraft(shown || '');
+        unsyncedRef.current = false;
         setEditing(true);
+    };
+
+    const onDraftChange = (val: string, meta?: EditorChangeMeta) => {
+        setDraft(val);
+        if (!meta?.autosaved) unsyncedRef.current = true;
+    };
+
+    const done = async () => {
+        if (saving) return;
+        if (unsyncedRef.current && draft !== (shown || '')) {
+            setSaving(true);
+            try {
+                await onSave(draft);
+            } catch (e: any) {
+                toast.error(e?.response?.data?.detail || e?.message || 'Failed to save');
+                return;
+            } finally {
+                setSaving(false);
+            }
+        }
+        setShownAfterClose(draft);
+        setEditing(false);
     };
 
     const cancel = () => {
@@ -104,9 +150,35 @@ function PlainInlineMarkdownField({
     };
 
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-        else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+        if (e.key === 'Escape') { e.preventDefault(); if (collaborative) done(); else cancel(); }
+        else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); if (collaborative) done(); else save(); }
     };
+
+    if (editing && collaborative && resourceType && resourceId && field) {
+        return (
+            <div onKeyDown={onKeyDown}>
+                <div className="rounded-lg border border-slate-700 overflow-hidden">
+                    <MarkdownEditor
+                        value={draft}
+                        onChange={onDraftChange}
+                        engagementId={engagementId}
+                        fieldContext={fieldContext}
+                        placeholder={placeholder}
+                        minHeight={minHeight}
+                        resizable
+                        disabled={saving}
+                        collab={{ path: collabFieldPath(resourceType, resourceId, field) }}
+                    />
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-slate-500">Live — saves as you type and syncs with anyone else editing this field · Esc or ⌘/Ctrl+Enter to finish</span>
+                    <Button size="sm" className="h-7 bg-primary hover:bg-primary/90 text-white" onClick={done} disabled={saving}>
+                        {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Saving</> : 'Done'}
+                    </Button>
+                </div>
+            </div>
+        );
+    }
 
     if (editing) {
         return (
@@ -136,7 +208,7 @@ function PlainInlineMarkdownField({
         );
     }
 
-    const hasValue = !!(value && value.trim());
+    const hasValue = !!(shown && shown.trim());
 
     return (
         <div
@@ -157,7 +229,7 @@ function PlainInlineMarkdownField({
             )}
             {hasValue ? (
                 <div className={previewWrapperClassName}>
-                    <MarkdownPreview value={value} theme="dark" />
+                    <MarkdownPreview value={shown} theme="dark" />
                 </div>
             ) : (
                 <p className="text-sm text-slate-600 italic select-none py-1">

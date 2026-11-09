@@ -41,7 +41,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import DiscussionSection from '@/components/discussions/discussion-section';
-import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
@@ -101,9 +101,11 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     const { data: findings = [] } = useFindings({ engagement_id: asset?.engagement_id });
 
     const queryClient = useQueryClient();
+    const onRecordUpdated = useRecordUpdatedRefresh(['assets', id]);
     const { activeUsers } = useCollaboration({
         resourceType: 'asset',
         resourceId: id,
+        onMessage: onRecordUpdated,
         enabled: !!asset
     });
     // Live content updates: a teammate's edit to this asset refreshes it in place.
@@ -346,6 +348,9 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                             value={asset.description || ''}
                                             canEdit={canEdit}
                                             onSave={(v) => saveField({ description: v })}
+                                            resourceType="asset"
+                                            resourceId={asset.id}
+                                            field="description"
                                             engagementId={asset.engagement_id}
                                             fieldContext={{ resourceType: 'asset', fieldName: 'description', entityContext: buildAssetContext(asset) }}
                                             emptyText="Double-click to add a description…"
@@ -366,6 +371,9 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                                     value={asset.notes || ''}
                                                     canEdit={canEdit}
                                                     onSave={(v) => saveField({ notes: v })}
+                                                    resourceType="asset"
+                                                    resourceId={asset.id}
+                                                    field="notes"
                                                     engagementId={asset.engagement_id}
                                                     fieldContext={{ resourceType: 'asset', fieldName: 'notes', entityContext: buildAssetContext(asset) }}
                                                     previewWrapperClassName="bg-slate-950/30 p-4 rounded-lg border border-slate-800/50"

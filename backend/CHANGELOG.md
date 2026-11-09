@@ -7,6 +7,13 @@ section becomes one release entry.
 ## [1.9.0] — Unreleased
 
 ### Added
+- **Live editing from the view pages.** Double-clicking a text field on a
+  finding, test case or asset page (or its side sheet on the engagement
+  page) now opens the same live editor as the full edit page. Everyone
+  editing that field sees each other's text and cursors as they type,
+  whether they're on the edit page or the view page, and changes save
+  automatically, so Save/Cancel becomes Done. Pages showing a record also
+  update as others edit it live, instead of only after the first change.
 - **Security Center** (Admin → Security) — one place to watch the
   instance's own security. Sign-ins: every successful and failed sign-in
   (with the reason), failed 2FA codes, sign-outs, password and 2FA changes,

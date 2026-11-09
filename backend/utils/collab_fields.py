@@ -203,7 +203,24 @@ async def save_collab_field(
                 resource_type=resource_type, resource_id=resource_id,
                 resource_name=name, details=details,
             )
+        await _announce_field_saved(resource_type, resource_id, field, user_id)
         return True
+
+
+async def _announce_field_saved(resource_type: str, resource_id: str, field: str, user_id: str) -> None:
+    """Tell the record's own presence channel (/ws/{type}/{id} — the view and
+    edit pages, gated on the record's engagement at connect) that a field
+    changed, so pages showing it but not in its live room refetch. The
+    activity-log broadcast only fires once per live session, so it can't
+    carry this. Best effort."""
+    try:
+        from utils.collaboration import manager
+        await manager.broadcast_to_resource(resource_type, resource_id, {
+            "type": "record_updated", "resource_type": resource_type,
+            "resource_id": resource_id, "field": field, "user_id": user_id,
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.warning("collab field: record_updated broadcast failed: %s", e)
 
 
 async def assert_no_other_live_editors(resource_type: str, resource_id: str, user_id: str) -> None:

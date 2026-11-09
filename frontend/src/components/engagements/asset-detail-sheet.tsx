@@ -41,7 +41,7 @@ import Link from 'next/link';
 import { apiErrorMessage } from '@/lib/api';
 import { useEngagement } from '@/lib/hooks/use-engagements';
 import { useAuthStore } from '@/stores/auth-store';
-import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -117,9 +117,11 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
     // Presence + live content refresh (mirrors the full asset page)
+    const onRecordUpdated = useRecordUpdatedRefresh(['assets', assetId || '']);
     const { activeUsers } = useCollaboration({
         resourceType: 'asset',
         resourceId: assetId || '',
+        onMessage: onRecordUpdated,
         enabled: !!asset && open,
     });
     useCollaboration({
@@ -404,6 +406,9 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                 value={asset.description || ''}
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ description: v })}
+                                                resourceType="asset"
+                                                resourceId={asset.id}
+                                                field="description"
                                                 engagementId={engagementId}
                                                 fieldContext={{ resourceType: 'asset', fieldName: 'description', entityContext: buildAssetContext(asset) }}
                                                 previewWrapperClassName="bg-slate-950/30 p-3 rounded-lg border border-slate-800/50"
@@ -422,6 +427,9 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                                 value={asset.notes || ''}
                                                 canEdit={canEdit}
                                                 onSave={(v) => saveField({ notes: v })}
+                                                resourceType="asset"
+                                                resourceId={asset.id}
+                                                field="notes"
                                                 engagementId={engagementId}
                                                 fieldContext={{ resourceType: 'asset', fieldName: 'notes', entityContext: buildAssetContext(asset) }}
                                                 previewWrapperClassName="bg-slate-900/40 p-3 rounded-lg border border-slate-800/60"

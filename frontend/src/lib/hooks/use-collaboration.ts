@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 
 export interface PresenceUser {
@@ -236,4 +237,26 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
         isConnected,
         sendCursorMove
     };
+}
+
+
+/**
+ * onMessage handler for a record's presence channel (useCollaboration on
+ * finding / testcase / asset): refetch the record when one of its fields is
+ * saved live (`record_updated`, sent on every live save by the server), so
+ * a page showing the field — but not editing it — keeps up with someone
+ * typing on the edit page or in another inline editor. Debounced: a typist
+ * saves about once a second.
+ */
+export function useRecordUpdatedRefresh(queryKey: readonly unknown[]) {
+    const queryClient = useQueryClient();
+    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const keyRef = useRef(queryKey);
+    keyRef.current = queryKey;
+    useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+    return useCallback((data: any) => {
+        if (data?.type !== 'record_updated') return;
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => queryClient.invalidateQueries({ queryKey: keyRef.current }), 600);
+    }, [queryClient]);
 }

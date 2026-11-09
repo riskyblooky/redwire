@@ -33,7 +33,7 @@ import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { useInfraByEntity } from '@/lib/hooks/use-infra';
 import { useEngagement } from '@/lib/hooks/use-engagements';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
-import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
@@ -149,7 +149,8 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
     // Live presence + content refresh when a teammate edits this finding.
-    const { activeUsers } = useCollaboration({ resourceType: 'finding', resourceId: fid, enabled: !!finding });
+    const onRecordUpdated = useRecordUpdatedRefresh(['findings', fid]);
+    const { activeUsers } = useCollaboration({ resourceType: 'finding', resourceId: fid, enabled: !!finding, onMessage: onRecordUpdated });
     useCollaboration({
         resourceType: 'dashboard',
         resourceId: 'global',

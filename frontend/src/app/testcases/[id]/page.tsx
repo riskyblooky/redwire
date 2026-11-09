@@ -39,7 +39,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import Link from 'next/link';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { MarkdownEditor, MarkdownPreview } from '@/components/ui/markdown-editor';
-import { useCollaboration } from '@/lib/hooks/use-collaboration';
+import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
 import { cn, parseUTCDate } from '@/lib/utils';
@@ -109,9 +109,11 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     const { data: engagement } = useEngagement(testcase?.engagement_id || '');
 
     const queryClient = useQueryClient();
+    const onRecordUpdated = useRecordUpdatedRefresh(['testcases', id]);
     const { activeUsers } = useCollaboration({
         resourceType: 'testcase',
         resourceId: id,
+        onMessage: onRecordUpdated,
         enabled: !!testcase
     });
     // Live content updates: a teammate's edit to this test case refreshes it in place.
