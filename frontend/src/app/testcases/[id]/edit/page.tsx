@@ -93,6 +93,13 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
     const hasConcurrentEditor = otherEditors.length > 0;
     const [templateOpen, setTemplateOpen] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
+    // The record refetches whenever anything touches it (a comment, a live
+    // save, a teammate's edit). Re-copying it into the form then would wipe
+    // unsaved changes and disarm the leave-page guard, so after the first load
+    // only a clean form follows the server.
+    const isDirtyRef = useRef(false);
+    isDirtyRef.current = isDirty;
+    const loadedIdRef = useRef<string | null>(null);
 
     const getBackPath = () => returnEngagementId
         ? `/engagements/${returnEngagementId}?tab=${returnTab}`
@@ -123,7 +130,8 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
     const hasCustomFields = cfDefs.length > 0;
 
     useEffect(() => {
-        if (testcase) {
+        if (testcase && !(loadedIdRef.current === testcase.id && isDirtyRef.current)) {
+            loadedIdRef.current = testcase.id;
             setFormData({
                 title: testcase.title || '',
                 engagement_id: testcase.engagement_id || '',

@@ -123,6 +123,13 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     const [cvssCalcOpen, setCvssCalcOpen] = useState(false);
     const [scoreModelId, setScoreModelId] = useState('cvss31');
     const [isDirty, setIsDirty] = useState(false);
+    // The record refetches whenever anything touches it (a comment, a live
+    // save, a teammate's edit). Re-copying it into the form then would wipe
+    // unsaved changes and disarm the leave-page guard, so after the first load
+    // only a clean form follows the server.
+    const isDirtyRef = useRef(false);
+    isDirtyRef.current = isDirty;
+    const loadedIdRef = useRef<string | null>(null);
 
     const getBackPath = () => {
         const query = returnEngagementId ? `?engagementId=${returnEngagementId}&tab=${returnTab}` : '';
@@ -213,7 +220,8 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     })();
 
     useEffect(() => {
-        if (finding) {
+        if (finding && !(loadedIdRef.current === finding.id && isDirtyRef.current)) {
+            loadedIdRef.current = finding.id;
             setFormData({
                 title: finding.title,
                 engagement_id: finding.engagement_id,

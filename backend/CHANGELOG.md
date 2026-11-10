@@ -136,6 +136,9 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- The finding and test-case edit pages no longer discard unsaved changes
+  (and silently disarm the leave-page warning) when the record reloads,
+  e.g. after a comment or a teammate's edit.
 - Live editing keeps working past the 30-minute login-token lifetime: a
   reconnect now refreshes the token first instead of reusing the one the
   page started with, which the server refused, losing pending auto-saves.
