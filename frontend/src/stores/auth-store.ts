@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { User } from '@/lib/types';
 import api, { startProactiveRefresh, stopProactiveRefresh } from '@/lib/api';
+import { useEngagementContext } from '@/stores/engagement-store';
 
 interface AuthState {
     user: User | null;
@@ -10,7 +11,6 @@ interface AuthState {
     // 2FA state
     requires2fa: boolean;
     pendingToken: string | null;
-    pendingCredentials: { username: string; password: string } | null;
     // Force password change state
     mustChangePassword: boolean;
     login: (username: string, password: string) => Promise<void>;
@@ -30,7 +30,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     needsRedirect: false,
     requires2fa: false,
     pendingToken: null,
-    pendingCredentials: null,
     mustChangePassword: false,
 
     login: async (username: string, password: string) => {
@@ -40,7 +39,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
             if (requires_2fa) {
                 // Store pending token for the 2FA verification step
-                set({ requires2fa: true, pendingToken: access_token, pendingCredentials: { username, password }, isLoading: false });
+                set({ requires2fa: true, pendingToken: access_token, isLoading: false });
                 return;
             }
 
@@ -59,8 +58,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 isLoading: false,
                 needsRedirect: false,
                 requires2fa: false,
-                pendingCredentials: null,
-                mustChangePassword: !!must_change_password,
+                            mustChangePassword: !!must_change_password,
             });
         } catch (error) {
             set({ user: null, isAuthenticated: false, isLoading: false });
@@ -90,8 +88,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 needsRedirect: false,
                 requires2fa: false,
                 pendingToken: null,
-                pendingCredentials: null,
-                mustChangePassword: !!must_change_password,
+                            mustChangePassword: !!must_change_password,
             });
         } catch (error) {
             throw error;
@@ -99,7 +96,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
 
     cancel2fa: () => {
-        set({ requires2fa: false, pendingToken: null, pendingCredentials: null });
+        set({ requires2fa: false, pendingToken: null });
     },
 
     verifySsoTotp: async (code: string, pendingToken: string) => {
@@ -120,8 +117,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 isLoading: false,
                 needsRedirect: false,
                 requires2fa: false,
-                pendingCredentials: null,
-                mustChangePassword: !!must_change_password,
+                            mustChangePassword: !!must_change_password,
             });
         } catch (error) {
             throw error;
@@ -136,7 +132,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.removeItem('access_token');
         document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
         stopProactiveRefresh();
-        set({ user: null, isAuthenticated: false, needsRedirect: false, requires2fa: false, pendingCredentials: null, mustChangePassword: false });
+        set({ user: null, isAuthenticated: false, needsRedirect: false, requires2fa: false, mustChangePassword: false });
+        // The selected engagement is per-user context: don't hand it to
+        // whoever signs in next on this browser.
+        useEngagementContext.getState().clearSelectedEngagement();
 
         // Then ask the backend to blacklist the access token and the
         // refresh-cookie (read server-side), and clear the cookie.

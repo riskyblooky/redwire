@@ -155,6 +155,15 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Small fixes from the 11/8 review: editing or removing an attack-chain
+  link is now in the activity log; restoring a finding version restores its
+  scoring model and inputs too (older versions clear inputs that no longer
+  match); the engagement picker no longer gets stuck on "new" and is
+  cleared at sign-out; the sign-in screen no longer keeps the password in
+  memory during the 2FA step; posting in a thread no longer refetches every
+  cached finding / asset / test-case list; a SAML sign-in whose username is
+  taken or contains odd characters gets a cleaned, unique username instead
+  of a server error.
 - Read-only admins can download evidence (the download-token step refused
   them) and see an engagement's scan import history.
 - Read-only admins and team leads no longer see write buttons the server

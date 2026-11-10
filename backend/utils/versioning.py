@@ -22,6 +22,9 @@ FINDING_VERSIONED_FIELDS = [
     "title", "category", "description", "severity", "status",
     "cvss_score", "cvss_vector", "impact", "technical_details",
     "steps_to_reproduce", "mitigations", "references",
+    # The calculator state behind cvss_score / cvss_vector — versioned with
+    # them so a restore can't leave the inputs disagreeing with the score.
+    "score_model", "score_inputs",
 ]
 
 TESTCASE_VERSIONED_FIELDS = [

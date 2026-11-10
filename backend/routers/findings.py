@@ -973,6 +973,14 @@ async def restore_finding_version(
     from utils.versioning import FINDING_VERSIONED_FIELDS
     snap = v.snapshot or {}
     update_data = {f: snap[f] for f in FINDING_VERSIONED_FIELDS if f in snap}
+    # Snapshots from before score_model/score_inputs were versioned: if the
+    # restore changes the vector, the current calculator inputs describe a
+    # different score — drop them (back to the legacy vector-only state)
+    # rather than keep a mismatched pair.
+    if ("score_model" not in snap and "cvss_vector" in update_data
+            and update_data["cvss_vector"] != finding.cvss_vector):
+        update_data["score_model"] = None
+        update_data["score_inputs"] = None
     # Snapshots store enums as their string value — coerce back before applying.
     if update_data.get("severity") is not None:
         update_data["severity"] = Severity(update_data["severity"])

@@ -1179,6 +1179,29 @@ async def get_auth_providers(db: AsyncSession = Depends(get_db)):
     )
 
 
+async def _saml_jit_username(db: AsyncSession, raw: str) -> str:
+    """A username for a JIT-provisioned SAML user. The IdP's value is
+    canonicalised and squeezed into the registration allowlist (SAML users
+    never type it, so substituting is safe, and it keeps homograph or
+    control-character names out). On a clash with an existing account —
+    which used to fail the unique constraint with a 500 — add a numeric
+    suffix."""
+    import re
+    from schemas.user import canonicalize_username, _USERNAME_ALLOWED
+    base = re.sub(r"[^a-z0-9._-]+", "-", canonicalize_username(raw or ""))
+    base = re.sub(r"^[^a-z0-9]+|[^a-z0-9]+$", "", base)[:44] or "saml-user"
+    if len(base) < 2:
+        base = f"{base}-user"
+    for n in range(1, 1000):
+        candidate = base if n == 1 else f"{base}-{n}"
+        if not _USERNAME_ALLOWED.fullmatch(candidate):
+            continue
+        taken = (await db.execute(select(User.id).where(User.username == candidate))).first()
+        if not taken:
+            return candidate
+    return f"saml-{uuid.uuid4().hex[:12]}"
+
+
 @router.get(
     "/saml/login",
     summary="SAML SSO login redirect",
@@ -1378,7 +1401,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
         from models.group import Group, user_groups
         user = User(
             id=str(uuid.uuid4()),
-            username=username or email.split("@")[0],
+            username=await _saml_jit_username(db, username or email.split("@")[0]),
             email=email,
             hashed_password=get_password_hash(str(uuid.uuid4())),
             full_name=user_info.get("full_name", ""),

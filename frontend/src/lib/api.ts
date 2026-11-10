@@ -133,6 +133,7 @@ api.interceptors.response.use(
                 // The refresh cookie is cleared by /auth/logout, or by the
                 // server when it issues a 401 on an expired/missing cookie.
                 localStorage.removeItem('access_token');
+                localStorage.removeItem('engagement-context'); // per-user selection (engagement-store)
                 document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
                 window.location.href = '/login';
                 return Promise.reject(_redactAuthOnError(refreshError));

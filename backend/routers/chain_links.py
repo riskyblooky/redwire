@@ -359,6 +359,21 @@ async def create_chain_link(
     )
 
 
+async def _log_chain_change(db, engagement_id, current_user, source, target, action, verb):
+    """Audit-log an edit or removal of a chain edge, in the same shape as the
+    linked_chain entry written on create (logged on the source item)."""
+    def _name(ref):
+        return ref.label or "item"
+    await create_activity_log(
+        db, engagement_id=engagement_id, user_id=current_user.id,
+        action=action,
+        resource_type="vault" if source.type == "vault_item" else source.type,
+        resource_id=source.id,
+        resource_name=_name(source),
+        details=f"{verb} '{_name(source)}' → '{_name(target)}'",
+    )
+
+
 @router.patch("/{engagement_id}/chain-links/{link_id}", response_model=ChainLinkOut)
 async def update_chain_link_note(
     engagement_id: str,
@@ -381,11 +396,13 @@ async def update_chain_link_note(
     await db.refresh(link)
 
     # Resolve just the two endpoints rather than scanning the whole engagement.
-    return ChainLinkOut(
-        id=link.id, relation=link.relation, note=link.note,
-        source=await _resolve_one(link.source_type, link.source_id, db),
-        target=await _resolve_one(link.target_type, link.target_id, db),
-    )
+    source = await _resolve_one(link.source_type, link.source_id, db)
+    target = await _resolve_one(link.target_type, link.target_id, db)
+    out = ChainLinkOut(id=link.id, relation=link.relation, note=link.note, source=source, target=target)
+    # Built first: the log helper commits, which expires `link`.
+    await _log_chain_change(db, engagement_id, current_user, source, target,
+                            "updated_chain", "Edited the note on chain")
+    return out
 
 
 @router.delete("/{engagement_id}/chain-links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -403,8 +420,12 @@ async def delete_chain_link(
     if link is None:
         raise HTTPException(status_code=404, detail="Chain link not found")
 
+    source = await _resolve_one(link.source_type, link.source_id, db)
+    target = await _resolve_one(link.target_type, link.target_id, db)
     await db.execute(sa_delete(ChainLink).where(ChainLink.id == link_id))
     await db.commit()
+    await _log_chain_change(db, engagement_id, current_user, source, target,
+                            "unlinked_chain", "Removed chain")
     try:
         await manager.broadcast_to_resource("engagement", engagement_id, {
             "type": "graph_attacker_changed", "username": current_user.username,

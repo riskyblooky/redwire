@@ -23,6 +23,8 @@ const FIELD_LABELS: Record<string, string> = {
     status: 'Status',
     cvss_score: 'CVSS Score',
     cvss_vector: 'CVSS Vector',
+    score_model: 'Scoring Model',
+    score_inputs: 'Score Inputs',
     impact: 'Impact',
     technical_details: 'Technical Details',
     steps_to_reproduce: 'Steps to Reproduce',
@@ -111,8 +113,12 @@ interface DiffFieldProps {
     newValue: any;
 }
 
-function DiffField({ field, oldValue, newValue }: DiffFieldProps) {
+function DiffField({ field, oldValue: rawOld, newValue: rawNew }: DiffFieldProps) {
     const label = FIELD_LABELS[field] || field;
+    // Structured values (score_inputs) diff as pretty JSON, one key per line.
+    const asText = (v: any) => (v !== null && typeof v === 'object' ? JSON.stringify(v, null, 2) : v);
+    const oldValue = asText(rawOld);
+    const newValue = asText(rawNew);
 
     // Boolean fields
     if (typeof oldValue === 'boolean' || typeof newValue === 'boolean') {
@@ -135,7 +141,7 @@ function DiffField({ field, oldValue, newValue }: DiffFieldProps) {
     // Short scalar fields (severity, status, category, numbers)
     if (
         field === 'severity' || field === 'status' || field === 'category' ||
-        field === 'cvss_score' || field === 'cvss_vector' || field === 'title'
+        field === 'cvss_score' || field === 'cvss_vector' || field === 'title' || field === 'score_model'
     ) {
         return (
             <div className="space-y-1">

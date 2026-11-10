@@ -43,7 +43,8 @@ export default function EngagementSelector() {
     useEffect(() => {
         if (pathname?.startsWith('/engagements/')) {
             const id = pathname?.split('/')[2];
-            if (id && id !== selectedEngagementId) {
+            // /engagements/new is the create form, not an engagement id.
+            if (id && id !== 'new' && id !== selectedEngagementId) {
                 setSelectedEngagement(id);
             }
         } else if (pathname === '/engagements') {

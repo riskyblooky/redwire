@@ -207,41 +207,6 @@ async def get_current_active_user(
     return current_user
 
 
-async def get_optional_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    db: AsyncSession = Depends(get_db)
-) -> Optional[User]:
-    """Get current user if authenticated, None otherwise."""
-    if credentials is None:
-        return None
-
-    try:
-        token = credentials.credentials
-
-        # Reject revoked tokens
-        if is_token_blacklisted(token):
-            return None
-
-        payload = decode_token(token)
-        if payload is None:
-            return None
-
-        # Reject 2FA-pending tokens
-        if payload.get("2fa_pending"):
-            return None
-
-        user_id = payload.get("sub")
-        if user_id is None:
-            return None
-
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        return user if user and user.is_active else None
-    except Exception as e:
-        logger.debug(f"Optional auth failed: {e}")
-        return None
-
-
 def require_roles(allowed_roles: list[str]):
     """Dependency factory for checking user roles."""
     async def role_checker(current_user: User = Depends(get_current_user)) -> User:

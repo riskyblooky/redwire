@@ -130,10 +130,12 @@ export function useUpdateThread() {
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['threads'] });
             queryClient.invalidateQueries({ queryKey: ['threads', data.id] });
-            // Aggressively invalidate findings/assets/testcases to update unresolved_thread_count
-            queryClient.invalidateQueries({ queryKey: ['findings'], refetchType: 'all' });
-            queryClient.invalidateQueries({ queryKey: ['assets'], refetchType: 'all' });
-            queryClient.invalidateQueries({ queryKey: ['testcases'], refetchType: 'all' });
+            // unresolved_thread_count lives on findings/assets/testcases. Refetch
+            // only what's on screen; the rest is marked stale and refetches when
+            // next shown (refetchType 'all' refetched every cached list at once).
+            queryClient.invalidateQueries({ queryKey: ['findings'] });
+            queryClient.invalidateQueries({ queryKey: ['assets'] });
+            queryClient.invalidateQueries({ queryKey: ['testcases'] });
         },
     });
 }
@@ -149,10 +151,12 @@ export function useResolveThread() {
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['threads'] });
             queryClient.invalidateQueries({ queryKey: ['threads', data.id] });
-            // Aggressively invalidate findings/assets/testcases to update unresolved_thread_count
-            queryClient.invalidateQueries({ queryKey: ['findings'], refetchType: 'all' });
-            queryClient.invalidateQueries({ queryKey: ['assets'], refetchType: 'all' });
-            queryClient.invalidateQueries({ queryKey: ['testcases'], refetchType: 'all' });
+            // unresolved_thread_count lives on findings/assets/testcases. Refetch
+            // only what's on screen; the rest is marked stale and refetches when
+            // next shown (refetchType 'all' refetched every cached list at once).
+            queryClient.invalidateQueries({ queryKey: ['findings'] });
+            queryClient.invalidateQueries({ queryKey: ['assets'] });
+            queryClient.invalidateQueries({ queryKey: ['testcases'] });
         },
     });
 }
