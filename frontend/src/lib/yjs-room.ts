@@ -24,6 +24,7 @@ import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { fixedCursorPlugin } from '@/lib/fixed-cursor-plugin';
 import { useAuthStore } from '@/stores/auth-store';
+import { getFreshAccessToken } from '@/lib/api';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -268,8 +269,12 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         };
         awareness.on('update', awarenessUpdateHandler);
 
-        const connect = () => {
+        const connect = async () => {
             if (isCleaningUp) return;
+            // Fresh per connect: a reconnect after the token lapsed must not
+            // replay the one captured at mount.
+            const token = await getFreshAccessToken();
+            if (isCleaningUp || !token) return;
             setStatus('connecting');
             ws = new WebSocket(wsUrl);
             ws.binaryType = 'arraybuffer';

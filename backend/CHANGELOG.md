@@ -136,6 +136,9 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Live editing keeps working past the 30-minute login-token lifetime: a
+  reconnect now refreshes the token first instead of reusing the one the
+  page started with, which the server refused, losing pending auto-saves.
 - Saving an engagement team with an unknown user or role, or with the same
   user listed twice, now gives a clear error instead of a server error.
 - Engagement pages, lists, feeds and deletes are faster on large

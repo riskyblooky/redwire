@@ -207,6 +207,54 @@ if (typeof window !== 'undefined') {
     });
 }
 
+/** `exp` (seconds) of a JWT, or null if it can't be read. */
+function jwtExpiry(token: string): number | null {
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return typeof payload.exp === 'number' ? payload.exp : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The access token, refreshed first if it expires within a minute. For
+ * WebSocket (re)connects, which send the token themselves and so never pass
+ * through the axios 401 → refresh interceptor: a socket that reconnects
+ * after the 30-minute token lapsed (laptop slept, proactive timer drifted)
+ * would otherwise be refused forever. Shares the interceptor's in-flight
+ * lock; on a failed refresh it returns the current token and lets the
+ * server decide.
+ */
+export async function getFreshAccessToken(): Promise<string | null> {
+    const token = localStorage.getItem('access_token');
+    if (!token) return null;
+    const exp = jwtExpiry(token);
+    if (exp === null || exp * 1000 - Date.now() > 60_000) return token;
+    if (isRefreshing) {
+        // Another refresh is in flight; take its result (or give up after 10s
+        // — a failed refresh clears subscribers without calling them).
+        return Promise.race([
+            new Promise<string>((resolve) => subscribeTokenRefresh(resolve)),
+            new Promise<string | null>((resolve) => setTimeout(() => resolve(localStorage.getItem('access_token')), 10_000)),
+        ]);
+    }
+    isRefreshing = true;
+    try {
+        const response = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
+        const { access_token } = response.data;
+        localStorage.setItem('access_token', access_token);
+        document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
+        onTokenRefreshed(access_token);
+        return access_token;
+    } catch {
+        onRefreshFailed();
+        return localStorage.getItem('access_token');
+    } finally {
+        isRefreshing = false;
+    }
+}
+
 export { startProactiveRefresh, stopProactiveRefresh };
 export default api;
 

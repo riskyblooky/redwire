@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
+import { getFreshAccessToken } from '@/lib/api';
 
 export interface PresenceUser {
     id: string;
@@ -56,8 +57,11 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
         const maxRetries = 10;
         let isCleaningUp = false;
 
-        const connect = () => {
+        const connect = async () => {
             if (isCleaningUp) return;
+            // Fresh per connect (see getFreshAccessToken), not the mount-time one.
+            const token = await getFreshAccessToken();
+            if (isCleaningUp || !token) return;
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const host = window.location.host;
