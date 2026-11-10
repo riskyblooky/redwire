@@ -32,7 +32,8 @@ class WordlistEntry(Base):
     __tablename__ = "wordlist_entries"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    password = Column(Text, nullable=False, index=True)
+    # Not indexed: nothing looks entries up by plaintext (migration c2e7a9d4b1f6).
+    password = Column(Text, nullable=False)
     ntlm = Column(String(32), nullable=True, index=True)
     md5 = Column(String(32), nullable=True, index=True)
     sha1 = Column(String(40), nullable=True, index=True)
@@ -46,4 +47,5 @@ class WordlistEntry(Base):
         String(255),
         ForeignKey("wordlist_meta.id", ondelete="CASCADE"),
         nullable=True,
+        index=True,  # wordlist delete / FK cascade filter on it
     )

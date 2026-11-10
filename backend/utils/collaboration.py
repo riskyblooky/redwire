@@ -752,9 +752,23 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def _republish_local_presence() -> None:
+    """Publish every local connection's presence — for when the bus comes up
+    after sockets were already accepted (Redis was down at worker start)."""
+    from utils.ws_bus import bus
+    for resource_type, by_id in list(manager.active_connections.items()):
+        for resource_id, sockets in list(by_id.items()):
+            for ws in list(sockets):
+                conn_id = manager.connection_ids.get(ws)
+                info = manager.connection_info.get(ws)
+                if conn_id and info is not None:
+                    await bus.presence_add(resource_type, resource_id, conn_id, info)
+
+
 def _register_bus_handlers() -> None:
     from utils.ws_bus import bus
     bus.register("resource", manager._deliver_from_bus)
+    bus.on_activate(_republish_local_presence)
 
 
 _register_bus_handlers()

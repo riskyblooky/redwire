@@ -1,7 +1,16 @@
+# Rotate container stdout/stderr (json-file has no limit by default and the
+# deploy target is a small VPS): 5 × 10 MB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:15-alpine
     container_name: redwire-db
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-redwire}
       POSTGRES_USER: ${POSTGRES_USER:-redwire}
@@ -22,6 +31,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redwire-redis
+    logging: *default-logging
     command: redis-server --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
 
     volumes:
@@ -38,6 +48,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: redwire-minio
+    logging: *default-logging
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -67,6 +78,7 @@ services:
         BUILD_TIME: ${BUILD_TIME:-}
     image: redwire-backend:latest
     container_name: redwire-backend
+    logging: *default-logging
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-redwire}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-redwire}
       REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
@@ -107,6 +119,10 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:-}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      # Retention in days (utils/retention.py); unset = the default shown.
+      ACTIVITY_PING_RETENTION_DAYS: ${ACTIVITY_PING_RETENTION_DAYS:-}   # 365
+      NOTIFICATION_RETENTION_DAYS: ${NOTIFICATION_RETENTION_DAYS:-}     # 90 (read ones only)
+      ACTIVITY_LOG_RETENTION_DAYS: ${ACTIVITY_LOG_RETENTION_DAYS:-}     # 0 = keep the audit log forever
 
     volumes:
       # Persist backend/uploads/ across container rebuilds. profile
@@ -172,6 +188,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     image: redwire-frontend:latest
     container_name: redwire-frontend
+    logging: *default-logging
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       NODE_ENV: production
@@ -186,6 +203,7 @@ services:
   nginx:
     image: nginx:1.25-alpine
     container_name: redwire-nginx
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -210,6 +228,7 @@ services:
   certbot:
     image: certbot/certbot
     container_name: redwire-certbot
+    logging: *default-logging
     volumes:
       - ./nginx/certbot/conf:/etc/letsencrypt
       - ./nginx/certbot/www:/var/www/certbot
@@ -223,6 +242,7 @@ services:
       dockerfile: Dockerfile
     image: redwire-mcp-server:latest
     container_name: redwire-mcp
+    logging: *default-logging
     environment:
       REDWIRE_API_URL: http://backend:8000
       MCP_PORT: "3001"

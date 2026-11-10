@@ -1,0 +1,28 @@
+# Keep runtime data, secrets and dev artefacts out of the backend image.
+# (Dev bind-mounts ./backend over /app, so tests still run there.)
+
+# Runtime data — bind-mounted / in MinIO, never baked in
+uploads/
+evidence/
+
+# Secrets
+.env
+.env.*
+
+# Tests and their output
+tests/
+.pytest_cache/
+pytest.ini
+pytest_out*.txt
+test_report*.pdf
+
+# Python / tooling cruft
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+Dockerfile
+.dockerignore

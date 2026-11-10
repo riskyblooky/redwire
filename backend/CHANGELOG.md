@@ -155,6 +155,14 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Operations: a backend worker that starts while Redis is down now keeps
+  retrying and turns live updates on once Redis is back (it used to stay
+  single-worker until restarted); container logs rotate (5 × 10 MB);
+  activity pings older than a year and read notifications older than 90
+  days are pruned daily (the audit log is kept unless
+  ACTIVITY_LOG_RETENTION_DAYS is set); the unused 640 MB wordlist password
+  index is dropped and wordlist deletes are indexed; the backend image no
+  longer includes uploads, tests or env files.
 - Small fixes from the 11/8 review: editing or removing an attack-chain
   link is now in the activity log; restoring a finding version restores its
   scoring model and inputs too (older versions clear inputs that no longer

@@ -35,6 +35,7 @@ _PRESENCE_PREFIX = "rw:ws:presence:"
 _WORKER_PREFIX = "rw:ws:worker:"
 _WORKER_TTL = 30          # seconds; refreshed every _WORKER_TTL / 3
 _PRESENCE_TTL = 24 * 3600  # safety net so an abandoned hash can't live forever
+_RETRY_BASE_S = 2.0        # first Redis reconnect delay; doubles to 60s
 
 Handler = Callable[[dict], Awaitable[None]]
 
@@ -48,41 +49,81 @@ class WsBus:
         self._redis = None
         self._tasks: List[asyncio.Task] = []
         self._handlers: Dict[str, Handler] = {}
+        # Run once Redis becomes reachable, so state built up while the bus
+        # was down (local presence) gets published.
+        self._on_activate: List[Callable[[], Awaitable[None]]] = []
         self._warned = False
+        self._connect_warned = False
 
     # ── lifecycle ──────────────────────────────────────────────────────────
     @property
     def active(self) -> bool:
         return self._redis is not None
 
+    def on_activate(self, callback: Callable[[], Awaitable[None]]) -> None:
+        self._on_activate.append(callback)
+
     def register(self, kind: str, handler: Handler) -> None:
         """Handle bus messages of ``kind`` published by *other* workers."""
         self._handlers[kind] = handler
 
-    async def start(self) -> None:
-        if not _enabled() or self._redis is not None:
-            return
+    async def _connect(self):
+        """A pinged Redis client, or None if Redis isn't reachable."""
         try:
             import redis.asyncio as aioredis
             client = aioredis.from_url(
                 os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
             )
             await client.ping()
+            return client
         except Exception as e:
-            logger.warning("ws_bus: Redis unavailable, WebSocket fan-out disabled (single-process mode): %s", e)
-            return
+            if not self._connect_warned:
+                logger.warning("ws_bus: Redis unavailable, WebSocket fan-out disabled until it is reachable: %s", e)
+                self._connect_warned = True
+            return None
+
+    async def _activate(self, client) -> None:
         self._redis = client
         await self._heartbeat_once()
-        self._tasks = [
+        self._tasks += [
             asyncio.create_task(self._listen()),
             asyncio.create_task(self._heartbeat()),
         ]
         logger.info("ws_bus: fan-out active (worker %s)", WORKER_ID)
+        for cb in self._on_activate:
+            try:
+                await cb()
+            except Exception as e:
+                logger.warning("ws_bus: on_activate callback failed: %s", e)
+
+    async def _retry_connect(self) -> None:
+        # Redis down when this worker booted (e.g. started first after a host
+        # restart) used to leave fan-out off for the worker's whole life —
+        # peers on other workers never saw its users' events. Keep trying.
+        delay = _RETRY_BASE_S
+        while self._redis is None:
+            await asyncio.sleep(delay)
+            client = await self._connect()
+            if client is not None:
+                await self._activate(client)
+                return
+            delay = min(delay * 2, 60.0)
+
+    async def start(self) -> None:
+        if not _enabled() or self._redis is not None:
+            return
+        client = await self._connect()
+        if client is None:
+            self._tasks = [asyncio.create_task(self._retry_connect())]
+            return
+        self._tasks = []
+        await self._activate(client)
 
     async def stop(self) -> None:
-        for t in self._tasks:
+        tasks = list(self._tasks)
+        for t in tasks:
             t.cancel()
-        for t in self._tasks:
+        for t in tasks:
             try:
                 await t
             except (asyncio.CancelledError, Exception):

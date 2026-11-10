@@ -132,6 +132,11 @@ async def activity_heartbeat(
     import time as _time
     from datetime import datetime as _dt
     now = _time.monotonic()
+    # The throttle caches are per worker and keyed per user (+resource);
+    # bound them so a long-lived worker doesn't accumulate every key forever.
+    from utils.retention import evict_stale
+    evict_stale(_heartbeat_cache, now, _HEARTBEAT_INTERVAL)
+    evict_stale(_ping_cache, now, _PING_INTERVAL)
 
     # 1. Presence: bump last_active (per-user throttle).
     if now - _heartbeat_cache.get(current_user.id, 0.0) >= _HEARTBEAT_INTERVAL:

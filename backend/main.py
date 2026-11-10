@@ -553,13 +553,18 @@ async def lifespan(app):
     from utils import http_log_ingest
     security_log_task = asyncio.create_task(http_log_ingest.run_forever())
 
+    # Prune old activity pings / read notifications (/ audit log, opt-in).
+    from utils.retention import retention_loop
+    retention_task = asyncio.create_task(retention_loop(AsyncSessionLocal))
+
     yield
     await ws_bus.stop()
     bloom_task.cancel()
     intel_task.cancel()
     plugin_sync_task.cancel()
     security_log_task.cancel()
-    for task in (bloom_task, intel_task, plugin_sync_task, security_log_task):
+    retention_task.cancel()
+    for task in (bloom_task, intel_task, plugin_sync_task, security_log_task, retention_task):
         try:
             await task
         except asyncio.CancelledError:
