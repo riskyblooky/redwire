@@ -42,10 +42,10 @@ export function useGlobalPermission(permission: string): boolean {
     const { user } = useAuthStore();
     const { data: permissions = [], isLoading } = useGlobalPermissionsQuery();
 
-    // Admins and Team Leads have all permissions
-    if (user?.role === 'admin' || user?.role === 'read_only_admin' || user?.role === 'team_lead') {
-        return true;
-    }
+    // Only full admins hold every global permission. Read-only admins get the
+    // view_* ones and team leads only what a group grants — the backend's
+    // /users/me/permissions reports exactly that, so trust it.
+    if (user?.role === 'admin') return true;
 
     if (isLoading) return false;
 
@@ -90,8 +90,9 @@ export function usePermission(engagementId: string | undefined, permission: stri
     const { user } = useAuthStore();
     const { data: permissions = [], isLoading } = useEngagementPermissions(engagementId);
 
-    // Admins and Team Leads have all permissions
-    if (user?.role === 'admin' || user?.role === 'read_only_admin' || user?.role === 'team_lead') {
+    // Admins and Team Leads have all permissions. Read-only admins don't —
+    // /my-permissions returns their real (view-only + granted) set.
+    if (user?.role === 'admin' || user?.role === 'team_lead') {
         return true;
     }
 
@@ -123,8 +124,9 @@ export function usePermissions(
         return {};
     }
 
-    // Admins and Team Leads have all permissions
-    if (user?.role === 'admin' || user?.role === 'read_only_admin' || user?.role === 'team_lead') {
+    // Admins and Team Leads have all permissions. Read-only admins don't —
+    // /my-permissions returns their real (view-only + granted) set.
+    if (user?.role === 'admin' || user?.role === 'team_lead') {
         return permissionList.reduce((acc, perm) => ({ ...acc, [perm]: true }), {});
     }
 

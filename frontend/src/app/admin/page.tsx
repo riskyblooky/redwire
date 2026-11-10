@@ -118,7 +118,8 @@ export default function AdminPage() {
     const show = (tab: string) => canSeeAdminTab(tab, isAdminView, myPerms);
     // Write controls on the Operators tab require MANAGE_USERS (a viewer with
     // only VIEW_ALL_USERS sees the list but not the create/edit/delete actions).
-    const canManageUsers = isAdminView || myPerms.includes('manage_users');
+    // Read-only admins see the tab but can't write (the API refuses them).
+    const canManageUsers = user?.role === UserRole.ADMIN || myPerms.includes('manage_users');
     // Land on the requested tab only if the user can see it; otherwise the first
     // tab they can (delegated permission-holders won't have 'users').
     const requestedTab = searchParams?.get('tab') || 'users';

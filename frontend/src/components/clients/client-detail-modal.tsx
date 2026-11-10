@@ -37,7 +37,7 @@ import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-di
 import { useClientAccess, useGrantClientAccess, useRevokeClientAccess, ClientAccessUser } from '@/lib/hooks/use-clients';
 import { useUsers } from '@/lib/hooks/use-users';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { useAuthStore } from '@/stores/auth-store';
+import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
 
@@ -85,10 +85,12 @@ export function ClientDetailModal({
     allClients = [],
 }: ClientDetailModalProps) {
     const [selectedUserId, setSelectedUserId] = useState<string>('');
-    const user = useAuthStore((s) => s.user);
-    const isAdmin = user?.role === 'admin' || user?.role === 'read_only_admin' || user?.role === 'team_lead';
+    // Every /clients/{id}/access route requires manage_client_access (admins
+    // hold it; RO admins and team leads only via a group), so gate on that
+    // rather than the role — otherwise they'd see a section that only 403s.
+    const isAdmin = useGlobalPermission('manage_client_access');
 
-    const { data: directAccess = [], isLoading: accessLoading } = useClientAccess(open && client ? client.id : null);
+    const { data: directAccess = [], isLoading: accessLoading } = useClientAccess(open && client && isAdmin ? client.id : null);
     const { data: allUsers = [] } = useUsers();
     const grantAccess = useGrantClientAccess();
     const revokeAccess = useRevokeClientAccess();

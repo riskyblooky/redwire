@@ -140,6 +140,10 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Read-only admins and team leads no longer see write buttons the server
+  refuses: the permission lists the UI reads now match what the API
+  enforces (read-only admins hold view permissions plus explicit grants;
+  team leads hold only group-granted global permissions).
 - The finding and test-case edit pages no longer discard unsaved changes
   (and silently disarm the leave-page warning) when the record reloads,
   e.g. after a comment or a teammate's edit.

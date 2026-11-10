@@ -60,32 +60,12 @@ async def get_my_global_permissions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get current user's global permissions from group memberships."""
-    from models.permission import Permission, GroupPermissions, GLOBAL_PERMISSIONS
-    from models.group import Group, user_groups
-
-    # Admins get all global permissions
-    if current_user.role == UserRole.ADMIN:
-        return [p.value for p in GLOBAL_PERMISSIONS]
-
-    # Query all groups the user belongs to
-    query = (
-        select(GroupPermissions.permissions)
-        .join(Group, GroupPermissions.group_id == Group.id)
-        .join(user_groups, Group.id == user_groups.c.group_id)
-        .where(user_groups.c.user_id == current_user.id)
-    )
-    result = await db.execute(query)
-    all_group_permissions = result.scalars().all()
-
-    permissions_set = set()
-    for group_perms in all_group_permissions:
-        if group_perms:
-            permissions_set.update(group_perms)
-
-    # Only return global permissions (filter out any engagement-scoped ones)
-    global_values = {p.value for p in GLOBAL_PERMISSIONS}
-    return sorted(permissions_set & global_values)
+    """The caller's effective global permissions — exactly what
+    has_global_permission enforces (ADMIN: all; READ_ONLY_ADMIN: the view
+    permissions plus group grants; everyone else, TEAM_LEAD included: group
+    grants), so the UI never offers an action the API will refuse."""
+    from auth.permissions import global_permission_set
+    return sorted(await global_permission_set(current_user, db))
 
 
 # In-memory throttle: only write last_active once per user per interval, even if
