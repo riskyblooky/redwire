@@ -1100,6 +1100,15 @@ def _apply_assignment_scope(query, req: QueryPreviewRequest, current_user: User)
         return query.where(model.id.in_(eng_sq))
     if hasattr(model, "engagement_id"):
         return query.where(model.engagement_id.in_(eng_sq))
+    # Child tables with no engagement_id of their own scope through their
+    # parent (otherwise this returned the query unscoped — every
+    # engagement's spray results / comments).
+    if req.table == "spray_results":
+        return query.where(model.campaign_id.in_(
+            select(SprayCampaign.id).where(SprayCampaign.engagement_id.in_(eng_sq))))
+    if req.table == "comments":
+        return query.where(model.thread_id.in_(
+            select(Thread.id).where(Thread.engagement_id.in_(eng_sq))))
     return query
 
 

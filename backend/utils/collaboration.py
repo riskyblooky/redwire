@@ -415,25 +415,30 @@ async def create_activity_log(
         return  # Don't run side-effects if we can't even log
 
     # ── 2. WebSocket broadcasts ────────────────────────────────────────
-    try:
-        event_payload = {
-            "type": "activity_log",
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "resource_name": resource_name,
-            "user_id": user_id,
-            "engagement_id": engagement_id,
-            "details": details,
-        }
-        await manager.broadcast_to_resource("engagement", engagement_id, event_payload)
-        # dashboard:global is open to any authenticated subscriber, so pass
-        # db down — broadcast_to_resource will filter recipients by
-        # ENGAGEMENT_VIEW membership against this event's engagement_id.
-        await manager.broadcast_to_resource("dashboard", "global", event_payload, db=db)
-        await manager.broadcast_to_resource("dashboard", engagement_id, event_payload)
-    except Exception as e:
-        print(f"[ActivityLog] Broadcast error (non-fatal): {e}")
+    # Only engagement events go out live. With no engagement there is
+    # nothing to gate recipients on, and dashboard:global would hand an
+    # account-security or admin-settings event (recovery codes used, stats
+    # scope changed, …) to every logged-in user. Those stay in the audit log.
+    if engagement_id:
+        try:
+            event_payload = {
+                "type": "activity_log",
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "resource_name": resource_name,
+                "user_id": user_id,
+                "engagement_id": engagement_id,
+                "details": details,
+            }
+            await manager.broadcast_to_resource("engagement", engagement_id, event_payload)
+            # dashboard:global is open to any authenticated subscriber, so pass
+            # db down — broadcast_to_resource will filter recipients by
+            # ENGAGEMENT_VIEW membership against this event's engagement_id.
+            await manager.broadcast_to_resource("dashboard", "global", event_payload, db=db)
+            await manager.broadcast_to_resource("dashboard", engagement_id, event_payload)
+        except Exception as e:
+            print(f"[ActivityLog] Broadcast error (non-fatal): {e}")
 
     # ── 3. Plugin event bus ────────────────────────────────────────────
     try:

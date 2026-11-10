@@ -7,20 +7,41 @@ Provides:
   POST /plugins/shodan-enricher/enrich/{asset_id} — Manually trigger enrichment
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from auth.dependencies import get_current_user
 from models.user import User
 from database import AsyncSessionLocal
+from rate_limit import limiter
 
 router = APIRouter()
 
+# Each call spends Shodan API quota (the plugin's MAX_ENRICHMENTS_PER_MINUTE
+# setting governs the auto-enricher; this caps the manual routes).
+_SHODAN_RATE = "10/minute"
+
+
+async def require_lookup_access(user: User) -> None:
+    """A free-text lookup spends Shodan quota with no asset (so no
+    engagement) to check: allow it for anyone who can create assets in some
+    engagement, refuse view-only accounts. (Kept local — plugins are
+    drop-in and must not import each other.)"""
+    from auth.permissions import engagement_permission_ceiling
+    from models.permission import Permission
+    async with AsyncSessionLocal() as db:
+        if Permission.ASSET_CREATE.value in await engagement_permission_ceiling(user, db):
+            return
+    raise HTTPException(403, "Lookups require the asset_create permission in an engagement.")
+
 
 @router.get("/lookup/{ip}")
+@limiter.limit(_SHODAN_RATE)
 async def shodan_lookup(
+    request: Request,
     ip: str,
     current_user: User = Depends(get_current_user),
 ):
     """Look up an IP address on Shodan. Returns host data."""
+    await require_lookup_access(current_user)
     from models.plugin import PluginSetting
     from sqlalchemy import select
 
@@ -56,7 +77,9 @@ async def enrichment_stats(
 
 
 @router.post("/enrich/{asset_id}")
+@limiter.limit(_SHODAN_RATE)
 async def manual_enrich(
+    request: Request,
     asset_id: str,
     current_user: User = Depends(get_current_user),
 ):

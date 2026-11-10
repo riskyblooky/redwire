@@ -100,12 +100,15 @@ async def test_shodan_manual_enrich_route(db_session, make_user, shared_factory,
         return {"ip": ip, "ports": [], "vulns": []}
     monkeypatch.setattr(enr_mod.ShodanEnricher, "lookup", fake_lookup)
 
-    out = await shodan_router.manual_enrich(a.id, current_user=admin)  # used to 500 on asset.hostname
+    # __wrapped__: the handler behind the slowapi rate-limit decorator (which
+    # insists on a real Request).
+    enrich = shodan_router.manual_enrich.__wrapped__
+    out = await enrich(None, a.id, current_user=admin)  # used to 500 on asset.hostname
     assert out["ip"] == "203.0.113.7"
 
     outsider = await make_user(role="operator", username=f"out_{uuid.uuid4().hex[:6]}")
     with pytest.raises(Exception) as exc:
-        await shodan_router.manual_enrich(a.id, current_user=outsider)
+        await enrich(None, a.id, current_user=outsider)
     assert getattr(exc.value, "status_code", None) == 404
 
 

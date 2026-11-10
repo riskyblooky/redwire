@@ -7,12 +7,26 @@ Provides:
   GET /plugins/servicenow-cmdb/enrichment/{asset_id}   — Get stored enrichment data for an asset
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from auth.dependencies import get_current_user
 from models.user import User
 from database import AsyncSessionLocal
+from rate_limit import limiter
 
 router = APIRouter()
+
+
+async def require_lookup_access(user: User) -> None:
+    """Free-text lookups spend the integration's credentials / quota on an
+    arbitrary query, with no asset (and so no engagement) to check. Allow
+    them for anyone who can create assets in some engagement — the people
+    doing recon — and refuse view-only accounts."""
+    from auth.permissions import engagement_permission_ceiling
+    from models.permission import Permission
+    async with AsyncSessionLocal() as db:
+        if Permission.ASSET_CREATE.value in await engagement_permission_ceiling(user, db):
+            return
+    raise HTTPException(403, "Lookups require the asset_create permission in an engagement.")
 
 
 async def _viewable_asset(asset_id: str, user: User):
@@ -76,12 +90,15 @@ async def _get_client():
 
 
 @router.get("/lookup/{query}")
+@limiter.limit("20/minute")
 async def lookup_cmdb(
+    request: Request,
     query: str,
     limit: int = 10,
     current_user: User = Depends(get_current_user),
 ):
     """Search ServiceNow CMDB for Configuration Items matching the query."""
+    await require_lookup_access(current_user)
     client = await _get_client()
     result = await client.lookup(query, limit=min(limit, 50))
 
@@ -92,7 +109,9 @@ async def lookup_cmdb(
 
 
 @router.get("/asset/{asset_id}")
+@limiter.limit("20/minute")
 async def lookup_asset(
+    request: Request,
     asset_id: str,
     current_user: User = Depends(get_current_user),
 ):

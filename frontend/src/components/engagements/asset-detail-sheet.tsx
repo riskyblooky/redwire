@@ -38,7 +38,7 @@ import { toast } from 'sonner';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { UserName } from '@/components/ui/user-name';
 import Link from 'next/link';
-import { apiErrorMessage } from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 import { useEngagement } from '@/lib/hooks/use-engagements';
 import { useAuthStore } from '@/stores/auth-store';
 import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
@@ -148,9 +148,10 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
         if (!assetId || !open) { setSnowData(null); return; }
         let cancelled = false;
         setSnowLoading(true);
-        fetch(`/api/plugins/servicenow-cmdb/enrichment/${assetId}`, { credentials: 'include' })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => { if (!cancelled) setSnowData(d?.enrichment ?? null); })
+        // Through the shared axios instance — a bare fetch() carried no
+        // Authorization header, so this always 401'd and never showed data.
+        api.get(`/plugins/servicenow-cmdb/enrichment/${assetId}`)
+            .then(r => { if (!cancelled) setSnowData(r.data?.enrichment ?? null); })
             .catch(() => { if (!cancelled) setSnowData(null); })
             .finally(() => { if (!cancelled) setSnowLoading(false); });
         return () => { cancelled = true; };

@@ -298,29 +298,8 @@ async def _execute_notify_users(
     if not link:
         link = _build_resource_link(context)
 
-    async def _can_see_engagement(uid: str) -> bool:
-        """Mirror the read-side gate: admin/lead bypass, VIEW_ALL_ENGAGEMENTS
-        bypass, otherwise engagement_view on this engagement."""
-        if not event_engagement_id:
-            return True
-        try:
-            user = (
-                await db.execute(select(User).where(User.id == uid))
-            ).scalar_one_or_none()
-            if user is None:
-                return False
-            if user.role in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
-                return True
-            if await has_global_permission(user, Permission.VIEW_ALL_ENGAGEMENTS, db):
-                return True
-            return await check_engagement_permission(
-                uid, event_engagement_id, Permission.ENGAGEMENT_VIEW.value, db
-            )
-        except Exception:
-            return False  # fail closed
-
     for uid in user_ids:
-        if not await _can_see_engagement(uid):
+        if not await _recipient_can_see_engagement(db, uid, event_engagement_id):
             continue
         # Bypass the default "don't ping the actor about their own
         # action" self-suppression in two cases:
@@ -346,6 +325,31 @@ async def _execute_notify_users(
         )
 
 
+async def _recipient_can_see_engagement(db: AsyncSession, uid: str, engagement_id) -> bool:
+    """Mirror the read-side gate before notifying someone about an
+    engagement event: admin/lead bypass, VIEW_ALL_ENGAGEMENTS bypass,
+    otherwise engagement_view on this engagement. No engagement → no gate."""
+    from auth.rbac import check_engagement_permission
+    from auth.permissions import has_global_permission
+    from models.permission import Permission
+    from models.user import User, UserRole
+    if not engagement_id:
+        return True
+    try:
+        user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
+        if user is None:
+            return False
+        if user.role in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
+            return True
+        if await has_global_permission(user, Permission.VIEW_ALL_ENGAGEMENTS, db):
+            return True
+        return await check_engagement_permission(
+            uid, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+        )
+    except Exception:
+        return False  # fail closed
+
+
 async def _execute_notify_role(
     db: AsyncSession, action: dict, context: Dict[str, Any], rule_name: str
 ):
@@ -365,6 +369,10 @@ async def _execute_notify_role(
     user_ids = [r[0] for r in result.all()]
 
     for uid in user_ids:
+        # Same visibility gate as notify_user: a role-wide fire must not tell
+        # members of that role about an engagement they can't see.
+        if not await _recipient_can_see_engagement(db, uid, context.get("engagement_id")):
+            continue
         await create_notification(
             db=db,
             user_id=uid,

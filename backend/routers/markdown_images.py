@@ -4,8 +4,8 @@ Two endpoints — upload and fetch — both auth-required and scoped by
 engagement. The frontend's tiptap editor calls POST on paste/drop, then
 embeds the image as a `/api/markdown-images/{id}` URL.
 
-Permission model: an authenticated caller can upload to any engagement
-they have view access to (admins always pass). Fetching the image bytes
+Permission model: uploading to an engagement needs a write permission there
+(any non-view one; admins and team leads always pass). Fetching the image bytes
 re-checks engagement view permission, so a user removed from an
 engagement loses access to its markdown images.
 
@@ -69,6 +69,22 @@ async def _check_engagement_view(user: User, engagement_id: str, db: AsyncSessio
         )
 
 
+async def _check_engagement_write(user: User, engagement_id: str, db: AsyncSession) -> None:
+    """Uploading is a write: the caller must hold some non-view permission
+    on the engagement (images are pasted into findings, test cases, notes,
+    discussions … each with its own create/edit permission). View-only
+    members — and read-only admins without a grant — can still fetch."""
+    if user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD):
+        return
+    from auth.permissions import get_user_engagement_permissions
+    perms = await get_user_engagement_permissions(user.id, engagement_id, db)
+    if not any(not (p.startswith("view_") or p.endswith("_view")) for p in perms):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to edit content in this engagement",
+        )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 @limiter.limit("60/minute")
 async def upload_markdown_image(
@@ -92,7 +108,7 @@ async def upload_markdown_image(
         eng_result = await db.execute(select(Engagement).where(Engagement.id == engagement_id))
         if eng_result.scalar_one_or_none() is None:
             raise HTTPException(404, "Engagement not found")
-        await _check_engagement_view(current_user, engagement_id, db)
+        await _check_engagement_write(current_user, engagement_id, db)
 
     content_type = (file.content_type or "").lower()
     if content_type not in _ALLOWED_TYPES:

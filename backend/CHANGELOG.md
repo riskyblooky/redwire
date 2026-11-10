@@ -132,6 +132,14 @@ section becomes one release entry.
   also opened it in a new tab on RedWire's own origin, where an HTML or SVG
   file could run script. It is now only saved, as a generic binary, and the
   temporary URL is released.
+- **Low-severity permission gaps closed.** Dashboard widgets on spray
+  results and comments are now scoped to the viewer's engagements; the
+  automation "notify role" action skips members who can't see the event's
+  engagement; plugin CMDB / Shodan free-text lookups need asset-create
+  permission in some engagement and are rate-limited; activity entries with
+  no engagement (2FA recovery-code use, admin settings) are no longer pushed
+  live to every logged-in user; and uploading a markdown image into an
+  engagement needs a write permission there, not just view.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is
