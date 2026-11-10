@@ -887,14 +887,18 @@ export function VaultTab({ engagementId }: VaultTabProps) {
             const response = await api.get(`/vault/download/${itemId}`, {
                 responseType: 'blob'
             });
-            const url = window.URL.createObjectURL(new Blob([response.data]));
+            // Save only — never render. An octet-stream blob can't be sniffed
+            // into HTML/SVG on the app's origin (the old extra window.open of
+            // this URL could run a stored file's script), and the URL is
+            // revoked once the click has started the download.
+            const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/octet-stream' }));
             const link = document.createElement('a');
             link.href = url;
             link.setAttribute('download', filename);
             document.body.appendChild(link);
             link.click();
-            window.open(url, '_blank');
             link.remove();
+            setTimeout(() => window.URL.revokeObjectURL(url), 1_000);
         } catch (error) {
             console.error('Download failed:', error);
             toast.error('Failed to download file securely');

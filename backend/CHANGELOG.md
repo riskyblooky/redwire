@@ -128,6 +128,10 @@ section becomes one release entry.
   and saving until they closed the page. Open sessions now re-check
   access every 15 seconds and before every save. Losing edit rights
   turns the editor read-only, and losing view access closes it.
+- **Vault file downloads are never rendered.** Downloading a vault file
+  also opened it in a new tab on RedWire's own origin, where an HTML or SVG
+  file could run script. It is now only saved, as a generic binary, and the
+  temporary URL is released.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is
