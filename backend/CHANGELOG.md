@@ -140,6 +140,13 @@ section becomes one release entry.
   no engagement (2FA recovery-code use, admin settings) are no longer pushed
   live to every logged-in user; and uploading a markdown image into an
   engagement needs a write permission there, not just view.
+- **Evidence uploads follow one set of rules.** Replacing an evidence file
+  is size-capped and its type comes from the file extension, not the
+  client (as on the original upload); engagement-archive import does the
+  same and cleans the stored filename; saving a report to an engagement
+  needs evidence-create permission, is size-capped and cleans the filename.
+  New evidence can no longer be uploaded to, or re-linked into, a VERIFIED
+  finding.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is
@@ -148,6 +155,8 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- Read-only admins can download evidence (the download-token step refused
+  them) and see an engagement's scan import history.
 - Read-only admins and team leads no longer see write buttons the server
   refuses: the permission lists the UI reads now match what the API
   enforces (read-only admins hold view permissions plus explicit grants;

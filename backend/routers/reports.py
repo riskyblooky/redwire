@@ -87,7 +87,7 @@ from models.permission import Permission
 from models.user import UserRole
 from utils.report_generator import PDFReportGenerator, MarkdownReportGenerator, HTMLReportGenerator
 from utils.storage import storage_service
-from utils.uploads import safe_content_type, content_disposition_attachment
+from utils.uploads import safe_content_type, content_disposition_attachment, read_upload_capped, sanitize_original_filename, MAX_EVIDENCE_BYTES
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -681,24 +681,28 @@ async def save_report_to_engagement(
             detail="Engagement not found",
         )
 
-    # 2. Permission check (same as report generation)
+    # 2. Permission check: generating the report AND adding an attachment
+    # (it lands as Evidence, so EVIDENCE_CREATE applies as for any upload).
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id,
-            engagement_id,
-            Permission.REPORT_GENERATE.value,
-            db,
-        )
+        has_permission = all([
+            await check_engagement_permission(current_user.id, engagement_id, perm.value, db)
+            for perm in (Permission.REPORT_GENERATE, Permission.EVIDENCE_CREATE)
+        ])
         if not has_permission:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions to save reports for this engagement.",
             )
 
-    # 3. Read file content
-    content = await file.read()
+    # 3. Read file content (capped like any evidence upload) and clean the
+    # client-supplied name before it's stored or displayed.
+    content = await read_upload_capped(
+        file, MAX_EVIDENCE_BYTES,
+        detail=f"Report exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    )
     file_size = len(content)
+    filename = sanitize_original_filename(filename, "report")
 
     # 4. Upload to MinIO
     ext = os.path.splitext(filename)[1] if filename else ""

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Query, UploadFile, File as FastAPIFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from utils.uploads import content_disposition_attachment
+from utils.uploads import content_disposition_attachment, read_upload_capped, safe_content_type, MAX_EVIDENCE_BYTES
 from sqlalchemy import select
 from typing import List, Optional
 import logging
@@ -75,6 +75,23 @@ async def _assert_evidence_mutable(
             status_code=status.HTTP_409_CONFLICT,
             detail="Evidence is locked: parent finding is VERIFIED",
         )
+
+async def assert_finding_accepts_evidence(
+    db: AsyncSession, finding_id: str, current_user: User, action: str
+) -> None:
+    """New evidence can't be attached to a VERIFIED finding — the same
+    chain-of-custody property as _assert_evidence_mutable, from the other
+    side: what was verified is what the report proves."""
+    result = await db.execute(select(Finding.status).where(Finding.id == finding_id))
+    if result.scalar_one_or_none() == FindingStatus.VERIFIED:
+        logger.warning(
+            "Blocked %s into VERIFIED finding %s by user %s", action, finding_id, current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Finding is VERIFIED: move it back to another status to add evidence.",
+        )
+
 
 @router.get("/{evidence_id}", response_model=EvidenceResponse)
 async def get_evidence(
@@ -179,16 +196,16 @@ async def update_evidence(
     if EVIDENCE_COC_LOCKED_FIELDS.intersection(update_data):
         await _assert_evidence_mutable(db, evidence, current_user, "metadata-edit")
 
-    # Build specific change details before applying updates
+    # Change summary: parts are collected as each field is applied, and the
+    # message is assembled after the last one (it used to be built here,
+    # before the classification / link parts were added, so those never
+    # appeared in the activity log).
     change_parts = []
     if "description" in update_data:
         change_parts.append("description")
     if "include_in_report" in update_data:
         old_include = getattr(evidence, "include_in_report", None)
         change_parts.append(f"include in report: {str(old_include).lower()} → {str(update_data['include_in_report']).lower()}")
-    change_details = f"Updated evidence '{evidence.original_filename}'"
-    if change_parts:
-        change_details += f" — {', '.join(change_parts)}"
 
     if "description" in update_data:
         evidence.description = update_data["description"]
@@ -227,6 +244,9 @@ async def update_evidence(
             if eng_id and target_eng != eng_id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Finding belongs to a different engagement.")
             evidence.engagement_id = evidence.engagement_id or target_eng
+            if new_finding_id != evidence.finding_id:
+                # Linking INTO a verified finding changes its proof too.
+                await assert_finding_accepts_evidence(db, new_finding_id, current_user, "relink")
         if new_testcase_id:
             res = await db.execute(select(TestCase.engagement_id).where(TestCase.id == new_testcase_id))
             target_eng = res.scalar_one_or_none()
@@ -241,6 +261,9 @@ async def update_evidence(
         change_parts.append("link")
 
     evidence.updated_by = current_user.id
+    change_details = f"Updated evidence '{evidence.original_filename}'"
+    if change_parts:
+        change_details += f" — {', '.join(change_parts)}"
     
     await db.commit()
     
@@ -397,8 +420,14 @@ async def replace_evidence_file(
     await _assert_evidence_mutable(db, evidence, current_user, "replace-file")
 
     # Read file content and overwrite in storage using the same key
-    file_content = await file.read()
-    content_type = file.content_type or evidence.mime_type or "application/octet-stream"
+    # Same rules as the original upload: size-capped, and the type comes
+    # from the stored file's extension, never the client's Content-Type
+    # (which could flip an image into inline-rendered HTML).
+    file_content = await read_upload_capped(
+        file, MAX_EVIDENCE_BYTES,
+        detail=f"Evidence upload exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    )
+    content_type = safe_content_type(evidence.filename)
 
     await storage_service.upload_file(file_content, evidence.filename, content_type)
 
@@ -540,8 +569,8 @@ async def create_evidence_download_token(
 
     # Mirror the same authorization the download route enforces — issuing
     # a token to a caller who can't use the underlying file would be a
-    # capability leak.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
+    # capability leak. A read, so READ_ONLY_ADMIN is in (as on /download).
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     if not is_admin:
         eng_id = await get_evidence_engagement_id(evidence, db)
         if eng_id and not await check_engagement_permission(

@@ -508,7 +508,10 @@ async def list_scan_imports(
 ):
     """List past scanner imports for an engagement (most recent first), with the
     command line + scan metadata captured at import time."""
-    await _check_import_permission(current_user, engagement_id, db)
+    # A read: ASSET_VIEW (read-only admins included), not the import write gate.
+    if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD) \
+            and not await check_engagement_permission(current_user.id, engagement_id, Permission.ASSET_VIEW.value, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions for this engagement.")
 
     limit = max(1, min(limit, 200))
     rows = (await db.execute(

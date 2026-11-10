@@ -1105,6 +1105,13 @@ async def upload_evidence(
                     detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this finding."
                 )
 
+    if finding.status == FindingStatus.VERIFIED:
+        # Chain of custody: what was verified is what the report proves.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Finding is VERIFIED: move it back to another status to add evidence.",
+        )
+
     content = await read_upload_capped(
         file, MAX_EVIDENCE_BYTES,
         detail=f"Evidence upload exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",

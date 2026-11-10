@@ -16,7 +16,7 @@ from auth.permissions import has_global_permission
 from models.permission import Permission
 from models.user import User, UserRole
 from utils.storage import storage_service
-from utils.uploads import read_upload_capped, content_disposition_attachment
+from utils.uploads import read_upload_capped, content_disposition_attachment, safe_content_type, sanitize_original_filename
 # Note: vault secret columns are encrypted at rest via the EncryptedText
 # column type — reads come back as plaintext, writes encrypt on bind.
 # Export and import paths therefore pass plain str values; no per-call
@@ -1459,13 +1459,19 @@ async def import_engagement(
             old_path = ev.get("file_path", "")
             ext = os.path.splitext(old_path)[1] if old_path else ""
             new_storage_name = f"{uuid.uuid4()}{ext}"
+            # The bundle's mime_type is attacker-supplied (text/html on a
+            # .png would render inline): derive it from the extension, as a
+            # direct upload does.
+            ev_mime = safe_content_type(new_storage_name)
+            file_size = ev.get("file_size", 0)
 
             # Upload file from ZIP to MinIO
             zip_path = f"attachments/{old_path}"
             if old_path and zip_path in zf.namelist():
                 file_bytes = _read_member_safely(zf, zip_path)
+                file_size = len(file_bytes)
                 try:
-                    await storage_service.upload_file(file_bytes, new_storage_name, content_type=ev.get("mime_type"))
+                    await storage_service.upload_file(file_bytes, new_storage_name, content_type=ev_mime)
                 except Exception:
                     # GHSA-rcjp-27mp-v69m: never fall back to the bundle-supplied
                     # path — that would persist an attacker-controlled storage
@@ -1478,10 +1484,10 @@ async def import_engagement(
                 testcase_id=remap(ev.get("testcase_id")),
                 engagement_id=eng_new_id,
                 filename=new_storage_name,
-                original_filename=ev.get("original_filename", "unknown"),
+                original_filename=sanitize_original_filename(ev.get("original_filename"), "unknown"),
                 file_path=new_storage_name,
-                file_size=ev.get("file_size", 0),
-                mime_type=ev.get("mime_type"),
+                file_size=file_size,
+                mime_type=ev_mime,
                 description=ev.get("description"),
                 include_in_report=ev.get("include_in_report", True),
                 created_by=resolve_user(ev.get("created_by")),
