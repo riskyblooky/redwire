@@ -12,7 +12,7 @@ from models.testcase import TestCase
 from models.asset import Asset
 from schemas.cleanup_artifact import CleanupArtifactCreate, CleanupArtifactUpdate, CleanupArtifactResponse
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, require_engagement_perm
 from models.permission import Permission
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from sqlalchemy.orm import selectinload
@@ -74,16 +74,7 @@ async def get_cleanup_artifacts(
     current_user: User = Depends(get_current_user),
 ):
     """Get all cleanup artifacts for an engagement."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.CLEANUP_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'cleanup_view' permission.",
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.CLEANUP_VIEW, db)
 
     result = await db.execute(
         select(CleanupArtifact, User.username.label("creator_username"), User.full_name.label("creator_full_name"), User.profile_photo.label("creator_profile_photo"))
@@ -152,16 +143,7 @@ async def create_cleanup_artifact(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new cleanup artifact."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, data.engagement_id, Permission.CLEANUP_CREATE.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'cleanup_create' permission.",
-            )
+    await require_engagement_perm(current_user, data.engagement_id, Permission.CLEANUP_CREATE, db)
 
     db_item = CleanupArtifact(
         **data.model_dump(),

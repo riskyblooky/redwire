@@ -10,7 +10,7 @@ from models.user import User
 from models.testcase import TestCase
 from schemas.testcase import TestCaseCreate, TestCaseUpdate, TestCaseResponse
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission, is_engagement_member
+from auth.rbac import check_engagement_permission, has_engagement_perm, is_engagement_member, require_engagement_perm, require_owned_perm
 from models.user import UserRole
 from models.permission import Permission
 import uuid
@@ -275,23 +275,8 @@ async def update_testcase(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = db_testcase.created_by == current_user.id
-    
-    if not is_admin:
-        if is_owner:
-            # Owner needs base edit permission
-            has_permission = await check_engagement_permission(current_user.id, db_testcase.engagement_id, Permission.TESTCASE_EDIT.value, db)
-        else:
-            # Non-owner needs edit_any permission
-            has_permission = await check_engagement_permission(current_user.id, db_testcase.engagement_id, Permission.TESTCASE_EDIT_ANY.value, db)
-        
-        if not has_permission:
-            required_perm = Permission.TESTCASE_EDIT.value if is_owner else Permission.TESTCASE_EDIT_ANY.value
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this test case."
-            )
+    await require_owned_perm(current_user, db_testcase.engagement_id, db_testcase.created_by,
+                             Permission.TESTCASE_EDIT, Permission.TESTCASE_EDIT_ANY, db, action="modify this test case")
     
     # Update fields
     update_data = testcase_update.model_dump(exclude_unset=True, exclude={"tag_ids", "attack_technique_ids"})
@@ -396,16 +381,7 @@ async def get_testcase_versions(
     if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, tc.engagement_id, Permission.TESTCASE_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'testcase_view' permission to view test cases.",
-            )
+    await require_engagement_perm(current_user, tc.engagement_id, Permission.TESTCASE_VIEW, db, action="view test cases")
 
     versions = await db.execute(
         select(VersionHistory, User.username)
@@ -442,16 +418,7 @@ async def get_testcase_version(
     if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, tc.engagement_id, Permission.TESTCASE_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'testcase_view' permission to view test cases.",
-            )
+    await require_engagement_perm(current_user, tc.engagement_id, Permission.TESTCASE_VIEW, db, action="view test cases")
 
     result = await db.execute(
         select(VersionHistory, User.username)
@@ -547,23 +514,8 @@ async def delete_testcase(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = db_testcase.created_by == current_user.id
-    
-    if not is_admin:
-        if is_owner:
-            # Owner needs base delete permission
-            has_permission = await check_engagement_permission(current_user.id, db_testcase.engagement_id, Permission.TESTCASE_DELETE.value, db)
-        else:
-            # Non-owner needs delete_any permission
-            has_permission = await check_engagement_permission(current_user.id, db_testcase.engagement_id, Permission.TESTCASE_DELETE_ANY.value, db)
-        
-        if not has_permission:
-            required_perm = Permission.TESTCASE_DELETE.value if is_owner else Permission.TESTCASE_DELETE_ANY.value
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{required_perm}' permission to delete this test case."
-            )
+    await require_owned_perm(current_user, db_testcase.engagement_id, db_testcase.created_by,
+                             Permission.TESTCASE_DELETE, Permission.TESTCASE_DELETE_ANY, db, action="delete this test case")
     
     # Cascade: collect all descendant IDs and delete them too
     cascade_count = 0
@@ -572,12 +524,10 @@ async def delete_testcase(
         # gate per descendant that the direct-delete path enforces. Hoist the
         # _ANY lookup once — it is a static property of the (user, engagement)
         # pair within this request.
-        has_delete_any = False
-        if not is_admin:
-            has_delete_any = await check_engagement_permission(
-                current_user.id, db_testcase.engagement_id,
-                Permission.TESTCASE_DELETE_ANY.value, db,
-            )
+        # Admin / team lead pass via the role bypass inside the helper.
+        has_delete_any = await has_engagement_perm(
+            current_user, db_testcase.engagement_id, Permission.TESTCASE_DELETE_ANY, db,
+        )
 
         # BFS to find all descendants
         descendants = []
@@ -590,7 +540,7 @@ async def delete_testcase(
             )
             children = children_result.scalars().all()
             for child in children:
-                if not is_admin and child.created_by != current_user.id and not has_delete_any:
+                if child.created_by != current_user.id and not has_delete_any:
                     logger.warning(
                         "Blocked cascade delete by user %s: descendant %s authored by %s",
                         current_user.id, child.id, child.created_by,
@@ -972,13 +922,7 @@ async def _require_testcase(testcase_id: str, db: AsyncSession, current_user: Us
     if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
     # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, tc.engagement_id, Permission.TESTCASE_EDIT.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    await require_engagement_perm(current_user, tc.engagement_id, Permission.TESTCASE_EDIT, db)
     return tc
 
 

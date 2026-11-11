@@ -15,7 +15,7 @@ from models.vault import VaultItem
 from models.cleanup_artifact import CleanupArtifact
 from models.associations import NoteAsset, NoteTestCase, NoteFinding, NoteVaultItem, NoteCleanupArtifact
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, require_engagement_perm
 from models.permission import Permission
 from utils.collaboration import create_activity_log, manager
 
@@ -166,16 +166,7 @@ async def get_note(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, note.engagement_id, Permission.NOTE_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions."
-            )
+    await require_engagement_perm(current_user, note.engagement_id, Permission.NOTE_VIEW, db)
 
     # Get usernames and profile photo
     from models.user import User as UserModel
@@ -483,13 +474,7 @@ async def _get_note_with_perm_check(note_id: str, db: AsyncSession, current_user
         raise HTTPException(status_code=404, detail="Note not found")
 
     # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, note.engagement_id, Permission.NOTE_EDIT.value, db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions.")
+    await require_engagement_perm(current_user, note.engagement_id, Permission.NOTE_EDIT, db)
 
     return note
 

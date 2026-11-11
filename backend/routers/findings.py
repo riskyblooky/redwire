@@ -23,7 +23,7 @@ from models.evidence import Evidence
 from schemas.finding import FindingCreate, FindingUpdate, FindingResponse, TagResponse
 from schemas.evidence import EvidenceResponse
 from auth.dependencies import get_current_user
-from auth.rbac import can_modify_resource, check_engagement_permission, is_engagement_member
+from auth.rbac import can_modify_resource, check_engagement_permission, is_engagement_member, require_engagement_perm, require_owned_perm
 from models.user import UserRole
 from models.permission import Permission
 from utils.storage import storage_service
@@ -150,11 +150,7 @@ async def get_remediation_summary(
         raise HTTPException(status_code=404, detail="Engagement not found")
 
     # Gate the bulk read on FINDING_VIEW (admins bypass) — matches get_finding.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.FINDING_VIEW.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions to view this engagement's findings.")
+    await require_engagement_perm(current_user, engagement_id, Permission.FINDING_VIEW, db)
 
     # Fetch findings for engagement with assets eager-loaded
     findings_result = await db.execute(
@@ -863,16 +859,7 @@ async def get_finding_versions(
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, finding.engagement_id, Permission.FINDING_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'finding_view' permission to view findings.",
-            )
+    await require_engagement_perm(current_user, finding.engagement_id, Permission.FINDING_VIEW, db, action="view findings")
 
     versions = await db.execute(
         select(VersionHistory, User.username)
@@ -909,16 +896,7 @@ async def get_finding_version(
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, finding.engagement_id, Permission.FINDING_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'finding_view' permission to view findings.",
-            )
+    await require_engagement_perm(current_user, finding.engagement_id, Permission.FINDING_VIEW, db, action="view findings")
 
     result = await db.execute(
         select(VersionHistory, User.username)
@@ -1025,23 +1003,8 @@ async def delete_finding(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = finding.created_by == current_user.id
-   
-    if not is_admin:
-        if is_owner:
-            # Owner needs base delete permission
-            has_permission = await check_engagement_permission(current_user.id, finding.engagement_id, Permission.FINDING_DELETE.value, db)
-        else:
-            # Non-owner needs delete_any permission
-            has_permission = await check_engagement_permission(current_user.id, finding.engagement_id, Permission.FINDING_DELETE_ANY.value, db)
-        
-        if not has_permission:
-            required_perm = Permission.FINDING_DELETE.value if is_owner else Permission.FINDING_DELETE_ANY.value
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{required_perm}' permission to delete this finding."
-            )
+    await require_owned_perm(current_user, finding.engagement_id, finding.created_by,
+                             Permission.FINDING_DELETE, Permission.FINDING_DELETE_ANY, db, action="delete this finding")
     
     # Log activity before deletion
     await create_activity_log(
@@ -1243,13 +1206,7 @@ async def _require_finding(finding_id: str, db: AsyncSession, current_user: User
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
     # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, finding.engagement_id, Permission.FINDING_EDIT.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    await require_engagement_perm(current_user, finding.engagement_id, Permission.FINDING_EDIT, db)
     return finding
 
 

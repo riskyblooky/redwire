@@ -14,7 +14,7 @@ from schemas.engagement import (
     EngagementPhaseResponse, EngagementPhaseUpdate,
 )
 from auth.dependencies import get_current_user
-from auth.rbac import can_modify_resource
+from auth.rbac import can_modify_resource, require_engagement_perm
 
 from sqlalchemy.orm import selectinload
 from models.associations import EngagementAssignment
@@ -412,16 +412,7 @@ async def get_engagement_counts(
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'engagement_view' permission to view this engagement.",
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_VIEW, db, action="view this engagement")
 
     async def _count(model, *extra) -> int:
         stmt = select(func.count()).select_from(model).where(model.engagement_id == engagement_id, *extra)
@@ -476,16 +467,7 @@ async def get_engagement_note_links(
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'engagement_view' permission to view this engagement.",
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_VIEW, db, action="view this engagement")
 
     async def _links(resource_col, assoc_model) -> dict:
         rows = await db.execute(
@@ -524,16 +506,7 @@ async def get_engagement_intel_infra_links(
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'engagement_view' permission to view this engagement.",
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_VIEW, db, action="view this engagement")
 
     async def _map(resource_fk_col, item_link_col, item_model, label_col, label_key, resource_model) -> dict:
         rows = await db.execute(
@@ -1024,11 +997,7 @@ async def get_engagement_evidence(
         raise HTTPException(status_code=404, detail="Engagement not found")
         
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.EVIDENCE_VIEW.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions. You need the 'evidence_view' permission to view evidence.")
+    await require_engagement_perm(current_user, engagement_id, Permission.EVIDENCE_VIEW, db, action="view evidence")
 
     # Fetch evidence: directly linked OR linked to any finding in this engagement
     # Fetch evidence: directly linked OR linked to any finding in this engagement
@@ -1097,11 +1066,7 @@ async def upload_engagement_evidence(
 ):
     """Upload a general attachment for an engagement."""
     # Check if engagement exists and user has permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.EVIDENCE_CREATE.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions. You need the 'evidence_create' permission to upload to this engagement.")
+    await require_engagement_perm(current_user, engagement_id, Permission.EVIDENCE_CREATE, db, action="upload to this engagement")
 
     content = await read_upload_capped(
         file, MAX_EVIDENCE_BYTES,

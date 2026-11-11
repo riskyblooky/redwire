@@ -9,7 +9,7 @@ from models.evidence import Evidence
 from models.user import User, UserRole
 from schemas.evidence import EvidenceResponse
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import owned_perm, require_engagement_perm, role_bypasses
 from models.permission import Permission
 from utils.storage import storage_service
 from utils.collaboration import create_activity_log
@@ -93,6 +93,17 @@ async def assert_finding_accepts_evidence(
         )
 
 
+async def _require_evidence_perm(db, evidence, user, own_permission, any_permission=None, *, action):
+    """Evidence's permission check, via the shared rbac helpers: the
+    engagement is resolved from the evidence (or its finding / test case);
+    with ``any_permission`` it's the owner-vs-ANY check on created_by.
+    Evidence with no engagement is reachable only by the bypass roles."""
+    perm = owned_perm(user, evidence.created_by, own_permission, any_permission) if any_permission else own_permission
+    if role_bypasses(user, perm):
+        return
+    await require_engagement_perm(user, await get_evidence_engagement_id(evidence, db), perm, db, action=action)
+
+
 @router.get("/{evidence_id}", response_model=EvidenceResponse)
 async def get_evidence(
     evidence_id: str,
@@ -120,24 +131,7 @@ async def get_evidence(
 
     evidence, username, full_name, finding_title, finding_status, testcase_title = row
     
-    # Authorization Check using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_VIEW.value, db)
-            if not has_permission:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions. You need the 'evidence_view' permission to view evidence."
-                )
-        else:
-            # No engagement linked, restrict to admin
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to system file"
-            )
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_VIEW, action="view evidence")
     
     evidence.created_by_username = username
     evidence.created_by_full_name = full_name
@@ -164,31 +158,8 @@ async def update_evidence(
             detail="Evidence not found"
         )
     
-    # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = evidence.created_by == current_user.id
-    
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            if is_owner:
-                # Owner needs base edit permission
-                has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_EDIT.value, db)
-            else:
-                # Non-owner needs edit_any permission
-                has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_EDIT_ANY.value, db)
-            
-            if not has_permission:
-                required_perm = Permission.EVIDENCE_EDIT.value if is_owner else Permission.EVIDENCE_EDIT_ANY.value
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this evidence."
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to modify this evidence."
-            )
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_EDIT,
+                                 Permission.EVIDENCE_EDIT_ANY, action="modify this evidence")
     
     # GHSA-287x-h6p3-frfv follow-up: extend the chain-of-custody guard to
     # the metadata flags that drive report rendering. See
@@ -313,31 +284,8 @@ async def delete_evidence(
             detail="Evidence not found"
         )
     
-    # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = evidence.created_by == current_user.id
-    
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            if is_owner:
-                # Owner needs base delete permission
-                has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_DELETE.value, db)
-            else:
-                # Non-owner needs delete_any permission
-                has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_DELETE_ANY.value, db)
-            
-            if not has_permission:
-                required_perm = Permission.EVIDENCE_DELETE.value if is_owner else Permission.EVIDENCE_DELETE_ANY.value
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Insufficient permissions. You need the '{required_perm}' permission to delete this evidence."
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to delete this evidence."
-            )
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_DELETE,
+                                 Permission.EVIDENCE_DELETE_ANY, action="delete this evidence")
 
     await _assert_evidence_mutable(db, evidence, current_user, "delete")
 
@@ -393,29 +341,8 @@ async def replace_evidence_file(
             detail="Evidence not found"
         )
 
-    # Check permissions using RBAC (same as update_evidence)
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = evidence.created_by == current_user.id
-
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            if is_owner:
-                has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_EDIT.value, db)
-            else:
-                has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_EDIT_ANY.value, db)
-
-            if not has_permission:
-                required_perm = Permission.EVIDENCE_EDIT.value if is_owner else Permission.EVIDENCE_EDIT_ANY.value
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this evidence."
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to modify this evidence."
-            )
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_EDIT,
+                                 Permission.EVIDENCE_EDIT_ANY, action="modify this evidence")
 
     await _assert_evidence_mutable(db, evidence, current_user, "replace-file")
 
@@ -482,22 +409,7 @@ async def get_evidence_presigned_url(
             detail="Evidence not found"
         )
     
-    # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_VIEW.value, db)
-            if not has_permission:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions. You need the 'evidence_view' permission to access this file."
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to system file"
-            )
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_VIEW, action="access this file")
             
     url = storage_service.get_presigned_url(evidence.filename)
     return {"url": url}
@@ -570,19 +482,8 @@ async def create_evidence_download_token(
     # Mirror the same authorization the download route enforces — issuing
     # a token to a caller who can't use the underlying file would be a
     # capability leak. A read, so READ_ONLY_ADMIN is in (as on /download).
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id and not await check_engagement_permission(
-            current_user.id, eng_id, Permission.EVIDENCE_VIEW.value, db,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Insufficient permissions. You need the 'evidence_view' "
-                    "permission to download files from this engagement."
-                ),
-            )
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_VIEW,
+                                 action="download files from this engagement")
 
     dl_token = create_access_token(
         data={
@@ -613,26 +514,7 @@ async def download_evidence(
             detail="Evidence not found"
         )
     
-    # Security: Verify user has access to this engagement
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            # Security: Verify user has access to this engagement via permissions
-            has_permission = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_VIEW.value, db)
-            if not has_permission:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions. You need the 'evidence_view' permission to download files from this engagement."
-                )
-        else:
-            # If no engagement linked, default to admin-only or handle as needed
-            # For now, let's assume secure by default
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to system file"
-            )
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_VIEW, action="download files from this engagement")
     
     try:
         file_stream = await storage_service.get_file_stream(evidence.filename)
@@ -703,16 +585,7 @@ async def get_evidence_exif(
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
-    # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            has_perm = await check_engagement_permission(current_user.id, eng_id, Permission.EVIDENCE_VIEW.value, db)
-            if not has_perm:
-                raise HTTPException(status_code=403, detail="Insufficient permissions")
-        else:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_VIEW, action="access this file")
 
     # Only process images
     if not evidence.mime_type or not evidence.mime_type.startswith('image/'):
@@ -751,18 +624,8 @@ async def strip_evidence_exif(
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
-    # Check edit permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = evidence.created_by == current_user.id
-    if not is_admin:
-        eng_id = await get_evidence_engagement_id(evidence, db)
-        if eng_id:
-            perm = Permission.EVIDENCE_EDIT.value if is_owner else Permission.EVIDENCE_EDIT_ANY.value
-            has_perm = await check_engagement_permission(current_user.id, eng_id, perm, db)
-            if not has_perm:
-                raise HTTPException(status_code=403, detail=f"Insufficient permissions ({perm})")
-        else:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await _require_evidence_perm(db, evidence, current_user, Permission.EVIDENCE_EDIT,
+                                 Permission.EVIDENCE_EDIT_ANY, action="modify this evidence")
 
     await _assert_evidence_mutable(db, evidence, current_user, "strip-exif")
 

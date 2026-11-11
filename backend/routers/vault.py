@@ -20,7 +20,7 @@ from schemas.vault import (
     VaultItemRevealResponse,
 )
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, require_engagement_perm, require_owned_perm
 from models.permission import Permission
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.hash_utils import identify_hash_type
@@ -188,14 +188,7 @@ async def upload_vault_file(
 ):
     """Upload a sensitive file to the vault."""
     # Authorization Check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.VAULT_CREATE.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'vault_create' permission to upload files to the vault."
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.VAULT_CREATE, db, action="upload files to the vault")
 
     # Upload file to MinIO. Encrypt the content with the vault Fernet key
     # so files in object storage are protected at rest the same way the
@@ -265,21 +258,8 @@ async def update_vault_item(
             raise HTTPException(status_code=404, detail="Vault item not found")
 
         # Authorization Check using RBAC with ANY model
-        is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-        is_owner = item.created_by == current_user.id
-        
-        if not is_admin:
-            if is_owner:
-                has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
-            else:
-                has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT_ANY.value, db)
-            
-            if not has_permission:
-                required_perm = Permission.VAULT_EDIT.value if is_owner else Permission.VAULT_EDIT_ANY.value
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Insufficient permissions. You need the '{required_perm}' permission to edit this vault item."
-                )
+        await require_owned_perm(current_user, item.engagement_id, item.created_by,
+                                 Permission.VAULT_EDIT, Permission.VAULT_EDIT_ANY, db, action="edit this vault item")
 
         # Disallow changing type if it's a file
         if item.item_type == "File" and item_update.item_type and item_update.item_type != "File":
@@ -374,16 +354,7 @@ async def get_vault_item(
         raise HTTPException(status_code=404, detail="Vault item not found")
     item, creator_username, creator_profile_photo = row
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, item.engagement_id, Permission.VAULT_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'vault_view' permission to view vault items.",
-            )
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_VIEW, db, action="view vault items")
 
     return _build_metadata_response(item, creator_username, creator_profile_photo)
 
@@ -420,16 +391,7 @@ async def reveal_vault_item(
         raise HTTPException(status_code=404, detail="Vault item not found")
     item, creator_username, creator_profile_photo = row
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, item.engagement_id, Permission.VAULT_VIEW.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'vault_view' permission to reveal vault credentials.",
-            )
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_VIEW, db, action="reveal vault credentials")
 
     # The EncryptedText column type already returned plaintext from
     # the ORM read; metadata + reveal both consume the same values.
@@ -469,23 +431,8 @@ async def delete_vault_item(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # Authorization Check using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = item.created_by == current_user.id
-    
-    if not is_admin:
-        if is_owner:
-            # Owner needs base delete permission
-            has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_DELETE.value, db)
-        else:
-            # Non-owner needs delete_any permission
-            has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_DELETE_ANY.value, db)
-        
-        if not has_permission:
-            required_perm = Permission.VAULT_DELETE.value if is_owner else Permission.VAULT_DELETE_ANY.value
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{required_perm}' permission to delete this vault item."
-            )
+    await require_owned_perm(current_user, item.engagement_id, item.created_by,
+                             Permission.VAULT_DELETE, Permission.VAULT_DELETE_ANY, db, action="delete this vault item")
 
     # Delete file from MinIO if exists
     if item.file_path:
@@ -532,14 +479,7 @@ async def download_vault_file(
         raise HTTPException(status_code=404, detail="File not found in vault")
 
     # Authorization Check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_VIEW.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'vault_view' permission to access this file."
-            )
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_VIEW, db, action="access this file")
 
     if not item.file_path:
         raise HTTPException(status_code=404, detail="File content missing on server")
@@ -605,11 +545,7 @@ async def link_vault_to_finding(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions. You need 'vault_edit' permission.")
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_EDIT, db)
 
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()
@@ -653,11 +589,7 @@ async def unlink_vault_from_finding(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions. You need 'vault_edit' permission.")
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_EDIT, db)
 
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()
@@ -697,11 +629,7 @@ async def link_vault_to_testcase(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions. You need 'vault_edit' permission.")
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_EDIT, db)
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
     testcase = result.scalar_one_or_none()
@@ -745,11 +673,7 @@ async def unlink_vault_from_testcase(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions. You need 'vault_edit' permission.")
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_EDIT, db)
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
     testcase = result.scalar_one_or_none()
@@ -790,11 +714,7 @@ async def link_vault_to_asset(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions. You need 'vault_edit' permission.")
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_EDIT, db)
 
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalar_one_or_none()
@@ -838,11 +758,7 @@ async def unlink_vault_from_asset(
         raise HTTPException(status_code=404, detail="Vault item not found")
 
     # RBAC check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, item.engagement_id, Permission.VAULT_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions. You need 'vault_edit' permission.")
+    await require_engagement_perm(current_user, item.engagement_id, Permission.VAULT_EDIT, db)
 
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalar_one_or_none()

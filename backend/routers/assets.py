@@ -11,7 +11,7 @@ from models.asset import Asset
 from models.asset_port import AssetPort, PortProtocol, PortState
 from schemas.asset import AssetCreate, AssetUpdate, AssetResponse, AssetPortCreate, AssetPortUpdate, AssetPortResponse, AssetImportResult
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import require_engagement_perm, require_owned_perm
 from models.user import UserRole
 from models.permission import Permission
 import logging
@@ -322,16 +322,7 @@ async def import_assets(
 ):
     """Import assets from CSV, XLSX, or NMAP XML file."""
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.ASSET_CREATE.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to import assets.",
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.ASSET_CREATE, db, action="import assets")
 
     content = await read_upload_capped(
         file, MAX_ASSET_IMPORT_BYTES,
@@ -522,13 +513,7 @@ async def add_asset_port(
         raise HTTPException(status_code=404, detail="Asset not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, asset.engagement_id, Permission.ASSET_EDIT, db, action="modify this asset")
 
     # Check for duplicates
     existing = await db.execute(
@@ -576,13 +561,7 @@ async def update_asset_port(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, asset.engagement_id, Permission.ASSET_EDIT, db, action="modify this asset")
 
     update_data = port_data.model_dump(exclude_unset=True)
 
@@ -630,13 +609,7 @@ async def delete_asset_port(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, asset.engagement_id, Permission.ASSET_EDIT, db, action="modify this asset")
 
     await db.delete(db_port)
     await db.commit()
@@ -659,15 +632,7 @@ async def get_port_filters(
     # previously accepted no engagement_id (union across all tenants) or a
     # foreign engagement_id (no membership check), leaking cross-tenant
     # port/service inventory.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        if not await check_engagement_permission(
-            current_user.id, engagement_id, Permission.ASSET_VIEW.value, db
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions for this engagement.",
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.ASSET_VIEW, db, action="view this asset")
 
     port_query = select(
         distinct(AssetPort.port_number),
@@ -852,14 +817,7 @@ async def get_asset(
     asset, creator_username, creator_full_name, creator_profile_photo = row
     
     # Authorization Check using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, asset.engagement_id, Permission.ASSET_VIEW.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'asset_view' permission to view assets."
-            )
+    await require_engagement_perm(current_user, asset.engagement_id, Permission.ASSET_VIEW, db, action="view assets")
     
     asset_dict = AssetResponse.model_validate(asset).model_dump()
     asset_dict["created_by_username"] = creator_username
@@ -888,14 +846,7 @@ async def create_asset(
 ):
     """Create a new asset"""
     # Check permissions using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, asset_data.engagement_id, Permission.ASSET_CREATE.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'asset_create' permission to add assets."
-            )
+    await require_engagement_perm(current_user, asset_data.engagement_id, Permission.ASSET_CREATE, db, action="add assets")
 
     db_asset = Asset(
         id=str(uuid.uuid4()),
@@ -944,23 +895,8 @@ async def update_asset(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = db_asset.created_by == current_user.id
-    
-    if not is_admin:
-        if is_owner:
-            # Owner needs base edit permission
-            has_permission = await check_engagement_permission(current_user.id, db_asset.engagement_id, Permission.ASSET_EDIT.value, db)
-        else:
-            # Non-owner needs edit_any permission
-            has_permission = await check_engagement_permission(current_user.id, db_asset.engagement_id, Permission.ASSET_EDIT_ANY.value, db)
-        
-        if not has_permission:
-            required_perm = Permission.ASSET_EDIT.value if is_owner else Permission.ASSET_EDIT_ANY.value
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this asset."
-            )
+    await require_owned_perm(current_user, db_asset.engagement_id, db_asset.created_by,
+                             Permission.ASSET_EDIT, Permission.ASSET_EDIT_ANY, db, action="modify this asset")
     
     # Update fields
     update_data = asset_update.model_dump(exclude_unset=True)
@@ -1025,23 +961,8 @@ async def delete_asset(
         )
     
     # Check permissions using RBAC with ANY model
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    is_owner = db_asset.created_by == current_user.id
-    
-    if not is_admin:
-        if is_owner:
-            # Owner needs base delete permission
-            has_permission = await check_engagement_permission(current_user.id, db_asset.engagement_id, Permission.ASSET_DELETE.value, db)
-        else:
-            # Non-owner needs delete_any permission
-            has_permission = await check_engagement_permission(current_user.id, db_asset.engagement_id, Permission.ASSET_DELETE_ANY.value, db)
-        
-        if not has_permission:
-            required_perm = Permission.ASSET_DELETE.value if is_owner else Permission.ASSET_DELETE_ANY.value
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{required_perm}' permission to delete this asset."
-            )
+    await require_owned_perm(current_user, db_asset.engagement_id, db_asset.created_by,
+                             Permission.ASSET_DELETE, Permission.ASSET_DELETE_ANY, db, action="delete this asset")
     
     # Log activity before deletion
     await create_activity_log(
@@ -1072,13 +993,7 @@ async def _require_asset(asset_id: str, db: AsyncSession, current_user: User) ->
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, asset.engagement_id, Permission.ASSET_EDIT.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    await require_engagement_perm(current_user, asset.engagement_id, Permission.ASSET_EDIT, db, action="modify this asset")
     return asset
 
 
@@ -1090,14 +1005,7 @@ async def _asset_for_view(asset_id: str, current_user: User, db: AsyncSession) -
     asset = (await db.execute(select(Asset).where(Asset.id == asset_id))).scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin and not await check_engagement_permission(
-        current_user.id, asset.engagement_id, Permission.ASSET_VIEW.value, db
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions. You need the 'asset_view' permission to view assets.",
-        )
+    await require_engagement_perm(current_user, asset.engagement_id, Permission.ASSET_VIEW, db, action="view assets")
     return asset
 
 
@@ -1167,14 +1075,8 @@ async def restore_asset_version(
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        perm = Permission.ASSET_EDIT.value if asset.created_by == current_user.id else Permission.ASSET_EDIT_ANY.value
-        if not await check_engagement_permission(current_user.id, asset.engagement_id, perm, db):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. You need the '{perm}' permission to restore an asset version.",
-            )
+    await require_owned_perm(current_user, asset.engagement_id, asset.created_by,
+                             Permission.ASSET_EDIT, Permission.ASSET_EDIT_ANY, db, action="restore an asset version")
 
     v = (await db.execute(
         select(VersionHistory).where(

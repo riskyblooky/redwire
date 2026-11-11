@@ -13,7 +13,7 @@ from schemas.discussion import (
     ActivityLogResponse
 )
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission, is_engagement_member
+from auth.rbac import check_engagement_permission, is_engagement_member, require_engagement_perm
 from models.permission import Permission
 from models.associations import EngagementAssignment
 from datetime import datetime, timedelta
@@ -485,11 +485,7 @@ async def get_comments(
     thread = (await db.execute(select(Thread).where(Thread.id == thread_id))).scalar_one_or_none()
     if not thread:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, thread.engagement_id, Permission.DISCUSSION_VIEW.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to view this thread.")
+    await require_engagement_perm(current_user, thread.engagement_id, Permission.DISCUSSION_VIEW, db)
 
     result = await db.execute(
         select(Comment)
@@ -699,11 +695,7 @@ async def resolve_comment(
     parent_thread = (await db.execute(select(Thread).where(Thread.id == comment.thread_id))).scalar_one_or_none()
     if not parent_thread:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, parent_thread.engagement_id, Permission.DISCUSSION_EDIT.value, db)
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to resolve this comment.")
+    await require_engagement_perm(current_user, parent_thread.engagement_id, Permission.DISCUSSION_EDIT, db)
 
     comment.is_resolved = True
     comment.resolved_by = current_user.id

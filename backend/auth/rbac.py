@@ -329,3 +329,88 @@ def can_modify_resource(resource_owner_id: str, current_user, engagement_role: O
     # Read-only cannot modify anything
     return False
 
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Shared engagement-permission helpers.
+#
+# Routers used to spell these out inline — the admin role triplet, then
+# "owner needs X, others need X_ANY" — about a hundred times, and the copies
+# drifted (read-only admins let into writes, or kept out of reads; a
+# creator bypass that forgot membership). New code, and routers as they're
+# touched, should go through these instead.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Roles that bypass engagement permission checks. Read-only admins bypass
+# only read (view) permissions; writes need an explicit grant.
+READ_BYPASS_ROLES = (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
+WRITE_BYPASS_ROLES = (UserRole.ADMIN, UserRole.TEAM_LEAD)
+
+
+def _perm_value(permission) -> str:
+    return getattr(permission, "value", permission)
+
+
+def is_read_permission(permission) -> bool:
+    """View-style permissions (``*_view`` / ``view_*``) are reads; everything
+    else is a write. Same rule as auth.permissions._is_read_permission."""
+    v = _perm_value(permission)
+    return v.startswith("view_") or v.endswith("_view")
+
+
+def role_bypasses(user, permission) -> bool:
+    """True if the user's global role grants ``permission`` on every
+    engagement without an assignment."""
+    roles = READ_BYPASS_ROLES if is_read_permission(permission) else WRITE_BYPASS_ROLES
+    return user.role in roles
+
+
+async def has_engagement_perm(user, engagement_id: Optional[str], permission, db: AsyncSession) -> bool:
+    """Role bypass, else the permission via the user's role on this
+    engagement. No engagement → only the bypass roles pass."""
+    if role_bypasses(user, permission):
+        return True
+    if not engagement_id:
+        return False
+    return await check_engagement_permission(user.id, engagement_id, _perm_value(permission), db)
+
+
+def _denied(permission, action: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Insufficient permissions. You need the '{_perm_value(permission)}' permission to {action}.",
+    )
+
+
+async def require_engagement_perm(user, engagement_id: Optional[str], permission, db: AsyncSession,
+                                  *, action: str = "do this") -> None:
+    """403 unless has_engagement_perm. ``action`` completes the message:
+    "...need the 'finding_edit' permission to <action>."."""
+    if not await has_engagement_perm(user, engagement_id, permission, db):
+        raise _denied(permission, action)
+
+
+def owned_perm(user, owner_id: Optional[str], own_permission, any_permission):
+    """The permission that applies to acting on a record: the base one on
+    your own record, the ``*_ANY`` one on anyone else's."""
+    return own_permission if owner_id and owner_id == user.id else any_permission
+
+
+async def require_owned_perm(user, engagement_id: Optional[str], owner_id: Optional[str],
+                             own_permission, any_permission, db: AsyncSession,
+                             *, action: str = "do this") -> None:
+    """The owner-vs-ANY check: owners need ``own_permission``, everyone else
+    ``any_permission`` (bypass roles pass either way)."""
+    await require_engagement_perm(
+        user, engagement_id, owned_perm(user, owner_id, own_permission, any_permission), db, action=action,
+    )
+
+
+def assert_same_engagement(expected: Optional[str], actual: Optional[str], what: str = "item") -> None:
+    """400 when a referenced record belongs to another engagement (the
+    cross-engagement link / move guard)."""
+    if expected and actual != expected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"The {what} belongs to a different engagement.",
+        )

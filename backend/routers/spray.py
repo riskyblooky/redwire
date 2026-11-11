@@ -15,7 +15,7 @@ from schemas.spray import (
     SprayCampaignResponse, SprayCampaignDetailResponse,
 )
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, require_engagement_perm
 from models.permission import Permission
 # SprayCampaign.password_used and SprayResult.username/password are
 # EncryptedText columns — encrypt-on-write happens at the ORM type
@@ -43,13 +43,7 @@ async def import_spray_log(
         raise HTTPException(status_code=404, detail="Engagement not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.VAULT_CREATE.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, engagement_id, Permission.VAULT_CREATE, db)
 
     # Read and parse
     content = await file.read()
@@ -286,13 +280,7 @@ async def list_spray_campaigns(
     current_user: User = Depends(get_current_user),
 ):
     """List spray campaigns for an engagement."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.VAULT_VIEW.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, engagement_id, Permission.VAULT_VIEW, db)
 
     result = await db.execute(
         select(SprayCampaign)
@@ -324,13 +312,7 @@ async def get_spray_campaign(
         raise HTTPException(status_code=404, detail="Spray campaign not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, campaign.engagement_id, Permission.VAULT_VIEW.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, campaign.engagement_id, Permission.VAULT_VIEW, db)
 
     # EncryptedText already decrypted password_used at ORM-read time.
     return campaign
@@ -352,13 +334,7 @@ async def delete_spray_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Spray campaign not found")
 
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, campaign.engagement_id, Permission.VAULT_DELETE.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, campaign.engagement_id, Permission.VAULT_DELETE, db)
 
     # Log before delete
     await create_activity_log(
@@ -396,13 +372,7 @@ async def vault_spray_hits(
         raise HTTPException(status_code=404, detail="Spray campaign not found")
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_perm = await check_engagement_permission(
-            current_user.id, campaign.engagement_id, Permission.VAULT_CREATE.value, db
-        )
-        if not has_perm:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    await require_engagement_perm(current_user, campaign.engagement_id, Permission.VAULT_CREATE, db)
 
     # EncryptedText already decrypted campaign.password_used at ORM-read.
     # Kept as a fallback for older per-result rows that didn't store
