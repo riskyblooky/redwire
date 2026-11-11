@@ -209,7 +209,34 @@ Backing them up in the same file/vault as the DB means an attacker who
 gets the DB backup also gets the keys, and every "encrypted at rest"
 value becomes plaintext to them.
 
-### Postgres backup
+### Automated: `backup.sh`
+
+`deploy_server.sh` installs a daily 03:30 job (`/etc/cron.d/redwire-backup`)
+that runs `backup.sh` from the install directory. Each run writes
+`backups/<timestamp>/` (owner-only permissions) with `db.dump` (Postgres,
+custom format), `minio.tar.gz`, `uploads.tar.gz`, a copy of `.env` named
+`env`, and `alembic_version.txt`. It keeps the newest 7 runs
+(`BACKUP_KEEP`). Every deploy also writes a database-only
+`backups/<timestamp>-predeploy/` snapshot before migrating, and keeps the
+newest 5.
+
+```bash
+./backup.sh              # full backup now
+./backup.sh --db-only    # database only
+BACKUP_REMOTE=user@host:/srv/redwire-backups ./backup.sh   # also rsync it off-box
+```
+
+Backups on the server's own disk don't survive losing the server: set
+`BACKUP_REMOTE`. Because the `env` copy holds the encryption keys, treat
+every backup folder as a secret (see the warning above).
+
+Restore a `db.dump` with:
+
+```bash
+docker exec -i redwire-db pg_restore -U redwire -d redwire --clean --if-exists < db.dump
+```
+
+### Postgres backup (manual)
 
 ```bash
 docker exec redwire-db pg_dump -U redwire redwire | gzip > redwire-$(date +%F).sql.gz
@@ -383,6 +410,39 @@ docker compose restart backend
 ```
 
 Same shape for `TOTP_ENCRYPTION_KEY`.
+
+---
+
+## Hiding pages from groups
+
+Every main-nav page except Dashboard, Engagements and Automations has a
+view permission. Without it, the tab is hidden and the page refuses a
+direct link:
+
+| Page | Permission |
+|---|---|
+| Calendar | `calendar_view` |
+| Planning | `planning_view` |
+| Stats | `stats_view` |
+| Remediation | `remediation_view` |
+| Intelligence | `intel_view` |
+| Infrastructure | `infra_view` |
+| Templates | `template_view` |
+| Tags | `tag_view` |
+| Clients | `client_view` |
+
+To hide a page from a group, remove its permission in **Admin →
+Permissions**. A user sees the page if any of their groups grants it.
+Admins and read-only admins always see every page.
+
+Automations is open to everyone because personal rules need no
+permission. Its **Org Rules** view needs `automation_view`.
+
+A page permission controls whether the page is offered. It doesn't change
+what data the page shows: Remediation still lists only engagements you
+can see, Clients only clients you've been granted, and so on. Template
+and tag pickers inside findings and engagements keep working without
+`template_view` / `tag_view`.
 
 ---
 

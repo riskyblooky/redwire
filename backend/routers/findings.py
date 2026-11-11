@@ -138,7 +138,11 @@ async def get_remediation_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get remediation summary for an engagement."""
+    """Get remediation summary for an engagement. The Remediation page's only
+    read, so it's gated on REMEDIATION_VIEW (the page's nav permission) as
+    well as FINDING_VIEW on the engagement."""
+    from auth.permissions import require_global_permission
+    await require_global_permission(Permission.REMEDIATION_VIEW, current_user, db)
     from models.engagement import Engagement
     from models.cleanup_artifact import CleanupArtifact
     import json

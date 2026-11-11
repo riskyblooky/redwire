@@ -29,6 +29,13 @@ async def seed_default_groups_and_roles():
                 "is_system": False,
                 "is_default": False,
                 "permissions": [
+                    # Main-nav pages (the tab is hidden without these).
+                    Permission.STATS_VIEW.value,
+                    Permission.REMEDIATION_VIEW.value,
+                    Permission.TEMPLATE_VIEW.value,
+                    Permission.TAG_VIEW.value,
+                    Permission.CLIENT_VIEW.value,
+                    Permission.PLANNING_VIEW.value,
                     Permission.VIEW_ALL_USERS.value,
                     Permission.VIEW_ALL_ENGAGEMENTS.value,
                     Permission.CREATE_ENGAGEMENT.value,
@@ -87,6 +94,11 @@ async def seed_default_groups_and_roles():
                     Permission.INFRA_VIEW.value,
                     Permission.SKILL_VIEW.value,
                     Permission.RUNBOOK_VIEW.value,
+                    # Main-nav pages (the tab is hidden without these).
+                    Permission.STATS_VIEW.value,
+                    Permission.REMEDIATION_VIEW.value,
+                    Permission.TEMPLATE_VIEW.value,
+                    Permission.TAG_VIEW.value,
                 ]
             },
             {
@@ -101,6 +113,11 @@ async def seed_default_groups_and_roles():
                     Permission.INFRA_VIEW.value,
                     Permission.SKILL_VIEW.value,
                     Permission.RUNBOOK_VIEW.value,
+                    # Main-nav pages (the tab is hidden without these).
+                    Permission.STATS_VIEW.value,
+                    Permission.REMEDIATION_VIEW.value,
+                    Permission.TEMPLATE_VIEW.value,
+                    Permission.TAG_VIEW.value,
                 ]
             },
         ]

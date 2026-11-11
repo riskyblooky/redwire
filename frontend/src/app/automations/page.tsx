@@ -56,6 +56,7 @@ import {
     TriggerType,
 } from '@/lib/hooks/use-automations';
 import { PersonalRuleEditor } from '@/components/automations/personal-rule-editor';
+import { useGlobalPermissions } from '@/lib/hooks/use-permissions';
 import { useUsers } from '@/lib/hooks/use-users';
 import { useTags } from '@/lib/hooks/use-tags';
 
@@ -851,7 +852,10 @@ function RuleEditor({
 // ── main page ────────────────────────────────────────────────────────
 
 export default function AutomationsPage() {
-    const { data: orgRules, isLoading: orgLoading } = useAutomations();
+    // Everyone can manage their personal rules; org rules need automation_view.
+    const { data: myPerms = [] } = useGlobalPermissions();
+    const canViewOrg = myPerms.includes('automation_view');
+    const { data: orgRules, isLoading: orgLoading } = useAutomations(canViewOrg);
     const { data: personalRules, isLoading: personalLoading } = useMyPersonalAutomations();
     const { data: triggers } = useTriggerTypes();
     const toggleRule = useToggleAutomation();
@@ -859,7 +863,8 @@ export default function AutomationsPage() {
     const triggerRule = useTriggerAutomation();
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
-    const [scope, setScope] = useState<'org' | 'personal'>('org');
+    const [scopeChoice, setScope] = useState<'org' | 'personal'>('org');
+    const scope = canViewOrg ? scopeChoice : 'personal';
     const [editorOpen, setEditorOpen] = useState(false);
     const [personalEditorOpen, setPersonalEditorOpen] = useState(false);
     const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
@@ -943,7 +948,7 @@ export default function AutomationsPage() {
 
                 {/* Scope tabs */}
                 <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit mb-4">
-                    <button
+                    {canViewOrg && <button
                         onClick={() => { setScope('org'); setSearch(''); }}
                         className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${scope === 'org'
                             ? 'bg-primary/15 text-primary'
@@ -953,7 +958,7 @@ export default function AutomationsPage() {
                         <Shield className="h-4 w-4" />
                         Org Rules
                         <span className="text-[10px] text-slate-500">({(orgRules || []).length})</span>
-                    </button>
+                    </button>}
                     <button
                         onClick={() => { setScope('personal'); setSearch(''); }}
                         className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${scope === 'personal'

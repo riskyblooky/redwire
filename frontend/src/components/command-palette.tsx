@@ -45,6 +45,7 @@ import {
     CommandShortcut,
 } from '@/components/ui/command';
 import { useEngagements } from '@/lib/hooks/use-engagements';
+import { useGlobalPermissions } from '@/lib/hooks/use-permissions';
 import {
     LayoutDashboard,
     Briefcase,
@@ -146,6 +147,10 @@ export function CommandPalette({ open: openProp, onOpenChange }: { open?: boolea
     const router = useRouter();
     const engagementId = useCurrentEngagementId();
     const { data: engagements = [] } = useEngagements();
+    // Same page permissions as the sidebar tabs.
+    const { data: myPerms = [] } = useGlobalPermissions();
+    const canCalendar = myPerms.includes('calendar_view');
+    const canPlanning = myPerms.includes('planning_view');
 
     // Cmd/Ctrl+K toggle.
     useEffect(() => {
@@ -202,8 +207,8 @@ export function CommandPalette({ open: openProp, onOpenChange }: { open?: boolea
             case 'gi': go('/imports'); return true;
             case 'ga': go('/admin'); return true;
             case 'gp': go('/profile'); return true;
-            case 'gc': go('/calendar'); return true;
-            case 'gl': go('/planning'); return true;
+            case 'gc': if (!canCalendar) return false; go('/calendar'); return true;
+            case 'gl': if (!canPlanning) return false; go('/planning'); return true;
         }
         return false;
     });
@@ -286,16 +291,20 @@ export function CommandPalette({ open: openProp, onOpenChange }: { open?: boolea
                         <span>Engagements</span>
                         <CommandShortcut>G E</CommandShortcut>
                     </CommandItem>
-                    <CommandItem onSelect={() => go('/calendar')}>
-                        <Calendar />
-                        <span>Calendar</span>
-                        <CommandShortcut>G C</CommandShortcut>
-                    </CommandItem>
-                    <CommandItem onSelect={() => go('/planning')}>
-                        <GanttChart />
-                        <span>Planning</span>
-                        <CommandShortcut>G L</CommandShortcut>
-                    </CommandItem>
+                    {canCalendar && (
+                        <CommandItem onSelect={() => go('/calendar')}>
+                            <Calendar />
+                            <span>Calendar</span>
+                            <CommandShortcut>G C</CommandShortcut>
+                        </CommandItem>
+                    )}
+                    {canPlanning && (
+                        <CommandItem onSelect={() => go('/planning')}>
+                            <GanttChart />
+                            <span>Planning</span>
+                            <CommandShortcut>G L</CommandShortcut>
+                        </CommandItem>
+                    )}
                     <CommandItem onSelect={() => go('/imports')}>
                         <Upload />
                         <span>Import Scanner Output</span>

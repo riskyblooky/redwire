@@ -78,22 +78,25 @@ interface NavItem {
     icon: any;
     badge?: string;
     adminOnly?: boolean;
-    managerOnly?: boolean; // admin or team_lead
+    /** Global permission that shows the tab (admins get every view one). */
+    permission?: string;
 }
 
 const navItems: NavItem[] = [
     { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { title: 'Engagements', href: '/engagements', icon: Briefcase },
-    { title: 'Calendar', href: '/calendar', icon: Calendar },
-    { title: 'Planning', href: '/planning', icon: GanttChart, managerOnly: true },
-    { title: 'Stats', href: '/stats', icon: BarChart },
-    { title: 'Remediation', href: '/remediation', icon: ClipboardCheck },
-    { title: 'Intelligence', href: '/intelligence', icon: Radar },
-    { title: 'Infrastructure', href: '/infrastructure', icon: Server },
-    { title: 'Templates', href: '/templates', icon: BookOpen },
-    { title: 'Tags', href: '/tags', icon: Tags },
-    { title: 'Automations', href: '/automations', icon: Zap, managerOnly: true },
-    { title: 'Clients', href: '/clients', icon: Building2, managerOnly: true },
+    { title: 'Calendar', href: '/calendar', icon: Calendar, permission: 'calendar_view' },
+    { title: 'Planning', href: '/planning', icon: GanttChart, permission: 'planning_view' },
+    { title: 'Stats', href: '/stats', icon: BarChart, permission: 'stats_view' },
+    { title: 'Remediation', href: '/remediation', icon: ClipboardCheck, permission: 'remediation_view' },
+    { title: 'Intelligence', href: '/intelligence', icon: Radar, permission: 'intel_view' },
+    { title: 'Infrastructure', href: '/infrastructure', icon: Server, permission: 'infra_view' },
+    { title: 'Templates', href: '/templates', icon: BookOpen, permission: 'template_view' },
+    { title: 'Tags', href: '/tags', icon: Tags, permission: 'tag_view' },
+    // Everyone: personal rules need no permission; the org-rule view inside
+    // the page is gated on automation_view.
+    { title: 'Automations', href: '/automations', icon: Zap },
+    { title: 'Clients', href: '/clients', icon: Building2, permission: 'client_view' },
     { title: 'Admin', href: '/admin', icon: Settings, adminOnly: true },
 ];
 
@@ -285,7 +288,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     };
 
     const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.READ_ONLY_ADMIN;
-    const isManager = user?.role === UserRole.ADMIN || user?.role === UserRole.READ_ONLY_ADMIN || user?.role === UserRole.TEAM_LEAD;
     // The Admin link shows for admins OR anyone holding a delegatable admin-surface
     // permission (the admin page then shows only the tabs they can manage).
     const { data: myGlobalPerms = [] } = useGlobalPermissions();
@@ -293,7 +295,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     const filteredNavItems = navItems.filter(item => {
         if (item.adminOnly && !canSeeAdmin) return false;
-        if (item.managerOnly && !isManager) return false;
+        // Hidden until permissions load, so a tab never flashes in and out.
+        if (item.permission && !myGlobalPerms.includes(item.permission)) return false;
         return true;
     });
 

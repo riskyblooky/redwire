@@ -156,6 +156,17 @@ class Permission(str, enum.Enum):
     RUNBOOK_DELETE = "runbook_delete"
 
     # Dashboard & Stats
+    # ============ Page access (main navigation) ============
+    # Gate a main-nav page: without it the tab is hidden and the page refuses.
+    # The page's data keeps its own scoping (engagement membership, client
+    # grants); these decide whether the page is offered at all.
+    STATS_VIEW = "stats_view"
+    REMEDIATION_VIEW = "remediation_view"
+    TEMPLATE_VIEW = "template_view"
+    TAG_VIEW = "tag_view"
+    CLIENT_VIEW = "client_view"
+    PLANNING_VIEW = "planning_view"
+
     MANAGE_DASHBOARD_WIDGETS = "manage_dashboard_widgets"  # CRUD widget definitions + query builder
     MANAGE_STATS_PAGES = "manage_stats_pages"  # Create/arrange global stats-page tabs
 
@@ -199,10 +210,12 @@ PERMISSION_CATEGORIES = {
         Permission.MANAGE_GROUPS,
         Permission.MANAGE_ENGAGEMENT_ROLES,
         Permission.MANAGE_REGISTRATION_CODES,
+        Permission.CLIENT_VIEW,
         Permission.MANAGE_CLIENTS,
         Permission.MANAGE_CLIENT_ACCESS,
     ],
     "Engagements": [
+        Permission.PLANNING_VIEW,
         Permission.VIEW_ALL_ENGAGEMENTS,
         Permission.CREATE_ENGAGEMENT,
         Permission.DELETE_ANY_ENGAGEMENT,
@@ -218,6 +231,7 @@ PERMISSION_CATEGORIES = {
         Permission.FINDING_DELETE,
         Permission.FINDING_EDIT_ANY,
         Permission.FINDING_DELETE_ANY,
+        Permission.REMEDIATION_VIEW,
     ],
     "Assets": [
         Permission.ASSET_VIEW,
@@ -268,16 +282,19 @@ PERMISSION_CATEGORIES = {
     "Reports & Templates": [
         Permission.REPORT_VIEW,
         Permission.REPORT_GENERATE,
+        Permission.TEMPLATE_VIEW,
         Permission.MANAGE_FINDING_TEMPLATES,
         Permission.MANAGE_TESTCASE_TEMPLATES,
         Permission.MANAGE_REPORT_LAYOUT_TEMPLATES,
         Permission.MANAGE_REPORT_THEMES,
+        Permission.TAG_VIEW,
         Permission.MANAGE_TAGS,
     ],
     "Analytics": [
         Permission.VIEW_ALL_ANALYTICS,
     ],
     "Dashboard & Stats": [
+        Permission.STATS_VIEW,
         Permission.MANAGE_DASHBOARD_WIDGETS,
         Permission.MANAGE_STATS_PAGES,
     ],
@@ -403,6 +420,13 @@ GLOBAL_PERMISSIONS = [
     Permission.MANAGE_CUSTOM_FIELDS,
     Permission.VIEW_SECURITY_CENTER,
     Permission.MANAGE_SECURITY_CENTER,
+    # Page access (main navigation).
+    Permission.STATS_VIEW,
+    Permission.REMEDIATION_VIEW,
+    Permission.TEMPLATE_VIEW,
+    Permission.TAG_VIEW,
+    Permission.CLIENT_VIEW,
+    Permission.PLANNING_VIEW,
 ]
 
 ENGAGEMENT_PERMISSIONS = [

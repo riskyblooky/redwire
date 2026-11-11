@@ -7,6 +7,20 @@ section becomes one release entry.
 ## [1.9.0] — Unreleased
 
 ### Added
+- **Hide pages from groups.** Every main-nav page now has a view
+  permission, so a page can be hidden from a group by removing that
+  permission in Admin → Permissions; without it the tab disappears and a
+  direct link is refused. The new permissions are `stats_view`,
+  `remediation_view`, `template_view`, `tag_view`, `client_view` and
+  `planning_view`, and the sidebar now also honours the existing
+  `calendar_view`, `intel_view` and `infra_view`. Upgrading keeps
+  everyone's current tabs: the first four are granted to every existing
+  group, and Clients and Planning (until now shown to team leads by role)
+  to the Team Leads group and any group with a team lead in it. A user in
+  no group at all won't see these pages until they're added to one.
+  Automations is now in everyone's sidebar, since anyone can make personal
+  rules; its Org Rules view needs `automation_view`. The admin guide
+  (Help → Admin) lists each page's permission.
 - **Backups.** `backup.sh` (in the install directory) backs up the
   database, the MinIO evidence store, `backend/uploads` and `.env`, which
   holds the vault and 2FA encryption keys, into `backups/<timestamp>/`

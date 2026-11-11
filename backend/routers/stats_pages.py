@@ -23,7 +23,7 @@ from models.user import User
 from models.stats_page import StatsPage
 from models.permission import Permission
 from auth.dependencies import get_current_user
-from auth.permissions import has_global_permission
+from auth.permissions import has_global_permission, require_global_permission
 from utils.collaboration import create_activity_log
 
 logger = logging.getLogger(__name__)
@@ -104,9 +104,10 @@ async def list_stats_pages(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List active stats pages in tab order. Any authenticated user — the
-    pages are global and shared; scoping of the DATA inside each widget is
-    handled at the widget-data endpoint, not here."""
+    """List active stats pages in tab order. Needs STATS_VIEW (the Stats
+    page's nav permission); the pages are global and shared, and scoping of
+    the DATA inside each widget is handled at the widget-data endpoint."""
+    await require_global_permission(Permission.STATS_VIEW, current_user, db)
     result = await db.execute(
         select(StatsPage)
         .where(StatsPage.is_active == True)  # noqa: E712

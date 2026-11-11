@@ -52,13 +52,16 @@ export interface TriggerType {
     fields: string[];
 }
 
-export function useAutomations() {
+export function useAutomations(enabled = true) {
     return useQuery<AutomationRule[]>({
         queryKey: ['automations'],
         queryFn: async () => {
             const { data } = await api.get('/automations');
             return data.rules;
         },
+        // Org rules need automation_view; callers without it pass false so
+        // the page doesn't fire a request that can only 403.
+        enabled,
     });
 }
 
