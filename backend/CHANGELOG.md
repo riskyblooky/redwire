@@ -156,6 +156,10 @@ section becomes one release entry.
   needs evidence-create permission, is size-capped and cleans the filename.
   New evidence can no longer be uploaded to, or re-linked into, a VERIFIED
   finding.
+- **The backend and MCP server no longer run as root.** Both containers
+  run as an unprivileged user (UID 10001) that can write only
+  `backend/uploads`. The deploy script hands that directory to the new
+  user, and nginx hands it the access log that the Security Center reads.
 - **Plugin settings are encrypted at rest.** Plugin secrets such as the
   ServiceNow password and the Shodan API key were masked in the admin UI
   but stored unencrypted in the database. Every plugin setting value is

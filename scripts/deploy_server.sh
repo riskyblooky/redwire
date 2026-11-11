@@ -289,6 +289,10 @@ fi
 
 # 6. Start Services
 echo -e "\n${BLUE}[6/8] Starting Services...${NC}"
+# The backend runs as UID 10001 (non-root, backend/Dockerfile): give it the
+# bind-mounted uploads dir, which older installs created as root.
+mkdir -p backend/uploads
+chown -R 10001:10001 backend/uploads 2>/dev/null || echo "  (could not chown backend/uploads to 10001 - photo / wordlist uploads will fail until it is)"
 if [ "$OFFLINE" -eq 1 ]; then
     if [ ! -f redwire_images.tar ]; then
         echo -e "${RED}Error: --offline requires redwire_images.tar in the working directory.${NC}"

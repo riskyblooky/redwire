@@ -60,6 +60,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     image: redwire-backend:dev
+    # The image runs as UID 10001; dev bind-mounts the host source over /app
+    # (and writes caches / uploads into it), so stay root here.
+    user: root
     container_name: redwire-backend
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-redwire}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-redwire}

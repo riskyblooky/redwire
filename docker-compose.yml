@@ -135,8 +135,9 @@ services:
       # compose file at ./backend/uploads and shows up on the host
       # filesystem so an operator can back it up with `tar`, `ls` it
       # for debugging, or move it during a host migration. The
-      # backend runs as root inside the container, so files land
-      # owned by root:root on the host — no UID drift.
+      # backend runs as UID 10001 inside the container, so the host
+      # directory must be owned by it — deploy_server.sh chowns it
+      # (a fresh Docker-created dir would be root-owned and unwritable).
       #
       # `backend/uploads/` is git-ignored and excluded from the
       # deploy zip, so nothing in the source tree collides with it.
@@ -217,7 +218,10 @@ services:
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
     # Reload every 6h so certs renewed by the certbot container are picked up;
     # without this nginx keeps serving the old cert from memory until restarted.
-    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g 'daemon off;'"]
+    # The backend (UID 10001, non-root) truncates access.json after ingesting
+    # it, so hand the file to that UID — at start and before each reload
+    # (a reload reopens logs and would recreate a missing file as root).
+    command: ["/bin/sh", "-c", "own() { touch /var/log/nginx/security/access.json && chown 10001:10001 /var/log/nginx/security/access.json; }; own; while :; do sleep 6h & wait $${!}; own; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g 'daemon off;'"]
     depends_on:
       - frontend
       - backend

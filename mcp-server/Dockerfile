@@ -18,6 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Unprivileged: the MCP server only talks HTTP to the backend, writes nothing.
+RUN groupadd --system --gid 10001 redwire \
+    && useradd --system --uid 10001 --gid redwire --no-create-home redwire
+USER redwire
+
 EXPOSE 3001
 
 CMD ["python", "server.py"]

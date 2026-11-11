@@ -31,8 +31,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create directory for uploads
-RUN mkdir -p /app/uploads
+# Run as an unprivileged user (fixed UID so host bind mounts can be chowned
+# to it — deploy_server.sh does `chown 10001 backend/uploads`). Everything is
+# root-owned and read-only to it except uploads/, the only directory the app
+# writes (temp files go to /tmp). Dev overrides this with `user: root` because
+# it bind-mounts the source tree.
+RUN groupadd --system --gid 10001 redwire \
+    && useradd --system --uid 10001 --gid redwire --home-dir /app --no-create-home redwire \
+    && mkdir -p /app/uploads \
+    && chown redwire:redwire /app/uploads
+USER redwire
 
 EXPOSE 8000
 
