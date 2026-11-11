@@ -1,0 +1,53 @@
+name: backend tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: redwire
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: redwire
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U redwire"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      # The suite derives <db>_test from DATABASE_URL; the migration test
+      # creates (and drops) its own throwaway database next to it.
+      DATABASE_URL: postgresql+asyncpg://redwire:ci-only-password@localhost:5432/redwire
+      RATE_LIMIT_STORAGE_URI: memory://
+      WS_FANOUT: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Create the test database and throwaway keys
+        run: |
+          PGPASSWORD=ci-only-password psql -h localhost -U redwire -d redwire -c "CREATE DATABASE redwire_test"
+          python - >> "$GITHUB_ENV" <<'EOF'
+          import base64, os, secrets
+          print("JWT_SECRET=" + secrets.token_hex(32))
+          print("VAULT_ENCRYPTION_KEY=" + base64.urlsafe_b64encode(os.urandom(32)).decode())
+          print("TOTP_ENCRYPTION_KEY=" + base64.urlsafe_b64encode(os.urandom(32)).decode())
+          EOF
+      - name: pytest
+        working-directory: backend
+        run: python -m pytest -q -p no:warnings tests
