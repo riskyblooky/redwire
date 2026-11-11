@@ -7,6 +7,15 @@ section becomes one release entry.
 ## [1.9.0] — Unreleased
 
 ### Added
+- **Backups.** `backup.sh` (in the install directory) backs up the
+  database, the MinIO evidence store, `backend/uploads` and `.env`, which
+  holds the vault and 2FA encryption keys, into `backups/<timestamp>/`
+  (owner-only permissions), keeping the newest 7. The deploy script installs
+  it as a daily 03:30 cron job, and now also snapshots the database before
+  every upgrade, aborting the deploy if the snapshot fails or the disk is
+  too full (`SKIP_BACKUP=1` skips it). Backups on the server's own disk
+  don't survive losing the server: set `BACKUP_REMOTE` to an rsync target
+  to copy each one off-box.
 - **Live editing from the view pages.** Double-clicking a text field on a
   finding, test case or asset page (or its side sheet on the engagement
   page) now opens the same live editor as the full edit page. Everyone

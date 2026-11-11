@@ -156,6 +156,36 @@ EOF
     echo -e "${GREEN}Credentials saved to 'credentials_DO_NOT_SHARE.txt'.${NC}"
 fi
 
+# 2b. Pre-deploy database snapshot. Starting the new backend runs its
+# migrations, so this is the last moment the old schema can be captured.
+# Inline (not backup.sh) because the backup script on disk may be the old
+# one, or absent, until the zip is extracted below. SKIP_BACKUP=1 skips it.
+if [ "${SKIP_BACKUP:-0}" != "1" ] && docker inspect -f '{{.State.Running}}' redwire-db 2>/dev/null | grep -q true; then
+    echo -e "\n${BLUE}[2b] Snapshotting the database before upgrading...${NC}"
+    mkdir -p backups && chmod 700 backups
+    PG_U="$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2-)"; PG_U="${PG_U:-redwire}"
+    PG_D="$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2-)"; PG_D="${PG_D:-redwire}"
+    DB_BYTES=$(docker exec redwire-db psql -U "$PG_U" -d "$PG_D" -Atc "select pg_database_size(current_database())")
+    FREE_BYTES=$(( $(df -Pk backups | awk 'NR==2 {print $4}') * 1024 ))
+    NEED_BYTES=$(( DB_BYTES * 3 / 2 + 1073741824 ))
+    if [ "$FREE_BYTES" -lt "$NEED_BYTES" ]; then
+        echo -e "${RED}Only $(( FREE_BYTES / 1048576 )) MB free, need ~$(( NEED_BYTES / 1048576 )) MB for the snapshot — aborting before touching anything.${NC}"
+        echo "Free some space (old backups/ entries, docker image prune) or rerun with SKIP_BACKUP=1."
+        exit 1
+    fi
+    SNAP="backups/$(date -u +%Y%m%dT%H%M%SZ)-predeploy"
+    mkdir -p "$SNAP" && chmod 700 "$SNAP"
+    if ! ( umask 077; docker exec redwire-db pg_dump -U "$PG_U" -d "$PG_D" -Fc > "$SNAP/db.dump" ); then
+        echo -e "${RED}pg_dump failed — aborting before touching anything.${NC}"
+        exit 1
+    fi
+    docker exec redwire-db psql -U "$PG_U" -d "$PG_D" -Atc "select version_num from alembic_version" > "$SNAP/alembic_version.txt" 2>/dev/null || true
+    echo -e "${GREEN}Database snapshot: $SNAP/db.dump ($(du -sh "$SNAP" | cut -f1))${NC}"
+    echo "  Restore: docker exec -i redwire-db pg_restore -U $PG_U -d $PG_D --clean --if-exists < $SNAP/db.dump"
+    # Keep the newest 5 pre-deploy snapshots.
+    ls -1d backups/2*Z-predeploy 2>/dev/null | sort | head -n -5 | xargs -r rm -rf
+fi
+
 # 3 & 4. Source files.
 #
 # Two supported layouts:
@@ -300,6 +330,15 @@ if [ "${NEEDS_ROTATION:-0}" -eq 1 ]; then
     echo -e "\n${BLUE}[7b] Re-keying existing vault/TOTP data onto the new encryption key(s)...${NC}"
     docker compose run --rm backend python3 rotate_encryption_keys.py
     echo -e "${GREEN}Encryption key rotation complete.${NC}"
+fi
+
+# 7c. Daily backups (backup.sh --install-cron), once per host.
+if [ -f backup.sh ] && [ "$(id -u)" -eq 0 ] && [ -d /etc/cron.d ]; then
+    if [ ! -f /etc/cron.d/redwire-backup ]; then
+        echo -e "\n${BLUE}[7c] Installing the daily backup job...${NC}"
+        bash backup.sh --install-cron
+    fi
+    echo "  Backups land in $(pwd)/backups — copy them off this server (BACKUP_REMOTE in backup.sh)."
 fi
 
 # Legacy Import Check (Skipped by default for safety as requested)

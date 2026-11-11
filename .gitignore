@@ -113,3 +113,5 @@ scripts/export_system.ps1
 scripts/seed_findings_only.sql
 scripts/seed_test_data.sql
 scripts/sync_templates.sh
+# Backups written by scripts/backup.sh / deploy_server.sh (contain secrets)
+backups/
