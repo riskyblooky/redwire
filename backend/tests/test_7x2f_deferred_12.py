@@ -25,6 +25,11 @@ import os
 import pytest
 from cryptography.fernet import Fernet
 
+import os as _os
+
+# Backend root, wherever the suite runs (/app in the container, backend/ in CI).
+_BACKEND = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+
 os.environ.setdefault("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("VAULT_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
@@ -50,7 +55,7 @@ class TestModelUniqueConstraint:
 
 class TestRetryLoopShape:
     def _versioning_src(self) -> str:
-        return open("/app/utils/versioning.py").read()
+        return open(_BACKEND + "/utils/versioning.py").read()
 
     def test_max_retries_constant_present(self):
         src = self._versioning_src()
@@ -103,7 +108,7 @@ class TestMigrationPresent:
     def test_dedupe_and_index_migration_exists(self):
         import glob
         matches = glob.glob(
-            "/app/alembic/versions/*199be698dd4a*.py"
+            _BACKEND + "/alembic/versions/*199be698dd4a*.py"
         )
         assert matches, "expected migration 199be698dd4a to be present"
         src = open(matches[0]).read()
@@ -122,5 +127,5 @@ class TestMigrationPresent:
         # audit trail (older event's snapshot is the "authoritative"
         # one for that version number).
         import glob
-        src = open(glob.glob("/app/alembic/versions/*199be698dd4a*.py")[0]).read()
+        src = open(glob.glob(_BACKEND + "/alembic/versions/*199be698dd4a*.py")[0]).read()
         assert "ORDER BY created_at ASC" in src

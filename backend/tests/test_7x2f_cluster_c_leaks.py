@@ -28,6 +28,11 @@ import os
 import pytest
 from cryptography.fernet import Fernet
 
+import os as _os
+
+# Backend root, wherever the suite runs (/app in the container, backend/ in CI).
+_BACKEND = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+
 os.environ.setdefault("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("VAULT_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
@@ -112,7 +117,7 @@ def test_presence_ws_console_log_removed():
 
 class TestVaultUpdateGenericError:
     def test_no_exception_reflection_in_500(self):
-        src = open("/app/routers/vault.py").read()
+        src = open(_BACKEND + "/routers/vault.py").read()
         # Regression pin — the specific `str(e)` reflection must not
         # reappear in the update_vault_item handler.
         # Find the update_vault_item block and check its inner except.

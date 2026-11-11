@@ -17,6 +17,11 @@ import os
 import pytest
 from cryptography.fernet import Fernet
 
+import os as _os
+
+# Backend root, wherever the suite runs (/app in the container, backend/ in CI).
+_BACKEND = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+
 os.environ.setdefault("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("VAULT_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
@@ -53,7 +58,7 @@ class TestResourceTypeEnumCoerce:
     def test_import_handler_has_coerce_guard(self):
         # The Thread + ActivityLog imports MUST both build against the
         # same enum-derived set. Search the transfer module.
-        src = open("/app/routers/engagements_transfer.py").read()
+        src = open(_BACKEND + "/routers/engagements_transfer.py").read()
         # The coerce set must be built from the enum, not hardcoded.
         assert "_valid_resource_types = {v.value for v in ResourceType}" in src
         # Both Thread and ActivityLog import blocks must use it — the
@@ -66,7 +71,7 @@ class TestResourceTypeEnumCoerce:
         # Pin the fallback shape so a future edit doesn't accidentally
         # switch to raise-on-unknown, which would refuse the whole
         # archive on any legacy or third-party-provider row.
-        src = open("/app/routers/engagements_transfer.py").read()
+        src = open(_BACKEND + "/routers/engagements_transfer.py").read()
         assert "ResourceType.ENGAGEMENT.value" in src
 
 
@@ -80,7 +85,7 @@ class TestRunbookApplyCommitOrdering:
     can't propagate an exception."""
 
     def _apply_handler_slice(self) -> str:
-        src = open("/app/routers/runbooks.py").read()
+        src = open(_BACKEND + "/routers/runbooks.py").read()
         idx = src.find("async def apply_runbook_to_engagement")
         assert idx != -1, "apply_runbook_to_engagement not found"
         rest = src[idx:]

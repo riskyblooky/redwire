@@ -32,6 +32,11 @@ import pytest
 from pydantic import ValidationError
 from cryptography.fernet import Fernet
 
+import os as _os
+
+# Backend root, wherever the suite runs (/app in the container, backend/ in CI).
+_BACKEND = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+
 os.environ.setdefault("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("VAULT_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
@@ -60,14 +65,14 @@ class TestIsCreatorBypassRefactor:
     reappears loudly here."""
 
     def test_discussions_update_thread_uses_membership_gate(self):
-        src = open("/app/routers/discussions.py").read()
+        src = open(_BACKEND + "/routers/discussions.py").read()
         assert "is_engagement_member" in src, "helper not used in discussions.py"
         # The two vulnerable sites — update_thread and toggle_resolve —
         # must each contain the membership gate.
         assert src.count("is_engagement_member(") >= 2
 
     def test_testcases_uses_membership_gate(self):
-        src = open("/app/routers/testcases.py").read()
+        src = open(_BACKEND + "/routers/testcases.py").read()
         assert "is_engagement_member" in src
 
 
@@ -76,7 +81,7 @@ class TestIsCreatorBypassRefactor:
 
 class TestChatbotEnabledEnforced:
     def test_gate_present_in_chat_handler(self):
-        src = open("/app/routers/ai.py").read()
+        src = open(_BACKEND + "/routers/ai.py").read()
         # Pin the specific 403 message this fix emits — that's the
         # concrete reject shape. Also assert it appears in the
         # ai_chat function's slice (after `async def ai_chat` and
@@ -96,7 +101,7 @@ class TestChatbotEnabledEnforced:
 
 class TestSprayAssetCreatePermission:
     def test_asset_create_check_present(self):
-        src = open("/app/routers/spray.py").read()
+        src = open(_BACKEND + "/routers/spray.py").read()
         # The commit endpoint must additionally check ASSET_CREATE when
         # the caller opts into create_missing_assets.
         assert "Permission.ASSET_CREATE" in src
@@ -108,7 +113,7 @@ class TestSprayAssetCreatePermission:
 
 class TestPluginsListAdminOnly:
     def test_list_endpoint_has_admin_gate(self):
-        src = open("/app/routers/plugins.py").read()
+        src = open(_BACKEND + "/routers/plugins.py").read()
         # Both list and detail endpoints require ADMIN_ROLES.
         assert 'require_roles(ADMIN_ROLES)' in src
         # Regression pin: at least 2 endpoints protected (list + detail)
