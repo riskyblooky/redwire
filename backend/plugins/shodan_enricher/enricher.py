@@ -6,10 +6,15 @@ Handles rate limiting and error recovery.
 """
 
 import re
+import time
 import asyncio
 import traceback
 from datetime import datetime
 from typing import Any
+
+
+_CACHE_TTL_S = 24 * 3600
+_CACHE_MAX = 1000
 
 
 class ShodanEnricher:
@@ -17,7 +22,10 @@ class ShodanEnricher:
 
     def __init__(self, db_factory):
         self.db_factory = db_factory
-        self._cache: dict[str, dict] = {}  # ip -> enrichment data
+        # ip -> (monotonic time, enrichment). Expires so a host's new ports /
+        # vulns show up, and is capped so a long-lived worker doesn't hold
+        # every IP it ever saw.
+        self._cache: dict[str, tuple[float, dict]] = {}
         self._lock = asyncio.Lock()
 
     async def _get_api_key(self) -> str | None:
@@ -103,8 +111,9 @@ class ShodanEnricher:
     async def lookup(self, ip: str, api_key: str) -> dict | None:
         """Query Shodan API for host information."""
         # Check cache first
-        if ip in self._cache:
-            return self._cache[ip]
+        hit = self._cache.get(ip)
+        if hit and time.monotonic() - hit[0] < _CACHE_TTL_S:
+            return hit[1]
 
         try:
             import httpx
@@ -141,7 +150,9 @@ class ShodanEnricher:
                     "enriched_at": datetime.utcnow().isoformat(),
                 }
 
-                self._cache[ip] = result
+                if len(self._cache) >= _CACHE_MAX:
+                    self._cache.pop(next(iter(self._cache)))  # oldest insertion
+                self._cache[ip] = (time.monotonic(), result)
                 return result
 
         except Exception as e:

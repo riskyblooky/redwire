@@ -558,6 +558,9 @@ async def lifespan(app):
     retention_task = asyncio.create_task(retention_loop(AsyncSessionLocal))
 
     yield
+    # Let in-flight plugin event handlers (background tasks) finish briefly.
+    from utils.event_bus import event_bus as _event_bus
+    await _event_bus.drain(timeout=5)
     await ws_bus.stop()
     bloom_task.cancel()
     intel_task.cancel()

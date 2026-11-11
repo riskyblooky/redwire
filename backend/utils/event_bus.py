@@ -22,9 +22,16 @@ Usage:
 """
 
 import asyncio
+import logging
+import os
 import traceback
 from collections import defaultdict
 from typing import Any, Callable, Coroutine
+
+logger = logging.getLogger(__name__)
+
+# Plugin handlers run as background tasks (see emit), each bounded by this.
+PLUGIN_HANDLER_TIMEOUT_S = float(os.getenv("PLUGIN_HANDLER_TIMEOUT_S", "30"))
 
 
 class EventBus:
@@ -47,6 +54,9 @@ class EventBus:
         # enabled" so non-plugin handlers (core code, tests) keep
         # firing without any setup.
         self._enabled_check: Callable[[str], bool] = lambda _pid: True
+        # In-flight plugin handler tasks — held so they aren't garbage
+        # collected mid-run, and so drain() can wait for them.
+        self._pending: set[asyncio.Task] = set()
 
     def set_plugin_enabled_check(self, predicate: Callable[[str], bool]) -> None:
         """Wire the per-plugin enabled predicate. Called once at
@@ -106,26 +116,49 @@ class EventBus:
         # Global wildcard
         handlers.extend(self._handlers.get("*", []))
 
-        # Filter out subscribers whose owning plugin is currently
-        # toggled off. Non-plugin handlers pass through unchanged.
-        active = []
+        # Split core subscribers from plugin ones, dropping subscribers
+        # whose owning plugin is currently toggled off.
+        core, plugin = [], []
         for h in handlers:
             owner = self._handler_owner.get(id(h))
             if owner is None:
-                active.append(h)
+                core.append(h)
             elif self._enabled_check(owner):
-                active.append(h)
-        if not active:
-            return
+                plugin.append((owner, h))
 
-        # Fire all handlers concurrently, don't let one failure kill others
-        results = await asyncio.gather(
-            *[self._safe_call(h, event_type, data) for h in active],
-            return_exceptions=True,
-        )
-        for r in results:
-            if isinstance(r, Exception):
-                print(f"[EventBus] Handler error on '{event_type}': {r}")
+        # Plugin handlers run off the request path: emit() is awaited inside
+        # create / update requests, and a slow integration (Shodan
+        # auto-enrich: up to 10s per lookup) held every asset save hostage.
+        # Each runs as its own task with a timeout; handlers open their own
+        # DB sessions, so nothing here depends on the caller's.
+        for owner, h in plugin:
+            task = asyncio.create_task(self._run_plugin_handler(owner, h, event_type, dict(data)))
+            self._pending.add(task)
+            task.add_done_callback(self._pending.discard)
+
+        # Core subscribers keep the inline contract (callers rely on them).
+        if core:
+            results = await asyncio.gather(
+                *[self._safe_call(h, event_type, data) for h in core],
+                return_exceptions=True,
+            )
+            for r in results:
+                if isinstance(r, Exception):
+                    print(f"[EventBus] Handler error on '{event_type}': {r}")
+
+    async def _run_plugin_handler(self, owner: str, handler: Callable, event_type: str, data: dict):
+        try:
+            await asyncio.wait_for(self._safe_call(handler, event_type, data), PLUGIN_HANDLER_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            logger.warning("EventBus: plugin %s handler for %r timed out after %ss",
+                           owner, event_type, PLUGIN_HANDLER_TIMEOUT_S)
+        except Exception as e:
+            logger.warning("EventBus: plugin %s handler error on %r: %s", owner, event_type, e)
+
+    async def drain(self, timeout: float | None = None) -> None:
+        """Wait for in-flight plugin handlers (tests; graceful shutdown)."""
+        if self._pending:
+            await asyncio.wait(set(self._pending), timeout=timeout)
 
     @staticmethod
     async def _safe_call(handler: Callable, event_type: str, data: dict):

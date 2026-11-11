@@ -66,6 +66,7 @@ async def test_asset_created_reaches_plugins(client, db_session, make_user, auth
         r = await client.post("/assets", json={"engagement_id": a.engagement_id, "name": "db01",
                                                "asset_type": "Server", "identifier": "10.1.1.1"})
         assert r.status_code == 201, r.text
+        await event_bus.drain(5)  # plugin handlers run as background tasks
     finally:
         event_bus.unregister_plugin("__test_samples")
     assert [e["resource_id"] for e in seen] == [r.json()["id"]]

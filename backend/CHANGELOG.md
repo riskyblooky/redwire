@@ -155,6 +155,12 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- **Saving an asset no longer waits on plugins.** Plugin event handlers
+  (such as Shodan auto-enrichment, up to 10 s per lookup) used to run inside
+  the save request; they now run in the background, each limited to 30 s
+  (`PLUGIN_HANDLER_TIMEOUT_S`). The Shodan enricher's lookup cache now
+  expires after 24 hours, so new ports and vulnerabilities show up, and
+  holds at most 1,000 hosts.
 - **Deleting an engagement that had spray campaigns failed** with a server
   error. The campaigns (and their results) are now removed with it.
 - Operations: a backend worker that starts while Redis is down now keeps

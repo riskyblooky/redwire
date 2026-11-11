@@ -64,10 +64,16 @@ def test_handler_with_no_owning_plugin_always_fires():
     bus.register("asset.created", core_handler)
     # Deliberately leave the enabled predicate at its default.
 
-    asyncio.get_event_loop().run_until_complete(
-        bus.emit("asset.created", {"x": 1})
+    asyncio.get_event_loop().run_until_complete(_settle(bus, "asset.created", {"x": 1})
     )
     assert seen == ["asset.created"]
+
+
+async def _settle(bus, event_type, data):
+    """emit, then wait for the plugin handlers it spawned (they run as
+    background tasks)."""
+    await bus.emit(event_type, data)
+    await bus.drain()
 
 
 def test_handler_owned_by_enabled_plugin_fires():
@@ -80,8 +86,7 @@ def test_handler_owned_by_enabled_plugin_fires():
     bus.register("asset.created", plugin_handler, plugin_id="my_plugin")
     bus.set_plugin_enabled_check(lambda pid: True)
 
-    asyncio.get_event_loop().run_until_complete(
-        bus.emit("asset.created", {})
+    asyncio.get_event_loop().run_until_complete(_settle(bus, "asset.created", {})
     )
     assert seen == ["fired"]
 
@@ -98,8 +103,7 @@ def test_handler_owned_by_disabled_plugin_does_not_fire():
     bus.register("asset.created", plugin_handler, plugin_id="my_plugin")
     bus.set_plugin_enabled_check(lambda pid: False)
 
-    asyncio.get_event_loop().run_until_complete(
-        bus.emit("asset.created", {})
+    asyncio.get_event_loop().run_until_complete(_settle(bus, "asset.created", {})
     )
     assert seen == []
 
@@ -119,15 +123,15 @@ def test_predicate_consulted_per_emit_so_toggle_takes_immediate_effect():
     state = {"enabled": True}
     bus.set_plugin_enabled_check(lambda pid: state["enabled"])
 
-    asyncio.get_event_loop().run_until_complete(bus.emit("e", {}))
+    asyncio.get_event_loop().run_until_complete(_settle(bus, "e", {}))
     assert seen == ["e"]
 
     state["enabled"] = False  # toggle off
-    asyncio.get_event_loop().run_until_complete(bus.emit("e", {}))
+    asyncio.get_event_loop().run_until_complete(_settle(bus, "e", {}))
     assert seen == ["e"]  # unchanged — disabled handler skipped
 
     state["enabled"] = True  # toggle back on
-    asyncio.get_event_loop().run_until_complete(bus.emit("e", {}))
+    asyncio.get_event_loop().run_until_complete(_settle(bus, "e", {}))
     assert seen == ["e", "e"]
 
 
@@ -165,5 +169,5 @@ def test_mixed_owners_only_disabled_one_is_gated():
     bus.register("e", h_b, plugin_id="plugin_b")
     bus.set_plugin_enabled_check(lambda pid: pid == "plugin_b")
 
-    asyncio.get_event_loop().run_until_complete(bus.emit("e", {}))
+    asyncio.get_event_loop().run_until_complete(_settle(bus, "e", {}))
     assert seen == ["b"]
