@@ -155,6 +155,8 @@ section becomes one release entry.
   posture check reports any that couldn't be.
 
 ### Fixed
+- **Deleting an engagement that had spray campaigns failed** with a server
+  error. The campaigns (and their results) are now removed with it.
 - Operations: a backend worker that starts while Redis is down now keeps
   retrying and turns live updates on once Redis is back (it used to stay
   single-worker until restarted); container logs rotate (5 × 10 MB);

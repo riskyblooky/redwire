@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 from database import Base, AuditMixin
 from utils.encrypted_types import EncryptedText
 import uuid
@@ -37,7 +37,10 @@ class SprayCampaign(Base, AuditMixin):
     imported_from = Column(String(255), nullable=True)  # original filename
 
     # Relationships
-    engagement = relationship("Engagement", backref="spray_campaigns")
+    # passive_deletes="all": engagement_id is ON DELETE CASCADE, so leave the
+    # rows to Postgres. A plain backref made the ORM NULL engagement_id on
+    # engagement delete — a NOT NULL violation, so the delete 500'd.
+    engagement = relationship("Engagement", backref=backref("spray_campaigns", passive_deletes="all"))
     results = relationship("SprayResult", back_populates="campaign", cascade="all, delete-orphan", lazy="selectin")
     created_by_user = relationship("User", foreign_keys="SprayCampaign.created_by")
 
