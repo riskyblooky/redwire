@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.9.0] — Unreleased
+## [1.9.0] — 2026-11-11
 
 ### Added
 - **Hide pages from groups.** Every main-nav page now has a view
