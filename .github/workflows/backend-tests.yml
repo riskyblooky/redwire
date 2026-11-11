@@ -47,12 +47,14 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: backend/requirements.txt
-      # A service container can't be given MinIO's `server` command.
+      # A service container can't be given MinIO's `server` command. MinIO
+      # no longer publishes images (minio/minio is gone from Docker Hub), so
+      # CI uses pgsty/minio, a maintained community build with the same CLI.
       - name: Start MinIO
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=ci-minio -e MINIO_ROOT_PASSWORD=ci-minio-secret \
-            minio/minio:latest server /data
+            pgsty/minio:latest server /data
           for i in $(seq 1 30); do curl -sf http://localhost:9000/minio/health/live && break; sleep 2; done
       - name: Install dependencies
         working-directory: backend
