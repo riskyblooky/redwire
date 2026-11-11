@@ -292,7 +292,11 @@ echo -e "\n${BLUE}[6/8] Starting Services...${NC}"
 # The backend runs as UID 10001 (non-root, backend/Dockerfile): give it the
 # bind-mounted uploads dir, which older installs created as root.
 mkdir -p backend/uploads
-chown -R 10001:10001 backend/uploads 2>/dev/null || echo "  (could not chown backend/uploads to 10001 - photo / wordlist uploads will fail until it is)"
+# u+rwX too: root ignored modes, so older installs can have directories
+# without the execute bit (seen on prod: drw-r--r--), which a non-root
+# backend can't enter — it crash-looped on uploads/wordlists at import.
+chown -R 10001:10001 backend/uploads 2>/dev/null && chmod -R u+rwX backend/uploads \
+    || echo "  (could not chown/chmod backend/uploads for UID 10001 - the backend will fail to start until it is)"
 if [ "$OFFLINE" -eq 1 ]; then
     if [ ! -f redwire_images.tar ]; then
         echo -e "${RED}Error: --offline requires redwire_images.tar in the working directory.${NC}"
