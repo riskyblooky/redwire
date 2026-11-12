@@ -348,8 +348,8 @@ class TestDigestMapShapeValidation:
 
 
 class TestManifestVersion:
-    def test_current_version_is_1_2(self):
+    def test_current_version_is_1_3(self):
         # Pin the version so a future bump has to consciously update
-        # this test — accidentally shipping a v1.3 export that pre-1.3
-        # importers can't verify would repeat the CWE.
-        assert MANIFEST_VERSION == "1.2"
+        # this test. 1.3 only adds engagement.json sections/columns; the
+        # digest scheme is unchanged, so 1.2 importers still verify it.
+        assert MANIFEST_VERSION == "1.3"

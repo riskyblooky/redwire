@@ -141,6 +141,14 @@ section becomes one release entry.
   Details and Timeline edits, switching tabs dropped Skills edits, and Save &
   Close left the page even when the save failed. Failed parts are now
   reported and the page stays open.
+- **Engagement export and import keep everything.** Imports used to drop
+  classification markings, scoring inputs, custom fields, ATT&CK links, note
+  nesting, engagement tags, phases and skills, chain links and peer
+  reviews, and broke attack-graph attacker links, saved graph layouts and
+  links to specific ports. A tag name used for both findings and
+  engagements made the import fail. Peer reviews only carry over for
+  reviewers you map to a local user, and a failed import no longer leaves
+  uploaded files behind.
 
 ## [1.9.0] — 2026-11-11
 

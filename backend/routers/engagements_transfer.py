@@ -66,7 +66,10 @@ MIN_EXPORT_PASSPHRASE_LEN = 16
 # downgrade past the check. Operators with pre-1.2 archives that
 # genuinely need re-importing can set the env var below to False for
 # one-shot use.
-MANIFEST_VERSION = "1.2"
+# 1.3: every model column is exported (field lists derived from the models),
+# plus engagement tags/phases/skills, ATT&CK links, vault-asset and chain
+# links, and finding reviews. Older archives still import.
+MANIFEST_VERSION = "1.3"
 IMPORT_REQUIRE_DIGEST = os.getenv(
     "ENGAGEMENT_IMPORT_REQUIRE_DIGEST", "true"
 ).lower() not in ("false", "0", "no")
@@ -378,6 +381,13 @@ def _import_anchor(th: dict, resource_type: str) -> dict:
     }
 
 
+def _cols(model, *exclude: str) -> list[str]:
+    """Every column of ``model`` except ``exclude``. Export lists are derived
+    from the models so a new column travels by default; hand-kept lists
+    drifted and silently dropped markings, scoring, custom fields etc."""
+    return [c.key for c in model.__table__.columns if c.key not in exclude]
+
+
 def _row_dict(obj, fields: list[str]) -> dict:
     """Extract selected columns from an ORM object."""
     d = {}
@@ -389,6 +399,66 @@ def _row_dict(obj, fields: list[str]) -> dict:
             v = v.value
         d[f] = v
     return d
+
+# Never taken from an archive row: identity, ownership and timestamps the
+# import sets itself. Foreign-key columns are skipped too (see below).
+_NEVER_FROM_ARCHIVE = frozenset({"id", "engagement_id", "created_by", "updated_by", "updated_at"})
+# Attack-graph node id prefixes ("testcase-<uuid>") remapped on import.
+_GRAPH_NODE_PREFIXES = frozenset({"testcase", "finding", "asset", "cleanup", "vault", "attacker"})
+_SKIP = object()
+
+
+def _coerce_column(col, v, parse_dt):
+    """An archive value checked against the column's type, or _SKIP (the
+    column default applies). The archive is untrusted: a wrong type must not
+    reach the database, where it would fail the whole import."""
+    import sqlalchemy as sa
+    from utils.encrypted_types import EncryptedText
+    if v is None:
+        return None if col.nullable else _SKIP
+    t = col.type
+    if isinstance(t, sa.DateTime):
+        d = parse_dt(v)
+        return d if d is not None else (None if col.nullable else _SKIP)
+    if isinstance(t, sa.Enum):  # before String: Enum subclasses it
+        if isinstance(v, str):
+            for cand in (v, v.upper()):
+                if cand in t.enums:
+                    return cand
+        return _SKIP
+    if isinstance(t, sa.Boolean):
+        return v if isinstance(v, bool) else _SKIP
+    if isinstance(t, sa.Integer):
+        return v if isinstance(v, int) and not isinstance(v, bool) else _SKIP
+    if isinstance(t, sa.Float):
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else _SKIP
+    if isinstance(t, sa.JSON):
+        return v if isinstance(v, (dict, list)) else _SKIP
+    if isinstance(t, (sa.String, EncryptedText)):
+        if not isinstance(v, str):
+            return _SKIP
+        n = getattr(t, "length", None)
+        return v[:n] if n else v
+    return _SKIP
+
+
+def _plain_fields(model, row, parse_dt, handled=()) -> dict:
+    """The archive row's ordinary columns for ``model``: every column except
+    _NEVER_FROM_ARCHIVE, foreign keys (remapped by the caller, never copied)
+    and ``handled`` (set explicitly by the caller). Derived from the model so
+    new columns round-trip without editing this file."""
+    if not isinstance(row, dict):
+        return {}
+    out = {}
+    for col in model.__table__.columns:
+        k = col.key
+        if k in _NEVER_FROM_ARCHIVE or k in handled or col.foreign_keys or k not in row:
+            continue
+        v = _coerce_column(col, row[k], parse_dt)
+        if v is not _SKIP:
+            out[k] = v
+    return out
+
 
 # ═════════════════════════════════════════════════════════════════════════
 #  EXPORT
@@ -464,12 +534,7 @@ async def export_engagement(
     if not eng:
         raise HTTPException(status_code=404, detail="Engagement not found")
 
-    eng_fields = [
-        "id", "name", "client_name", "engagement_type", "status",
-        "description", "scope", "objectives", "start_date", "end_date",
-        "created_by", "updated_by", "created_at", "updated_at",
-    ]
-    data: dict = {"engagement": _row_dict(eng, eng_fields)}
+    data: dict = {"engagement": _row_dict(eng, _cols(Engagement))}
 
     # ── Collect user IDs for username resolution ─────────────────────
     user_ids_set: set[str] = set()
@@ -487,13 +552,7 @@ async def export_engagement(
         .where(Finding.engagement_id == engagement_id)
     )
     findings = res.scalars().all()
-    finding_fields = [
-        "id", "title", "category", "description", "severity", "status",
-        "cvss_score", "cvss_vector", "impact", "technical_details",
-        "steps_to_reproduce", "mitigations", "references",
-        "created_by", "updated_by", "created_at", "updated_at",
-    ]
-    data["findings"] = [_row_dict(f, finding_fields) for f in findings]
+    data["findings"] = [_row_dict(f, _cols(Finding)) for f in findings]
     for f in findings:
         _collect_user_ids(f, "created_by", "updated_by")
 
@@ -505,10 +564,9 @@ async def export_engagement(
         )
     )
     fa_rows = fa_res.scalars().all() if findings else []
-    data["finding_assets"] = [
-        _row_dict(r, ["finding_id", "asset_id", "port_ids", "remediated", "remediated_at"])
-        for r in fa_rows
-    ]
+    data["finding_assets"] = [_row_dict(r, _cols(FindingAsset)) for r in fa_rows]
+    for r in fa_rows:
+        _collect_user_ids(r, "remediated_by")
 
     # Finding → TestCase M2M
     from models.associations import FindingTestCase
@@ -545,12 +603,7 @@ async def export_engagement(
     from models.asset_port import AssetPort
     a_res = await db.execute(select(Asset).where(Asset.engagement_id == engagement_id))
     assets = a_res.scalars().all()
-    asset_fields = [
-        "id", "name", "asset_type", "identifier", "description", "notes",
-        "is_pwned", "is_scanned", "in_scope",
-        "created_by", "updated_by", "created_at", "updated_at",
-    ]
-    data["assets"] = [_row_dict(a, asset_fields) for a in assets]
+    data["assets"] = [_row_dict(a, _cols(Asset)) for a in assets]
     for a in assets:
         _collect_user_ids(a, "created_by", "updated_by")
 
@@ -561,10 +614,7 @@ async def export_engagement(
         )
     )
     ports = p_res.scalars().all() if assets else []
-    data["asset_ports"] = [
-        _row_dict(p, ["id", "asset_id", "port_number", "protocol", "service_name", "state", "version"])
-        for p in ports
-    ]
+    data["asset_ports"] = [_row_dict(p, _cols(AssetPort)) for p in ports]
 
     # ── testcases ────────────────────────────────────────────────────
     from models.testcase import TestCase
@@ -573,12 +623,7 @@ async def export_engagement(
         .where(TestCase.engagement_id == engagement_id)
     )
     testcases = tc_res.scalars().all()
-    tc_fields = [
-        "id", "parent_id", "title", "category", "description", "steps",
-        "expected_result", "actual_result", "is_executed", "is_successful", "notes",
-        "created_by", "updated_by", "created_at", "updated_at",
-    ]
-    data["testcases"] = [_row_dict(tc, tc_fields) for tc in testcases]
+    data["testcases"] = [_row_dict(tc, _cols(TestCase)) for tc in testcases]
     for tc in testcases:
         _collect_user_ids(tc, "created_by", "updated_by")
 
@@ -605,8 +650,34 @@ async def export_engagement(
         )
     )
     data["testcase_assets"] = [
-        _row_dict(r, ["testcase_id", "asset_id", "port_ids"]) for r in (tca_res.scalars().all() if testcases else [])
+        _row_dict(r, _cols(TestCaseAsset)) for r in (tca_res.scalars().all() if testcases else [])
     ]
+
+    # ATT&CK technique links (technique ids are global MITRE ids).
+    from models.associations import FindingAttackTechnique, TestCaseAttackTechnique
+    data["finding_attack_techniques"] = [
+        _row_dict(r, _cols(FindingAttackTechnique)) for r in ((await db.execute(
+            select(FindingAttackTechnique).where(FindingAttackTechnique.finding_id.in_([f.id for f in findings]))
+        )).scalars().all() if findings else [])
+    ]
+    data["testcase_attack_techniques"] = [
+        _row_dict(r, _cols(TestCaseAttackTechnique)) for r in ((await db.execute(
+            select(TestCaseAttackTechnique).where(TestCaseAttackTechnique.testcase_id.in_([tc.id for tc in testcases]))
+        )).scalars().all() if testcases else [])
+    ]
+
+    # Engagement tags, phases, required skills.
+    from models.associations import EngagementTag
+    from models.engagement_phase import EngagementPhase
+    from models.skill import EngagementSkill
+    eng_tag_rows = (await db.execute(
+        select(EngagementTag).where(EngagementTag.engagement_id == engagement_id))).scalars().all()
+    data["engagement_tags"] = [_row_dict(r, _cols(EngagementTag)) for r in eng_tag_rows]
+    tag_ids_set.update(r.tag_id for r in eng_tag_rows)
+    data["engagement_phases"] = [_row_dict(r, _cols(EngagementPhase)) for r in (await db.execute(
+        select(EngagementPhase).where(EngagementPhase.engagement_id == engagement_id))).scalars().all()]
+    data["engagement_skills"] = [_row_dict(r, _cols(EngagementSkill)) for r in (await db.execute(
+        select(EngagementSkill).where(EngagementSkill.engagement_id == engagement_id))).scalars().all()]
 
     # ── tags (fetch actual tag objects) ──────────────────────────────
     if tag_ids_set:
@@ -614,7 +685,7 @@ async def export_engagement(
         tags = tags_res.scalars().all()
     else:
         tags = []
-    data["tags"] = [_row_dict(t, ["id", "name", "color", "created_at"]) for t in tags]
+    data["tags"] = [_row_dict(t, _cols(Tag)) for t in tags]
 
     # ── evidence ─────────────────────────────────────────────────────
     from models.evidence import Evidence
@@ -624,13 +695,7 @@ async def export_engagement(
         (Evidence.testcase_id.in_([tc.id for tc in testcases]) if testcases else False)
     ))
     evidence_list = ev_res.scalars().all()
-    ev_fields = [
-        "id", "finding_id", "testcase_id", "engagement_id",
-        "filename", "original_filename", "file_path", "file_size",
-        "mime_type", "description", "include_in_report",
-        "created_by", "updated_by", "created_at", "updated_at",
-    ]
-    data["evidence"] = [_row_dict(e, ev_fields) for e in evidence_list]
+    data["evidence"] = [_row_dict(e, _cols(Evidence)) for e in evidence_list]
     for e in evidence_list:
         _collect_user_ids(e, "created_by", "updated_by")
 
@@ -641,22 +706,13 @@ async def export_engagement(
         .where(Thread.engagement_id == engagement_id)
     )
     threads = th_res.scalars().all()
-    data["threads"] = [
-        _row_dict(t, ["id", "resource_type", "resource_id", "title", "is_resolved", "created_by", "created_at",
-                      # Peer-review highlight anchor (null on plain threads).
-                      "anchor_field", "anchor_quote", "anchor_prefix", "anchor_suffix",
-                      "anchor_occurrence", "anchor_status"])
-        for t in threads
-    ]
+    data["threads"] = [_row_dict(t, _cols(Thread)) for t in threads]
     for t in threads:
         _collect_user_ids(t, "created_by")
     all_comments = []
     for t in threads:
         for c in t.comments:
-            all_comments.append(_row_dict(c, [
-                "id", "thread_id", "content", "is_resolvable", "is_resolved",
-                "resolved_by", "resolved_at", "created_by", "created_at",
-            ]))
+            all_comments.append(_row_dict(c, _cols(Comment)))
             _collect_user_ids(c, "created_by", "resolved_by")
     data["comments"] = all_comments
 
@@ -665,8 +721,7 @@ async def export_engagement(
     al_res = await db.execute(select(ActivityLog).where(ActivityLog.engagement_id == engagement_id))
     activity_logs = al_res.scalars().all()
     data["activity_logs"] = [
-        _row_dict(a, ["id", "user_id", "action", "resource_type", "resource_id", "resource_name", "details", "created_at"])
-        for a in activity_logs
+        _row_dict(a, _cols(ActivityLog, "origin_engagement_id")) for a in activity_logs
     ]
     for a in activity_logs:
         _collect_user_ids(a, "user_id")
@@ -678,11 +733,7 @@ async def export_engagement(
         .where(VaultItem.engagement_id == engagement_id)
     )
     vault_items = vi_res.scalars().all()
-    vi_fields = [
-        "id", "name", "item_type", "username", "password", "note",
-        "file_path", "filename", "description",
-        "created_by", "updated_by", "created_at", "updated_at",
-    ]
+    vi_fields = _cols(VaultItem, "encryption_version")
     # GHSA-3r7j-7h5r-gxgx: decrypt the Fernet-protected vault columns
     # before serialising so the archive carries plaintext that the
     # destination instance can re-encrypt under ITS key on import.
@@ -715,6 +766,12 @@ async def export_engagement(
     data["vault_item_testcases"] = [
         _row_dict(r, ["vault_item_id", "testcase_id"]) for r in (vitc_res.scalars().all() if vault_items else [])
     ]
+    from models.associations import VaultItemAsset
+    data["vault_item_assets"] = [
+        _row_dict(r, _cols(VaultItemAsset)) for r in ((await db.execute(
+            select(VaultItemAsset).where(VaultItemAsset.vault_item_id.in_([v.id for v in vault_items]))
+        )).scalars().all() if vault_items else [])
+    ]
 
     # ── cleanup artifacts ────────────────────────────────────────────
     from models.cleanup_artifact import CleanupArtifact
@@ -728,12 +785,7 @@ async def export_engagement(
         .where(CleanupArtifact.engagement_id == engagement_id)
     )
     cleanup_artifacts = ca_res.scalars().all()
-    ca_fields = [
-        "id", "title", "artifact_type", "status", "location",
-        "description", "cleanup_notes", "cleaned_at", "cleaned_by",
-        "created_by", "updated_by", "created_at", "updated_at",
-    ]
-    data["cleanup_artifacts"] = [_row_dict(ca, ca_fields) for ca in cleanup_artifacts]
+    data["cleanup_artifacts"] = [_row_dict(ca, _cols(CleanupArtifact)) for ca in cleanup_artifacts]
     for ca in cleanup_artifacts:
         _collect_user_ids(ca, "created_by", "updated_by", "cleaned_by")
 
@@ -769,7 +821,7 @@ async def export_engagement(
     note_res = await db.execute(select(Note).where(Note.engagement_id == engagement_id))
     notes = note_res.scalars().all()
     data["notes"] = [
-        _row_dict(n, ["id", "title", "content", "created_by", "updated_by", "created_at", "updated_at"]) for n in notes
+        _row_dict(n, _cols(Note)) for n in notes
     ]
     for n in notes:
         _collect_user_ids(n, "created_by", "updated_by")
@@ -796,7 +848,7 @@ async def export_engagement(
     an_res = await db.execute(select(AttackerNode).where(AttackerNode.engagement_id == engagement_id))
     attacker_nodes = an_res.scalars().all()
     data["attacker_nodes"] = [
-        _row_dict(an, ["id", "name", "point_of_presence", "description", "created_at"]) for an in attacker_nodes
+        _row_dict(an, _cols(AttackerNode)) for an in attacker_nodes
     ]
     ane_res = await db.execute(
         select(AttackerNodeEdge).where(
@@ -804,8 +856,7 @@ async def export_engagement(
         )
     )
     data["attacker_node_edges"] = [
-        _row_dict(r, ["id", "attacker_node_id", "target_node_id", "target_node_type"])
-        for r in (ane_res.scalars().all() if attacker_nodes else [])
+        _row_dict(r, _cols(AttackerNodeEdge)) for r in (ane_res.scalars().all() if attacker_nodes else [])
     ]
 
     # ── attack graph layouts ─────────────────────────────────────────
@@ -819,8 +870,7 @@ async def export_engagement(
         select(AttackGraphLayout).where(AttackGraphLayout.engagement_id == engagement_id)
     )
     data["attack_graph_layouts"] = [
-        _row_dict(agl, ["id", "name", "is_active", "positions", "pinned_at"])
-        for agl in agl_res.scalars().all()
+        _row_dict(agl, _cols(AttackGraphLayout, "pinned_by")) for agl in agl_res.scalars().all()
     ]
 
     # ── report layouts ───────────────────────────────────────────────
@@ -832,14 +882,28 @@ async def export_engagement(
     report_layouts = rl_res.scalars().all()
     data["report_layouts"] = []
     for rl in report_layouts:
-        rl_dict = _row_dict(rl, ["id", "name", "is_default", "created_at", "updated_at"])
-        rl_dict["sections"] = [
-            _row_dict(s, ["id", "section_type", "title", "content", "sort_order"]) for s in rl.sections
-        ]
+        rl_dict = _row_dict(rl, _cols(ReportLayout))
+        rl_dict["sections"] = [_row_dict(s, _cols(ReportSection)) for s in rl.sections]
         data["report_layouts"].append(rl_dict)
     for rl in report_layouts:
         _collect_user_ids(rl, "created_by", "updated_by")
     _collect_user_ids(eng, "created_by", "updated_by")
+
+    # ── chain links (testcase / finding / vault item → each other) ───
+    from models.chain_link import ChainLink
+    chain_links = (await db.execute(
+        select(ChainLink).where(ChainLink.engagement_id == engagement_id))).scalars().all()
+    data["chain_links"] = [_row_dict(cl, _cols(ChainLink)) for cl in chain_links]
+    for cl in chain_links:
+        _collect_user_ids(cl, "created_by", "updated_by")
+
+    # ── finding peer reviews ─────────────────────────────────────────
+    from models.finding_review import FindingReview
+    reviews = (await db.execute(select(FindingReview).where(
+        FindingReview.finding_id.in_([f.id for f in findings])))).scalars().all() if findings else []
+    data["finding_reviews"] = [_row_dict(r, _cols(FindingReview)) for r in reviews]
+    for r in reviews:
+        _collect_user_ids(r, "reviewer_id")
 
     # ── resolve user IDs → usernames ─────────────────────────────────
     user_ids_set.discard(None)
@@ -1253,262 +1317,295 @@ async def import_engagement(
         except Exception:
             return None
 
+    def mapped_user(original_user_id) -> str | None:
+        """A manually mapped local user, else None. For attributions that must
+        not silently become the importer (a peer approval, a remediation)."""
+        mapped = manual_mapping.get(original_user_id) if isinstance(original_user_id, str) else None
+        return mapped if mapped in valid_targets else None
+
+    def plain(model, row, handled=()) -> dict:
+        return _plain_fields(model, row, parse_dt, handled)
+
+    def rows(key) -> list[dict]:
+        v = data.get(key)
+        return [r for r in v if isinstance(r, dict)] if isinstance(v, list) else []
+
+    def remap_graph_id(gid) -> str | None:
+        """Attack-graph node ids are "<type>-<uuid>"; id_map holds bare ids.
+        Infra items are global (not part of the archive) and keep their id."""
+        if not isinstance(gid, str):
+            return None
+        prefix, sep, rest = gid.partition("-")
+        if not sep:
+            return None
+        if prefix == "infra":
+            return gid
+        if prefix in _GRAPH_NODE_PREFIXES:
+            nid = remap(rest)
+            return f"{prefix}-{nid}" if nid else None
+        return None
+
+    def remap_port_ids(raw) -> str | None:
+        """port_ids is a JSON list of AssetPort ids; they were copied verbatim
+        and pointed at the source instance's ports."""
+        try:
+            ids = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(ids, list):
+            return None
+        out = [nid for nid in (remap(x) for x in ids if isinstance(x, str)) if nid]
+        return json.dumps(out) if out else None
+
+    async def local_id(model, oid) -> str | None:
+        """Keep a reference to an instance-level record (client, marking
+        profile, skill) only when it exists here — true for a same-instance
+        copy or restore, usually not across instances."""
+        if not isinstance(oid, str) or not oid:
+            return None
+        return (await db.execute(select(model.id).where(model.id == oid))).scalar_one_or_none()
+
+    async def insert_parents_first(items: list[dict], build) -> None:
+        """Self-referencing rows (test case / note hierarchy): pre-register
+        ids, then insert level by level so each parent exists first. A
+        parent outside the archive, or a cycle, imports as top-level."""
+        for it in items:
+            new_id(it.get("id"))
+        known = {it.get("id") for it in items}
+        done: set = set()
+        pending = list(items)
+        while pending:
+            ready = [it for it in pending
+                     if not it.get("parent_id") or it["parent_id"] in done or it["parent_id"] not in known]
+            if not ready:
+                for it in pending:
+                    it["parent_id"] = None
+                ready = pending
+            for it in ready:
+                db.add(build(it))
+                done.add(it.get("id"))
+            await db.flush()
+            pending = [it for it in pending if it.get("id") not in done]
+
+    uploaded_keys: list[str] = []
+
     try:
         # ── 1. Engagement ────────────────────────────────────────────
         from models.engagement import Engagement
+        from models.client import Client
+        from models.marking_profile import MarkingProfile
         eng_data = data["engagement"]
         eng_new_id = new_id(eng_data["id"])
 
+        client_id = await local_id(Client, eng_data.get("client_id"))
+        client_name = eng_data.get("client_name") if isinstance(eng_data.get("client_name"), str) else ""
+        if client_id:
+            client_name = (await db.execute(select(Client.name).where(Client.id == client_id))).scalar_one()
         new_eng = Engagement(
             id=eng_new_id,
-            name=eng_data["name"] + " (imported)",
-            client_name=eng_data.get("client_name", ""),
-            engagement_type=eng_data.get("engagement_type", "Other"),
-            status=eng_data.get("status", "PLANNING"),
-            description=eng_data.get("description"),
-            scope=eng_data.get("scope"),
-            objectives=eng_data.get("objectives"),
-            start_date=parse_dt(eng_data.get("start_date")),
-            end_date=parse_dt(eng_data.get("end_date")),
+            **plain(Engagement, eng_data, handled={"name", "client_name", "engagement_type"}),
+            name=str(eng_data["name"]) + " (imported)",
+            client_name=client_name or "",
+            engagement_type=eng_data.get("engagement_type") if isinstance(eng_data.get("engagement_type"), str) else "Other",
+            client_id=client_id,
+            marking_profile_id=await local_id(MarkingProfile, eng_data.get("marking_profile_id")),
             created_by=resolve_user(eng_data.get("created_by")),
             updated_by=resolve_user(eng_data.get("updated_by")),
-            # Don't set client_id — the source client likely doesn't exist here
         )
         db.add(new_eng)
         await db.flush()
 
-        # ── 2. Tags — upsert by name ────────────────────────────────
+        # ── 2. Tags — matched by (name, entity_type) ─────────────────
+        # Names are unique per entity type, so a name-only lookup raised
+        # MultipleResultsFound once a name existed under two types. Archives
+        # before 1.3 carry no entity_type: infer it from where the tag is used.
         from models.finding import Tag
-        for tag_data in data.get("tags", []):
-            old_tag_id = tag_data["id"]
-            # Check if tag with same name exists
-            existing = await db.execute(select(Tag).where(Tag.name == tag_data["name"]))
-            existing_tag = existing.scalar_one_or_none()
+        usage: dict = {}
+        for key, et in (("finding_tags", "finding"), ("testcase_tags", "testcase"), ("engagement_tags", "engagement")):
+            for r in rows(key):
+                usage.setdefault(r.get("tag_id"), et)
+        for tag_data in rows("tags"):
+            name = tag_data.get("name")
+            if not isinstance(name, str) or not name.strip() or not tag_data.get("id"):
+                continue
+            et = tag_data.get("entity_type")
+            if not isinstance(et, str) or not et:
+                et = usage.get(tag_data["id"], "finding")
+            et = et[:20]
+            existing_tag = (await db.execute(
+                select(Tag).where(Tag.name == name, Tag.entity_type == et).limit(1)
+            )).scalars().first()
             if existing_tag:
-                id_map[old_tag_id] = existing_tag.id
+                id_map[tag_data["id"]] = existing_tag.id
             else:
-                new_tag_id = new_id(old_tag_id)
-                db.add(Tag(
-                    id=new_tag_id,
-                    name=tag_data["name"],
-                    color=tag_data.get("color"),
-                    created_at=parse_dt(tag_data.get("created_at")) or datetime.utcnow(),
-                ))
+                db.add(Tag(id=new_id(tag_data["id"]), name=name, entity_type=et,
+                           **plain(Tag, tag_data, handled={"name", "entity_type"})))
                 await db.flush()
 
-        # ── 3. Assets ────────────────────────────────────────────────
+        # ── 3. Assets + ports ────────────────────────────────────────
         from models.asset import Asset
-        from utils.asset_types import canonical_name, configured_asset_types
-        type_names = await configured_asset_types(db)
-        for a in data.get("assets", []):
+        from models.asset_port import AssetPort
+        from utils.asset_types import resolve_asset_type
+        for a in rows("assets"):
             db.add(Asset(
                 id=new_id(a["id"]),
                 engagement_id=eng_new_id,
-                name=a["name"],
-                # Bundles from older versions carry legacy spellings.
-                asset_type=canonical_name(a.get("asset_type"), type_names) or canonical_name("Other", type_names) or "Other",
-                identifier=a.get("identifier", ""),
-                description=a.get("description"),
-                notes=a.get("notes"),
-                is_pwned=a.get("is_pwned", False),
-                is_scanned=a.get("is_scanned", False),
-                in_scope=a.get("in_scope", True),
+                **plain(Asset, a, handled={"asset_type", "identifier"}),
+                # Same resolution as a direct create: legacy spellings map onto
+                # the configured types; with none configured the value is kept.
+                asset_type=await resolve_asset_type(
+                    a.get("asset_type") if isinstance(a.get("asset_type"), str) else None, db, fallback="Other",
+                ) or "Other",
+                identifier=a.get("identifier") if isinstance(a.get("identifier"), str) else "",
                 created_by=resolve_user(a.get("created_by")),
                 updated_by=resolve_user(a.get("updated_by")),
-                created_at=parse_dt(a.get("created_at")) or datetime.utcnow(),
             ))
         await db.flush()
-
-        # ── 3b. Asset Ports ──────────────────────────────────────────
-        from models.asset_port import AssetPort
-        for p in data.get("asset_ports", []):
-            asset_id = remap(p["asset_id"])
+        for p in rows("asset_ports"):
+            asset_id = remap(p.get("asset_id"))
             if asset_id is None:
                 continue
-            db.add(AssetPort(
-                id=new_id(p["id"]),
-                asset_id=asset_id,
-                port_number=p["port_number"],
-                protocol=p.get("protocol", "TCP"),
-                service_name=p.get("service_name"),
-                state=p.get("state", "OPEN"),
-                version=p.get("version"),
-            ))
+            db.add(AssetPort(id=new_id(p["id"]), asset_id=asset_id, **plain(AssetPort, p)))
         await db.flush()
 
         # ── 4. Findings ──────────────────────────────────────────────
         from models.finding import Finding
-        for f in data.get("findings", []):
+        finding_author: dict[str, str] = {}
+        for f in rows("findings"):
+            fid = new_id(f["id"])
+            finding_author[fid] = resolve_user(f.get("created_by"))
             db.add(Finding(
-                id=new_id(f["id"]),
+                id=fid,
                 engagement_id=eng_new_id,
-                title=f["title"],
-                category=f.get("category"),
-                description=f.get("description", ""),
-                severity=f.get("severity", "MEDIUM"),
-                status=f.get("status", "OPEN"),
-                cvss_score=f.get("cvss_score"),
-                cvss_vector=f.get("cvss_vector"),
-                impact=f.get("impact"),
-                technical_details=f.get("technical_details"),
-                steps_to_reproduce=f.get("steps_to_reproduce"),
-                mitigations=f.get("mitigations"),
-                references=f.get("references"),
-                created_by=resolve_user(f.get("created_by")),
+                **plain(Finding, f, handled={"description"}),
+                description=f.get("description") if isinstance(f.get("description"), str) else "",
+                created_by=finding_author[fid],
                 updated_by=resolve_user(f.get("updated_by")),
-                created_at=parse_dt(f.get("created_at")) or datetime.utcnow(),
             ))
         await db.flush()
 
-        # ── 5. TestCases (handle parent_id self-ref) ─────────────────
+        # ── 5. TestCases (parent hierarchy) ──────────────────────────
         from models.testcase import TestCase
-        # First pass: pre-generate IDs
-        all_tcs = data.get("testcases", [])
-        for tc in all_tcs:
-            new_id(tc["id"])
+        await insert_parents_first(rows("testcases"), lambda tc: TestCase(
+            id=remap(tc["id"]),
+            engagement_id=eng_new_id,
+            parent_id=remap(tc.get("parent_id")),
+            **plain(TestCase, tc, handled={"category", "description"}),
+            category=tc.get("category") if isinstance(tc.get("category"), str) and tc.get("category") else "Other",
+            description=tc.get("description") if isinstance(tc.get("description"), str) else "",
+            created_by=resolve_user(tc.get("created_by")),
+            updated_by=resolve_user(tc.get("updated_by")),
+        ))
 
-        # Topological insert: parents before children to satisfy self-ref FK
-        inserted_ids: set[str] = set()
-        remaining = list(all_tcs)
-        while remaining:
-            batch = []
-            still_remaining = []
-            for tc in remaining:
-                old_parent = tc.get("parent_id")
-                if not old_parent or old_parent in inserted_ids:
-                    batch.append(tc)
-                else:
-                    still_remaining.append(tc)
-
-            if not batch:
-                # Prevent infinite loop: insert remaining with parent_id=None
-                for tc in still_remaining:
-                    tc["parent_id"] = None
-                batch = still_remaining
-                still_remaining = []
-
-            for tc in batch:
-                tc_new_id = remap(tc["id"])
-                db.add(TestCase(
-                    id=tc_new_id,
-                    engagement_id=eng_new_id,
-                    parent_id=remap(tc.get("parent_id")),
-                    title=tc["title"],
-                    category=tc.get("category", "Other"),
-                    description=tc.get("description", ""),
-                    steps=tc.get("steps"),
-                    expected_result=tc.get("expected_result"),
-                    actual_result=tc.get("actual_result"),
-                    is_executed=tc.get("is_executed", False),
-                    is_successful=tc.get("is_successful"),
-                    notes=tc.get("notes"),
-                    created_by=resolve_user(tc.get("created_by")),
-                    updated_by=resolve_user(tc.get("updated_by")),
-                    created_at=parse_dt(tc.get("created_at")) or datetime.utcnow(),
-                ))
-                inserted_ids.add(tc["id"])
-            await db.flush()
-            remaining = still_remaining
-
-        # ── 6. Association tables ────────────────────────────────────
+        # ── 6. Links between findings, test cases, assets, tags ──────
+        # A row is kept only when every end was created by this import
+        # (a missing end used to insert NULL and fail the whole import).
         from models.associations import (
-            FindingAsset, FindingTestCase, FindingTag, TestCaseTag, TestCaseAsset,
-            VaultItemFinding, VaultItemTestCase,
+            FindingAsset, FindingTestCase, FindingTag, TestCaseTag, TestCaseAsset, EngagementTag,
+            FindingAttackTechnique, TestCaseAttackTechnique,
+            VaultItemFinding, VaultItemTestCase, VaultItemAsset,
             CleanupArtifactFinding, CleanupArtifactTestCase, CleanupArtifactAsset,
             NoteAsset, NoteTestCase, NoteFinding, NoteVaultItem, NoteCleanupArtifact,
         )
 
-        for fa in data.get("finding_assets", []):
-            db.add(FindingAsset(
-                finding_id=remap(fa["finding_id"]),
-                asset_id=remap(fa["asset_id"]),
-                port_ids=fa.get("port_ids"),
-                remediated=fa.get("remediated", False),
-                remediated_at=parse_dt(fa.get("remediated_at")),
-            ))
+        def add_links(key, model, fks: tuple, extra=None):
+            seen = set()
+            for r in rows(key):
+                ends = tuple(remap(r.get(fk)) for fk in fks)
+                if None in ends or ends in seen:
+                    continue
+                seen.add(ends)
+                db.add(model(**dict(zip(fks, ends)), **(extra(r) if extra else {})))
 
-        for ft in data.get("finding_testcases", []):
-            db.add(FindingTestCase(
-                finding_id=remap(ft["finding_id"]),
-                testcase_id=remap(ft["testcase_id"]),
-            ))
+        add_links("finding_assets", FindingAsset, ("finding_id", "asset_id"), lambda r: {
+            **plain(FindingAsset, r, handled={"port_ids"}),
+            "port_ids": remap_port_ids(r.get("port_ids")),
+            "remediated_by": mapped_user(r.get("remediated_by")),
+        })
+        add_links("finding_testcases", FindingTestCase, ("finding_id", "testcase_id"))
+        add_links("finding_tags", FindingTag, ("finding_id", "tag_id"))
+        add_links("testcase_tags", TestCaseTag, ("testcase_id", "tag_id"))
+        add_links("testcase_assets", TestCaseAsset, ("testcase_id", "asset_id"),
+                  lambda r: {"port_ids": remap_port_ids(r.get("port_ids"))})
+        id_map.setdefault(eng_data["id"], eng_new_id)
+        add_links("engagement_tags", EngagementTag, ("engagement_id", "tag_id"))
 
-        for ftg in data.get("finding_tags", []):
-            db.add(FindingTag(
-                finding_id=remap(ftg["finding_id"]),
-                tag_id=remap(ftg["tag_id"]),
-            ))
+        # ATT&CK technique ids are global MITRE ids, not remapped.
+        for key, model, fk in (("finding_attack_techniques", FindingAttackTechnique, "finding_id"),
+                               ("testcase_attack_techniques", TestCaseAttackTechnique, "testcase_id")):
+            seen_t = set()
+            for r in rows(key):
+                owner, tech = remap(r.get(fk)), r.get("technique_id")
+                if owner is None or not isinstance(tech, str) or not tech or (owner, tech) in seen_t:
+                    continue
+                seen_t.add((owner, tech))
+                db.add(model(**{fk: owner}, **plain(model, r)))
+        await db.flush()
 
-        for tct in data.get("testcase_tags", []):
-            db.add(TestCaseTag(
-                testcase_id=remap(tct["testcase_id"]),
-                tag_id=remap(tct["tag_id"]),
-            ))
-
-        for tca in data.get("testcase_assets", []):
-            db.add(TestCaseAsset(
-                testcase_id=remap(tca["testcase_id"]),
-                asset_id=remap(tca["asset_id"]),
-                port_ids=tca.get("port_ids"),
-            ))
+        # ── 6b. Phases, required skills ──────────────────────────────
+        from models.engagement_phase import EngagementPhase
+        from models.skill import EngagementSkill, Skill
+        for ph in rows("engagement_phases"):
+            db.add(EngagementPhase(id=new_id(ph.get("id")) or str(uuid.uuid4()), engagement_id=eng_new_id,
+                                   **plain(EngagementPhase, ph)))
+        for sk in rows("engagement_skills"):
+            skill_id = await local_id(Skill, sk.get("skill_id"))
+            if skill_id:
+                db.add(EngagementSkill(id=str(uuid.uuid4()), engagement_id=eng_new_id, skill_id=skill_id,
+                                       **plain(EngagementSkill, sk)))
         await db.flush()
 
         # ── 7. Evidence (+ upload files) ─────────────────────────────
         from models.evidence import Evidence
-        for ev in data.get("evidence", []):
-            old_path = ev.get("file_path", "")
-            ext = os.path.splitext(old_path)[1] if old_path else ""
+        for ev in rows("evidence"):
+            old_path = ev.get("file_path") if isinstance(ev.get("file_path"), str) else ""
+            zip_path = f"attachments/{old_path}"
+            # A row without its file in the archive would point at nothing.
+            if not old_path or zip_path not in zf.namelist():
+                logger.warning("engagement-import: evidence %r has no file in the archive; skipped", ev.get("id"))
+                continue
+            ext = os.path.splitext(old_path)[1]
             new_storage_name = f"{uuid.uuid4()}{ext}"
             # The bundle's mime_type is attacker-supplied (text/html on a
             # .png would render inline): derive it from the extension, as a
             # direct upload does.
             ev_mime = safe_content_type(new_storage_name)
-            file_size = ev.get("file_size", 0)
-
-            # Upload file from ZIP to MinIO
-            zip_path = f"attachments/{old_path}"
-            if old_path and zip_path in zf.namelist():
-                file_bytes = _read_member_safely(zf, zip_path)
-                file_size = len(file_bytes)
-                try:
-                    await storage_service.upload_file(file_bytes, new_storage_name, content_type=ev_mime)
-                except Exception:
-                    # GHSA-rcjp-27mp-v69m: never fall back to the bundle-supplied
-                    # path — that would persist an attacker-controlled storage
-                    # key pointing at another engagement's object. Skip the row.
-                    continue
+            file_bytes = _read_member_safely(zf, zip_path)
+            try:
+                await storage_service.upload_file(file_bytes, new_storage_name, content_type=ev_mime)
+            except Exception:
+                # GHSA-rcjp-27mp-v69m: never fall back to the bundle-supplied
+                # path — that would persist an attacker-controlled storage
+                # key pointing at another engagement's object. Skip the row.
+                continue
+            uploaded_keys.append(new_storage_name)
 
             db.add(Evidence(
                 id=new_id(ev["id"]),
                 finding_id=remap(ev.get("finding_id")),
                 testcase_id=remap(ev.get("testcase_id")),
                 engagement_id=eng_new_id,
+                **plain(Evidence, ev, handled={"filename", "original_filename", "file_path", "file_size", "mime_type"}),
                 filename=new_storage_name,
                 original_filename=sanitize_original_filename(ev.get("original_filename"), "unknown"),
                 file_path=new_storage_name,
-                file_size=file_size,
+                file_size=len(file_bytes),
                 mime_type=ev_mime,
-                description=ev.get("description"),
-                include_in_report=ev.get("include_in_report", True),
                 created_by=resolve_user(ev.get("created_by")),
                 updated_by=resolve_user(ev.get("updated_by")),
-                created_at=parse_dt(ev.get("created_at")) or datetime.utcnow(),
             ))
         await db.flush()
 
         # ── 8. Vault Items (+ upload files) ──────────────────────────
         from models.vault import VaultItem
-        for vi in data.get("vault_items", []):
-            old_path = vi.get("file_path", "")
+        for vi in rows("vault_items"):
+            old_path = vi.get("file_path") if isinstance(vi.get("file_path"), str) else ""
             new_vault_path = None
             if old_path:
-                ext = os.path.splitext(old_path)[1] if old_path else ""
+                ext = os.path.splitext(old_path)[1]
                 # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: force the .enc
                 # suffix so the new blob has the same on-disk shape as
-                # native uploads. Helps the operator visually distinguish
-                # encrypted blobs from any legacy plaintext still in
-                # MinIO (pre-RDW-057) and matches the .enc convention
-                # in routers/vault.py::upload_vault_file.
+                # native uploads (routers/vault.py::upload_vault_file).
                 if not ext.endswith(".enc"):
                     ext = (ext or "") + ".enc"
                 new_vault_path = f"vault/{uuid.uuid4()}{ext}"
@@ -1516,155 +1613,122 @@ async def import_engagement(
                 if zip_path in zf.namelist():
                     file_bytes = _read_member_safely(zf, zip_path)
                     try:
-                        # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: the export
-                        # path decrypts before zipping, so the archive
-                        # carries plaintext. Encrypt under THIS instance's
+                        # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: the archive
+                        # carries plaintext; encrypt under THIS instance's
                         # VAULT_ENCRYPTION_KEY before persisting to MinIO.
-                        # Without this, imported vault files would sit in
-                        # the destination bucket as plaintext — the exact
-                        # bug the at-rest fix exists to close.
                         from utils.vault_crypto import encrypt_bytes as _encrypt_vault_bytes
-                        ciphertext = _encrypt_vault_bytes(file_bytes)
                         await storage_service.upload_file(
-                            ciphertext,
-                            new_vault_path,
+                            _encrypt_vault_bytes(file_bytes), new_vault_path,
                             content_type="application/octet-stream",
                         )
+                        uploaded_keys.append(new_vault_path)
                     except Exception:
                         # GHSA-rcjp-27mp-v69m: drop the file reference rather
-                        # than persisting the attacker-supplied path. VaultItem
-                        # carries non-file payload too (username/password/note),
-                        # so the row is still useful — vault.py:322 already
-                        # handles file_path is None with a 404 on download.
+                        # than persisting the attacker-supplied path.
                         new_vault_path = None
+                else:
+                    new_vault_path = None
 
-            # GHSA-3r7j-7h5r-gxgx: persist vault text columns under the
-            # destination instance's Fernet key. The archive carries
-            # plaintext (see export side); the EncryptedText column type
-            # on VaultItem encrypts on bind, so we hand it the raw
-            # plaintext from the archive and let the type layer do the
-            # work. Same applies to the file blob above (encrypted via
-            # encrypt_bytes before MinIO upload).
+            # GHSA-3r7j-7h5r-gxgx: the EncryptedText columns encrypt the
+            # archive's plaintext under this instance's key on bind.
             db.add(VaultItem(
                 id=new_id(vi["id"]),
                 engagement_id=eng_new_id,
-                name=vi["name"],
-                item_type=vi.get("item_type", "Note"),
-                username=vi.get("username"),
-                password=vi.get("password"),
-                note=vi.get("note"),
+                **plain(VaultItem, vi, handled={"file_path", "encryption_version", "item_type"}),
+                item_type=vi.get("item_type") if isinstance(vi.get("item_type"), str) and vi.get("item_type") else "Note",
                 file_path=new_vault_path,
-                filename=vi.get("filename"),
-                description=vi.get("description"),
-                # New row's blob just got encrypted above (if there was
-                # one), so it's at the current scheme.
+                # New row's blob (if any) was just encrypted: current scheme.
                 encryption_version=1,
                 created_by=resolve_user(vi.get("created_by")),
                 updated_by=resolve_user(vi.get("updated_by")),
-                created_at=parse_dt(vi.get("created_at")) or datetime.utcnow(),
             ))
         await db.flush()
-
-        # Vault M2M
-        for vif in data.get("vault_item_findings", []):
-            db.add(VaultItemFinding(
-                vault_item_id=remap(vif["vault_item_id"]),
-                finding_id=remap(vif["finding_id"]),
-            ))
-        for vitc in data.get("vault_item_testcases", []):
-            db.add(VaultItemTestCase(
-                vault_item_id=remap(vitc["vault_item_id"]),
-                testcase_id=remap(vitc["testcase_id"]),
-            ))
+        add_links("vault_item_findings", VaultItemFinding, ("vault_item_id", "finding_id"))
+        add_links("vault_item_testcases", VaultItemTestCase, ("vault_item_id", "testcase_id"))
+        add_links("vault_item_assets", VaultItemAsset, ("vault_item_id", "asset_id"))
         await db.flush()
 
         # ── 9. Cleanup Artifacts ─────────────────────────────────────
         from models.cleanup_artifact import CleanupArtifact
-        for ca in data.get("cleanup_artifacts", []):
+        for ca in rows("cleanup_artifacts"):
             db.add(CleanupArtifact(
                 id=new_id(ca["id"]),
                 engagement_id=eng_new_id,
-                title=ca["title"],
-                artifact_type=ca.get("artifact_type", "Other"),
-                status=ca.get("status", "PENDING"),
-                location=ca.get("location"),
-                description=ca.get("description"),
-                cleanup_notes=ca.get("cleanup_notes"),
-                cleaned_at=parse_dt(ca.get("cleaned_at")),
+                **plain(CleanupArtifact, ca, handled={"artifact_type"}),
+                artifact_type=ca.get("artifact_type") if isinstance(ca.get("artifact_type"), str) and ca.get("artifact_type") else "Other",
                 cleaned_by=resolve_user(ca.get("cleaned_by")) if ca.get("cleaned_by") else None,
                 created_by=resolve_user(ca.get("created_by")),
                 updated_by=resolve_user(ca.get("updated_by")),
-                created_at=parse_dt(ca.get("created_at")) or datetime.utcnow(),
             ))
         await db.flush()
-
-        # Cleanup M2M
-        for caf in data.get("cleanup_artifact_findings", []):
-            db.add(CleanupArtifactFinding(
-                cleanup_artifact_id=remap(caf["cleanup_artifact_id"]),
-                finding_id=remap(caf["finding_id"]),
-            ))
-        for catc in data.get("cleanup_artifact_testcases", []):
-            db.add(CleanupArtifactTestCase(
-                cleanup_artifact_id=remap(catc["cleanup_artifact_id"]),
-                testcase_id=remap(catc["testcase_id"]),
-            ))
-        for caas in data.get("cleanup_artifact_assets", []):
-            db.add(CleanupArtifactAsset(
-                cleanup_artifact_id=remap(caas["cleanup_artifact_id"]),
-                asset_id=remap(caas["asset_id"]),
-            ))
+        add_links("cleanup_artifact_findings", CleanupArtifactFinding, ("cleanup_artifact_id", "finding_id"))
+        add_links("cleanup_artifact_testcases", CleanupArtifactTestCase, ("cleanup_artifact_id", "testcase_id"))
+        add_links("cleanup_artifact_assets", CleanupArtifactAsset, ("cleanup_artifact_id", "asset_id"))
         await db.flush()
 
-        # ── 10. Notes ────────────────────────────────────────────────
+        # ── 10. Notes (parent hierarchy) ─────────────────────────────
         from models.note import Note
-        for n in data.get("notes", []):
-            db.add(Note(
-                id=new_id(n["id"]),
+        await insert_parents_first(rows("notes"), lambda n: Note(
+            id=remap(n["id"]),
+            engagement_id=eng_new_id,
+            parent_id=remap(n.get("parent_id")),
+            **plain(Note, n),
+            created_by=resolve_user(n.get("created_by")),
+            updated_by=resolve_user(n.get("updated_by")),
+        ))
+        add_links("note_findings", NoteFinding, ("note_id", "finding_id"))
+        add_links("note_testcases", NoteTestCase, ("note_id", "testcase_id"))
+        add_links("note_assets", NoteAsset, ("note_id", "asset_id"))
+        add_links("note_vault_items", NoteVaultItem, ("note_id", "vault_item_id"))
+        add_links("note_cleanup_artifacts", NoteCleanupArtifact, ("note_id", "cleanup_artifact_id"))
+        await db.flush()
+
+        # ── 10b. Chain links ─────────────────────────────────────────
+        from models.chain_link import ChainLink, CHAIN_NODE_TYPES
+        for cl in rows("chain_links"):
+            src, dst = remap(cl.get("source_id")), remap(cl.get("target_id"))
+            if (src is None or dst is None or cl.get("source_type") not in CHAIN_NODE_TYPES
+                    or cl.get("target_type") not in CHAIN_NODE_TYPES):
+                continue
+            db.add(ChainLink(
+                id=new_id(cl.get("id")) or str(uuid.uuid4()),
                 engagement_id=eng_new_id,
-                title=n["title"],
-                content=n.get("content", ""),
-                created_by=resolve_user(n.get("created_by")),
-                updated_by=resolve_user(n.get("updated_by")),
-                created_at=parse_dt(n.get("created_at")) or datetime.utcnow(),
+                **plain(ChainLink, cl, handled={"source_id", "target_id"}),
+                source_id=src, target_id=dst,
+                created_by=resolve_user(cl.get("created_by")),
+                updated_by=resolve_user(cl.get("updated_by")),
             ))
         await db.flush()
 
-        # Note M2M
-        for nf in data.get("note_findings", []):
-            db.add(NoteFinding(note_id=remap(nf["note_id"]), finding_id=remap(nf["finding_id"])))
-        for ntc in data.get("note_testcases", []):
-            db.add(NoteTestCase(note_id=remap(ntc["note_id"]), testcase_id=remap(ntc["testcase_id"])))
-        for na in data.get("note_assets", []):
-            db.add(NoteAsset(note_id=remap(na["note_id"]), asset_id=remap(na["asset_id"])))
-        for nvi in data.get("note_vault_items", []):
-            db.add(NoteVaultItem(note_id=remap(nvi["note_id"]), vault_item_id=remap(nvi["vault_item_id"])))
-        for nca in data.get("note_cleanup_artifacts", []):
-            db.add(NoteCleanupArtifact(note_id=remap(nca["note_id"]), cleanup_artifact_id=remap(nca["cleanup_artifact_id"])))
+        # ── 10c. Finding peer reviews ────────────────────────────────
+        # Only reviewers mapped to a local user: defaulting them to the
+        # importer would forge approvals (possibly on the importer's own
+        # findings, defeating the two-person rule).
+        from models.finding_review import FindingReview
+        seen_reviews = set()
+        for rv in rows("finding_reviews"):
+            fid, reviewer = remap(rv.get("finding_id")), mapped_user(rv.get("reviewer_id"))
+            if (fid is None or reviewer is None or reviewer == finding_author.get(fid)
+                    or (fid, reviewer) in seen_reviews or rv.get("status") not in ("APPROVED", "CHANGES_REQUESTED")):
+                continue
+            seen_reviews.add((fid, reviewer))
+            db.add(FindingReview(id=str(uuid.uuid4()), finding_id=fid, reviewer_id=reviewer,
+                                 **plain(FindingReview, rv)))
         await db.flush()
 
         # ── 11. Threads & Comments ───────────────────────────────────
         from models.discussion import Thread, Comment, ResourceType
-        # GHSA-7x2f-ff7r-h388 #8 (CWE-20): the Thread.resource_type
-        # column is a plain String(50) (the model comment reads
-        # "Changed from Enum to String") — no DB-level enum guard.
-        # An archive whose `resource_type` value doesn't belong to the
-        # ResourceType enum would land as legit-looking data and later
-        # break every consumer that assumes the value is one of the
-        # 12 documented shapes (serializer, /engagements/{id}/threads
-        # UI grouping, discussions router's engagement scoping).
-        # Coerce unknown values to ENGAGEMENT + log — the value's not
-        # attacker-controlled in a way that lets them cross a trust
-        # boundary, so silently normalising is preferable to refusing
-        # the whole archive.
+        # GHSA-7x2f-ff7r-h388 #8 (CWE-20): Thread.resource_type is a plain
+        # String(50) with no DB-level enum guard; coerce unknown values to
+        # ENGAGEMENT (+ log) rather than refusing the whole archive.
         _valid_resource_types = {v.value for v in ResourceType}
         # Report sections are created in step 15; register their new ids now
         # so report-section threads remap instead of losing their resource.
-        for rl in data.get("report_layouts", []):
-            for sec in rl.get("sections", []):
-                new_id(sec.get("id"))
-        for th in data.get("threads", []):
-            # Remap resource_id if it was an engagement-scoped entity
+        for rl in rows("report_layouts"):
+            for sec in (rl.get("sections") or []):
+                if isinstance(sec, dict):
+                    new_id(sec.get("id"))
+        for th in rows("threads"):
             resource_id = remap(th.get("resource_id"))
             raw_rt = th.get("resource_type", "engagement")
             if raw_rt not in _valid_resource_types:
@@ -1678,37 +1742,31 @@ async def import_engagement(
                 engagement_id=eng_new_id,
                 resource_type=raw_rt,
                 resource_id=resource_id,
-                title=th.get("title", ""),
-                is_resolved=th.get("is_resolved", False),
+                title=th.get("title") if isinstance(th.get("title"), str) else "",
+                is_resolved=th.get("is_resolved") is True,
                 created_by=resolve_user(th.get("created_by")),
                 created_at=parse_dt(th.get("created_at")) or datetime.utcnow(),
                 **_import_anchor(th, raw_rt),
             ))
         await db.flush()
 
-        for c in data.get("comments", []):
-            thread_id = remap(c["thread_id"])
+        for c in rows("comments"):
+            thread_id = remap(c.get("thread_id"))
             if thread_id is None:
                 continue
             db.add(Comment(
                 id=new_id(c["id"]),
                 thread_id=thread_id,
-                content=c.get("content", ""),
-                is_resolvable=c.get("is_resolvable", False),
-                is_resolved=c.get("is_resolved", False),
-                resolved_at=parse_dt(c.get("resolved_at")),
+                **plain(Comment, c, handled={"content"}),
+                content=c.get("content") if isinstance(c.get("content"), str) else "",
                 resolved_by=resolve_user(c.get("resolved_by")) if c.get("resolved_by") else None,
                 created_by=resolve_user(c.get("created_by")),
-                created_at=parse_dt(c.get("created_at")) or datetime.utcnow(),
             ))
         await db.flush()
 
         # ── 12. Activity Logs ────────────────────────────────────────
         from models.discussion import ActivityLog
-        # GHSA-7x2f-ff7r-h388 #8 (CWE-20): ActivityLog.resource_type
-        # is the same String(50) shape and lands from the same archive
-        # section; same enum-coerce policy as threads above.
-        for al in data.get("activity_logs", []):
+        for al in rows("activity_logs"):
             raw_rt = al.get("resource_type", "engagement")
             if raw_rt not in _valid_resource_types:
                 logger.warning(
@@ -1720,107 +1778,100 @@ async def import_engagement(
                 id=new_id(al["id"]),
                 engagement_id=eng_new_id,
                 user_id=resolve_user(al.get("user_id")),
-                action=al.get("action", "imported"),
+                action=al.get("action") if isinstance(al.get("action"), str) else "imported",
                 resource_type=raw_rt,
                 resource_id=remap(al.get("resource_id")) or eng_new_id,
-                resource_name=al.get("resource_name"),
-                details=al.get("details"),
+                resource_name=al.get("resource_name") if isinstance(al.get("resource_name"), str) else None,
+                details=al.get("details") if isinstance(al.get("details"), str) else None,
                 created_at=parse_dt(al.get("created_at")) or datetime.utcnow(),
             ))
         await db.flush()
 
         # ── 13. Attacker Nodes & Edges ───────────────────────────────
         from models.attacker_node import AttackerNode, AttackerNodeEdge
-        for an in data.get("attacker_nodes", []):
-            db.add(AttackerNode(
-                id=new_id(an["id"]),
-                engagement_id=eng_new_id,
-                name=an.get("name", "Threat Actor"),
-                point_of_presence=an.get("point_of_presence", "External"),
-                description=an.get("description"),
-                created_at=parse_dt(an.get("created_at")) or datetime.utcnow(),
-            ))
+        for an in rows("attacker_nodes"):
+            db.add(AttackerNode(id=new_id(an["id"]), engagement_id=eng_new_id, **plain(AttackerNode, an)))
         await db.flush()
 
-        for edge in data.get("attacker_node_edges", []):
-            attacker_node_id = remap(edge["attacker_node_id"])
-            if attacker_node_id is None:
+        for edge in rows("attacker_node_edges"):
+            attacker_node_id = remap(edge.get("attacker_node_id"))
+            ttype = edge.get("target_node_type") if isinstance(edge.get("target_node_type"), str) else ""
+            raw_target = edge.get("target_node_id")
+            # Stored as the graph id ("testcase-<uuid>"); very old rows may be bare.
+            target = remap_graph_id(raw_target)
+            if target is None and remap(raw_target) and ttype in _GRAPH_NODE_PREFIXES:
+                target = f"{ttype}-{remap(raw_target)}"
+            if attacker_node_id is None or target is None:
                 continue
             db.add(AttackerNodeEdge(
-                id=new_id(edge["id"]),
+                id=new_id(edge.get("id")) or str(uuid.uuid4()),
                 attacker_node_id=attacker_node_id,
-                target_node_id=remap(edge.get("target_node_id")) or "",
-                target_node_type=edge.get("target_node_type", ""),
+                target_node_id=target,
+                target_node_type=ttype,
             ))
         await db.flush()
 
         # ── 14. Attack Graph Layouts ─────────────────────────────────
         # New archives ship a list (`attack_graph_layouts`); old archives
-        # ship a single object (`attack_graph_layout`). Normalize to a
-        # list and iterate so both shapes import cleanly.
+        # ship a single object (`attack_graph_layout`).
         agl_list = data.get("attack_graph_layouts")
         if agl_list is None:
             single = data.get("attack_graph_layout")
             agl_list = [single] if single else []
-        if agl_list:
-            from models.attack_graph_layout import AttackGraphLayout
-            for agl_data in agl_list:
-                if not agl_data:
-                    continue
-                positions_raw = agl_data.get("positions", "{}")
-                try:
-                    positions = json.loads(positions_raw) if isinstance(positions_raw, str) else positions_raw
-                    remapped_pos = {}
-                    for key, value in positions.items():
-                        remapped_pos[remap(key) or key] = value
-                    positions_str = json.dumps(remapped_pos)
-                except Exception:
-                    positions_str = positions_raw if isinstance(positions_raw, str) else json.dumps(positions_raw)
-
-                db.add(AttackGraphLayout(
-                    id=new_id(agl_data["id"]),
-                    engagement_id=eng_new_id,
-                    name=agl_data.get("name") or "Default",
-                    is_active=bool(agl_data.get("is_active", False)),
-                    positions=positions_str,
-                    pinned_by=current_user.id,
-                    pinned_at=parse_dt(agl_data.get("pinned_at")) or datetime.utcnow(),
-                ))
-            await db.flush()
+        from models.attack_graph_layout import AttackGraphLayout
+        for agl_data in agl_list if isinstance(agl_list, list) else []:
+            if not isinstance(agl_data, dict):
+                continue
+            positions_raw = agl_data.get("positions", "{}")
+            try:
+                positions = json.loads(positions_raw) if isinstance(positions_raw, str) else positions_raw
+            except (TypeError, ValueError):
+                positions = {}
+            # Keys are graph node ids; those not in this archive are dropped.
+            remapped_pos = {}
+            for key, value in (positions.items() if isinstance(positions, dict) else []):
+                nk = remap_graph_id(key)
+                if nk:
+                    remapped_pos[nk] = value
+            db.add(AttackGraphLayout(
+                id=new_id(agl_data.get("id")) or str(uuid.uuid4()),
+                engagement_id=eng_new_id,
+                **plain(AttackGraphLayout, agl_data, handled={"positions", "name"}),
+                name=agl_data.get("name") if isinstance(agl_data.get("name"), str) and agl_data.get("name") else "Default",
+                positions=json.dumps(remapped_pos),
+                pinned_by=current_user.id,
+            ))
+        await db.flush()
 
         # ── 15. Report Layouts ───────────────────────────────────────
         from models.report_layout import ReportLayout, ReportSection
-        for rl in data.get("report_layouts", []):
+        for rl in rows("report_layouts"):
             rl_new_id = new_id(rl["id"])
             db.add(ReportLayout(
                 id=rl_new_id,
-                name=rl.get("name", "Default"),
                 engagement_id=eng_new_id,
-                is_default=rl.get("is_default", False),
+                **plain(ReportLayout, rl, handled={"name"}),
+                name=rl.get("name") if isinstance(rl.get("name"), str) and rl.get("name") else "Default",
                 created_by=resolve_user(rl.get("created_by")),
-                created_at=parse_dt(rl.get("created_at")) or datetime.utcnow(),
+                updated_by=resolve_user(rl.get("updated_by")),
             ))
             await db.flush()
-            for sec in rl.get("sections", []):
+            for sec in (rl.get("sections") or []):
+                if not isinstance(sec, dict):
+                    continue
                 db.add(ReportSection(
-                    id=new_id(sec["id"]),
+                    id=new_id(sec.get("id")) or str(uuid.uuid4()),
                     report_layout_id=rl_new_id,
-                    section_type=sec.get("section_type", "text"),
-                    title=sec.get("title", ""),
-                    content=sec.get("content", ""),
-                    sort_order=sec.get("sort_order", 0),
+                    **plain(ReportSection, sec, handled={"title"}),
+                    title=sec.get("title") if isinstance(sec.get("title"), str) else "",
                 ))
             await db.flush()
 
         # ── Log import activity ──────────────────────────────────────
         # GHSA-vwgf-r8qp-8gwr: include the archive's manifest root
         # digest so forensic queries can tie an imported engagement
-        # back to a specific archive without digging through server
-        # logs. Truncated to 16 hex chars in the details string for
-        # readability; the full digest is available in server logs
-        # and by re-hashing the archive if it's still on hand.
+        # back to a specific archive.
         _archive_fp = (manifest.get("root_digest") or "unknown")[:16]
-        from models.discussion import ActivityLog
         db.add(ActivityLog(
             id=str(uuid.uuid4()),
             engagement_id=eng_new_id,
@@ -1847,6 +1898,14 @@ async def import_engagement(
 
     except Exception as e:
         await db.rollback()
+        # The rows are gone; so must be the objects uploaded for them.
+        for key in uploaded_keys:
+            try:
+                await storage_service.delete_file(key)
+            except Exception:
+                logger.warning("engagement-import: could not remove orphaned object %s", key)
+        if isinstance(e, HTTPException):
+            raise
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
