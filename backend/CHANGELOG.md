@@ -65,6 +65,10 @@ section becomes one release entry.
   The page guard and the server-side redirect disagreed about which pages
   need no session; both now use one list, and a stale session cookie no
   longer sends the SSO callback or reset-password page to the dashboard.
+- **Turning two-factor on (or off) keeps you signed in.** The change signs
+  out every session, and it used to sign out yours too, sending you to the
+  login page before your recovery codes were shown. You now get a fresh
+  session and the codes appear as intended.
 
 ## [1.9.0] — 2026-11-11
 

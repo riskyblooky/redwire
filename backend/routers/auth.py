@@ -87,6 +87,15 @@ REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24  # 24h — matches create_refresh_token
 
 
+def _reissue_session(response: Response, request: Request, user) -> str:
+    """After revoke_all_user_tokens on a credential/MFA change: give the
+    caller a fresh pair (refresh in the cookie) and return the access token,
+    so the user who made the change stays signed in."""
+    access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
+    _set_refresh_cookie(response, request, create_refresh_token(data={"sub": user.id}))
+    return access_token
+
+
 def _set_refresh_cookie(response: Response, request: Request, refresh_token: str) -> None:
     response.set_cookie(
         REFRESH_COOKIE_NAME,
@@ -900,6 +909,7 @@ async def totp_setup(
 @limiter.limit("5/minute")
 async def totp_verify_setup(
     request: Request,
+    response: Response,
     body: TotpVerifyRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -978,6 +988,9 @@ async def totp_verify_setup(
     return TotpVerifySetupResponse(
         message="Two-factor authentication enabled successfully",
         recovery_codes=codes,
+        # Without a fresh session the client's next call 401s and it is sent
+        # to login before it can show the recovery codes.
+        access_token=_reissue_session(response, request, current_user),
     )
 
 
@@ -990,6 +1003,7 @@ async def totp_verify_setup(
 @limiter.limit("5/minute")
 async def totp_disable(
     request: Request,
+    response: Response,
     body: TotpDisableRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -1069,7 +1083,10 @@ async def totp_disable(
     )
     await db.commit()
 
-    return {"message": "Two-factor authentication disabled successfully"}
+    return {
+        "message": "Two-factor authentication disabled successfully",
+        "access_token": _reissue_session(response, request, current_user),
+    }
 
 
 @router.post(

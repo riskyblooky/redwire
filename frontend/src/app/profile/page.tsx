@@ -253,6 +253,9 @@ export default function ProfilePage() {
         setTotpLoading(true);
         try {
             const res = await api.post('/auth/totp/verify-setup', { code: totpCode });
+            // Enabling 2FA revokes every session, this one included; adopt the
+            // fresh token the response carries so we stay signed in.
+            if (res.data?.access_token) localStorage.setItem('access_token', res.data.access_token);
             toast.success('Two-factor authentication enabled!');
             setTotpSetup(null);
             setTotpCode('');
@@ -327,7 +330,8 @@ export default function ProfilePage() {
     const handleTotpDisable = async () => {
         setTotpLoading(true);
         try {
-            await api.post('/auth/totp/disable', { password: disablePassword, code: disableCode });
+            const res = await api.post('/auth/totp/disable', { password: disablePassword, code: disableCode });
+            if (res.data?.access_token) localStorage.setItem('access_token', res.data.access_token);
             toast.success('Two-factor authentication disabled.');
             setShowDisable(false);
             setDisablePassword('');

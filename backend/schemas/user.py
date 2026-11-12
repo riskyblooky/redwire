@@ -235,6 +235,9 @@ class TotpVerifySetupResponse(BaseModel):
     """
     message: str
     recovery_codes: List[str] = []
+    # Every session is revoked when 2FA is enabled, the caller's included;
+    # this is the caller's fresh one (refresh token rides the cookie).
+    access_token: Optional[str] = None
 
 
 class RecoveryCodesRegenerateRequest(BaseModel):
