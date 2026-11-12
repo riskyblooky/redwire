@@ -1013,10 +1013,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text=_wrap_untrusted(f"Error: {str(e)}"))]
 
 
-_UUID_ARG_KEYS = (
-    "engagement_id", "finding_id", "asset_id", "testcase_id", "note_id",
-    "vault_item_id", "cleanup_artifact_id", "template_id", "user_id",
-)
+# Every ``*_id`` argument must be a UUID, except these (validated where used).
+# A fixed list of UUID keys drifted from the tool schemas: the vault and
+# cleanup tools take ``item_id`` / ``artifact_id``, which it didn't name, so
+# ``item_id="<uuid>/reveal"`` reached GET /vault/<uuid>/reveal unchecked.
+_NON_UUID_ID_KEYS = frozenset({"model_id"})
 
 
 _VAULT_SECRET_FIELDS = ("username", "password", "note")
@@ -1043,8 +1044,9 @@ def _validate_uuid_args(args: dict[str, Any]) -> None:
     fragment) would traverse to unintended routes. Validate as UUID before
     any URL interpolation."""
     import uuid as _uuid
-    for k in _UUID_ARG_KEYS:
-        v = args.get(k)
+    for k, v in args.items():
+        if not k.endswith("_id") or k in _NON_UUID_ID_KEYS:
+            continue
         if v is None or v == "":
             continue
         if not isinstance(v, str):
@@ -1163,12 +1165,12 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
 
     elif name == "create_vault_item":
         eid = args.pop("engagement_id")
-        return await _api_post(f"/vault?engagement_id={eid}", data=args)
+        return _redact_vault_secrets(await _api_post(f"/vault?engagement_id={eid}", data=args))
 
     elif name == "update_vault_item":
         iid = args.pop("item_id")
         eid = args.pop("engagement_id")
-        return await _api_patch(f"/vault/{iid}?engagement_id={eid}", data=args)
+        return _redact_vault_secrets(await _api_patch(f"/vault/{iid}?engagement_id={eid}", data=args))
 
     # ── Cleanup Artifacts ────────────────────────────────────────────
     elif name == "list_cleanup_artifacts":
@@ -1248,7 +1250,9 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         return await _api_delete(f"/notes/{args['note_id']}")
 
     elif name == "get_vault_item":
-        return await _api_get(f"/vault/{args['item_id']}")
+        # Redacted like list_vault_items (GHSA-q4x9 b1): the detail response
+        # carries the decrypted username / password / note too.
+        return _redact_vault_secrets(await _api_get(f"/vault/{args['item_id']}"))
 
     elif name == "delete_vault_item":
         return await _api_delete(f"/vault/{args['item_id']}")

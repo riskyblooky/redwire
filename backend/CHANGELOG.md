@@ -18,6 +18,11 @@ section becomes one release entry.
   help and SECURITY.md named a variable the script never read; they now give
   the real procedure, including stopping the backend and recreating it
   (`docker compose up -d backend`, since `restart` keeps the old `.env`).
+- **The AI assistant can no longer read vault secrets.** Every `*_id` tool
+  argument must now be a UUID; the vault and cleanup tools' `item_id` /
+  `artifact_id` weren't checked, so a crafted id could reach the vault reveal
+  endpoint. Viewing, creating or updating a vault item through the assistant
+  now hides the username, password and note, as listing already did.
 
 ## [1.9.0] — 2026-11-11
 
