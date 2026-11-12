@@ -81,6 +81,10 @@ export function AuthSettingsManagement() {
     const [ldap, setLdap] = useState<LdapSettings>(DEFAULT_LDAP);
     const [saml, setSaml] = useState<SamlSettings>(DEFAULT_SAML);
     const [loading, setLoading] = useState(true);
+    // Set when the current settings couldn't be loaded. The form is not
+    // rendered then: its defaults are blank, and saving them would replace
+    // the real LDAP / SAML / splash configuration.
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [testResult, setTestResult] = useState<LdapTestResult | null>(null);
     const [testLoginOpen, setTestLoginOpen] = useState(false);
@@ -97,6 +101,8 @@ export function AuthSettingsManagement() {
     const getToken = () => localStorage.getItem('access_token') || '';
 
     const fetchSettings = useCallback(async () => {
+        setLoading(true);
+        setLoadError(null);
         try {
             const [authRes, splashRes] = await Promise.all([
                 fetch(`${API}/admin/auth-settings`, {
@@ -106,17 +112,19 @@ export function AuthSettingsManagement() {
                     headers: { Authorization: `Bearer ${getToken()}` },
                 }),
             ]);
-            if (authRes.ok) {
-                const data: AuthSettings = await authRes.json();
-                setLdap(data.ldap);
-                setSaml(data.saml);
+            if (!authRes.ok || !splashRes.ok) {
+                const bad = !authRes.ok ? authRes : splashRes;
+                setLoadError(`The server answered HTTP ${bad.status}.`);
+                return;
             }
-            if (splashRes.ok) {
-                const data = await splashRes.json();
-                setSplash(data);
-            }
+            const data: AuthSettings = await authRes.json();
+            const splashData = await splashRes.json();
+            setLdap(data.ldap);
+            setSaml(data.saml);
+            setSplash(splashData);
         } catch (e) {
             console.error('Failed to load settings', e);
+            setLoadError(e instanceof Error ? e.message : String(e));
         } finally {
             setLoading(false);
         }
@@ -272,6 +280,24 @@ export function AuthSettingsManagement() {
         return (
             <div className="flex justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+        );
+    }
+
+    if (loadError) {
+        return (
+            <div className="rounded-lg border border-destructive/40 bg-card p-6 space-y-3">
+                <p className="font-medium text-destructive">Couldn&apos;t load the authentication settings</p>
+                <p className="text-sm text-muted-foreground">
+                    {loadError} The form is hidden so a blank copy can&apos;t be saved over the current LDAP / SAML configuration.
+                </p>
+                <button
+                    type="button"
+                    onClick={fetchSettings}
+                    className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
+                >
+                    Retry
+                </button>
             </div>
         );
     }

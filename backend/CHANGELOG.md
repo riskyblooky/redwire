@@ -37,6 +37,10 @@ section becomes one release entry.
   Opening the dialog before its existing intel / infra links had loaded,
   then pressing Apply, unlinked all of them. Apply now waits for them, and
   a failed load skips that type rather than treating it as "no links".
+- **Admin → Authentication: a failed load no longer shows a blank form.**
+  If the current settings can't be loaded you now get an error and a Retry
+  button, instead of an empty form whose Save would replace the real LDAP,
+  SAML and splash configuration.
 
 ## [1.9.0] — 2026-11-11
 
