@@ -49,6 +49,11 @@ section becomes one release entry.
   If the current settings can't be loaded you now get an error and a Retry
   button, instead of an empty form whose Save would replace the real LDAP,
   SAML and splash configuration.
+- **SAML sign-in works again.** Every SAML login failed: the replay check
+  expected a date where the SAML library hands back a number. With an
+  external identity provider the login also failed at the return step,
+  because the browser didn't send the request cookie on the provider's
+  cross-site POST; over HTTPS that cookie is now sent cross-site.
 
 ## [1.9.0] — 2026-11-11
 

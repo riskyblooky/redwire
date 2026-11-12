@@ -158,3 +158,22 @@ def test_timezone_aware_not_on_or_after_is_handled(monkeypatch):
     aware_future = datetime.now(tz=timezone.utc) + timedelta(minutes=5)
 
     assert claim_saml_assertion("_assertion-009", aware_future) is True
+
+
+def test_epoch_int_not_on_or_after_is_handled(monkeypatch):
+    """What python3-saml actually returns: parse_SAML_to_time → int epoch.
+    Calling .tzinfo on it used to raise and fail every SAML login."""
+    import calendar
+    fake = _FakeRedis()
+    monkeypatch.setattr(saml_replay, "_get_redis", lambda: fake)
+    epoch = calendar.timegm((datetime.utcnow() + timedelta(minutes=5)).timetuple())
+    assert claim_saml_assertion("_assertion-epoch", epoch) is True
+    assert claim_saml_assertion("_assertion-epoch", epoch) is False  # replay
+    assert claim_saml_assertion("_assertion-past", epoch - 3600) is False
+    assert claim_saml_assertion("_assertion-junk", "2030-01-01") is False
+
+
+def test_toolkit_returns_epoch_int():
+    """Pin the toolkit behaviour the cache depends on."""
+    from onelogin.saml2.utils import OneLogin_Saml2_Utils
+    assert isinstance(OneLogin_Saml2_Utils.parse_SAML_to_time("2030-01-01T00:00:00Z"), int)

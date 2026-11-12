@@ -1234,6 +1234,7 @@ async def saml_login(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to generate SAML login request")
 
     response = RedirectResponse(url=redirect_url)
+    secure = request.url.scheme == "https"
     # Bind the upcoming ACS callback to *this* AuthnRequest. The cookie is a
     # short-lived signed JWT so the request_id can't be forged or fixed by an
     # attacker. ACS rejects any Response that doesn't carry it.
@@ -1246,8 +1247,13 @@ async def saml_login(request: Request, db: AsyncSession = Depends(get_db)):
         ),
         max_age=600,
         httponly=True,
-        samesite="lax",
-        secure=request.url.scheme == "https",
+        # The IdP returns the user with a cross-site POST to /saml/acs, and
+        # browsers don't send a Lax cookie on that, so ACS never saw this
+        # one. None requires Secure, so plain-http dev keeps Lax (a local
+        # IdP on another port is same-site anyway). The cookie is a signed,
+        # single-AuthnRequest binding: sending it cross-site leaks nothing.
+        samesite="none" if secure else "lax",
+        secure=secure,
     )
     return response
 

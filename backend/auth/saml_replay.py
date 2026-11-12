@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 
 from auth.jwt import _get_redis  # shared Redis access; private import is fine within auth/
 
@@ -41,7 +41,7 @@ _MIN_TTL_SECONDS = 60
 
 def claim_saml_assertion(
     assertion_id: Optional[str],
-    not_on_or_after: Optional[datetime],
+    not_on_or_after: Optional[Union[datetime, int, float]],
 ) -> bool:
     """Atomically claim a SAML assertion ID as seen.
 
@@ -71,6 +71,18 @@ def claim_saml_assertion(
         logger.warning(
             "SAML replay-cache: assertion %s missing NotOnOrAfter, refusing",
             assertion_id,
+        )
+        return False
+
+    # python3-saml hands back NotOnOrAfter as an int epoch (parse_SAML_to_time
+    # → calendar.timegm), not a datetime; calling .tzinfo on it raised, which
+    # failed every SAML login.
+    if isinstance(not_on_or_after, (int, float)) and not isinstance(not_on_or_after, bool):
+        not_on_or_after = datetime.utcfromtimestamp(not_on_or_after)
+    elif not isinstance(not_on_or_after, datetime):
+        logger.warning(
+            "SAML replay-cache: assertion %s has unusable NotOnOrAfter %r, refusing",
+            assertion_id, not_on_or_after,
         )
         return False
 
