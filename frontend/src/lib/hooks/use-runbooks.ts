@@ -75,7 +75,7 @@ export interface RunbookPageParams {
 export function useRunbooksPaged(params: RunbookPageParams = {}) {
     const { q, runbook_type, status, mine_only, sort_by = 'name', sort_dir = 'asc', page = 0, pageSize = 20 } = params;
     return useQuery({
-        queryKey: ['runbooks-paged', { q, runbook_type, status, mine_only, sort_by, sort_dir, page, pageSize }],
+        queryKey: ['runbooks', 'paged', { q, runbook_type, status, mine_only, sort_by, sort_dir, page, pageSize }],
         queryFn: async () => {
             const res = await api.get<Runbook[]>('/runbooks', {
                 params: {

@@ -59,7 +59,7 @@ export interface TestCaseTemplatePageParams {
 export function useTestCaseTemplatesPaged(params: TestCaseTemplatePageParams = {}) {
     const { q, category, status, mine_only, sort_by = 'title', sort_dir = 'asc', page = 0, pageSize = 20 } = params;
     return useQuery({
-        queryKey: ['testcase-templates-paged', { q, category, status, mine_only, sort_by, sort_dir, page, pageSize }],
+        queryKey: ['testcase-templates', 'paged', { q, category, status, mine_only, sort_by, sort_dir, page, pageSize }],
         queryFn: async () => {
             const res = await api.get<TestCaseTemplate[]>('/testcase-templates', {
                 params: {

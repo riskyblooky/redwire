@@ -203,7 +203,7 @@ export interface TemplatePageParams {
 export function useFindingTemplatesPaged(params: TemplatePageParams = {}) {
     const { q, category, status, mine_only, sort_by = 'title', sort_dir = 'asc', page = 0, pageSize = 20 } = params;
     return useQuery({
-        queryKey: ['finding-templates-paged', { q, category, status, mine_only, sort_by, sort_dir, page, pageSize }],
+        queryKey: ['finding-templates', 'paged', { q, category, status, mine_only, sort_by, sort_dir, page, pageSize }],
         queryFn: async () => {
             const res = await api.get<FindingTemplate[]>('/templates', {
                 params: {

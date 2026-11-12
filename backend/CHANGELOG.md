@@ -123,6 +123,8 @@ section becomes one release entry.
 - **Cancelling a confirmation dialog no longer leaves the page waiting.**
   Cancel (or Escape) closed the dialog without answering it, so code waiting
   on the answer never continued.
+- **The Templates and Runbooks pages update after a create, edit or
+  delete.** Their lists stayed stale until a reload.
 
 ## [1.9.0] — 2026-11-11
 
