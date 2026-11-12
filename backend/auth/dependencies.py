@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,8 +138,9 @@ async def get_current_user(
     # ── JWT path (existing) ───────────────────────────────────────────────
     request.state.api_token_permission = None  # full access via JWT
 
-    # Check if token has been revoked
-    if is_token_blacklisted(token):
+    # Check if token has been revoked. Sync Redis call: run it off the event
+    # loop so a slow Redis delays this request, not every request.
+    if await asyncio.to_thread(is_token_blacklisted, token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked",

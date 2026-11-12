@@ -30,6 +30,7 @@ def validate_secret() -> None:
 # Redis connection for token blacklist
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 _redis_client: Optional[redis.Redis] = None
+_REDIS_TIMEOUT_S = float(os.getenv("REDIS_TIMEOUT_S", "1.5"))
 
 
 def _get_redis() -> Optional[redis.Redis]:
@@ -40,14 +41,19 @@ def _get_redis() -> Optional[redis.Redis]:
     """
     global _redis_client
     if _redis_client is not None:
-        try:
-            _redis_client.ping()
-            return _redis_client
-        except Exception:
-            # Connection went stale, force reconnect
-            _redis_client = None
+        # No ping per call: it doubled the round trips of every request's
+        # blacklist check. The pool health-checks idle connections and
+        # reconnects after an error; a failing command raises, and every
+        # caller fails closed on that.
+        return _redis_client
     try:
-        client = redis.from_url(REDIS_URL, decode_responses=True)
+        # Bounded timeouts: this runs on every authenticated request, and an
+        # unbounded read against a hung Redis stalled the request forever.
+        client = redis.from_url(
+            REDIS_URL, decode_responses=True,
+            socket_connect_timeout=_REDIS_TIMEOUT_S, socket_timeout=_REDIS_TIMEOUT_S,
+            health_check_interval=30,
+        )
         client.ping()
         _redis_client = client
         return _redis_client

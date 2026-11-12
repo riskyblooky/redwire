@@ -108,6 +108,11 @@ section becomes one release entry.
   and HTML rendering, their evidence-image downloads, and ZIP export
   compression ran on the main request loop. They now run in the background,
   at most two renders at a time per worker (`REPORT_RENDER_CONCURRENCY`).
+- **A slow Redis no longer hangs every request.** The session-revocation
+  check on each request had no timeout and pinged Redis every time. It now
+  uses bounded timeouts (`REDIS_TIMEOUT_S`, default 1.5 s), one round trip,
+  and runs off the main loop; if Redis can't answer, requests are refused as
+  before.
 
 ## [1.9.0] — 2026-11-11
 

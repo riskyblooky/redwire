@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Query, UploadFile, File as FastAPIFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.uploads import content_disposition_attachment, read_upload_capped, safe_content_type, MAX_EVIDENCE_BYTES
@@ -432,8 +433,8 @@ async def get_current_user_from_token(
 ) -> User:
     from auth.jwt import decode_token, is_token_blacklisted
 
-    # Check blacklist/revocation first
-    if is_token_blacklisted(token):
+    # Check blacklist/revocation first (sync Redis: off the event loop)
+    if await asyncio.to_thread(is_token_blacklisted, token):
         raise HTTPException(status_code=401, detail="Token has been revoked")
 
     payload = decode_token(token)
