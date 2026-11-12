@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -34,6 +34,16 @@ const initialState: ConfirmDialogState = {
 
 export function useConfirmDialog() {
     const [state, setState] = useState<ConfirmDialogState>(initialState);
+    // The open dialog's resolver. Cancel used to only reset the state, so
+    // `await confirm()` never settled and the caller hung forever (and
+    // leaked its closure). Every exit path now settles it exactly once.
+    const pending = useRef<((v: boolean | 'extra') => void) | null>(null);
+    const settle = useCallback((v: boolean | 'extra') => {
+        const resolve = pending.current;
+        pending.current = null;
+        setState(initialState);
+        resolve?.(v);
+    }, []);
 
     const confirm = useCallback(({
         title,
@@ -49,6 +59,8 @@ export function useConfirmDialog() {
         extraAction?: { label: string; variant?: 'outline' | 'destructive' | 'default' };
     }): Promise<boolean | 'extra'> => {
         return new Promise((resolve) => {
+            pending.current?.(false); // a dialog replaced by a new one counts as cancelled
+            pending.current = resolve;
             setState({
                 open: true,
                 title,
@@ -56,21 +68,17 @@ export function useConfirmDialog() {
                 confirmLabel,
                 variant,
                 extraAction,
-                onConfirm: () => {
-                    setState(initialState);
-                    resolve(true);
-                },
-                onExtra: extraAction ? () => {
-                    setState(initialState);
-                    resolve('extra');
-                } : undefined,
+                onConfirm: () => settle(true),
+                onExtra: extraAction ? () => settle('extra') : undefined,
             });
         });
-    }, []);
+    }, [settle]);
 
+    // Also reached after Confirm (Radix closes the dialog): by then
+    // `pending` is already cleared, so it can't override the answer.
     const handleCancel = useCallback(() => {
-        setState(initialState);
-    }, []);
+        if (pending.current) settle(false);
+    }, [settle]);
 
     const ConfirmDialog = useCallback(() => {
         const variantStyles = {

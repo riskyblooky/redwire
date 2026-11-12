@@ -120,6 +120,9 @@ section becomes one release entry.
   notified the user `john` (if one existed), and e-mail addresses in a
   comment mentioned their domain. Mentions now match the full username and
   ignore e-mail addresses.
+- **Cancelling a confirmation dialog no longer leaves the page waiting.**
+  Cancel (or Escape) closed the dialog without answering it, so code waiting
+  on the answer never continued.
 
 ## [1.9.0] — 2026-11-11
 
