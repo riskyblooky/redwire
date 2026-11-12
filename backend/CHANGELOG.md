@@ -54,6 +54,13 @@ section becomes one release entry.
   external identity provider the login also failed at the return step,
   because the browser didn't send the request cookie on the provider's
   cross-site POST; over HTTPS that cookie is now sent cross-site.
+- **Production now gets its public URLs and optional settings.** The prod
+  compose file passed the backend a fixed list of variables, so SAML,
+  password-reset and notification links pointed at `localhost`, and settings
+  such as `PLUGIN_VERIFY` and the upload size limits had no effect when set
+  in `.env`. `BACKEND_URL` and `FRONTEND_URL` now default to
+  `https://$DOMAIN_NAME/api` and `https://$DOMAIN_NAME`, and everything in
+  `.env` reaches the backend.
 
 ## [1.9.0] — 2026-11-11
 

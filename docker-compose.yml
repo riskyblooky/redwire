@@ -79,6 +79,10 @@ services:
     image: redwire-backend:latest
     container_name: redwire-backend
     logging: *default-logging
+    # Everything in .env reaches the backend, so optional settings the code
+    # reads (PLUGIN_VERIFY, *_MAX_BYTES limits, LDAP_LOGIN_TIMEOUT_S, …) take
+    # effect when set there. Keys under `environment:` below win over .env.
+    env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-redwire}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-redwire}
       REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
@@ -113,6 +117,12 @@ services:
       MINIO_BUCKET: redwire-evidence
       MINIO_SECURE: "false"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      # Public URLs for SAML (entity id / ACS), password-reset and
+      # notification links. Without these they fell back to localhost.
+      # nginx serves the API under /api.
+      DOMAIN_NAME: ${DOMAIN_NAME:-localhost}
+      BACKEND_URL: ${BACKEND_URL:-https://${DOMAIN_NAME:-localhost}/api}
+      FRONTEND_URL: ${FRONTEND_URL:-https://${DOMAIN_NAME:-localhost}}
       SQL_ECHO: "false"
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@redwire.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
