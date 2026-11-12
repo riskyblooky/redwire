@@ -96,6 +96,9 @@ section becomes one release entry.
   for as long as the tab stayed open, so a few dozen tabs per worker made
   other requests wait for a free connection. The connection is now released
   once the socket is set up.
+- **Sending email no longer stalls the server.** Mail went out on the main
+  request loop, so a slow or unreachable mail server held up every other
+  request on that worker for up to the SMTP timeouts.
 
 ## [1.9.0] — 2026-11-11
 

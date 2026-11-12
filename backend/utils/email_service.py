@@ -2,6 +2,7 @@
 Email service utility — sends emails via SMTP using settings from auth_settings table.
 """
 import re
+import asyncio
 import smtplib
 import ssl
 import tempfile
@@ -224,7 +225,11 @@ async def send_email(
 
     tls_context = _build_smtp_tls_context(cfg) if use_tls else None
 
-    return _send_smtp(
+    # smtplib blocks (connect, TLS, login, send: up to 15s per step against
+    # a slow or unreachable server); run it off the event loop so one email
+    # doesn't stall every request on this worker.
+    return await asyncio.to_thread(
+        _send_smtp,
         host=host,
         port=port,
         username=username,
