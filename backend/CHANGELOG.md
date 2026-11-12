@@ -83,6 +83,14 @@ section becomes one release entry.
 - **PDF reports with filters and the attack graph generate again.** A
   filtered report whose attack graph linked to a filtered-out finding
   failed.
+- **Wordlist password checks are accurate again, and NTLM lookups work.**
+  After the first wordlist upload on a fresh install the filter behind
+  `check-password` filled up and reported every password as found; it is
+  now sized with headroom and rebuilt when an upload outgrows it. NTLM
+  hashes were stored empty on every import (the server's OpenSSL no longer
+  provides MD4), so NTLM lookups never matched; they are computed again, and
+  existing entries are filled in by a background job on startup (it resumes
+  if interrupted and can take a while on a large wordlist).
 
 ## [1.9.0] — 2026-11-11
 

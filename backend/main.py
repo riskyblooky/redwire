@@ -526,6 +526,11 @@ async def lifespan(app):
     await release_startup_lock(_startup_lock)
 
     bloom_task = asyncio.create_task(_load_bloom())
+    # Fill NTLM hashes that OpenSSL 3 left empty on older imports (no-op once
+    # done; resumable; one worker runs it via an advisory lock).
+    import threading
+    from routers.wordlist import backfill_missing_ntlm_sync
+    threading.Thread(target=backfill_missing_ntlm_sync, name="ntlm-backfill", daemon=True).start()
     intel_task = asyncio.create_task(_refresh_intel_feeds_background())
     # Cross-worker WebSocket fan-out (Redis pub/sub). Degrades to
     # single-process delivery if Redis is unreachable.

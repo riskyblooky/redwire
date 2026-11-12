@@ -17,14 +17,63 @@ logger = logging.getLogger(__name__)
 # Hash computation
 # ═══════════════════════════════════════════════════════════════════
 
+def _md4(data: bytes) -> bytes:
+    """Pure-Python MD4 (RFC 1320). OpenSSL 3 moved MD4 to the legacy
+    provider, which the backend image doesn't load, so hashlib.new("md4")
+    raises there and every NTLM hash was stored empty."""
+    def rol(x, n):
+        x &= 0xFFFFFFFF
+        return ((x << n) | (x >> (32 - n))) & 0xFFFFFFFF
+
+    msg = bytearray(data)
+    bit_len = (8 * len(data)) & 0xFFFFFFFFFFFFFFFF
+    msg.append(0x80)
+    while len(msg) % 64 != 56:
+        msg.append(0)
+    msg += struct.pack("<Q", bit_len)
+
+    a, b, c, d = 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476
+    for off in range(0, len(msg), 64):
+        X = struct.unpack("<16I", bytes(msg[off:off + 64]))
+        aa, bb, cc, dd = a, b, c, d
+        # Round 1: F(x,y,z) = (x & y) | (~x & z)
+        for k, sft in zip(range(16), (3, 7, 11, 19) * 4):
+            f = (b & c) | (~b & d)
+            a, b, c, d = d, rol(a + f + X[k], sft), b, c
+        # Round 2: G(x,y,z) = (x & y) | (x & z) | (y & z), constant 0x5A827999
+        for i, sft in zip(range(16), (3, 5, 9, 13) * 4):
+            k = (i % 4) * 4 + i // 4
+            g = (b & c) | (b & d) | (c & d)
+            a, b, c, d = d, rol(a + g + X[k] + 0x5A827999, sft), b, c
+        # Round 3: H(x,y,z) = x ^ y ^ z, constant 0x6ED9EBA1
+        for i, sft in zip(range(16), (3, 9, 11, 15) * 4):
+            k = (0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15)[i]
+            h = b ^ c ^ d
+            a, b, c, d = d, rol(a + h + X[k] + 0x6ED9EBA1, sft), b, c
+        a = (a + aa) & 0xFFFFFFFF
+        b = (b + bb) & 0xFFFFFFFF
+        c = (c + cc) & 0xFFFFFFFF
+        d = (d + dd) & 0xFFFFFFFF
+    return struct.pack("<4I", a, b, c, d)
+
+
+def _openssl_md4_available() -> bool:
+    try:
+        hashlib.new("md4", b"", usedforsecurity=False)
+        return True
+    except ValueError:
+        return False
+
+
+_OPENSSL_MD4 = _openssl_md4_available()
+
+
 def compute_ntlm(password: str) -> str:
     """Compute NTLM hash (MD4 of UTF-16LE encoded password)."""
     pw_bytes = password.encode("utf-16-le")
-    try:
+    if _OPENSSL_MD4:
         return hashlib.new("md4", pw_bytes, usedforsecurity=False).hexdigest()
-    except ValueError:
-        # MD4 completely unavailable — skip NTLM
-        return ""
+    return _md4(pw_bytes).hex()
 
 
 def compute_md5(password: str) -> str:
@@ -98,6 +147,24 @@ def _redis_bit(pos: int) -> int:
     """Redis GETBIT/SETBIT offset for our LSB-first bit layout (Redis numbers
     bits MSB-first within each byte)."""
     return (pos // 8) * 8 + (7 - pos % 8)
+
+
+def bloom_capacity_for(total: int) -> int:
+    """Capacity to build a filter with for ``total`` current entries.
+
+    Headroom matters: imports add into the live filter, and one sized to the
+    current count (1 000 on an empty install) saturates on the first real
+    upload — every bit set, so check-password reports every password as
+    found. Past capacity the importer rebuilds from the DB
+    (``BloomFilterService.over_capacity``)."""
+    return max(int(total * 1.5), 1_000_000)
+
+
+def _capacity_from_bits(bit_count: int, fp_rate: float = 0.001) -> int:
+    """Inverse of BloomFilter's sizing, for shared metadata written before
+    capacity was recorded."""
+    import math
+    return int(bit_count * (math.log(2) ** 2) / -math.log(fp_rate))
 
 
 class BloomFilter:
@@ -293,6 +360,7 @@ class BloomFilterService:
                 pipe.delete(_META_KEY)
                 pipe.hset(_META_KEY, mapping={
                     "bit_count": bloom.bit_count, "num_hashes": bloom.num_hashes, "count": count,
+                    "capacity": bloom.capacity,
                 })
                 pipe.execute()
                 self._bloom = None  # no per-worker copy in shared mode
@@ -351,7 +419,7 @@ class BloomFilterService:
 
             async with db_session_factory() as session:
                 total = (await session.execute(select(func.count(WordlistEntry.id)))).scalar() or 0
-                bloom = BloomFilter(capacity=max(total, 1000))
+                bloom = BloomFilter(capacity=bloom_capacity_for(total))
                 loaded = 0
                 if total:
                     # Stream instead of OFFSET pages: OFFSET re-scans every
@@ -370,10 +438,25 @@ class BloomFilterService:
         except Exception as e:
             logger.error(f"Failed to load Bloom filter: {e}")
             if self._bloom is None and not self._loaded:
-                self._bloom = BloomFilter(capacity=1000)
+                self._bloom = BloomFilter(capacity=bloom_capacity_for(0))
                 self._loaded = True
         finally:
             await asyncio.to_thread(self.end_loading)
+
+    def over_capacity(self) -> bool:
+        """True once more entries were added than the live filter was sized
+        for: its false-positive rate is climbing towards "everything is
+        found", and it should be rebuilt from the DB."""
+        r = self._shared_sync()
+        if r is not None:
+            try:
+                meta = self._decode_meta(r.hgetall(_META_KEY))
+                if meta is not None:
+                    cap = meta.get("capacity") or _capacity_from_bits(meta["bit_count"])
+                    return meta.get("count", 0) > cap
+            except Exception:
+                pass
+        return self._bloom is not None and self._count > self._bloom.capacity
 
     def rebuild_sync_add(self, passwords: list):
         """Local-mode add (also the fallback for ``add_many``)."""

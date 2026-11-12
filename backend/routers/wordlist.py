@@ -14,8 +14,10 @@ from models.wordlist import WordlistEntry, WordlistMeta, WordlistStatus
 from auth.dependencies import get_current_user
 from utils.hash_utils import (
     compute_all_hashes,
+    compute_ntlm,
     identify_hash_type,
     bloom_service,
+    bloom_capacity_for,
 )
 from utils.paths import ensure_within
 
@@ -316,6 +318,13 @@ def _process_wordlist_sync(file_path: str, meta_id: str):
 
             logger.info(f"Wordlist {meta_id}: done — {total_count} entries imported.")
 
+        # The import outgrew the live filter: rebuild it at the new size
+        # (still in this background thread), or check-password would report
+        # nearly every password as found.
+        if bloom_service.over_capacity():
+            logger.info(f"Wordlist {meta_id}: Bloom filter over capacity, rebuilding")
+            _rebuild_bloom_sync()
+
     except Exception as e:
         logger.error(f"Wordlist {meta_id} processing failed: {e}")
         try:
@@ -347,7 +356,7 @@ def _rebuild_bloom_sync():
     import time
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
-    from utils.hash_utils import BloomFilter
+    from utils.hash_utils import BloomFilter, bloom_capacity_for
 
     # Another worker may be mid-build from rows read before this change;
     # wait for it, then rebuild so the deletion is reflected.
@@ -363,7 +372,7 @@ def _rebuild_bloom_sync():
     try:
         with Session(sync_engine) as session:
             total = session.query(func.count(WordlistEntry.id)).scalar() or 0
-            bloom = BloomFilter(capacity=max(total, 1000))
+            bloom = BloomFilter(capacity=bloom_capacity_for(total))
             loaded = 0
             for (pw,) in session.query(WordlistEntry.password).yield_per(50000):
                 if pw:
@@ -376,4 +385,58 @@ def _rebuild_bloom_sync():
     finally:
         bloom_service.end_loading()
         sync_engine.dispose()
+
+
+# Arbitrary, fixed: one backfill at a time across backend workers.
+_NTLM_BACKFILL_LOCK_KEY = 0x4E544C4D  # "NTLM"
+
+
+def backfill_missing_ntlm_sync(batch_size: int = 5000) -> int:
+    """Fill in ``wordlist_entries.ntlm`` where it is empty.
+
+    Until hash_utils gained a pure-Python MD4, every entry imported on an
+    OpenSSL 3 image (the backend image) was stored with ntlm = '' — NTLM
+    lookups never matched. Runs at startup in a background thread; resumable
+    (it only ever selects still-empty rows) and single-flight across workers
+    via a Postgres advisory lock. Returns the number of rows filled.
+    """
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(_get_sync_database_url(), pool_pre_ping=True)
+    filled = 0
+    try:
+        with engine.connect() as conn:
+            if not conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _NTLM_BACKFILL_LOCK_KEY}).scalar():
+                return 0
+            try:
+                last_id = 0
+                while True:
+                    rows = conn.execute(text(
+                        "SELECT id, password FROM wordlist_entries "
+                        "WHERE (ntlm IS NULL OR ntlm = '') AND id > :last "
+                        "ORDER BY id LIMIT :n"), {"last": last_id, "n": batch_size}).all()
+                    if not rows:
+                        break
+                    ids = [r[0] for r in rows]
+                    hashes = [compute_ntlm(r[1] or "") for r in rows]
+                    conn.execute(text(
+                        "UPDATE wordlist_entries AS w SET ntlm = v.ntlm "
+                        "FROM unnest(CAST(:ids AS integer[]), CAST(:hashes AS varchar[])) AS v(id, ntlm) "
+                        "WHERE w.id = v.id"), {"ids": ids, "hashes": hashes})
+                    conn.commit()
+                    filled += len(rows)
+                    last_id = ids[-1]
+                    if filled % 500_000 < batch_size:
+                        logger.info("NTLM backfill: %s entries filled", filled)
+            finally:
+                conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _NTLM_BACKFILL_LOCK_KEY})
+                conn.commit()
+        if filled:
+            logger.info("NTLM backfill: done, %s entries filled", filled)
+        return filled
+    except Exception as e:
+        logger.error(f"NTLM backfill failed after {filled} entries (will resume on next start): {e}")
+        return filled
+    finally:
+        engine.dispose()
 
