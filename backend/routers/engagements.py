@@ -122,6 +122,32 @@ _SORTABLE = {
 
 
 
+async def _log_team_changes(db: AsyncSession, engagement, actor_id: str, *, added: set, removed: set) -> None:
+    """One audit entry per member added to / removed from the team. These
+    are also the ``assigned_user`` / ``removed_user`` automation triggers,
+    which were offered in the rule editor but never fired: team changes
+    were only logged as a generic ``updated_engagement``."""
+    if not added and not removed:
+        return
+    rows = (await db.execute(
+        select(User.id, User.username).where(User.id.in_(added | removed))
+    )).all()
+    names = {uid: uname for uid, uname in rows}
+    for action, verb, ids in (("assigned_user", "Assigned", added), ("removed_user", "Removed", removed)):
+        for uid in sorted(ids):
+            await create_activity_log(
+                db,
+                engagement_id=engagement.id,
+                user_id=actor_id,
+                action=action,
+                resource_type="engagement",
+                resource_id=engagement.id,
+                resource_name=engagement.name,
+                details=f"{verb} {names.get(uid, 'a user')} {'to' if verb == 'Assigned' else 'from'} the team",
+                extra_context={"target_user_id": uid, "target_username": names.get(uid)},
+            )
+
+
 async def _validate_assignments(db: AsyncSession, assignments_data, user_ids) -> None:
     """400 on an unknown user, unknown role or a user listed twice, rather
     than letting the FK / primary key fail as a 500 on commit.
@@ -651,6 +677,8 @@ async def create_engagement(
         resource_name=new_engagement.name,
         details=f"Engagement initialized: {new_engagement.name}"
     )
+    initial_ids = {a["user_id"] for a in assignments_data} if assignments_data else set(user_ids or [])
+    await _log_team_changes(db, new_engagement, current_user.id, added=initial_ids, removed=set())
 
     # Reload with relationships
     return await get_engagement(new_engagement.id, db, current_user)
@@ -881,6 +909,12 @@ async def update_engagement(
         details=change_details,
         extra_context={"changes": changes},
     )
+    if team_changed:
+        await _log_team_changes(
+            db, engagement, current_user.id,
+            added=new_assigned_user_ids - old_assigned_user_ids,
+            removed=old_assigned_user_ids - new_assigned_user_ids,
+        )
 
     # Notify team if engagement status changed
     new_eng_status = engagement.status if engagement.status else None

@@ -414,6 +414,20 @@ async def _evaluate_automations(db, action, resource_type, context, extra_contex
         # extra_context["changes"]["status"] = {"old", "new"} and omits
         # unchanged fields — gate on that instead.
         changes = (extra_context or {}).get("changes") or {}
+
+        # Catalog triggers that aren't an action name of their own. They
+        # were offered in the rule editor but never fired: comments are
+        # logged as "commented", and execution is just a test case update.
+        derived = []
+        if action == "commented":
+            derived.append("created_comment")
+        executed = changes.get("is_executed")
+        if (resource_type == "testcase" and isinstance(executed, dict)
+                and executed.get("new") is True and not executed.get("old")):
+            derived.append("executed_testcase")
+        for trigger in derived:
+            await evaluate_rules(db, trigger, context)
+
         if isinstance(changes.get("status"), dict):
             status_trigger = {
                 "finding": "finding_status_changed",

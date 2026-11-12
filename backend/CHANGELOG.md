@@ -125,6 +125,10 @@ section becomes one release entry.
   on the answer never continued.
 - **The Templates and Runbooks pages update after a create, edit or
   delete.** Their lists stayed stale until a reload.
+- **Automation rules on comments, test case execution and team changes
+  run.** The "Comment Created", "Test Case Executed", "User Assigned to
+  Engagement" and "User Removed from Engagement" triggers were never
+  raised. Team changes also now appear in the activity feed per member.
 
 ## [1.9.0] — 2026-11-11
 
