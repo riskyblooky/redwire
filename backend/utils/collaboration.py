@@ -6,6 +6,8 @@ import asyncio
 import uuid
 import json
 import logging
+import os
+import traceback as tb
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
@@ -374,6 +376,71 @@ def plugin_event_name(resource_type: str, action: str) -> str:
     return f"{resource_type}.{action}"
 
 
+# Rules run as background tasks (see create_activity_log, step 4). The test
+# suite sets this True so rules run inline on the test session instead of
+# opening a session on the real database.
+AUTOMATION_INLINE = False
+AUTOMATION_TIMEOUT_S = float(os.getenv("AUTOMATION_TIMEOUT_S", "120"))
+_automation_tasks: "set[asyncio.Task]" = set()
+
+
+async def _evaluate_automations(db, action, resource_type, context, extra_context) -> None:
+    """Evaluate the generic trigger plus any status-change trigger, then
+    commit the rules' side-effects (notifications, trigger stats)."""
+    try:
+        from utils.automation_engine import evaluate_rules
+        await evaluate_rules(db, action, context)
+
+        # Fire specialized status-change triggers ONLY on an actual status
+        # transition. create_activity_log receives the current status in
+        # extra_context for creates and non-status edits alike, so keying on
+        # the mere presence of a "status" key mis-fired *_status_changed on
+        # finding CREATE (a brand-new open/medium finding matched a "when
+        # marked Verified" rule) and on every finding edit that never touched
+        # status. compute_changes_dict records real transitions under
+        # extra_context["changes"]["status"] = {"old", "new"} and omits
+        # unchanged fields — gate on that instead.
+        changes = (extra_context or {}).get("changes") or {}
+        if isinstance(changes.get("status"), dict):
+            status_trigger = {
+                "finding": "finding_status_changed",
+                "engagement": "engagement_status_changed",
+                "cleanup_artifact": "cleanup_status_changed",
+            }.get(resource_type)
+            if status_trigger:
+                await evaluate_rules(db, status_trigger, context)
+
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"[ActivityLog] Automation engine error (non-fatal): {e}")
+        tb.print_exc()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+
+async def _run_automations_background(action, resource_type, context, extra_context) -> None:
+    import database
+    try:
+        async with database.AsyncSessionLocal() as adb:
+            await asyncio.wait_for(
+                _evaluate_automations(adb, action, resource_type, context, extra_context),
+                AUTOMATION_TIMEOUT_S,
+            )
+    except asyncio.TimeoutError:
+        logger.warning("[ActivityLog] Automations for %r on %s %s timed out after %ss",
+                       action, resource_type, context.get("resource_id"), AUTOMATION_TIMEOUT_S)
+    except Exception as e:
+        logger.warning(f"[ActivityLog] Background automation error: {e}")
+
+
+async def drain_automations(timeout: float | None = None) -> None:
+    """Wait for in-flight background automations (tests; graceful shutdown)."""
+    if _automation_tasks:
+        await asyncio.wait(set(_automation_tasks), timeout=timeout)
+
+
 async def create_activity_log(
     db: AsyncSession,
     engagement_id: str,
@@ -456,52 +523,28 @@ async def create_activity_log(
         print(f"[ActivityLog] EventBus emit error (non-fatal): {e}")
 
     # ── 4. Automation engine ───────────────────────────────────────────
-    try:
-        from utils.automation_engine import evaluate_rules
-        context = {
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "resource_name": resource_name,
-            "engagement_id": engagement_id,
-            "user_id": user_id,
-            "details": details,
-        }
-        if extra_context:
-            context.update(extra_context)
-
-        await evaluate_rules(db, action, context)
-
-        # Fire specialized status-change triggers ONLY on an actual status
-        # transition. create_activity_log receives the current status in
-        # extra_context for creates and non-status edits alike, so keying on
-        # the mere presence of a "status" key mis-fired *_status_changed on
-        # finding CREATE (a brand-new open/medium finding matched a "when
-        # marked Verified" rule) and on every finding edit that never touched
-        # status. compute_changes_dict records real transitions under
-        # extra_context["changes"]["status"] = {"old", "new"} and omits
-        # unchanged fields — gate on that instead.
-        changes = (extra_context or {}).get("changes") or {}
-        if isinstance(changes.get("status"), dict):
-            status_trigger = None
-            if resource_type == "finding":
-                status_trigger = "finding_status_changed"
-            elif resource_type == "engagement":
-                status_trigger = "engagement_status_changed"
-            elif resource_type == "cleanup_artifact":
-                status_trigger = "cleanup_status_changed"
-            if status_trigger:
-                await evaluate_rules(db, status_trigger, context)
-
-        # Commit automation side-effects (notifications, trigger stats)
-        await db.commit()
-    except Exception as e:
-        logger.warning(f"[ActivityLog] Automation engine error (non-fatal): {e}")
-        tb.print_exc()
-        try:
-            await db.rollback()
-        except Exception:
-            pass
+    context = {
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "resource_name": resource_name,
+        "engagement_id": engagement_id,
+        "user_id": user_id,
+        "details": details,
+    }
+    if extra_context:
+        context.update(extra_context)
+    if AUTOMATION_INLINE:
+        await _evaluate_automations(db, action, resource_type, context, extra_context)
+    else:
+        # Off the request path: rule actions send webhooks (10s timeout) and
+        # email, and ran inside the triggering request — on its session, so
+        # their commit also committed whatever else the caller had pending.
+        # The triggering change is already committed above (step 1), so a
+        # fresh session sees it.
+        task = asyncio.create_task(_run_automations_background(action, resource_type, context, extra_context))
+        _automation_tasks.add(task)
+        task.add_done_callback(_automation_tasks.discard)
 
 class ConnectionManager:
     def __init__(self):

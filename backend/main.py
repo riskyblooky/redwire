@@ -566,6 +566,8 @@ async def lifespan(app):
     # Let in-flight plugin event handlers (background tasks) finish briefly.
     from utils.event_bus import event_bus as _event_bus
     await _event_bus.drain(timeout=5)
+    from utils.collaboration import drain_automations
+    await drain_automations(timeout=10)
     await ws_bus.stop()
     bloom_task.cancel()
     intel_task.cancel()

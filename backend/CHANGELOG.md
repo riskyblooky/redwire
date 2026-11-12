@@ -99,6 +99,11 @@ section becomes one release entry.
 - **Sending email no longer stalls the server.** Mail went out on the main
   request loop, so a slow or unreachable mail server held up every other
   request on that worker for up to the SMTP timeouts.
+- **Automation rules no longer slow down the change that triggers them.**
+  Rules (webhooks, email, notifications) ran inside the request that saved
+  the finding, asset or note, so a slow webhook delayed that save by up to
+  its timeout. They now run in the background right after the change is
+  saved, each limited to `AUTOMATION_TIMEOUT_S` (default 120 s).
 
 ## [1.9.0] — 2026-11-11
 

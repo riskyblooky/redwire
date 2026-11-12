@@ -174,6 +174,14 @@ def _no_security_event_recording(monkeypatch):
     monkeypatch.setattr(security_events, "_enabled", False)
 
 
+@pytest.fixture(autouse=True)
+def _automations_inline(monkeypatch):
+    """Background automations open their own session on the app's factory —
+    the real database. Run them inline on the caller's (test) session."""
+    from utils import collaboration
+    monkeypatch.setattr(collaboration, "AUTOMATION_INLINE", True)
+
+
 @pytest.fixture
 def security_events_on(db_session, monkeypatch):
     """Record security events into the test session."""
