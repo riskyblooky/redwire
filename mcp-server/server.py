@@ -409,7 +409,7 @@ def _all_tools() -> list[Tool]:
         ),
         Tool(
             name="create_asset",
-            description="Create a new target asset in an engagement. Requires at least a name and asset_type.",
+            description="Create a new target asset in an engagement. Requires a name, asset_type and identifier.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -420,11 +420,12 @@ def _all_tools() -> list[Tool]:
                         "description": "Type of asset",
                         "enum": ["IP_ADDRESS", "DOMAIN", "URL", "APPLICATION", "SERVER", "NETWORK", "OTHER"],
                     },
+                    "identifier": {"type": "string", "description": "The asset's address: IP, hostname, URL or CIDR (required by the API)"},
                     "description": {"type": "string", "description": "Optional description"},
                     "os": {"type": "string", "description": "Operating system"},
                     "in_scope": {"type": "boolean", "description": "Whether asset is in scope (default true)"},
                 },
-                "required": ["engagement_id", "name", "asset_type"],
+                "required": ["engagement_id", "name", "asset_type", "identifier"],
             },
         ),
         Tool(
@@ -1113,8 +1114,9 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         )
 
     elif name == "create_asset":
-        eid = args.pop("engagement_id")
-        return await _api_post(f"/assets?engagement_id={eid}", data=args)
+        # engagement_id stays in the body: the Create schema requires it
+        # there (popping it into the query made every call 422).
+        return await _api_post("/assets", data=args)
 
     elif name == "update_asset":
         aid = args.pop("asset_id")
@@ -1132,8 +1134,9 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         )
 
     elif name == "create_testcase":
-        eid = args.pop("engagement_id")
-        return await _api_post(f"/testcases?engagement_id={eid}", data=args)
+        # engagement_id stays in the body: the Create schema requires it
+        # there (popping it into the query made every call 422).
+        return await _api_post("/testcases", data=args)
 
     elif name == "update_testcase":
         tid = args.pop("testcase_id")
@@ -1164,8 +1167,9 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         return _redact_vault_secrets(items)
 
     elif name == "create_vault_item":
-        eid = args.pop("engagement_id")
-        return _redact_vault_secrets(await _api_post(f"/vault?engagement_id={eid}", data=args))
+        # engagement_id stays in the body: the Create schema requires it
+        # there (popping it into the query made every call 422).
+        return _redact_vault_secrets(await _api_post("/vault", data=args))
 
     elif name == "update_vault_item":
         iid = args.pop("item_id")
@@ -1183,8 +1187,9 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
         )
 
     elif name == "create_cleanup_artifact":
-        eid = args.pop("engagement_id")
-        return await _api_post(f"/cleanup-artifacts?engagement_id={eid}", data=args)
+        # engagement_id stays in the body: the Create schema requires it
+        # there (popping it into the query made every call 422).
+        return await _api_post("/cleanup-artifacts", data=args)
 
     elif name == "update_cleanup_artifact":
         aid = args.pop("artifact_id")
@@ -1225,10 +1230,22 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
 
     # ── Stats ────────────────────────────────────────────────────────
     elif name == "get_engagement_stats":
-        return await _api_get(f"/stats/engagement/{args['engagement_id']}")
+        # There is no /stats/engagement/{id} route (it always 404'd); build
+        # the documented answer from the per-engagement endpoints.
+        eid = args["engagement_id"]
+        return {
+            "counts": await _api_get(f"/engagements/{eid}/counts"),
+            "overview": await _api_get("/stats/overview", params={"engagement_id": eid}),
+            "severity_distribution": await _api_get("/stats/severity-distribution", params={"engagement_id": eid}),
+            "findings_by_status": await _api_get("/stats/findings-by-status", params={"engagement_id": eid}),
+        }
 
     elif name == "get_global_stats":
-        return await _api_get("/stats/global")
+        # Likewise no /stats/global: the overview without an engagement is it.
+        return {
+            "overview": await _api_get("/stats/overview"),
+            "severity_distribution": await _api_get("/stats/severity-distribution"),
+        }
 
     # ── Delete Operations ────────────────────────────────────────────
     # The DELETE endpoints don't read engagement_id from the URL — the

@@ -69,6 +69,11 @@ section becomes one release entry.
   out every session, and it used to sign out yours too, sending you to the
   login page before your recovery codes were shown. You now get a fresh
   session and the codes appear as intended.
+- **AI assistant: asset, test case, vault and cleanup creation, and the
+  stats tools, work.** The four create tools sent the engagement in the
+  wrong place and were always rejected, and `create_asset` didn't ask for
+  the required identifier; the two stats tools called endpoints that don't
+  exist.
 
 ## [1.9.0] — 2026-11-11
 
