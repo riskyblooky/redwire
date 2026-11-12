@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,6 +91,19 @@ from utils.storage import storage_service
 from utils.uploads import safe_content_type, content_disposition_attachment, read_upload_capped, sanitize_original_filename, MAX_EVIDENCE_BYTES
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+# Rendering is CPU-bound (ReportLab layout, image decoding) and the PDF/HTML
+# generators fetch evidence images with blocking boto3 calls, so it runs in a
+# thread rather than stalling every request on this worker. The semaphore
+# bounds concurrent renders per worker: each can hold a whole report's
+# images in memory, and the deploy target is a 4 GB VPS.
+_RENDER_SLOTS = asyncio.Semaphore(max(1, int(os.getenv("REPORT_RENDER_CONCURRENCY", "2"))))
+
+
+async def _render(generator):
+    async with _RENDER_SLOTS:
+        return await asyncio.to_thread(generator.generate)
 
 @router.post("/generate")
 async def generate_report(
@@ -371,7 +385,7 @@ async def _do_generate_report(
 
     if config.report_format == ReportFormat.PDF:
         generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields, chain_edges=chain_edges, chain_vault_items=chain_vault_items)
-        pdf_content = generator.generate()
+        pdf_content = await _render(generator)
         filename = f"Report_{safe_name}.pdf"
         return Response(
             content=pdf_content,
@@ -381,7 +395,7 @@ async def _do_generate_report(
 
     elif config.report_format == ReportFormat.MARKDOWN:
         generator = MarkdownReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, finding_custom_fields=finding_custom_fields)
-        md_content = generator.generate()
+        md_content = await _render(generator)
         filename = f"Report_{safe_name}.md"
         return Response(
             content=md_content,
@@ -391,7 +405,7 @@ async def _do_generate_report(
 
     elif config.report_format == ReportFormat.HTML:
         generator = HTMLReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields, chain_edges=chain_edges, chain_vault_items=chain_vault_items)
-        html_content = generator.generate()
+        html_content = await _render(generator)
         filename = f"Report_{safe_name}.html"
         return Response(
             content=html_content,
@@ -550,7 +564,7 @@ async def _do_generate_report(
             with zipfile.ZipFile(spooled, 'w', zipfile.ZIP_DEFLATED) as zf:
                 # Write JSON
                 json_content = json.dumps(export_data, indent=2, ensure_ascii=False)
-                zf.writestr("engagement_export.json", json_content)
+                await asyncio.to_thread(zf.writestr, "engagement_export.json", json_content)
 
                 # Download and bundle evidence files
                 if config.include_evidence:
@@ -614,7 +628,8 @@ async def _do_generate_report(
                                             "GHSA-fwvp: sanitized evidence %s original_filename %r → %r for ZIP export",
                                             e.id, e.original_filename, safe_name,
                                         )
-                                    zf.writestr(f"attachments/findings/{f.id}/{safe_name}", file_bytes)
+                                    # DEFLATE is CPU-bound: off the event loop.
+                                    await asyncio.to_thread(zf.writestr, f"attachments/findings/{f.id}/{safe_name}", file_bytes)
                                 except Exception:
                                     pass  # Skip files that can't be downloaded
 
@@ -629,7 +644,7 @@ async def _do_generate_report(
                                         "GHSA-fwvp: sanitized standalone evidence %s original_filename %r → %r for ZIP export",
                                         e.id, e.original_filename, safe_name,
                                     )
-                                zf.writestr(f"attachments/engagement/{safe_name}", file_bytes)
+                                await asyncio.to_thread(zf.writestr, f"attachments/engagement/{safe_name}", file_bytes)
                             except Exception:
                                 pass
         except Exception:

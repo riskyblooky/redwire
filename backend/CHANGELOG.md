@@ -104,6 +104,10 @@ section becomes one release entry.
   the finding, asset or note, so a slow webhook delayed that save by up to
   its timeout. They now run in the background right after the change is
   saved, each limited to `AUTOMATION_TIMEOUT_S` (default 120 s).
+- **Generating a report no longer freezes the app for everyone else.** PDF
+  and HTML rendering, their evidence-image downloads, and ZIP export
+  compression ran on the main request loop. They now run in the background,
+  at most two renders at a time per worker (`REPORT_RENDER_CONCURRENCY`).
 
 ## [1.9.0] — 2026-11-11
 
