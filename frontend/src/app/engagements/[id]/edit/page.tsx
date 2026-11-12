@@ -10,7 +10,7 @@
  */
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { buildEngagementContext } from '@/lib/ai-entity-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
@@ -134,7 +134,10 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     const updatePhases      = useUpdateEngagementPhases();
     const generatePhases    = useGenerateEngagementPhases();
     const { data: clients = [] }         = useClients();
-    const { data: engagementTypes = [] } = useEngagementTypes();
+    // Memoised: a `= []` default is a new array every render while the query
+    // is pending, which re-ran the populate effect on each render.
+    const { data: engagementTypesData } = useEngagementTypes();
+    const engagementTypes = useMemo(() => engagementTypesData ?? [], [engagementTypesData]);
     const canEdit = useCanEdit(id, 'engagement' as any, engagement?.created_by);
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
@@ -165,6 +168,12 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     const [editingPhases, setEditingPhases] = useState<Record<string, { start: string; end: string }>>({});
     const [phasesEdited, setPhasesEdited] = useState(false);
     const [skillsDirty, setSkillsDirty] = useState(false);
+    // Read by the populate effects: a refetch (after a Team change, Generate
+    // Phases or another user's save) must not overwrite unsaved edits.
+    const detailsDirtyRef = useRef(false);
+    detailsDirtyRef.current = detailsDirty;
+    const phasesEditedRef = useRef(false);
+    phasesEditedRef.current = phasesEdited;
     const skillsSaveRef = useRef<(() => Promise<void>) | null>(null);
     const { data: markingProfiles = [] } = useMarkingProfiles();
     const activeMarkingProfile = markingProfiles.find(p => p.id === formData.marking_profile_id);
@@ -193,7 +202,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
 
     // Populate form from engagement data
     useEffect(() => {
-        if (engagement) {
+        if (engagement && !detailsDirtyRef.current) {
             const rawType = (engagement.engagement_type as string) || '';
             setFormData({
                 name:            engagement.name || '',
@@ -222,25 +231,34 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     // Re-normalize type when types load AFTER engagement (async race)
     useEffect(() => {
         if (engagement && engagementTypes.length > 0) {
-            setFormData(prev => ({
-                ...prev,
-                engagement_type: normalizeType((engagement.engagement_type as string) || '', engagementTypes),
-            }));
+            const raw = (engagement.engagement_type as string) || '';
+            // Only the untouched stored value; never a type the user picked.
+            setFormData(prev => prev.engagement_type === raw
+                ? { ...prev, engagement_type: normalizeType(raw, engagementTypes) }
+                : prev);
         }
     }, [engagementTypes]);
 
     // Init phase editors
     useEffect(() => {
         if (engagement?.phases?.length) {
-            const edits: Record<string, { start: string; end: string }> = {};
+            const fresh: Record<string, { start: string; end: string }> = {};
             for (const p of engagement.phases) {
-                edits[p.id] = {
+                fresh[p.id] = {
                     start: p.planned_start ? format(parseISO(p.planned_start), 'yyyy-MM-dd') : '',
                     end:   p.planned_end   ? format(parseISO(p.planned_end),   'yyyy-MM-dd') : '',
                 };
             }
-            setEditingPhases(edits);
-            setPhasesEdited(false);
+            if (!phasesEditedRef.current) {
+                setEditingPhases(fresh);
+                setPhasesEdited(false);
+            } else {
+                // Keep the user's edits for phases that still exist; pick up
+                // new ones (e.g. from Generate Phases) and drop deleted ones.
+                setEditingPhases(prev => Object.fromEntries(
+                    Object.entries(fresh).map(([pid, d]) => [pid, prev[pid] ?? d]),
+                ));
+            }
         }
     }, [engagement?.id, engagement?.phases]);
 
@@ -280,12 +298,15 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         };
     };
 
-    const handleSaveAll = async () => {
-        const saves: Promise<any>[] = [];
+    /** True when everything dirty was saved (or nothing was). */
+    const handleSaveAll = async (): Promise<boolean> => {
+        // Each part saves independently; a part that saved is no longer dirty
+        // even if another failed, so a retry doesn't resend it.
+        const saves: { label: string; run: Promise<unknown>; clear: () => void }[] = [];
 
         if (detailsDirty) {
             const { allowed_score_models: _a, default_score_model: _d, ...details } = formData;
-            saves.push(updateEngagement.mutateAsync({
+            saves.push({ label: 'Details', clear: () => setDetailsDirty(false), run: updateEngagement.mutateAsync({
                 id,
                 ...details,
                 client_id:  formData.client_id  || undefined,
@@ -296,7 +317,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 default_classification_suffix: formData.default_classification_suffix || null,
                 ceiling_classification_level:  formData.ceiling_classification_level || null,
                 ...scoringPolicyPayload(),
-            }));
+            }) });
         }
 
         if (phasesEdited) {
@@ -308,29 +329,37 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                 }))
                 .filter(p => p.planned_start || p.planned_end);
             if (updates.length > 0) {
-                saves.push(updatePhases.mutateAsync({ engagementId: engagement.id, phases: updates }));
+                saves.push({ label: 'Timeline', clear: () => setPhasesEdited(false),
+                    run: updatePhases.mutateAsync({ engagementId: engagement.id, phases: updates }) });
+            } else {
+                setPhasesEdited(false);
             }
         }
 
         if (skillsDirty && skillsSaveRef.current) {
-            saves.push(skillsSaveRef.current());
+            // The card clears its own dirty flag on success.
+            saves.push({ label: 'Skills', clear: () => {}, run: skillsSaveRef.current() });
         }
 
-        if (saves.length === 0) return;
+        if (saves.length === 0) return true;
 
-        try {
-            await Promise.all(saves);
-            toast.success('Changes saved');
-            setDetailsDirty(false);
-            setPhasesEdited(false);
-        } catch (error: any) {
-            toast.error(apiErrorMessage(error, 'Failed to save changes'));
+        const results = await Promise.allSettled(saves.map(s => s.run));
+        const failed: string[] = [];
+        results.forEach((r, i) => {
+            if (r.status === 'fulfilled') saves[i].clear();
+            else failed.push(`${saves[i].label}: ${apiErrorMessage(r.reason, 'save failed')}`);
+        });
+        if (failed.length) {
+            toast.error(`Not saved. ${failed.join(' · ')}`);
+            return false;
         }
+        toast.success('Changes saved');
+        return true;
     };
 
     const handleSaveAndBack = async () => {
-        await handleSaveAll();
-        router.push(returnUrl);
+        // Leave only if the save worked; otherwise stay with the work intact.
+        if (await handleSaveAll()) router.push(returnUrl);
     };
 
     // ── Underline tab classes ─────────────────────────────────────
@@ -802,7 +831,9 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                         </TabsContent>
 
                         {/* ── SKILLS ── */}
-                        <TabsContent value="skills">
+                        {/* Kept mounted: its edits live in the card, and unmounting
+                            on a tab switch lost them while the dirty flag stuck. */}
+                        <TabsContent value="skills" forceMount className="data-[state=inactive]:hidden">
                             <RequiredSkillsCard
                                 engagementId={engagement.id}
                                 onDirtyChange={setSkillsDirty}
@@ -874,8 +905,10 @@ function RequiredSkillsCard({ engagementId, onDirtyChange, saveRef }: {
     const [localSkills, setLocalSkills] = useState<Record<string, number>>({});
     const [hasChanges, setHasChanges]   = useState(false);
 
+    const hasChangesRef = useRef(false);
+    hasChangesRef.current = hasChanges;
     useEffect(() => {
-        if (engagementSkills.length > 0) {
+        if (engagementSkills.length > 0 && !hasChangesRef.current) {
             const map: Record<string, number> = {};
             engagementSkills.forEach(es => { map[es.skill_id] = es.min_level; });
             setLocalSkills(map);
@@ -888,14 +921,12 @@ function RequiredSkillsCard({ engagementId, onDirtyChange, saveRef }: {
         onDirtyChange?.(dirty);
     };
 
+    // Throws on failure: the page's Save reports it (this used to swallow the
+    // error, so the page said "Changes saved" for skills that weren't).
     const handleSave = async () => {
         const skills = Object.entries(localSkills).map(([skill_id, min_level]) => ({ skill_id, min_level }));
-        try {
-            await setEngagementSkills.mutateAsync({ engagementId, skills });
-            markDirty(false);
-        } catch (error: any) {
-            toast.error(apiErrorMessage(error, 'Failed to save skills'));
-        }
+        await setEngagementSkills.mutateAsync({ engagementId, skills });
+        markDirty(false);
     };
 
     // Expose save function to parent via ref

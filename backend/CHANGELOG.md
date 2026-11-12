@@ -136,6 +136,11 @@ section becomes one release entry.
 - **Editing a finding's content withdraws its peer approvals.** Approvals
   used to survive later edits, so a finding could be verified on content
   no reviewer saw. Requested-changes reviews are kept.
+- **The edit-engagement page no longer loses unsaved work.** Opening the
+  Team dialog or generating phases reloaded the engagement and wiped unsaved
+  Details and Timeline edits, switching tabs dropped Skills edits, and Save &
+  Close left the page even when the save failed. Failed parts are now
+  reported and the page stays open.
 
 ## [1.9.0] — 2026-11-11
 
