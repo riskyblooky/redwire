@@ -2134,6 +2134,12 @@ class PDFReportGenerator:
             for a in (f.assets or []):
                 if a.name in aid:
                     edges.append({'s': f.id, 't': aid[a.name], 'kind': 'impacts'})
+        # A filtered report (severity / status / …) keeps only the matching
+        # findings, but test cases and cleanup artifacts still link to the
+        # dropped ones: drop edges whose ends aren't drawn, or layering
+        # raised KeyError and the PDF 500'd.
+        drawn = {n['id'] for n in nodes}
+        edges = [e for e in edges if e['s'] in drawn and e['t'] in drawn]
         # ── Chain overlay ──
         # Overlay operator-authored causal chain edges (and any vault items
         # they touch) onto the association-derived graph, mirroring the app's
@@ -2163,6 +2169,8 @@ class PDFReportGenerator:
         inD = {n['id']: 0 for n in nodes}
         outA = {n['id']: [] for n in nodes}
         for e in edges:
+            if e['s'] not in outA or e['t'] not in inD:
+                continue  # dangling edge: nothing to layer
             outA[e['s']].append(e['t'])
             inD[e['t']] += 1
         layer = {n['id']: 0 for n in nodes}

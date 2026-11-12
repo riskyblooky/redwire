@@ -80,6 +80,9 @@ section becomes one release entry.
   vault and test-case-template lists failed to load after the person who
   created an item was deleted, and a user who had ever had an API token
   couldn't be deleted at all.
+- **PDF reports with filters and the attack graph generate again.** A
+  filtered report whose attack graph linked to a filtered-out finding
+  failed.
 
 ## [1.9.0] — 2026-11-11
 
