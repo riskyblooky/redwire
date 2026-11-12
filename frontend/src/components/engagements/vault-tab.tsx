@@ -725,6 +725,12 @@ export function VaultTab({ engagementId }: VaultTabProps) {
     // dedups the audit log per (user, item) over 5 minutes so multiple
     // toggles in quick succession don't multiply the log rows.
     const [revealedItems, setRevealedItems] = useState<Record<string, VaultItemReveal | undefined>>({});
+    const forgetRevealed = (id: string) => setRevealedItems(prev => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+    });
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -736,6 +742,25 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         note: '',
         description: ''
     });
+
+    // Someone else edited (or deleted) an item whose plaintext we hold:
+    // drop the cached copy once the refreshed list shows a newer version,
+    // so it's re-fetched on next use instead of serving the old secret.
+    useEffect(() => {
+        const current = new Map(items.map(i => [i.id, i.updated_at]));
+        setRevealedItems(prev => {
+            let changed = false;
+            const next = { ...prev };
+            for (const [id, rev] of Object.entries(prev)) {
+                if (!rev) continue;
+                if (!current.has(id) || (rev.updated_at && current.get(id) !== rev.updated_at)) {
+                    delete next[id];
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
+        });
+    }, [items]);
 
     const handleEditItem = async (item: VaultItem) => {
         // Need plaintext to seed the edit form so the user sees the
@@ -759,6 +784,9 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         setIsSubmitting(true);
         try {
             await api.patch(`/vault/${editingItem.id}`, editForm);
+            // The cached plaintext is now stale: without this, reveal, copy
+            // and the next edit would keep using the old secret.
+            forgetRevealed(editingItem.id);
             toast.success('Vault item updated');
             setIsEditDialogOpen(false);
             setEditingItem(null);

@@ -23,6 +23,7 @@ export interface VaultItem {
     file_path?: string;
     description?: string;
     created_at: string;
+    updated_at?: string;
     created_by: string;
     created_by_username?: string;
     created_by_profile_photo?: string;

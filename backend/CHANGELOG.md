@@ -23,6 +23,10 @@ section becomes one release entry.
   `artifact_id` weren't checked, so a crafted id could reach the vault reveal
   endpoint. Viewing, creating or updating a vault item through the assistant
   now hides the username, password and note, as listing already did.
+- **Vault: an edited credential no longer shows its old value.** After an
+  edit (yours, or another user's once the list refreshes) the revealed,
+  copied and edit-form values are fetched fresh instead of served from the
+  page's cache.
 
 ## [1.9.0] — 2026-11-11
 
