@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { loginUrlForCurrentPage } from './login-redirect';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -135,7 +136,8 @@ api.interceptors.response.use(
                 localStorage.removeItem('access_token');
                 localStorage.removeItem('engagement-context'); // per-user selection (engagement-store)
                 document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
-                window.location.href = '/login';
+                // Session expired mid-use: come back to this page after sign-in.
+                if (window.location.pathname !== '/login') window.location.href = loginUrlForCurrentPage();
                 return Promise.reject(_redactAuthOnError(refreshError));
             }
         }

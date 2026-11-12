@@ -6,6 +6,14 @@ section becomes one release entry.
 
 ## [1.9.1] — Unreleased
 
+### Added
+- **Sign-in returns you to the page you wanted.** Opening a link while
+  signed out, or having your session expire mid-use, now sends you to the
+  login page with that page remembered, and you land on it after signing in
+  (password, two-factor or SSO) instead of on the dashboard. Only pages
+  inside RedWire are accepted as a return target. Signing out on purpose
+  still starts you at the dashboard next time.
+
 ### Fixed
 - **Encryption-key rotation no longer loses data.** `rotate_encryption_keys.py`
   now also re-encrypts auth settings (LDAP / SMTP / SAML secrets), plugin

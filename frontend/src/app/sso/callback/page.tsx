@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { apiErrorMessage } from '@/lib/api';
+import { takeSsoNext } from '@/lib/login-redirect';
 
 /**
  * SSO Callback Page
@@ -27,6 +28,10 @@ export default function SSOCallbackPage() {
     const [verifying, setVerifying] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const processedRef = useRef(false);
+    // The page the user was sent to login from (stashed before leaving for
+    // the IdP). Read once: StrictMode runs the effect twice.
+    const nextRef = useRef<string | null>(null);
+    const nextPath = () => (nextRef.current ??= takeSsoNext());
 
     useEffect(() => {
         // Guard against React StrictMode double-execution:
@@ -42,7 +47,7 @@ export default function SSOCallbackPage() {
         if (!accessToken) {
             // Check if tokens were already stored (StrictMode re-run)
             if (localStorage.getItem('access_token')) {
-                checkAuth().then(() => router.push('/dashboard'));
+                checkAuth().then(() => router.push(nextPath()));
                 return;
             }
             setError('No access token received from SSO provider.');
@@ -84,7 +89,7 @@ export default function SSOCallbackPage() {
         document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
 
         checkAuth().then(() => {
-            router.push('/dashboard');
+            router.push(nextPath());
         });
     }, [checkAuth, router]);
 
@@ -104,7 +109,7 @@ export default function SSOCallbackPage() {
 
         try {
             await verifySsoTotp(totpCode, pendingToken);
-            router.push('/dashboard');
+            router.push(nextPath());
         } catch (err: any) {
             const detail = apiErrorMessage(err, 'Invalid code. Please try again.');
             setError(detail);

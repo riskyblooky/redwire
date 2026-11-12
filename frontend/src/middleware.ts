@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { loginUrl, safeNextPath, DEFAULT_AFTER_LOGIN } from '@/lib/login-redirect';
 
 /**
  * Next.js Middleware for server-side route protection.
@@ -31,16 +32,18 @@ export function middleware(request: NextRequest) {
     const hasSession = request.cookies.get('has_session')?.value;
     const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
 
-    // Not authenticated, trying to access protected route → redirect to login
+    // Not authenticated, trying to access protected route → redirect to login,
+    // remembering the page so sign-in can resume there.
     if (!hasSession && !isPublicRoute) {
-        const loginUrl = new URL('/login', request.url);
-        return NextResponse.redirect(loginUrl);
+        const target = loginUrl(pathname + request.nextUrl.search);
+        return NextResponse.redirect(new URL(target, request.url));
     }
 
-    // Authenticated, trying to access login/register → redirect to dashboard
+    // Authenticated, trying to access login/register → go where ?next= says
+    // (a still-valid session opening a resume link), else the dashboard.
     if (hasSession && isPublicRoute) {
-        const dashboardUrl = new URL('/dashboard', request.url);
-        return NextResponse.redirect(dashboardUrl);
+        const next = pathname === '/login' ? safeNextPath(request.nextUrl.searchParams.get('next')) : null;
+        return NextResponse.redirect(new URL(next ?? DEFAULT_AFTER_LOGIN, request.url));
     }
 
     return NextResponse.next();

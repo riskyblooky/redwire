@@ -35,6 +35,7 @@ import {
 } from '@/lib/hooks/use-stats-pages';
 import AnalyticsOverview from '@/components/stats/analytics-overview';
 import StatsPageView from '@/components/stats/stats-page-view';
+import { loginUrlForCurrentPage } from '@/lib/login-redirect';
 
 const ANALYTICS_TAB = 'analytics';
 
@@ -71,7 +72,7 @@ export default function StatsPage() {
     const [renameTarget, setRenameTarget] = useState<StatsPage | null>(null);
 
     useEffect(() => {
-        if (!authLoading && !isAuthenticated) router.push('/login');
+        if (!authLoading && !isAuthenticated) router.push(loginUrlForCurrentPage());
     }, [isAuthenticated, authLoading, router]);
 
     // If the active tab points at a page that no longer exists, fall back.

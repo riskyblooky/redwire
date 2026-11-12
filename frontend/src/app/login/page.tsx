@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth-store';
 import { Shield, ArrowLeft, LogIn, Zap, AlertTriangle } from 'lucide-react';
 import { apiErrorMessage } from '@/lib/api';
+import { afterLoginPath, stashNextForSso } from '@/lib/login-redirect';
 
 interface AuthProviders {
     local: boolean;
@@ -287,7 +288,7 @@ export default function LoginPage() {
             await login(username, password);
             if (!useAuthStore.getState().requires2fa) {
                 setStatusText('Access granted');
-                window.location.href = '/dashboard';
+                window.location.href = afterLoginPath();
             }
         } catch (err: any) {
             const msg = apiErrorMessage(err, 'Authentication failed.');
@@ -308,7 +309,7 @@ export default function LoginPage() {
         try {
             await verifyTotp(totpCode);
             setStatusText('Verified');
-            window.location.href = '/dashboard';
+            window.location.href = afterLoginPath();
         } catch (err: any) {
             setError(apiErrorMessage(err, 'Invalid token.'));
             setTotpCode('');
@@ -500,6 +501,7 @@ export default function LoginPage() {
                                                 href={providers.saml_login_url}
                                                 onClick={() => {
                                                     try { sessionStorage.setItem('saml_pending', '1'); } catch { /* private mode */ }
+                                                    stashNextForSso();
                                                 }}
                                                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-mono font-semibold uppercase tracking-wider text-white/60 bg-white/[0.03] border border-white/10 rounded-lg hover:border-white/20 hover:text-white/80 hover:bg-white/[0.05] transition-all duration-300"
                                             >

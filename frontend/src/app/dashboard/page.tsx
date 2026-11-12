@@ -35,6 +35,7 @@ import WidgetRenderer from '@/components/dashboard/widget-renderer';
 import WidgetPicker from '@/components/dashboard/widget-picker';
 import { RedWireSpinner } from '@/components/ui/redwire-spinner';
 import { SIZE_SPANS, layoutToRGL, rglToLayout } from '@/lib/widget-layout';
+import { loginUrlForCurrentPage } from '@/lib/login-redirect';
 
 // Load the grid component client-only (ssr:false) to avoid CJS/ESM issues
 const DashboardGrid = dynamic(
@@ -96,7 +97,7 @@ export default function DashboardPage() {
     );
 
     useEffect(() => {
-        if (!isAuthLoading && !isAuthenticated) router.push('/login');
+        if (!isAuthLoading && !isAuthenticated) router.push(loginUrlForCurrentPage());
     }, [isAuthenticated, isAuthLoading, router]);
 
     // ── Real-time WebSocket: invalidate ALL dashboard queries on activity ──
