@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from typing import Optional, Tuple
 import asyncio
 import json
@@ -9,7 +9,6 @@ from auth import decode_token
 from auth.jwt import is_token_blacklisted
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
-from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -131,7 +130,7 @@ async def _auth_via_first_frame(
         return None
 
     # Reject revoked or 2FA-pending tokens
-    if is_token_blacklisted(token) or payload.get("2fa_pending"):
+    if payload.get("2fa_pending") or await asyncio.to_thread(is_token_blacklisted, token):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None
 
@@ -170,7 +169,6 @@ async def websocket_endpoint(
     websocket: WebSocket,
     resource_type: str,
     resource_id: str,
-    db: AsyncSession = Depends(get_db)
 ):
     """
     WebSocket endpoint for real-time collaboration.
@@ -182,105 +180,110 @@ async def websocket_endpoint(
     """
     await websocket.accept()
 
-    # 1. Authenticate via first-frame
-    authed = await _auth_via_first_frame(websocket, db)
-    if authed is None:
-        return  # helper already closed the socket
-    user_row, role = authed
-    user_id = user_row.id
+    # Setup-only DB session, closed before the receive loop. An injected
+    # get_db session lived as long as the socket, pinning a pooled connection
+    # per open tab (pool: 10 + 20 overflow per worker).
+    import database as _database
+    async with _database.AsyncSessionLocal() as db:
+        # 1. Authenticate via first-frame
+        authed = await _auth_via_first_frame(websocket, db)
+        if authed is None:
+            return  # helper already closed the socket
+        user_row, role = authed
+        user_id = user_row.id
 
-    # 2. Resolve resource and capture its owning engagement_id (where applicable).
-    from models.engagement import Engagement
-    from models.finding import Finding
+        # 2. Resolve resource and capture its owning engagement_id (where applicable).
+        from models.engagement import Engagement
+        from models.finding import Finding
 
-    resource_exists = False
-    engagement_id: Optional[str] = None
-    try:
-        from models.asset import Asset
-        from models.testcase import TestCase
-        from models.evidence import Evidence
+        resource_exists = False
+        engagement_id: Optional[str] = None
+        try:
+            from models.asset import Asset
+            from models.testcase import TestCase
+            from models.evidence import Evidence
 
-        if resource_type == "engagement":
-            result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
-            obj = result.scalar_one_or_none()
-            resource_exists = obj is not None
-            engagement_id = obj.id if obj else None
-        elif resource_type == "finding":
-            result = await db.execute(select(Finding).where(Finding.id == resource_id))
-            obj = result.scalar_one_or_none()
-            resource_exists = obj is not None
-            engagement_id = getattr(obj, "engagement_id", None) if obj else None
-        elif resource_type == "asset":
-            result = await db.execute(select(Asset).where(Asset.id == resource_id))
-            obj = result.scalar_one_or_none()
-            resource_exists = obj is not None
-            engagement_id = getattr(obj, "engagement_id", None) if obj else None
-        elif resource_type == "testcase":
-            result = await db.execute(select(TestCase).where(TestCase.id == resource_id))
-            obj = result.scalar_one_or_none()
-            resource_exists = obj is not None
-            engagement_id = getattr(obj, "engagement_id", None) if obj else None
-        elif resource_type == "evidence":
-            result = await db.execute(select(Evidence).where(Evidence.id == resource_id))
-            obj = result.scalar_one_or_none()
-            resource_exists = obj is not None
-            engagement_id = getattr(obj, "engagement_id", None) if obj else None
-        elif resource_type == "note":
-            from models.note import Note
-            result = await db.execute(select(Note).where(Note.id == resource_id))
-            obj = result.scalar_one_or_none()
-            resource_exists = obj is not None
-            engagement_id = getattr(obj, "engagement_id", None) if obj else None
-        elif resource_type == "report":
-            # Reports are virtual resources linked to engagement
-            result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
-            obj = result.scalar_one_or_none()
-            resource_exists = obj is not None
-            engagement_id = obj.id if obj else None
-        elif resource_type == "dashboard":
-            # Dashboard is a virtual global resource — broadcast-only.
-            resource_exists = resource_id == "global"
-        elif resource_type == "user":
-            # User-level notification channel
-            result = await db.execute(select(User).where(User.id == resource_id))
-            resource_exists = result.scalar_one_or_none() is not None
-        else:
-            resource_exists = False
-    except Exception as e:
-        print(f"WS Resource validation error: {e}")
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-        return
+            if resource_type == "engagement":
+                result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
+                obj = result.scalar_one_or_none()
+                resource_exists = obj is not None
+                engagement_id = obj.id if obj else None
+            elif resource_type == "finding":
+                result = await db.execute(select(Finding).where(Finding.id == resource_id))
+                obj = result.scalar_one_or_none()
+                resource_exists = obj is not None
+                engagement_id = getattr(obj, "engagement_id", None) if obj else None
+            elif resource_type == "asset":
+                result = await db.execute(select(Asset).where(Asset.id == resource_id))
+                obj = result.scalar_one_or_none()
+                resource_exists = obj is not None
+                engagement_id = getattr(obj, "engagement_id", None) if obj else None
+            elif resource_type == "testcase":
+                result = await db.execute(select(TestCase).where(TestCase.id == resource_id))
+                obj = result.scalar_one_or_none()
+                resource_exists = obj is not None
+                engagement_id = getattr(obj, "engagement_id", None) if obj else None
+            elif resource_type == "evidence":
+                result = await db.execute(select(Evidence).where(Evidence.id == resource_id))
+                obj = result.scalar_one_or_none()
+                resource_exists = obj is not None
+                engagement_id = getattr(obj, "engagement_id", None) if obj else None
+            elif resource_type == "note":
+                from models.note import Note
+                result = await db.execute(select(Note).where(Note.id == resource_id))
+                obj = result.scalar_one_or_none()
+                resource_exists = obj is not None
+                engagement_id = getattr(obj, "engagement_id", None) if obj else None
+            elif resource_type == "report":
+                # Reports are virtual resources linked to engagement
+                result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
+                obj = result.scalar_one_or_none()
+                resource_exists = obj is not None
+                engagement_id = obj.id if obj else None
+            elif resource_type == "dashboard":
+                # Dashboard is a virtual global resource — broadcast-only.
+                resource_exists = resource_id == "global"
+            elif resource_type == "user":
+                # User-level notification channel
+                result = await db.execute(select(User).where(User.id == resource_id))
+                resource_exists = result.scalar_one_or_none() is not None
+            else:
+                resource_exists = False
+        except Exception as e:
+            print(f"WS Resource validation error: {e}")
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return
 
-    if not resource_exists:
-        await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-        return
+        if not resource_exists:
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            return
 
-    # 2b. user channel: caller may only subscribe to their OWN id.
-    if resource_type == "user" and str(resource_id) != str(user_id):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
-    # 2c. Engagement-scoped resources: require ENGAGEMENT_VIEW on the owning
-    # engagement. (dashboard:global is intentionally permissive here;
-    # broadcast-side scoping is tracked separately.)
-    #
-    # Admin / read-only-admin / team-lead bypass the per-engagement
-    # gate — same pattern as every REST view endpoint (see e.g.
-    # engagements.py:323, notes.py:121). Without this an admin who
-    # isn't a direct member of the engagement can't open the
-    # collaboration WS at all, so /notes and every other real-time
-    # surface silently 1008-close for them.
-    if engagement_id is not None:
-        is_admin_view = role in (
-            UserRole.ADMIN.value,
-            UserRole.READ_ONLY_ADMIN.value,
-            UserRole.TEAM_LEAD.value,
-        )
-        if not is_admin_view and not await check_engagement_permission(
-            user_id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
-        ):
+        # 2b. user channel: caller may only subscribe to their OWN id.
+        if resource_type == "user" and str(resource_id) != str(user_id):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+
+        # 2c. Engagement-scoped resources: require ENGAGEMENT_VIEW on the owning
+        # engagement. (dashboard:global is intentionally permissive here;
+        # broadcast-side scoping is tracked separately.)
+        #
+        # Admin / read-only-admin / team-lead bypass the per-engagement
+        # gate — same pattern as every REST view endpoint (see e.g.
+        # engagements.py:323, notes.py:121). Without this an admin who
+        # isn't a direct member of the engagement can't open the
+        # collaboration WS at all, so /notes and every other real-time
+        # surface silently 1008-close for them.
+        if engagement_id is not None:
+            is_admin_view = role in (
+                UserRole.ADMIN.value,
+                UserRole.READ_ONLY_ADMIN.value,
+                UserRole.TEAM_LEAD.value,
+            )
+            if not is_admin_view and not await check_engagement_permission(
+                user_id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
+            ):
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
 
     # 3. Connect to manager. Identity comes from the authenticated DB row;
     # the client's `identify` frame may only set its edit/view mode (see
@@ -368,7 +371,6 @@ _ACCESS_RECHECK_S = 15
 async def yjs_websocket_endpoint(
     websocket: WebSocket,
     note_id: str,
-    db: AsyncSession = Depends(get_db),
 ):
     """
     Y.js binary sync WebSocket for collaborative note editing.
@@ -385,37 +387,40 @@ async def yjs_websocket_endpoint(
 
     await websocket.accept()
 
-    # 1. Authenticate via first-frame
-    authed = await _auth_via_first_frame(websocket, db)
-    if authed is None:
-        return  # helper already closed the socket
-    user_row, role = authed
-    user_id = user_row.id
+    # Setup-only DB session (see websocket_endpoint).
+    import database as _database
+    async with _database.AsyncSessionLocal() as db:
+        # 1. Authenticate via first-frame
+        authed = await _auth_via_first_frame(websocket, db)
+        if authed is None:
+            return  # helper already closed the socket
+        user_row, role = authed
+        user_id = user_row.id
 
-    # 2. Verify note exists
-    from models.note import Note
-    result = await db.execute(select(Note).where(Note.id == note_id))
-    note = result.scalar_one_or_none()
-    if not note:
-        await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-        return
+        # 2. Verify note exists
+        from models.note import Note
+        result = await db.execute(select(Note).where(Note.id == note_id))
+        note = result.scalar_one_or_none()
+        if not note:
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            return
 
-    # 2b. Authorize against the note's engagement. Mirrors routers/notes.py:
-    #   - VIEW bypass: admin / read-only-admin / team-lead (three roles).
-    #     Previously an admin who wasn't a direct engagement member
-    #     couldn't open the Y.js sync socket at all — the WS was a
-    #     *stricter* door than the REST fetch, so the note metadata
-    #     loaded fine and the collab handshake silently hung.
-    #   - WRITE bypass: admin / team-lead only (two roles — no
-    #     read-only-admin). read-only-admin passes VIEW but must not
-    #     write, matching notes.py:203 and every other REST edit gate.
-    #     Previously this treated all three view-bypass roles as edit-
-    #     capable, which let read-only-admin save note content and
-    #     broadcast CRDT updates even though REST would 403 them.
-    can_edit = await _note_access(user_row, note, db)
-    if can_edit is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+        # 2b. Authorize against the note's engagement. Mirrors routers/notes.py:
+        #   - VIEW bypass: admin / read-only-admin / team-lead (three roles).
+        #     Previously an admin who wasn't a direct engagement member
+        #     couldn't open the Y.js sync socket at all — the WS was a
+        #     *stricter* door than the REST fetch, so the note metadata
+        #     loaded fine and the collab handshake silently hung.
+        #   - WRITE bypass: admin / team-lead only (two roles — no
+        #     read-only-admin). read-only-admin passes VIEW but must not
+        #     write, matching notes.py:203 and every other REST edit gate.
+        #     Previously this treated all three view-bypass roles as edit-
+        #     capable, which let read-only-admin save note content and
+        #     broadcast CRDT updates even though REST would 403 them.
+        can_edit = await _note_access(user_row, note, db)
+        if can_edit is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
     # 3. Join the Y.js room and relay until the client leaves.
     async def _save(content: str):
@@ -465,7 +470,6 @@ async def yjs_field_websocket_endpoint(
     resource_type: str,
     resource_id: str,
     field: str,
-    db: AsyncSession = Depends(get_db),
 ):
     """
     Y.js sync for one rich-text field of a finding / test case / asset, or a
@@ -480,15 +484,18 @@ async def yjs_field_websocket_endpoint(
     import json as _json_mod
 
     await websocket.accept()
-    authed = await _auth_via_first_frame(websocket, db)
-    if authed is None:
-        return
-    user_row, _role = authed
+    # Setup-only DB session (see websocket_endpoint).
+    import database as _database
+    async with _database.AsyncSessionLocal() as db:
+        authed = await _auth_via_first_frame(websocket, db)
+        if authed is None:
+            return
+        user_row, _role = authed
 
-    target = await resolve_collab_target(resource_type, resource_id, field, user_row, db)
-    if target is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+        target = await resolve_collab_target(resource_type, resource_id, field, user_row, db)
+        if target is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
     async def _save(content: str):
         if not isinstance(content, str):

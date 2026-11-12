@@ -91,6 +91,11 @@ section becomes one release entry.
   provides MD4), so NTLM lookups never matched; they are computed again, and
   existing entries are filled in by a background job on startup (it resumes
   if interrupted and can take a while on a large wordlist).
+- **Many open tabs no longer exhaust the database connections.** Each live
+  connection (presence, live notes, live editing) held a database connection
+  for as long as the tab stayed open, so a few dozen tabs per worker made
+  other requests wait for a free connection. The connection is now released
+  once the socket is set up.
 
 ## [1.9.0] — 2026-11-11
 
