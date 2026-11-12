@@ -69,7 +69,8 @@ import { useMarkingProfiles } from '@/lib/hooks/use-marking-profiles';
 import { useEngagement } from '@/lib/hooks/use-engagements';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { SectionType } from '@/lib/types';
+import { SectionType, type ReportLayout } from '@/lib/types';
+import { isAxiosError } from 'axios';
 import { toast } from 'sonner';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useTestCases } from '@/lib/hooks/use-testcases';
@@ -298,7 +299,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     const [isSaving, setIsSaving] = useState(false);
 
     // ── Report layouts CRUD ──
-    const { data: layouts = [], isLoading: layoutsLoading } = useReportLayouts(engagementId);
+    const { data: layouts = [], isLoading: layoutsLoading, refetch: refetchLayouts } = useReportLayouts(engagementId);
     const createLayout = useCreateReportLayout();
     const updateLayout = useUpdateReportLayout();
     const deleteLayout = useDeleteReportLayout();
@@ -330,6 +331,9 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     // ── Local state ──
     const [selectedLayoutId, setSelectedLayoutId] = useState<string | null>(null);
     const [layoutName, setLayoutName] = useState('');
+    // updated_at of the layout as loaded: sent with Save so a stale copy
+    // can't overwrite co-editors (the backend answers 409).
+    const [layoutVersion, setLayoutVersion] = useState<string | null>(null);
     const [sections, setSections] = useState<LocalSection[]>([]);
     const [selectedSectionIdx, setSelectedSectionIdx] = useState<number | null>(null);
     const [expandedBuilder, setExpandedBuilder] = useState(false);
@@ -392,18 +396,9 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
     );
 
     // ── Load layout into local state ──
-    const loadLayout = useCallback((layoutId: string | null) => {
-        if (!layoutId) {
-            setSelectedLayoutId(null);
-            setLayoutName('');
-            setSections([]);
-            setSelectedSectionIdx(null);
-            setIsDirty(false);
-            return;
-        }
-        const layout = layouts.find(l => l.id === layoutId);
-        if (!layout) return;
+    const applyLayout = useCallback((layout: ReportLayout) => {
         setSelectedLayoutId(layout.id);
+        setLayoutVersion(layout.updated_at);
         setLayoutName(layout.name);
         setSections(
             layout.sections
@@ -421,7 +416,29 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
         );
         setSelectedSectionIdx(null);
         setIsDirty(false);
-    }, [layouts]);
+    }, []);
+
+    const loadLayout = useCallback((layoutId: string | null) => {
+        if (!layoutId) {
+            setSelectedLayoutId(null);
+            setLayoutVersion(null);
+            setLayoutName('');
+            setSections([]);
+            setSelectedSectionIdx(null);
+            setIsDirty(false);
+            return;
+        }
+        const layout = layouts.find(l => l.id === layoutId);
+        if (layout) applyLayout(layout);
+    }, [layouts, applyLayout]);
+
+    // Someone else saved the open layout: pick up their version when we have
+    // nothing unsaved (with unsaved edits, Save reports the conflict).
+    useEffect(() => {
+        if (!selectedLayoutId || isDirty || !layoutVersion) return;
+        const latest = layouts.find(l => l.id === selectedLayoutId);
+        if (latest && latest.updated_at !== layoutVersion) applyLayout(latest);
+    }, [layouts, selectedLayoutId, isDirty, layoutVersion, applyLayout]);
 
     // Auto-select first layout on load
     // (or, for a ?sectionId= deep link, the layout holding that section).
@@ -716,13 +733,14 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             page_break_before: !!s.page_break_before,
         }));
         try {
-            let saved: { sections: { id: string; sort_order: number }[] };
+            let saved: { updated_at: string; sections: { id: string; sort_order: number }[] };
             if (selectedLayoutId) {
                 saved = await updateLayout.mutateAsync({
                     engagementId,
                     layoutId: selectedLayoutId,
                     name: layoutName,
                     sections: sectionPayload,
+                    expected_updated_at: layoutVersion ?? undefined,
                 });
                 toast.success('Layout saved');
             } else {
@@ -736,11 +754,26 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             }
             // Adopt server ids (new sections get one; existing ones keep theirs),
             // then re-anchor review highlights against the saved text.
+            setLayoutVersion(saved.updated_at);
             const savedIds = [...saved.sections].sort((a, b) => a.sort_order - b.sort_order).map(s => s.id);
             setSections(prev => prev.map((s, i) => ({ ...s, id: savedIds[i] ?? s.id })));
             await Promise.all([...surfaceRefs.current.values()].map(h => h.refreshAnchors().catch(() => undefined)));
             setIsDirty(false);
         } catch (err) {
+            if (isAxiosError(err) && err.response?.status === 409 && selectedLayoutId) {
+                const reload = await confirm({
+                    title: 'Layout changed by someone else',
+                    description: 'Another user saved this layout after you opened it. Saving now would overwrite their changes and delete any sections they added, so it was not saved. Reload their version? Your unsaved changes will be lost — copy anything you need first.',
+                    confirmLabel: 'Reload',
+                    variant: 'destructive',
+                });
+                if (reload) {
+                    const { data } = await refetchLayouts();
+                    const latest = data?.find(l => l.id === selectedLayoutId);
+                    if (latest) applyLayout(latest);
+                }
+                return;
+            }
             toast.error(getErrorMessage(err, 'Failed to save layout'));
         }
     };

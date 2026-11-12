@@ -55,7 +55,8 @@ async def test_section_ids_survive_save_and_removed_threads_are_deleted(client, 
 
     # Reorder + edit Intro, drop Scope, add a new section.
     upd = await client.put(f"/engagements/{eng.id}/report-layouts/{layout['id']}", json={
-        "sections": _sections("New", "Intro (edited)", ids=[None, intro["id"]])})
+        "sections": _sections("New", "Intro (edited)", ids=[None, intro["id"]]),
+        "expected_updated_at": layout["updated_at"]})
     assert upd.status_code == 200, upd.text
     secs = sorted(upd.json()["sections"], key=lambda s: s["sort_order"])
     assert secs[1]["id"] == intro["id"] and secs[1]["title"] == "Intro (edited)"
@@ -77,7 +78,7 @@ async def test_foreign_section_id_creates_new_section(client, db_session, make_u
 
     # Sending another layout's section id must not move or modify it.
     upd = await client.put(f"/engagements/{eng_b.id}/report-layouts/{b['id']}",
-                           json={"sections": _sections("Hijack", ids=[a_sec])})
+                           json={"sections": _sections("Hijack", ids=[a_sec]), "expected_updated_at": b["updated_at"]})
     assert upd.status_code == 200, upd.text
     assert upd.json()["sections"][0]["id"] != a_sec
     a_after = (await client.get(f"/engagements/{eng_a.id}/report-layouts/{a['id']}")).json()
@@ -108,3 +109,31 @@ async def test_thread_create_checks_section_engagement_and_anchor(client, db_ses
 def test_report_section_deep_link():
     t = Thread(resource_type="report_section", resource_id="sec-1", engagement_id="eng-1")
     assert _comment_deep_link(t, "c-1") == "/engagements/eng-1?tab=reporting&sectionId=sec-1&commentId=c-1"
+
+
+async def test_stale_layout_save_is_refused(client, db_session, make_user, authenticate_as):
+    """A section save from a stale copy would overwrite co-editors' text and
+    delete their sections (with threads), so it needs the current version."""
+    _, (eng, _b) = await _setup(db_session, make_user, authenticate_as)
+    layout = (await client.post(f"/engagements/{eng.id}/report-layouts",
+                                json={"name": "L", "sections": _sections("Intro")})).json()
+    url = f"/engagements/{eng.id}/report-layouts/{layout['id']}"
+    sec = layout["sections"][0]["id"]
+
+    missing = await client.put(url, json={"sections": _sections("x", ids=[sec])})
+    assert missing.status_code == 400
+
+    first = await client.put(url, json={"sections": _sections("Intro", "Added by B", ids=[sec, None]),
+                                        "expected_updated_at": layout["updated_at"]})
+    assert first.status_code == 200, first.text
+    assert first.json()["updated_at"] != layout["updated_at"]
+
+    # Same user, second tab still holding the original version.
+    stale = await client.put(url, json={"sections": _sections("Intro (A)", ids=[sec]),
+                                        "expected_updated_at": layout["updated_at"]})
+    assert stale.status_code == 409
+    titles = sorted(s["title"] for s in (await client.get(url)).json()["sections"])
+    assert titles == ["Added by B", "Intro"]
+
+    # A rename alone doesn't replace sections and needs no version.
+    assert (await client.put(url, json={"name": "Renamed"})).status_code == 200

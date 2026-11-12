@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 from database import get_db
 
 from models.user import User, UserRole
@@ -36,6 +37,25 @@ async def _check_report_write(user: User, engagement_id: str, db: AsyncSession):
         has_perm = await check_engagement_permission(user.id, engagement_id, Permission.REPORT_GENERATE.value, db)
         if not has_perm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+
+def _naive(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _assert_layout_current(layout: ReportLayout, expected: Optional[datetime]) -> None:
+    """Optimistic concurrency for the full-section-list save: the client must
+    send the updated_at it loaded, and it must still be current."""
+    if expected is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="expected_updated_at is required when replacing sections; send the layout's updated_at as you loaded it.",
+        )
+    if layout.updated_at and _naive(layout.updated_at) != _naive(expected):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This layout was changed by someone else since you loaded it. Reload it to see their changes.",
+        )
 
 
 def _replace_sections(layout: ReportLayout, sections_data: List[ReportSectionCreate]) -> List[str]:
@@ -173,9 +193,14 @@ async def update_report_layout(
     if data.is_default is not None:
         layout.is_default = data.is_default
     if data.sections is not None:
+        _assert_layout_current(layout, data.expected_updated_at)
         await _delete_section_threads(db, _replace_sections(layout, data.sections))
 
     layout.updated_by = current_user.id
+    # Stamp explicitly: onupdate only fires when a column of the layout row
+    # itself changed, and a sections-only save by the same user changes
+    # none — the version the concurrency check compares must move anyway.
+    layout.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(layout)
 

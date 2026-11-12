@@ -27,6 +27,12 @@ section becomes one release entry.
   edit (yours, or another user's once the list refreshes) the revealed,
   copied and edit-form values are fetched fresh instead of served from the
   page's cache.
+- **Report layouts: saving no longer overwrites co-editors.** Saving a
+  layout's sections now checks it hasn't changed since you opened it. If
+  someone else saved in the meantime you're told, and offered their version,
+  instead of overwriting their text and deleting the sections they added
+  (with those sections' review threads). With no unsaved changes, their
+  version is picked up automatically.
 
 ## [1.9.0] — 2026-11-11
 

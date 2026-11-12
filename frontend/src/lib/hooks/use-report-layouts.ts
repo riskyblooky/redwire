@@ -24,6 +24,8 @@ export interface ReportLayoutUpdate {
     name?: string;
     is_default?: boolean;
     sections?: ReportSectionCreate[];
+    /** updated_at as loaded; required with `sections` (409 if it moved). */
+    expected_updated_at?: string;
 }
 
 export function useReportLayouts(engagementId?: string) {

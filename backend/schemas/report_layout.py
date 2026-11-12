@@ -57,6 +57,11 @@ class ReportLayoutUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=NAME)
     is_default: Optional[bool] = None
     sections: Optional[List[ReportSectionCreate]] = None
+    # The layout's updated_at as the client loaded it. Required when
+    # ``sections`` is sent: replacing the section list from a stale copy
+    # would overwrite co-editors' text and delete the sections they added
+    # (with their review threads), so a mismatch is refused with 409.
+    expected_updated_at: Optional[datetime] = None
 
 
 class ReportLayoutResponse(BaseModel):
