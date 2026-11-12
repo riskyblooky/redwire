@@ -1,6 +1,6 @@
 from models.discussion import ActivityLog
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from typing import Optional, List, Dict, Any
 import asyncio
 import uuid
@@ -174,7 +174,20 @@ async def notify_engagement_users(
 
 import re
 
-_MENTION_RE = re.compile(r'@(\w+)')
+# Usernames are [a-z0-9._-] (schemas.user._USERNAME_ALLOWED). \w+ stopped at
+# the first dot, so "@john.doe" notified "john". The lookbehind skips e-mail
+# addresses ("alice@example.com" used to mention "example"); trailing . _ -
+# is sentence punctuation ("thanks @jane.").
+_MENTION_RE = re.compile(r'(?<![\w.@])@([A-Za-z0-9][A-Za-z0-9._-]*)')
+
+
+def _mentioned_usernames(content: str) -> set:
+    names = set()
+    for m in _MENTION_RE.finditer(content):
+        name = m.group(1).rstrip("._-")
+        if name:
+            names.add(name.lower())
+    return names
 
 
 async def notify_mentions(
@@ -196,13 +209,13 @@ async def notify_mentions(
     # peak memory is bounded by the number of *distinct* usernames, not the
     # number of '@' occurrences. The schema-layer max_length is the primary
     # gate; this is defense-in-depth for any future caller that bypasses it.
-    usernames = {m.group(1) for m in _MENTION_RE.finditer(content)}
+    usernames = _mentioned_usernames(content)
     if not usernames:
         return
 
     result = await db.execute(
         select(UserModel.id, UserModel.username).where(
-            UserModel.username.in_(usernames)
+            func.lower(UserModel.username).in_(usernames)
         )
     )
     users = result.all()

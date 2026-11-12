@@ -116,6 +116,10 @@ section becomes one release entry.
 - **Filtering findings by severity or status works.** `GET /findings`
   accepted `severity` and `status` but ignored them and returned every
   finding.
+- **@mentions of dotted usernames reach the right person.** `@john.doe`
+  notified the user `john` (if one existed), and e-mail addresses in a
+  comment mentioned their domain. Mentions now match the full username and
+  ignore e-mail addresses.
 
 ## [1.9.0] — 2026-11-11
 
