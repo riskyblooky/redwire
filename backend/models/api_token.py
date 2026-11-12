@@ -4,7 +4,7 @@ API Token model for long-lived programmatic access.
 Tokens are stored as SHA-256 hashes — the raw value is shown once at creation.
 """
 from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 from database import Base
 from datetime import datetime
 import uuid
@@ -26,5 +26,9 @@ class ApiToken(Base):
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    user = relationship("User", foreign_keys=[user_id], backref="api_tokens")
+    # passive_deletes="all": users.id → api_tokens.user_id is ON DELETE
+    # CASCADE. Without it, deleting a user made the ORM null this NOT NULL
+    # column first, so a user who ever had a token couldn't be deleted.
+    user = relationship("User", foreign_keys=[user_id],
+                        backref=backref("api_tokens", passive_deletes="all"))
     creator = relationship("User", foreign_keys=[created_by])

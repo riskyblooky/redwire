@@ -82,7 +82,7 @@ class VaultItemResponse(BaseModel):
     file_path: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    created_by: str
+    created_by: Optional[str] = None  # SET NULL when the creator is deleted
     updated_by: Optional[str] = None
     created_by_username: Optional[str] = None
     created_by_profile_photo: Optional[str] = None

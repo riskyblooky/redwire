@@ -36,7 +36,7 @@ class TestCaseTemplateResponse(TestCaseTemplateBase):
     usage_count: int = 0
     created_at: datetime
     updated_at: datetime
-    created_by: str
+    created_by: Optional[str] = None  # SET NULL when the creator is deleted
     updated_by: Optional[str] = None
     status: TemplateStatus
     submitted_at: Optional[datetime] = None

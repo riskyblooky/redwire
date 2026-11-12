@@ -76,6 +76,10 @@ section becomes one release entry.
   exist.
 - **Admin → Stats scope mode saves without an error.** The setting was
   saved, but the request then failed, so the page reported an error.
+- **Deleting a user no longer breaks other pages or fails.** Test case,
+  vault and test-case-template lists failed to load after the person who
+  created an item was deleted, and a user who had ever had an API token
+  couldn't be deleted at all.
 
 ## [1.9.0] — 2026-11-11
 
