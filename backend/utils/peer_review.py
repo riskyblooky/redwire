@@ -61,3 +61,26 @@ async def assert_finding_verifiable(db: AsyncSession, finding) -> None:
                 f"to review it before marking it VERIFIED."
             ),
         )
+
+
+# Fields a peer review vouches for. Links (assets, tags, techniques) and
+# status/markings are left out: the edit form resends them on every save.
+REVIEWED_FIELDS = frozenset({
+    "title", "category", "description", "severity", "impact", "technical_details",
+    "steps_to_reproduce", "mitigations", "references", "cvss_score", "cvss_vector",
+    "score_model", "score_inputs",
+})
+
+
+async def withdraw_approvals_if_reviewed_changed(db: AsyncSession, finding_id: str, changed_fields) -> int:
+    """An approval vouches for the content the reviewer saw. Editing what
+    they judged withdraws it, or "N peer approvals" would cover text nobody
+    reviewed. CHANGES_REQUESTED verdicts are kept as the record. Shared by
+    the update, version-restore and live-edit save paths; doesn't commit."""
+    if not REVIEWED_FIELDS.intersection(changed_fields):
+        return 0
+    from sqlalchemy import delete
+    from models.finding_review import FindingReview
+    res = await db.execute(delete(FindingReview).where(
+        FindingReview.finding_id == finding_id, FindingReview.status == "APPROVED"))
+    return res.rowcount or 0

@@ -647,7 +647,10 @@ async def update_finding(
         await assert_model_allowed(db, finding.engagement_id, update_data["score_model"])
     _apply_scoring(update_data, existing=finding)
 
-    if "status" in update_data:
+    # Only an actual transition is gated: the edit form resends the current
+    # status with every save, so an author fixing a typo in their own VERIFIED
+    # finding was refused as "self-attesting" a status it already had.
+    if "status" in update_data and update_data["status"] != finding.status:
         await _assert_status_change_allowed(
             db, finding, update_data["status"], is_admin=is_admin, is_owner=is_owner, user_id=current_user.id,
         )
@@ -669,6 +672,12 @@ async def update_finding(
 
     # Snapshot current state before applying changes
     await create_version_snapshot(db, finding, "finding", update_data, current_user.id)
+
+    # An approval vouches for the content the reviewer saw. Editing what they
+    # judged withdraws it, or "N peer approvals" would cover text nobody
+    # reviewed. (CHANGES_REQUESTED verdicts are kept as the record.)
+    from utils.peer_review import withdraw_approvals_if_reviewed_changed
+    await withdraw_approvals_if_reviewed_changed(db, finding.id, changes.keys())
 
     for field, value in update_data.items():
         setattr(finding, field, value)
@@ -983,6 +992,9 @@ async def restore_finding_version(
     from utils.collab_fields import assert_no_other_live_editors
     await assert_no_other_live_editors("finding", finding.id, current_user.id)
     await create_version_snapshot(db, finding, "finding", update_data, current_user.id)
+    from utils.peer_review import withdraw_approvals_if_reviewed_changed
+    await withdraw_approvals_if_reviewed_changed(
+        db, finding.id, [f for f, v in update_data.items() if getattr(finding, f, None) != v])
     for field, value in update_data.items():
         setattr(finding, field, value)
     finding.updated_by = current_user.id

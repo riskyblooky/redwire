@@ -190,6 +190,9 @@ async def save_collab_field(
             # Pre-edit state, so history and the activity feed's diff show
             # what the session changed.
             await create_version_snapshot(db, obj, resource_type, {field: content}, user_id)
+        if resource_type == "finding":
+            from utils.peer_review import withdraw_approvals_if_reviewed_changed
+            await withdraw_approvals_if_reviewed_changed(db, resource_id, [field])
         setattr(obj, field, content)
         obj.updated_by = user_id
         engagement_id = obj.engagement_id

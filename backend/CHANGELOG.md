@@ -129,6 +129,13 @@ section becomes one release entry.
   run.** The "Comment Created", "Test Case Executed", "User Assigned to
   Engagement" and "User Removed from Engagement" triggers were never
   raised. Team changes also now appear in the activity feed per member.
+- **Authors can edit their own verified finding.** Any save was refused
+  with 403 because the form resends the current status, which was treated
+  as the author verifying their own work. Only a real status change is
+  checked now.
+- **Editing a finding's content withdraws its peer approvals.** Approvals
+  used to survive later edits, so a finding could be verified on content
+  no reviewer saw. Requested-changes reviews are kept.
 
 ## [1.9.0] — 2026-11-11
 
