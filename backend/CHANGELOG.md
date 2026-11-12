@@ -113,6 +113,9 @@ section becomes one release entry.
   uses bounded timeouts (`REDIS_TIMEOUT_S`, default 1.5 s), one round trip,
   and runs off the main loop; if Redis can't answer, requests are refused as
   before.
+- **Filtering findings by severity or status works.** `GET /findings`
+  accepted `severity` and `status` but ignored them and returned every
+  finding.
 
 ## [1.9.0] — 2026-11-11
 

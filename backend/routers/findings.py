@@ -77,6 +77,12 @@ async def get_findings(
 
     if engagement_id:
         query = query.where(Finding.engagement_id == engagement_id)
+    # Both were accepted and documented but never applied, so a filtered
+    # request returned every finding.
+    if severity is not None:
+        query = query.where(Finding.severity == severity)
+    if status is not None:
+        query = query.where(Finding.status == status)
     
     # Restrict to engagements where the caller's role can view these
     # (same rule as the single-item GET) for non-admins
