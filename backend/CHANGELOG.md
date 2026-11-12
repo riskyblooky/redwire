@@ -74,6 +74,8 @@ section becomes one release entry.
   wrong place and were always rejected, and `create_asset` didn't ask for
   the required identifier; the two stats tools called endpoints that don't
   exist.
+- **Admin → Stats scope mode saves without an error.** The setting was
+  saved, but the request then failed, so the page reported an error.
 
 ## [1.9.0] — 2026-11-11
 

@@ -683,6 +683,20 @@ async def update_stats_scope_mode(
         ))
     await db.commit()
 
+    from utils.collaboration import create_activity_log
+    await create_activity_log(
+        db=db,
+        engagement_id=None,
+        user_id=current_user.id,
+        action="updated_setting",
+        resource_type="auth_setting",
+        resource_id=_STATS_SCOPE_MODE_KEY,
+        resource_name="Stats scope mode",
+        details=f"Stats scope mode set to '{payload.mode}'",
+    )
+
+    return StatsScopeModeResponse(mode=payload.mode)
+
 
 class PeerReviewConfigResponse(BaseModel):
     required: bool
@@ -791,20 +805,6 @@ async def update_scoring_policy(
         user_id=current_user.id,
     )
     return _scoring_policy_response(await get_site_policy(db))
-
-    from utils.collaboration import create_activity_log
-    await create_activity_log(
-        db=db,
-        engagement_id=None,
-        user_id=current_user.id,
-        action="updated_setting",
-        resource_type="auth_setting",
-        resource_id=_STATS_SCOPE_MODE_KEY,
-        resource_name="Stats scope mode",
-        details=f"Stats scope mode set to '{payload.mode}'",
-    )
-
-    return StatsScopeModeResponse(mode=payload.mode)
 
 
 
