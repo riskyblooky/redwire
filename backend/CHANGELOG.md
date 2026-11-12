@@ -33,6 +33,10 @@ section becomes one release entry.
   instead of overwriting their text and deleting the sections they added
   (with those sections' review threads). With no unsaved changes, their
   version is picked up automatically.
+- **Link dialog: applying no longer drops intel and infrastructure links.**
+  Opening the dialog before its existing intel / infra links had loaded,
+  then pressing Apply, unlinked all of them. Apply now waits for them, and
+  a failed load skips that type rather than treating it as "no links".
 
 ## [1.9.0] — 2026-11-11
 

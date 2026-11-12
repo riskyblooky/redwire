@@ -125,12 +125,23 @@ export function LinkEntityDialog({
     // row on the tab (the N+1 "by-entity spam"). Empty id → hooks stay disabled
     // until the dialog is actually opened for one entity.
     const intelInfraId = (open && (entityType === 'finding' || entityType === 'testcase')) ? entityId : '';
-    const { data: linkedIntelItems = [] } = useIntelByEntity(intelInfraCompat as any, intelInfraId);
+    const intelLinksQ = useIntelByEntity(intelInfraCompat as any, intelInfraId);
+    const linkedIntelItems = intelLinksQ.data ?? [];
     const linkIntel = useLinkIntel();
     const unlinkIntel = useUnlinkIntel();
     const { data: infraData } = useInfraItems({ limit: 200 });
     const infraItems = infraData?.items ?? [];
-    const { data: linkedInfraItems = [] } = useInfraByEntity(intelInfraCompat as any, intelInfraId);
+    const infraLinksQ = useInfraByEntity(intelInfraCompat as any, intelInfraId);
+    const linkedInfraItems = infraLinksQ.data ?? [];
+    // The intel/infra link lists load after the dialog opens. Until each has
+    // settled, its baseline is unknown: seeding the selection from the empty
+    // placeholder and applying would unlink every existing link. A failed
+    // load is never treated as "no links" — that type is skipped on Apply.
+    const intelSettled = excluded.includes('intel') || !intelInfraId || intelLinksQ.isError
+        || (intelLinksQ.isSuccess && !intelLinksQ.isFetching);
+    const infraSettled = excluded.includes('infra') || !intelInfraId || infraLinksQ.isError
+        || (infraLinksQ.isSuccess && !infraLinksQ.isFetching);
+    const [seeded, setSeeded] = useState({ intel: false, infra: false });
     const linkInfra = useLinkInfra();
     const unlinkInfra = useUnlinkInfra();
 
@@ -160,12 +171,27 @@ export function LinkEntityDialog({
                 assets:    new Set(linkedIds.assets),
                 vault:     new Set(linkedIds.vault),
                 cleanup:   new Set(linkedIds.cleanup),
-                intel:     new Set(linkedIntelItems.map(i => i.id)),
-                infra:     new Set(linkedInfraItems.map(i => i.id)),
+                intel:     new Set(),
+                infra:     new Set(),
             });
+            setSeeded({ intel: false, infra: false });
             setLastClickedIndex(null);
         }
     }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        if (!open || seeded.intel || !intelSettled) return;
+        setSelectionMap(prev => ({ ...prev, intel: new Set(linkedIntelItems.map(i => i.id)) }));
+        setSeeded(prev => ({ ...prev, intel: true }));
+    }, [open, seeded.intel, intelSettled, linkedIntelItems]);
+
+    useEffect(() => {
+        if (!open || seeded.infra || !infraSettled) return;
+        setSelectionMap(prev => ({ ...prev, infra: new Set(linkedInfraItems.map(i => i.id)) }));
+        setSeeded(prev => ({ ...prev, infra: true }));
+    }, [open, seeded.infra, infraSettled, linkedInfraItems]);
+
+    const linksReady = seeded.intel && seeded.infra;
 
     const handleSwitchTab = (tab: LinkResourceType) => {
         setActiveTab(tab);
@@ -179,6 +205,7 @@ export function LinkEntityDialog({
     };
 
     const handleToggleSelect = (itemId: string, index: number, shiftKey: boolean, filteredItems: { id: string }[]) => {
+        if ((activeTab === 'intel' || activeTab === 'infra') && !seeded[activeTab]) return;
         setSelectionMap(prev => {
             const currentSet = new Set(prev[activeTab]);
             if (shiftKey && lastClickedIndex !== null) {
@@ -221,7 +248,8 @@ export function LinkEntityDialog({
         }
 
         // Intel
-        if (!excluded.includes('intel')) {
+        if (intelLinksQ.isError && !excluded.includes('intel')) errors++;
+        if (!excluded.includes('intel') && !intelLinksQ.isError) {
             const currentLinkedIntel = new Set(linkedIntelItems.map(i => i.id));
             const selectedIntel = selectionMap.intel;
             for (const itemId of [...selectedIntel].filter(id => !currentLinkedIntel.has(id))) {
@@ -233,7 +261,8 @@ export function LinkEntityDialog({
         }
 
         // Infra
-        if (!excluded.includes('infra')) {
+        if (infraLinksQ.isError && !excluded.includes('infra')) errors++;
+        if (!excluded.includes('infra') && !infraLinksQ.isError) {
             const currentLinkedInfra = new Set(linkedInfraItems.map(i => i.id));
             const selectedInfra = selectionMap.infra;
             for (const itemId of [...selectedInfra].filter(id => !currentLinkedInfra.has(id))) {
@@ -369,8 +398,9 @@ export function LinkEntityDialog({
                     <span className="text-xs text-slate-500">{totalSelected} selected across all types</span>
                     <div className="flex gap-2">
                         <Button variant="outline" className="border-slate-700 text-slate-400 hover:text-white" onClick={() => handleOpenChange(false)}>Cancel</Button>
-                        <Button className="bg-primary hover:bg-primary/90 text-white" onClick={handleApply} disabled={isApplying}>
-                            {isApplying ? <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Applying...</> : 'Apply All'}
+                        <Button className="bg-primary hover:bg-primary/90 text-white" onClick={handleApply} disabled={isApplying || !linksReady}>
+                            {isApplying ? <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Applying...</>
+                                : !linksReady ? <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Loading links...</> : 'Apply All'}
                         </Button>
                     </div>
                 </DialogFooter>
