@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { loginUrl, safeNextPath, DEFAULT_AFTER_LOGIN } from '@/lib/login-redirect';
+import { loginUrl, safeNextPath, DEFAULT_AFTER_LOGIN, PUBLIC_ROUTES, SIGNED_IN_REDIRECT_ROUTES } from '@/lib/login-redirect';
 
 /**
  * Next.js Middleware for server-side route protection.
@@ -14,7 +14,6 @@ import { loginUrl, safeNextPath, DEFAULT_AFTER_LOGIN } from '@/lib/login-redirec
  * happens client-side via the AuthGuard component.
  */
 
-const PUBLIC_ROUTES = ['/login', '/register', '/sso/callback', '/forgot-password', '/reset-password'];
 
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
@@ -41,7 +40,10 @@ export function middleware(request: NextRequest) {
 
     // Authenticated, trying to access login/register → go where ?next= says
     // (a still-valid session opening a resume link), else the dashboard.
-    if (hasSession && isPublicRoute) {
+    // Only login/register: the SSO callback, reset-password and
+    // forgot-password pages finish a flow and must render even with a
+    // (possibly stale) has_session cookie.
+    if (hasSession && SIGNED_IN_REDIRECT_ROUTES.includes(pathname)) {
         const next = pathname === '/login' ? safeNextPath(request.nextUrl.searchParams.get('next')) : null;
         return NextResponse.redirect(new URL(next ?? DEFAULT_AFTER_LOGIN, request.url));
     }

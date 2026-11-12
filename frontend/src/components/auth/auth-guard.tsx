@@ -4,9 +4,8 @@ import { useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { RedWireSpinner } from '@/components/ui/redwire-spinner';
-import { loginUrlForCurrentPage } from '@/lib/login-redirect';
+import { loginUrlForCurrentPage, afterLoginPath, PUBLIC_ROUTES, SIGNED_IN_REDIRECT_ROUTES } from '@/lib/login-redirect';
 
-const PUBLIC_ROUTES = ['/login', '/register'];
 
 export function AuthGuard({ children }: { children: ReactNode }) {
     const { user, isAuthenticated, isLoading, checkAuth, needsRedirect } = useAuthStore();
@@ -31,8 +30,8 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
             if (!isAuthenticated && !isPublicRoute) {
                 router.push(loginUrlForCurrentPage());
-            } else if (isAuthenticated && isPublicRoute) {
-                router.push('/dashboard');
+            } else if (isAuthenticated && SIGNED_IN_REDIRECT_ROUTES.includes(pathname || '')) {
+                router.push(afterLoginPath());
             }
         }
     }, [isAuthenticated, isLoading, pathname, router, needsRedirect]);

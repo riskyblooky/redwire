@@ -61,6 +61,10 @@ section becomes one release entry.
   in `.env`. `BACKEND_URL` and `FRONTEND_URL` now default to
   `https://$DOMAIN_NAME/api` and `https://$DOMAIN_NAME`, and everything in
   `.env` reaches the backend.
+- **Password reset and SSO two-factor pages no longer bounce to login.**
+  The page guard and the server-side redirect disagreed about which pages
+  need no session; both now use one list, and a stale session cookie no
+  longer sends the SSO callback or reset-password page to the dashboard.
 
 ## [1.9.0] — 2026-11-11
 

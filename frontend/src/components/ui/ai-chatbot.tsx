@@ -13,6 +13,7 @@ import {
     Check, X, Wrench, Clock, ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PUBLIC_ROUTES } from '@/lib/login-redirect';
 
 // Per-call tool execution state rendered inline with the chat
 // transcript. ``status`` drives the card UI:
@@ -323,7 +324,7 @@ function ToolCallCard({
 export function AiChatbot() {
     const pathname = usePathname();
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-    const isPublicRoute = pathname === '/login' || pathname === '/register';
+    const isPublicRoute = PUBLIC_ROUTES.includes(pathname || '');
 
     const { data: aiStatus } = useQuery<{
         enabled: boolean;

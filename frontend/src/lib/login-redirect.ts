@@ -11,8 +11,14 @@
 
 export const DEFAULT_AFTER_LOGIN = '/dashboard';
 
+/** Pages reachable without a session. Middleware and AuthGuard both use
+ *  this list — they disagreed once, and reset-password / SSO+2FA bounced. */
+export const PUBLIC_ROUTES = ['/login', '/register', '/sso/callback', '/forgot-password', '/reset-password'];
+/** Public pages a signed-in user is sent away from (the others finish a flow). */
+export const SIGNED_IN_REDIRECT_ROUTES = ['/login', '/register'];
+
 /** Pages that must never be a resume target (loops / pointless). */
-const AUTH_PAGES = ['/login', '/register', '/sso/callback', '/forgot-password', '/reset-password'];
+const AUTH_PAGES = PUBLIC_ROUTES;
 
 const SSO_NEXT_KEY = 'login_next';
 
