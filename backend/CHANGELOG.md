@@ -4,6 +4,21 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.9.1] — Unreleased
+
+### Fixed
+- **Encryption-key rotation no longer loses data.** `rotate_encryption_keys.py`
+  now also re-encrypts auth settings (LDAP / SMTP / SAML secrets), plugin
+  settings and spray-result usernames, which it used to skip, leaving them
+  unreadable after a rotation. A value encrypted under neither the old nor the
+  new key (a wrong old key) is no longer encrypted a second time, which made it
+  unrecoverable: a read-only first pass finds such values and stops the run
+  before anything is written (`--allow-undecryptable` re-keys the rest and
+  leaves them as they are). The rotation steps in the admin guide, the in-app
+  help and SECURITY.md named a variable the script never read; they now give
+  the real procedure, including stopping the backend and recreating it
+  (`docker compose up -d backend`, since `restart` keeps the old `.env`).
+
 ## [1.9.0] — 2026-11-11
 
 ### Added

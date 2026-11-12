@@ -149,10 +149,10 @@ To replace currently-active keys with fresh ones (periodic rotation, suspected e
 
 1. **Back up Postgres and MinIO.** The rotation rewrites data in place.
 2. Generate new keys: `python3 scripts/generate_encryption_keys.py`.
-3. Run the rotation script with both old and new keys in the environment:
+3. Stop the backend (`docker compose stop backend`): while it runs it keeps writing under the old key. Then run the rotation script with both old and new keys in the environment:
 
    ```bash
-   docker compose -f docker-compose.prod.yml run --rm \
+   docker compose run --rm \
      -e OLD_VAULT_ENCRYPTION_KEY=<currently-active-vault-key> \
      -e OLD_TOTP_ENCRYPTION_KEY=<currently-active-totp-key> \
      -e VAULT_ENCRYPTION_KEY=<new-vault-key> \
@@ -160,9 +160,9 @@ To replace currently-active keys with fresh ones (periodic rotation, suspected e
      backend python3 rotate_encryption_keys.py --dry-run
    ```
 
-   Drop `--dry-run` to actually re-key. The script is idempotent and resumable — it tries the new key first per row (already migrated → skip), then the old key (re-key), then treats as legacy plaintext. A crashed run is safe to re-run.
+   Drop `--dry-run` to actually re-key. The script is idempotent and resumable — it tries the new key first per row (already migrated → skip), then the old key (re-key); a value that isn't a Fernet token is legacy plaintext and is encrypted. Ciphertext that opens under neither key means the old key is wrong: the script reports it and refuses to write anything (`--allow-undecryptable` overrides). A crashed run is safe to re-run.
 
-4. Replace the keys in `.env` with the new values and restart the backend.
+4. Replace the keys in `.env` with the new values and recreate the backend with `docker compose up -d backend` (`restart` keeps the old environment).
 
 The same script also handles the original `pg99` first-time migration from the legacy `JWT_SECRET`-derived fallback: omit `OLD_*_ENCRYPTION_KEY` and the script derives the old keys from `JWT_SECRET`. In that flow, **do not rotate `JWT_SECRET`** until the rotation completes — the old key is unrecoverable once `JWT_SECRET` changes.
 

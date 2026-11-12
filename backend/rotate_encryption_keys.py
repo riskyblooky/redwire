@@ -27,12 +27,25 @@ Run order on an upgrade or rotation:
 For mode (a), do NOT rotate JWT_SECRET until this has completed — the old
 key is unrecoverable once JWT_SECRET changes.
 
-Usage (inside the backend container):
-    docker compose -f docker-compose.dev.yml exec backend python3 rotate_encryption_keys.py --dry-run
-    docker compose -f docker-compose.dev.yml exec backend python3 rotate_encryption_keys.py
+Usage — with the backend STOPPED (a running backend keeps writing under the
+old key, and those rows would be unreadable afterwards), in a one-off
+container so the keys can be passed in:
+
+    docker compose stop backend
+    docker compose run --rm \
+      -e OLD_VAULT_ENCRYPTION_KEY=<current> -e OLD_TOTP_ENCRYPTION_KEY=<current> \
+      -e VAULT_ENCRYPTION_KEY=<new>         -e TOTP_ENCRYPTION_KEY=<new> \
+      backend python3 rotate_encryption_keys.py --dry-run
+    # ... then without --dry-run, then put the new keys in .env and
+    docker compose up -d backend     # `restart` would keep the old env
 
 Idempotent & resumable: each value is tried new-key-first (already migrated →
-skip), then old-key (re-key), then treated as legacy plaintext (encrypt fresh).
+skip), then old-key (re-key). A value that is not a Fernet token is legacy
+plaintext and gets encrypted. A value that IS a Fernet token but opens under
+neither key is left untouched and reported — that means a wrong old key, and
+wrapping it again would bury the secret under two layers. A preflight pass
+(no writes) runs first; if it finds any such value the run stops before
+writing anything, unless --allow-undecryptable is given.
 """
 import argparse
 import asyncio
@@ -44,17 +57,31 @@ import sys
 import asyncpg
 from cryptography.fernet import Fernet, InvalidToken
 
-# ── Tables/columns encrypted with the VAULT key ──
+# ── Tables/columns encrypted with the VAULT key: table → (primary key, columns).
+# Every EncryptedText column must be here (tests/test_rotate_encryption_keys.py
+# checks the models against this map).
 VAULT_DB_FIELDS = {
-    "vault_items": ("username", "password", "note"),
-    "infra_vault_items": ("username", "password", "note"),
-    "spray_campaigns": ("password_used",),
-    "spray_results": ("password",),
+    "vault_items": ("id", ("username", "password", "note")),
+    "infra_vault_items": ("id", ("username", "password", "note")),
+    "spray_campaigns": ("id", ("password_used",)),
+    "spray_results": ("id", ("username", "password")),
+    "auth_settings": ("key", ("value",)),
+    "plugin_settings": ("id", ("value",)),
 }
 # MinIO-backed file columns (object key in column, Fernet-encrypted body)
 VAULT_FILE_TABLES = ("vault_items", "infra_vault_items")
 # ── Columns encrypted with the TOTP key ──
-TOTP_DB_FIELDS = {"users": ("totp_secret",)}
+TOTP_DB_FIELDS = {"users": ("id", ("totp_secret",))}
+
+
+def looks_like_fernet(raw: bytes) -> bool:
+    """A Fernet token is url-safe base64 of version byte 0x80 + 8-byte
+    timestamp + 16-byte IV + ≥16-byte ciphertext + 32-byte HMAC."""
+    try:
+        data = base64.urlsafe_b64decode(raw)
+    except Exception:
+        return False
+    return len(data) >= 73 and data[0] == 0x80
 
 
 def _legacy_vault_key(secret: str) -> bytes:
@@ -71,43 +98,23 @@ class Stats:
         self.already = 0
         self.plaintext = 0
         self.empty = 0
+        self.undecryptable: list[str] = []   # "table.column pk=…" / "object key"
 
     def line(self, label):
         return (f"  {label:28} rekeyed={self.rekeyed}  already-new={self.already}  "
-                f"plaintext-encrypted={self.plaintext}  empty/skip={self.empty}")
+                f"plaintext-encrypted={self.plaintext}  empty/skip={self.empty}  "
+                f"UNDECRYPTABLE={len(self.undecryptable)}")
 
 
-def rekey_str(val, new_f: Fernet, old_f: Fernet, st: Stats):
-    """Return new ciphertext str, or None if no change needed."""
-    if val is None or val == "":
-        st.empty += 1
-        return None
-    raw = val.encode()
-    try:
-        new_f.decrypt(raw)
-        st.already += 1
-        return None  # already under the new key
-    except InvalidToken:
-        pass
-    try:
-        pt = old_f.decrypt(raw)
-        st.rekeyed += 1
-        return new_f.encrypt(pt).decode()
-    except InvalidToken:
-        pass
-    # Not decryptable by either key → legacy plaintext stored before encryption.
-    st.plaintext += 1
-    return new_f.encrypt(raw).decode()
-
-
-def rekey_bytes(data: bytes, new_f: Fernet, old_f: Fernet, st: Stats):
+def rekey_bytes(data: bytes, new_f: Fernet, old_f: Fernet, st: Stats, where: str = ""):
+    """Return new ciphertext bytes, or None if nothing should be written."""
     if not data:
         st.empty += 1
         return None
     try:
         new_f.decrypt(data)
         st.already += 1
-        return None
+        return None  # already under the new key
     except InvalidToken:
         pass
     try:
@@ -116,8 +123,24 @@ def rekey_bytes(data: bytes, new_f: Fernet, old_f: Fernet, st: Stats):
         return new_f.encrypt(pt)
     except InvalidToken:
         pass
+    if looks_like_fernet(data):
+        # Ciphertext under some third key (almost always: the wrong OLD key
+        # was supplied). Leave it alone — re-encrypting it as if it were
+        # plaintext would make the secret unrecoverable with either key.
+        st.undecryptable.append(where)
+        return None
+    # Not a token at all → legacy plaintext stored before encryption.
     st.plaintext += 1
     return new_f.encrypt(data)
+
+
+def rekey_str(val, new_f: Fernet, old_f: Fernet, st: Stats, where: str = ""):
+    """Return new ciphertext str, or None if no change needed."""
+    if val is None or val == "":
+        st.empty += 1
+        return None
+    out = rekey_bytes(val.encode(), new_f, old_f, st, where)
+    return out.decode() if out is not None else None
 
 
 def _s3_client():
@@ -133,23 +156,28 @@ def _s3_client():
     )
 
 
-async def migrate_db_fields(conn, fields_map, new_f, old_f, dry_run):
-    for table, cols in fields_map.items():
+async def migrate_db_fields(conn, fields_map, new_f, old_f, dry_run, quiet=False) -> list[str]:
+    """Re-key every listed column. Returns the undecryptable locations."""
+    bad: list[str] = []
+    for table, (pk, cols) in fields_map.items():
         st = Stats()
-        sel_cols = ", ".join(("id", *cols))
+        sel_cols = ", ".join((pk, *cols))
         rows = await conn.fetch(f"SELECT {sel_cols} FROM {table}")  # nosec: static table/col names
         for r in rows:
             updates = {}
             for col in cols:
-                new_val = rekey_str(r[col], new_f, old_f, st)
+                new_val = rekey_str(r[col], new_f, old_f, st, f"{table}.{col} {pk}={r[pk]}")
                 if new_val is not None:
                     updates[col] = new_val
             if updates and not dry_run:
                 set_clause = ", ".join(f"{c} = ${i+2}" for i, c in enumerate(updates))
                 await conn.execute(
-                    f"UPDATE {table} SET {set_clause} WHERE id = $1",
-                    r["id"], *updates.values())
-        print(st.line(table))
+                    f"UPDATE {table} SET {set_clause} WHERE {pk} = $1",
+                    r[pk], *updates.values())
+        if not quiet:
+            print(st.line(table))
+        bad.extend(st.undecryptable)
+    return bad
 
 
 def migrate_minio_files(conn_rows, new_f, old_f, dry_run, bucket):
@@ -167,7 +195,7 @@ def migrate_minio_files(conn_rows, new_f, old_f, dry_run, bucket):
         except Exception as e:
             print(f"    ! could not read object {key}: {e}")
             continue
-        new_body = rekey_bytes(body, new_f, old_f, st)
+        new_body = rekey_bytes(body, new_f, old_f, st, f"object {key}")
         if new_body is not None and not dry_run:
             s3.put_object(Bucket=bucket, Key=key, Body=new_body)
     return st
@@ -177,6 +205,9 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would change without writing")
+    ap.add_argument("--allow-undecryptable", action="store_true",
+                    help="write even if some ciphertext opens under neither key "
+                         "(those values are left untouched)")
     args = ap.parse_args()
 
     # OLD keys: explicit env override takes precedence (dedicated->dedicated
@@ -241,6 +272,31 @@ async def main():
     print("=" * 70)
 
     conn = await asyncpg.connect(dsn)
+    file_keys = {}
+    for table in VAULT_FILE_TABLES:
+        file_keys[table] = [r["file_path"] for r in await conn.fetch(
+            f"SELECT file_path FROM {table} WHERE file_path IS NOT NULL")]
+
+    # Preflight: read everything, write nothing. A Fernet token that opens
+    # under neither key means the OLD key is wrong — stop before touching
+    # anything (MinIO writes can't be rolled back with the DB).
+    bad = await migrate_db_fields(conn, VAULT_DB_FIELDS, new_vault_f, old_vault_f, True, quiet=True)
+    bad += await migrate_db_fields(conn, TOTP_DB_FIELDS, new_totp_f, old_totp_f, True, quiet=True)
+    for table, keys in file_keys.items():
+        bad += migrate_minio_files(keys, new_vault_f, old_vault_f, True, bucket).undecryptable
+    if bad:
+        print(f"\n{len(bad)} value(s) are Fernet ciphertext that opens under NEITHER the old nor the new key:")
+        for where in bad[:20]:
+            print(f"    {where}")
+        if len(bad) > 20:
+            print(f"    … and {len(bad) - 20} more")
+        print("The OLD_*_ENCRYPTION_KEY (or JWT_SECRET) supplied is probably not the key the data was")
+        print("written with. Nothing has been written.")
+        if not args.dry_run and not args.allow_undecryptable:
+            await conn.close()
+            sys.exit("Aborting. Fix the old key, or pass --allow-undecryptable to re-key the rest "
+                     "and leave these values as they are.")
+
     try:
         async with conn.transaction():
             print("\nVault-key DB fields:")
@@ -252,11 +308,10 @@ async def main():
     except _Rollback:
         pass
 
-    # MinIO files (vault key) — outside the DB transaction
+    # MinIO files (vault key) — outside the DB transaction. Safe to re-run if
+    # this part is interrupted: re-keyed objects are skipped as already-new.
     print("\nVault-key MinIO files:")
-    for table in VAULT_FILE_TABLES:
-        keys = [r["file_path"] for r in await conn.fetch(
-            f"SELECT file_path FROM {table} WHERE file_path IS NOT NULL")]
+    for table, keys in file_keys.items():
         st = migrate_minio_files(keys, new_vault_f, old_vault_f, args.dry_run, bucket)
         print(st.line(f"{table} files"))
 

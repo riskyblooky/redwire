@@ -382,34 +382,56 @@ logged out on the next request. Do it during a maintenance window.
 
 ```bash
 sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
-docker compose restart backend
+docker compose up -d backend    # recreate: `restart` keeps the old environment
 ```
 
 ### `VAULT_ENCRYPTION_KEY` / `TOTP_ENCRYPTION_KEY`
 
-**Do not just change these.** The vault + TOTP tables contain ciphertext
-encrypted under the OLD key; changing the key without re-encrypting the
-data leaves it undecryptable, exactly like losing the key.
+**Do not just change these.** The vault, spray results, auth settings
+(LDAP/SMTP/SAML secrets), plugin settings and TOTP seeds are encrypted
+under the current keys. Changing a key without re-encrypting the data
+leaves that data unreadable, exactly like losing the key.
 
-The safe rotation flow:
+`rotate_encryption_keys.py` re-encrypts everything. It reads the
+**current** keys from `OLD_VAULT_ENCRYPTION_KEY` / `OLD_TOTP_ENCRYPTION_KEY`
+and the **new** keys from `VAULT_ENCRYPTION_KEY` / `TOTP_ENCRYPTION_KEY`, so
+pass all four to a one-off container. Stop the backend first: while it runs
+it keeps writing under the old key, and those rows would be unreadable
+afterwards.
 
 ```bash
-# 1. Take a backup FIRST
-docker exec redwire-db pg_dump -U redwire redwire | gzip > pre-rotate-$(date +%F).sql.gz
+# 1. Back up first (database, MinIO and .env).
+./backup.sh
 
-# 2. Add the new key to .env alongside the old one — the rotation script
-#    reads both.
-echo "VAULT_ENCRYPTION_KEY_NEW=$(python3 -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())")" >> .env
+# 2. Generate new keys and note the current ones.
+python3 scripts/generate_encryption_keys.py
+grep -E '^(VAULT|TOTP)_ENCRYPTION_KEY=' .env
 
-# 3. Run the rotation script — decrypts under OLD, re-encrypts under NEW.
-docker compose run --rm backend python rotate_encryption_keys.py
+# 3. Stop the backend, then preview the rotation.
+docker compose stop backend
+docker compose run --rm \
+  -e OLD_VAULT_ENCRYPTION_KEY=<current vault key> \
+  -e OLD_TOTP_ENCRYPTION_KEY=<current totp key> \
+  -e VAULT_ENCRYPTION_KEY=<new vault key> \
+  -e TOTP_ENCRYPTION_KEY=<new totp key> \
+  backend python3 rotate_encryption_keys.py --dry-run
 
-# 4. Promote NEW → active and remove OLD.
-# (Edit .env: VAULT_ENCRYPTION_KEY=<new value>, remove _NEW)
-docker compose restart backend
+# 4. Run the same command without --dry-run.
+
+# 5. Put the NEW keys in .env, then recreate the backend. `restart` would
+#    keep the old environment.
+docker compose up -d backend
 ```
 
-Same shape for `TOTP_ENCRYPTION_KEY`.
+The preview reports how many values it would re-key. If it reports any
+`UNDECRYPTABLE` values, the "current" key you passed is not the one the
+data was written with. A real run refuses to write anything in that case,
+so check the key and try again. Pass `--allow-undecryptable` only if you
+know those values are already lost. The script is safe to re-run if it's
+interrupted: values already under the new key are skipped.
+
+Rotate both keys in one run, or pass the same value as old and new for the
+key you're keeping.
 
 ---
 
@@ -596,7 +618,7 @@ The `Origin` header the backend receives doesn't match anything in
    port).
 2. Compare to `CORS_ORIGINS` in `.env`.
 3. If they differ:
-   - Simple case — add the exact value to `CORS_ORIGINS`, restart backend.
+   - Simple case — add the exact value to `CORS_ORIGINS`, then recreate the backend (`docker compose up -d backend`; `restart` keeps the old environment).
    - Complex case (behind chained proxies) — one of the intermediate
      proxies is rewriting `Origin`. See
      [Running behind an existing reverse proxy](#running-behind-an-existing-reverse-proxy).
