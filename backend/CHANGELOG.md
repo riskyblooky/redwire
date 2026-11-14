@@ -162,6 +162,13 @@ section becomes one release entry.
   history and automation rules.** Imported automation rules start switched
   off so an archive can't set up live webhooks; spray data marks the
   archive as containing plaintext secrets.
+- **Deleting no longer leaves half-deleted data or false audit entries.**
+  Deleting a test case with sub-cases, or a finding, asset, engagement,
+  vault item, cleanup artifact, thread or spray campaign, wrote its audit
+  entry first, and writing the entry saved whatever was pending. If the rest
+  of the delete then failed, sub-cases were already gone and the log said
+  the item was deleted. Audit entries are now written after the change is
+  saved, and a failed audit entry can no longer undo the change it records.
 
 ## [1.9.0] — 2026-11-11
 

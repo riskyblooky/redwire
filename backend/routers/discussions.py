@@ -450,22 +450,23 @@ async def delete_thread(
                 detail=f"Insufficient permissions. You need the '{required_perm}' permission to delete this thread."
             )
     
-    # Log activity before deletion
+    engagement_id = thread.engagement_id
+    thread_id = thread.id
+    thread_title = thread.title
+    await db.delete(thread)
+    await db.commit()
+
+    # Logged once the delete is committed (see create_activity_log).
     await create_activity_log(
         db,
-        engagement_id=thread.engagement_id,
+        engagement_id=engagement_id,
         user_id=current_user.id,
         action="deleted_thread",
         resource_type=ResourceType.COMMENT,
-        resource_id=thread.id,
-        resource_name=thread.title,
-        details=f"Deleted thread: {thread.title}"
+        resource_id=thread_id,
+        resource_name=thread_title,
+        details=f"Deleted thread: {thread_title}"
     )
-
-    engagement_id = thread.engagement_id
-    thread_id = thread.id
-    await db.delete(thread)
-    await db.commit()
 
     await _broadcast_discussion_update(engagement_id, thread_id, "deleted_thread")
     return None

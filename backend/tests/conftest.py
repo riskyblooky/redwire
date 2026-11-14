@@ -102,6 +102,19 @@ class FakeDb:
             return nxt if isinstance(nxt, FakeScalarResult) else FakeScalarResult(nxt)
         return FakeScalarResult(None)
 
+    # AsyncSession's pending-change sets (create_activity_log reads them).
+    # ``deleted`` above doubles as the record of delete() calls.
+    new: tuple = ()
+    dirty: tuple = ()
+
+    def begin_nested(self):
+        import contextlib
+
+        @contextlib.asynccontextmanager
+        async def _savepoint():
+            yield self
+        return _savepoint()
+
     def add(self, obj):
         self.added.append(obj)
 

@@ -336,7 +336,10 @@ async def delete_spray_campaign(
 
     await require_engagement_perm(current_user, campaign.engagement_id, Permission.VAULT_DELETE, db)
 
-    # Log before delete
+    await db.delete(campaign)
+    await db.commit()
+
+    # Logged once the delete is committed (see create_activity_log).
     await create_activity_log(
         db,
         engagement_id=campaign.engagement_id,
@@ -347,9 +350,6 @@ async def delete_spray_campaign(
         resource_name=campaign.name,
         details=f"Deleted spray campaign: {campaign.name}",
     )
-
-    await db.delete(campaign)
-    await db.commit()
     return None
 
 

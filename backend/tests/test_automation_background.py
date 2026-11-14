@@ -10,9 +10,21 @@ from utils import collaboration
 
 
 class _Db:
+    new: tuple = ()
+    dirty: tuple = ()
+    deleted: tuple = ()
+
     def __init__(self):
         self.commits = 0
         self.added = []
+
+    def begin_nested(self):
+        import contextlib
+
+        @contextlib.asynccontextmanager
+        async def _savepoint():
+            yield self
+        return _savepoint()
 
     def add(self, obj):
         self.added.append(obj)

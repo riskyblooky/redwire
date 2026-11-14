@@ -441,7 +441,17 @@ async def delete_vault_item(
         except Exception:
             logger.warning(f"Failed to delete vault file from storage: {item.file_path}")
 
-    # Log activity before deletion
+    # Sweep any chain edges this vault item participated in (polymorphic,
+    # no DB FK — see utils/chain_links.py).
+    from utils.chain_links import sweep_chain_links
+    await sweep_chain_links(db, "vault_item", item.id)
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "vault", item.id)
+
+    await db.delete(item)
+    await db.commit()
+
+    # Logged once the delete is committed (see create_activity_log).
     await create_activity_log(
         db,
         engagement_id=item.engagement_id,
@@ -452,16 +462,6 @@ async def delete_vault_item(
         resource_name=item.name,
         details=f"Deleted vault item: {item.name}"
     )
-
-    # Sweep any chain edges this vault item participated in (polymorphic,
-    # no DB FK — see utils/chain_links.py).
-    from utils.chain_links import sweep_chain_links
-    await sweep_chain_links(db, "vault_item", item.id)
-    from utils.thread_cleanup import sweep_threads
-    await sweep_threads(db, "vault", item.id)
-
-    await db.delete(item)
-    await db.commit()
 
     return None
 

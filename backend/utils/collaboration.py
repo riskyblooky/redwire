@@ -478,18 +478,33 @@ async def create_activity_log(
     resource_name: Optional[str] = None,
     details: Optional[str] = None,
     extra_context: dict = None,
+    origin_engagement_id: Optional[str] = None,
 ):
-    """Helper to create an activity log entry. Completely non-fatal — never raises.
+    """Record an audit entry, then broadcast it and run plugins/automations.
+    Non-fatal: never raises.
 
-    This function is self-contained: it commits its own log entry and all
-    side-effects internally. Callers do NOT need to commit after calling this.
+    Call it AFTER the change it describes is committed. It commits only its
+    own entry: the insert runs in a SAVEPOINT, so a failed log rolls back
+    the log alone. It used to commit (or, on failure, roll back) whatever
+    the caller had pending: logging before a delete committed half of a
+    cascade, and recorded deletes that then failed.
+
+    If the session still holds uncommitted ORM changes the entry is left
+    for the caller's own commit, so the two land (or fail) together, and a
+    warning names the call site. tests/test_activity_log_call_sites.py
+    keeps call sites in the commit-first order.
+
+    ``origin_engagement_id`` is for an entry about an engagement that no
+    longer exists (its deletion), where ``engagement_id`` can't be set.
     """
     import traceback as tb
 
     # ── 1. Persist the activity log entry ──────────────────────────────
+    caller_pending = bool(db.new or db.dirty or db.deleted)
     try:
         log_entry = ActivityLog(
             engagement_id=engagement_id,
+            origin_engagement_id=origin_engagement_id,
             user_id=user_id,
             action=action,
             resource_type=resource_type,
@@ -497,15 +512,27 @@ async def create_activity_log(
             resource_name=resource_name,
             details=details
         )
-        db.add(log_entry)
-        await db.commit()
+        async with db.begin_nested():
+            db.add(log_entry)
+        if caller_pending:
+            logger.warning(
+                "create_activity_log(%s %s) called with uncommitted changes; "
+                "the entry is left for the caller's commit", action, resource_type,
+                stack_info=True,
+            )
+        else:
+            await db.commit()
     except Exception as e:
         logger.warning(f"create_activity_log: failed to persist log entry: {e}")
         tb.print_exc()
-        try:
-            await db.rollback()
-        except Exception:
-            pass
+        # A failed savepoint has already undone itself. A failed commit
+        # leaves the session needing a rollback; only the entry is lost,
+        # since the commit path runs only with nothing else pending.
+        if not caller_pending:
+            try:
+                await db.rollback()
+            except Exception:
+                pass
         return  # Don't run side-effects if we can't even log
 
     # ── 2. WebSocket broadcasts ────────────────────────────────────────

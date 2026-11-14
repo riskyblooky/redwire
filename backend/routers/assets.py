@@ -964,22 +964,24 @@ async def delete_asset(
     await require_owned_perm(current_user, db_asset.engagement_id, db_asset.created_by,
                              Permission.ASSET_DELETE, Permission.ASSET_DELETE_ANY, db, action="delete this asset")
     
-    # Log activity before deletion
+    engagement_id, asset_name = db_asset.engagement_id, db_asset.name
+
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "asset", asset_id)
+    await db.delete(db_asset)
+    await db.commit()
+
+    # Logged once the delete is committed (see create_activity_log).
     await create_activity_log(
         db,
-        engagement_id=db_asset.engagement_id,
+        engagement_id=engagement_id,
         user_id=current_user.id,
         action="deleted_asset",
         resource_type="asset",
-        resource_id=db_asset.id,
-        resource_name=db_asset.name,
-        details=f"Deleted asset: {db_asset.name}"
+        resource_id=asset_id,
+        resource_name=asset_name,
+        details=f"Deleted asset: {asset_name}"
     )
-
-    from utils.thread_cleanup import sweep_threads
-    await sweep_threads(db, "asset", db_asset.id)
-    await db.delete(db_asset)
-    await db.commit()
     
     return None
 

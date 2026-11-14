@@ -554,12 +554,15 @@ async def delete_testcase(
                 visited.add(child.id)
                 descendants.append(child)
                 queue.append(child.id)
-        # Delete descendants in reverse (leaves first)
+        # Delete descendants in reverse (leaves first), flushed before the
+        # parent: in one flush a parent_id cycle is a CircularDependencyError.
+        # Same transaction, so it all still commits (or fails) together.
         for desc in reversed(descendants):
             await db.delete(desc)
+        await db.flush()
         cascade_count = len(descendants)
 
-    # Log activity before deletion. GHSA-3mpw-xmrg-5rx5 follow-up:
+    # Audit details (logged after the commit below). GHSA-3mpw-xmrg-5rx5 follow-up:
     # for cascade deletes, append a JSON payload listing every
     # descendant that got dropped — id, original author, title — so
     # the audit trail shows *whose work* was touched, not just a count.
@@ -578,17 +581,6 @@ async def delete_testcase(
             for d in descendants
         ]
         details += " " + _json.dumps({"descendants": descendants_payload})
-    await create_activity_log(
-        db,
-        engagement_id=db_testcase.engagement_id,
-        user_id=current_user.id,
-        action="deleted_testcase",
-        resource_type="testcase",
-        resource_id=db_testcase.id,
-        resource_name=db_testcase.title,
-        details=details
-    )
-
     # Sweep chain edges for this testcase and every cascade-deleted
     # descendant (polymorphic, no DB FK — see utils/chain_links.py).
     from utils.chain_links import sweep_chain_links
@@ -599,6 +591,20 @@ async def delete_testcase(
 
     await db.delete(db_testcase)
     await db.commit()
+
+    # Logged once the parent and descendants are all committed. Logging
+    # first committed the descendants' deletes on their own, so a failed
+    # parent delete left the tree half-gone (see create_activity_log).
+    await create_activity_log(
+        db,
+        engagement_id=db_testcase.engagement_id,
+        user_id=current_user.id,
+        action="deleted_testcase",
+        resource_type="testcase",
+        resource_id=db_testcase.id,
+        resource_name=db_testcase.title,
+        details=details
+    )
 
     return None
 

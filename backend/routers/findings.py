@@ -1028,18 +1028,6 @@ async def delete_finding(
     await require_owned_perm(current_user, finding.engagement_id, finding.created_by,
                              Permission.FINDING_DELETE, Permission.FINDING_DELETE_ANY, db, action="delete this finding")
     
-    # Log activity before deletion
-    await create_activity_log(
-        db,
-        engagement_id=finding.engagement_id,
-        user_id=current_user.id,
-        action="deleted_finding",
-        resource_type="finding",
-        resource_id=finding.id,
-        resource_name=finding.title,
-        details=f"Deleted finding: {finding.title}"
-    )
-
     # Sweep any chain edges this finding participated in (polymorphic,
     # no DB FK — see utils/chain_links.py).
     from utils.chain_links import sweep_chain_links
@@ -1052,6 +1040,18 @@ async def delete_finding(
     object_keys = await finding_object_keys(db, finding.id)
     await db.delete(finding)
     await db.commit()
+
+    # Logged once the delete is committed (see create_activity_log).
+    await create_activity_log(
+        db,
+        engagement_id=finding.engagement_id,
+        user_id=current_user.id,
+        action="deleted_finding",
+        resource_type="finding",
+        resource_id=finding.id,
+        resource_name=finding.title,
+        details=f"Deleted finding: {finding.title}"
+    )
     await delete_objects(object_keys)
 
     return None

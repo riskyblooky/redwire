@@ -998,9 +998,19 @@ async def delete_engagement(
     # Log activity before deletion
     engagement_name = engagement.name
     engagement_id_val = engagement.id
+    from utils.storage_cleanup import delete_objects, engagement_object_keys
+    object_keys = await engagement_object_keys(db, engagement_id_val)
+    await db.delete(engagement)
+    await db.commit()
+
+    # Logged once the delete is committed (see create_activity_log). The
+    # engagement row is gone, so the entry carries no engagement_id (the FK
+    # would fail) and keeps the id in origin_engagement_id for the admin
+    # deleted-engagement log view, as the SET NULL used to leave it.
     await create_activity_log(
         db,
-        engagement_id=engagement_id_val,
+        engagement_id=None,
+        origin_engagement_id=engagement_id_val,
         user_id=current_user.id,
         action="deleted_engagement",
         resource_type="engagement",
@@ -1008,11 +1018,6 @@ async def delete_engagement(
         resource_name=engagement_name,
         details=f"Deleted engagement: {engagement_name}"
     )
-
-    from utils.storage_cleanup import delete_objects, engagement_object_keys
-    object_keys = await engagement_object_keys(db, engagement_id_val)
-    await db.delete(engagement)
-    await db.commit()
     await delete_objects(object_keys)
 
     return None

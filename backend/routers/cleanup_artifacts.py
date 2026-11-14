@@ -257,6 +257,12 @@ async def delete_cleanup_artifact(
                 detail=f"Insufficient permissions. You need the '{perm}' permission.",
             )
 
+    from utils.thread_cleanup import sweep_threads
+    await sweep_threads(db, "cleanup_artifact", artifact.id)
+    await db.delete(artifact)
+    await db.commit()
+
+    # Logged once the delete is committed (see create_activity_log).
     await create_activity_log(
         db,
         engagement_id=artifact.engagement_id,
@@ -267,11 +273,6 @@ async def delete_cleanup_artifact(
         resource_name=artifact.title,
         details=f"Deleted cleanup artifact: {artifact.title}",
     )
-
-    from utils.thread_cleanup import sweep_threads
-    await sweep_threads(db, "cleanup_artifact", artifact.id)
-    await db.delete(artifact)
-    await db.commit()
     return None
 
 

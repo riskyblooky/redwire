@@ -274,7 +274,7 @@ async def test_persist_failure_returns_early_and_rolls_back(stubbed):
         db, "eng-1", "user-1", "created", "finding", "fnd-1",
     )
     assert result is None
-    assert db.rollback_count == 1
+    assert db.rollback_count == 1  # nothing else was pending: only the entry is lost
     # Side-effects must NOT run when the row couldn't even be persisted.
     assert stubbed.bcast.calls == []
     assert stubbed.emitted == []
