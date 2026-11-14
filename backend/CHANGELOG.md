@@ -149,6 +149,19 @@ section becomes one release entry.
   engagements made the import fail. Peer reviews only carry over for
   reviewers you map to a local user, and a failed import no longer leaves
   uploaded files behind.
+- **Importing an engagement credits work to the right people.** The import
+  preview showed users as "matched" but credited everything to the person
+  importing. Matching users (same account, or same username) are now
+  pre-selected in the mapping step, where they can be changed.
+- **Exports that couldn't be imported back are refused** with a message
+  naming the size setting, instead of producing an archive over the import
+  limit.
+- **The person importing an engagement is added to its team,** so they can
+  open it without admin or view-all access.
+- **Exports include inline images, password-spray results, scan import
+  history and automation rules.** Imported automation rules start switched
+  off so an archive can't set up live webhooks; spray data marks the
+  archive as containing plaintext secrets.
 
 ## [1.9.0] — 2026-11-11
 

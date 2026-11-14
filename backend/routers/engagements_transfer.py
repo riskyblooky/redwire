@@ -381,6 +381,25 @@ def _import_anchor(th: dict, resource_type: str) -> dict:
     }
 
 
+def _has_plaintext_secrets(vault_items, campaigns, spray_results) -> bool:
+    """Whether an export carries decrypted secrets (drives the warning
+    banner, the manifest flag and the export dialog's acknowledgement)."""
+    return (
+        any(vi.username or vi.password or vi.note or vi.file_path for vi in vault_items)
+        or any(c.password_used for c in campaigns)
+        or bool(spray_results)  # usernames always, passwords usually
+    )
+
+
+def _too_big_detail(size: int, what: str) -> str:
+    mb = lambda n: f"{n / (1024 * 1024):.0f} MB"  # noqa: E731
+    return (
+        f"This engagement's {what} ({mb(size)}) exceeds the {mb(IMPORT_MAX_ARCHIVE_BYTES)} import "
+        "limit, so the export could not be imported back. Raise "
+        "ENGAGEMENT_IMPORT_MAX_ARCHIVE_BYTES on both instances, or remove large evidence first."
+    )
+
+
 def _cols(model, *exclude: str) -> list[str]:
     """Every column of ``model`` except ``exclude``. Export lists are derived
     from the models so a new column travels by default; hand-kept lists
@@ -491,13 +510,16 @@ async def export_engagement_preview(
     if eng_res.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Engagement not found")
 
+    from models.spray import SprayCampaign, SprayResult
     vi_res = await db.execute(
         select(VaultItem).where(VaultItem.engagement_id == engagement_id)
     )
     vault_items = vi_res.scalars().all()
-    contains = any(
-        (vi.username or vi.password or vi.note or vi.file_path) for vi in vault_items
-    )
+    campaigns = (await db.execute(select(SprayCampaign).where(
+        SprayCampaign.engagement_id == engagement_id))).scalars().all()
+    spray_results = (await db.execute(select(SprayResult).where(
+        SprayResult.campaign_id.in_([c.id for c in campaigns])))).scalars().all() if campaigns else []
+    contains = _has_plaintext_secrets(vault_items, campaigns, spray_results)
     return {
         "vault_item_count": len(vault_items),
         "contains_plaintext_secrets": contains,
@@ -905,6 +927,52 @@ async def export_engagement(
     for r in reviews:
         _collect_user_ids(r, "reviewer_id")
 
+    # ── markdown images pasted into this engagement's editors ────────
+    # (Library-scope images are shared across the instance, not exported.)
+    from models.markdown_image import MarkdownImage
+    md_images = (await db.execute(select(MarkdownImage).where(
+        MarkdownImage.engagement_id == engagement_id, MarkdownImage.scope == "engagement",
+    ))).scalars().all()
+    data["markdown_images"] = [_row_dict(m, _cols(MarkdownImage)) for m in md_images]
+
+    # ── password spray campaigns and results ─────────────────────────
+    # EncryptedText decrypts on read: the archive carries plaintext, like
+    # the vault (see SECURITY_WARNING.txt).
+    from models.spray import SprayCampaign, SprayResult
+    campaigns = (await db.execute(select(SprayCampaign).where(
+        SprayCampaign.engagement_id == engagement_id))).scalars().all()
+    spray_results = (await db.execute(select(SprayResult).where(
+        SprayResult.campaign_id.in_([c.id for c in campaigns])))).scalars().all() if campaigns else []
+    data["spray_campaigns"] = [_row_dict(c, _cols(SprayCampaign)) for c in campaigns]
+    data["spray_results"] = [_row_dict(r, _cols(SprayResult)) for r in spray_results]
+    for c in campaigns:
+        _collect_user_ids(c, "created_by", "updated_by")
+
+    # ── scan import history ──────────────────────────────────────────
+    from models.scan_import import ScanImport
+    scan_imports = (await db.execute(select(ScanImport).where(
+        ScanImport.engagement_id == engagement_id))).scalars().all()
+    data["scan_imports"] = [_row_dict(si, _cols(ScanImport)) for si in scan_imports]
+    for si in scan_imports:
+        _collect_user_ids(si, "created_by", "updated_by")
+
+    # ── engagement-scoped automation rules ───────────────────────────
+    from models.automation import AutomationRule
+    rules = (await db.execute(select(AutomationRule).where(
+        AutomationRule.engagement_id == engagement_id))).scalars().all()
+    data["automation_rules"] = [_row_dict(r, _cols(AutomationRule)) for r in rules]
+    for r in rules:
+        _collect_user_ids(r, "created_by", "owner_user_id")
+
+    # ── size guard ───────────────────────────────────────────────────
+    # An archive over the import limit can't be imported back, and the
+    # whole archive is built in memory: refuse before downloading files.
+    # Attachments (evidence, images) are mostly incompressible, so their
+    # stored size is a fair floor for the archive's.
+    attachment_bytes = sum(e.file_size or 0 for e in evidence_list) + sum(m.size_bytes or 0 for m in md_images)
+    if attachment_bytes > IMPORT_MAX_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail=_too_big_detail(attachment_bytes, "attachments"))
+
     # ── resolve user IDs → usernames ─────────────────────────────────
     user_ids_set.discard(None)
     user_lookup: dict[str, dict] = {}
@@ -939,10 +1007,7 @@ async def export_engagement(
         # follow-up (users[] auto-map, evidence path prefix-check,
         # decompression caps) — the digest layer here is specifically
         # bind-content-to-manifest.
-        _has_vault_secrets = any(
-            (vi.username or vi.password or vi.note or vi.file_path)
-            for vi in vault_items
-        )
+        _has_vault_secrets = _has_plaintext_secrets(vault_items, campaigns, spray_results)
 
         members: dict[str, bytes] = {}
 
@@ -957,7 +1022,8 @@ async def export_engagement(
                 "\n"
                 "This archive contains plaintext credentials and/or vault file\n"
                 "attachments from an engagement (vault item username/password/\n"
-                "note columns and any uploaded FILE-type vault attachments).\n"
+                "note columns and any uploaded FILE-type vault attachments)\n"
+                "and/or password-spray usernames and passwords.\n"
                 "\n"
                 "Vault encryption-at-rest is intentionally stripped on export so\n"
                 "the destination RedWire instance can re-encrypt under its own\n"
@@ -991,6 +1057,16 @@ async def export_engagement(
                     members[f"attachments/{ev.file_path}"] = file_bytes
                 except Exception:
                     pass  # skip missing files
+
+        # attachments — markdown images
+        for m in md_images:
+            try:
+                file_bytes = await storage_service.download_file(m.storage_key)
+            except Exception:
+                logger.warning("engagement-export: markdown image %s missing from storage", m.id)
+                continue
+            if file_bytes is not None:
+                members[f"attachments/{m.storage_key}"] = file_bytes
 
         # attachments — vault files
         # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: MinIO blob may be
@@ -1037,6 +1113,8 @@ async def export_engagement(
         for name in sorted(members):
             zf.writestr(name, members[name])
 
+    if zip_buf.tell() > IMPORT_MAX_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail=_too_big_detail(zip_buf.tell(), "archive"))
     zip_buf.seek(0)
     safe_name = eng.name.replace(" ", "_").replace("/", "-")[:50]
     _suffix = "enc.zip" if passphrase else "zip"
@@ -1125,38 +1203,37 @@ async def preview_import(
     engagement_payload = data.get("engagement", {}) or {}
     engagement_name = engagement_payload.get("name", "Unknown")
 
-    # Check which user IDs exist locally
+    # Suggest a local user for each archive user: the same id (same-instance
+    # copy or restore), else the same username. These are only suggestions:
+    # the import credits records solely through the mapping the admin
+    # submits, since archive ids and usernames are attacker-controllable.
+    # The dialog pre-fills them, so "matched" means what it shows.
+    active_users = (await db.execute(select(User).where(User.is_active == True))).scalars().all()
+    by_id = {u.id: u for u in active_users}
+    by_username = {(u.username or "").lower(): u for u in active_users}
     matched = []
     unmatched = []
-    if exported_users:
-        exported_ids = list(exported_users.keys())
-        existing_res = await db.execute(select(User).where(User.id.in_(exported_ids)))
-        local_matches = {u.id: u for u in existing_res.scalars().all()}
-
-        for uid, info in exported_users.items():
-            entry = {
-                "id": uid,
-                "username": info.get("username", "unknown"),
-                "full_name": info.get("full_name", ""),
-                "email": info.get("email", ""),
-            }
-            if uid in local_matches:
-                lu = local_matches[uid]
-                entry["local_username"] = lu.username
-                entry["local_full_name"] = lu.full_name or lu.username
-                matched.append(entry)
-            else:
-                unmatched.append(entry)
-
-    # Fetch all local users for the mapping dropdown
-    all_users_res = await db.execute(select(User).where(User.is_active == True))
-    local_users = [
-        {
-            "id": u.id,
-            "username": u.username,
-            "full_name": u.full_name or u.username,
+    for uid, info in (exported_users.items() if isinstance(exported_users, dict) else []):
+        info = info if isinstance(info, dict) else {}
+        entry = {
+            "id": uid,
+            "username": info.get("username", "unknown"),
+            "full_name": info.get("full_name", ""),
+            "email": info.get("email", ""),
         }
-        for u in all_users_res.scalars().all()
+        lu, how = by_id.get(uid), "id"
+        if lu is None and isinstance(info.get("username"), str):
+            lu, how = by_username.get(info["username"].lower()), "username"
+        if lu is not None:
+            entry.update(suggested_id=lu.id, match=how,
+                         local_username=lu.username, local_full_name=lu.full_name or lu.username)
+            matched.append(entry)
+        else:
+            unmatched.append(entry)
+
+    local_users = [
+        {"id": u.id, "username": u.username, "full_name": u.full_name or u.username}
+        for u in active_users
     ]
 
     # Surface a content summary to the operator BEFORE the import fires —
@@ -1179,6 +1256,10 @@ async def preview_import(
         "threads": _len("threads"),
         "attacker_nodes": _len("attacker_nodes"),
         "report_layouts": _len("report_layouts"),
+        "spray_campaigns": _len("spray_campaigns"),
+        "scan_imports": _len("scan_imports"),
+        "automation_rules": _len("automation_rules"),
+        "markdown_images": _len("markdown_images"),
     }
 
     return {
@@ -1390,6 +1471,34 @@ async def import_engagement(
     uploaded_keys: list[str] = []
 
     try:
+        # ── 0. Markdown images: new ids, references rewritten ────────
+        # Editors embed them as /api/markdown-images/<id> inside any text
+        # field, so the new ids are substituted throughout the archive data
+        # before anything is built from it. Only images whose bytes are in
+        # the archive and whose type the upload endpoint would accept.
+        from routers.markdown_images import _ALLOWED_TYPES as _MD_TYPES, _MAX_SIZE_BYTES as _MD_MAX
+        md_new: dict[str, tuple[str, dict, bytes]] = {}
+        for m in rows("markdown_images"):
+            key, ctype = m.get("storage_key"), (m.get("content_type") or "").lower()
+            member = f"attachments/{key}" if isinstance(key, str) else None
+            if not m.get("id") or ctype not in _MD_TYPES or member not in zf.namelist():
+                continue
+            body = _read_member_safely(zf, member)
+            if 0 < len(body) <= _MD_MAX:
+                md_new[m["id"]] = (str(uuid.uuid4()), m, body)
+        if md_new:
+            def _rewrite(v):
+                if isinstance(v, str) and "/markdown-images/" in v:
+                    for old, (nid, _m, _b) in md_new.items():
+                        v = v.replace(f"/markdown-images/{old}", f"/markdown-images/{nid}")
+                    return v
+                if isinstance(v, list):
+                    return [_rewrite(x) for x in v]
+                if isinstance(v, dict):
+                    return {k: _rewrite(x) for k, x in v.items()}
+                return v
+            data = {k: (v if k == "markdown_images" else _rewrite(v)) for k, v in data.items()}
+
         # ── 1. Engagement ────────────────────────────────────────────
         from models.engagement import Engagement
         from models.client import Client
@@ -1413,6 +1522,38 @@ async def import_engagement(
             updated_by=resolve_user(eng_data.get("updated_by")),
         )
         db.add(new_eng)
+        await db.flush()
+
+        # ── 1b. Importer joins the team ──────────────────────────────
+        # Without a membership an importer who isn't admin / view-all could
+        # create the engagement and then not open it. They get the engagement
+        # role that can manage members (the broadest such, by permission
+        # count; roles are renameable, so never by name) to staff it.
+        from models.associations import EngagementAssignment
+        from models.permission import EngagementRolePermissions
+        role_rows = (await db.execute(select(EngagementRolePermissions))).scalars().all()
+        managers = [r for r in role_rows if Permission.ENGAGEMENT_MANAGE_MEMBERS.value in (r.permissions or [])]
+        if managers:
+            lead = max(managers, key=lambda r: len(r.permissions or []))
+            db.add(EngagementAssignment(user_id=current_user.id, engagement_id=eng_new_id, role_id=lead.role_id))
+
+        from models.markdown_image import MarkdownImage
+        for old_id, (nid, m, body) in md_new.items():
+            ctype = m["content_type"].lower()
+            ext = os.path.splitext(m["storage_key"])[1][:10]
+            storage_key = f"markdown/{eng_new_id}/{nid}{ext}"
+            try:
+                await storage_service.upload_file(body, storage_key, ctype)
+            except Exception:
+                logger.warning("engagement-import: could not store markdown image %s", old_id)
+                continue
+            uploaded_keys.append(storage_key)
+            db.add(MarkdownImage(
+                id=nid, storage_key=storage_key, scope="engagement", engagement_id=eng_new_id,
+                created_by=resolve_user(m.get("created_by")), content_type=ctype, size_bytes=len(body),
+                original_filename=sanitize_original_filename(m.get("original_filename")),
+                created_at=parse_dt(m.get("created_at")) or datetime.utcnow(),
+            ))
         await db.flush()
 
         # ── 2. Tags — matched by (name, entity_type) ─────────────────
@@ -1714,6 +1855,51 @@ async def import_engagement(
             seen_reviews.add((fid, reviewer))
             db.add(FindingReview(id=str(uuid.uuid4()), finding_id=fid, reviewer_id=reviewer,
                                  **plain(FindingReview, rv)))
+        await db.flush()
+
+        # ── 10d. Password spray campaigns + results ──────────────────
+        from models.spray import SprayCampaign, SprayResult
+        for c in rows("spray_campaigns"):
+            db.add(SprayCampaign(id=new_id(c["id"]), engagement_id=eng_new_id, **plain(SprayCampaign, c),
+                                 created_by=resolve_user(c.get("created_by")),
+                                 updated_by=resolve_user(c.get("updated_by"))))
+        await db.flush()
+        for r in rows("spray_results"):
+            campaign_id = remap(r.get("campaign_id"))
+            if campaign_id is None or not isinstance(r.get("username"), str):
+                continue
+            db.add(SprayResult(id=str(uuid.uuid4()), campaign_id=campaign_id, **plain(SprayResult, r),
+                               vault_item_id=remap(r.get("vault_item_id")), asset_id=remap(r.get("asset_id"))))
+        await db.flush()
+
+        # ── 10e. Scan import history ─────────────────────────────────
+        from models.scan_import import ScanImport
+        for si in rows("scan_imports"):
+            if not isinstance(si.get("source_tool"), str):
+                continue
+            db.add(ScanImport(id=str(uuid.uuid4()), engagement_id=eng_new_id, **plain(ScanImport, si),
+                              created_by=resolve_user(si.get("created_by")),
+                              updated_by=resolve_user(si.get("updated_by"))))
+        await db.flush()
+
+        # ── 10f. Automation rules — imported DISABLED ────────────────
+        # Rules send webhooks and e-mail. Enabled on import, an archive could
+        # plant rules that post the engagement's data to an outside URL on
+        # the next change; an admin reviews and enables them. A personal
+        # rule keeps its owner only when that user was mapped.
+        from models.automation import AutomationRule
+        for rule in rows("automation_rules"):
+            owner = None
+            if rule.get("owner_user_id"):
+                owner = mapped_user(rule["owner_user_id"])
+                if owner is None:
+                    continue
+            db.add(AutomationRule(
+                id=str(uuid.uuid4()), engagement_id=eng_new_id,
+                **plain(AutomationRule, rule, handled={"is_enabled", "last_triggered_at", "trigger_count"}),
+                is_enabled=False, owner_user_id=owner,
+                created_by=resolve_user(rule.get("created_by")),
+            ))
         await db.flush()
 
         # ── 11. Threads & Comments ───────────────────────────────────

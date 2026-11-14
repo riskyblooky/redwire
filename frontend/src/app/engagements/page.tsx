@@ -470,7 +470,10 @@ export default function EngagementsPage() {
         const preview = importPreview;
         if (!preview || !importFile) return;
         setImportPreview(null);
-        if (preview.unmatched_users.length > 0) {
+        // Every archive user goes through the mapping dialog: the import only
+        // credits records through the mapping sent, so local matches are
+        // pre-selected there (and can be changed) instead of being assumed.
+        if (preview.matched_users.length + preview.unmatched_users.length > 0) {
             setUserMappingData({
                 engagementName: preview.engagement_name,
                 matchedUsers: preview.matched_users,
@@ -478,6 +481,7 @@ export default function EngagementsPage() {
                 localUsers: preview.local_users,
             });
             const initial: Record<string, string> = {};
+            preview.matched_users.forEach((u: any) => { initial[u.id] = u.suggested_id || ''; });
             preview.unmatched_users.forEach((u: any) => { initial[u.id] = ''; });
             setUserMapping(initial);
             setShowUserMapping(true);
@@ -513,6 +517,37 @@ export default function EngagementsPage() {
         }
         setIsImporting(false);
     };
+
+    const renderMappingRow = (u: any, matchLabel?: string) => (
+        <div key={u.id} className="flex items-center gap-3 p-3 bg-slate-800/80 border border-slate-700 rounded-lg">
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">
+                    {u.full_name || u.username}
+                </p>
+                <p className="text-xs text-slate-500">
+                    {u.username}{u.email ? ` • ${u.email}` : ''}
+                    {matchLabel && <span className="text-emerald-400"> • {matchLabel}</span>}
+                </p>
+            </div>
+            <ArrowRight className="h-4 w-4 text-slate-500 flex-shrink-0" />
+            <Select
+                value={userMapping[u.id] || ''}
+                onValueChange={(val) => setUserMapping(prev => ({ ...prev, [u.id]: val }))}
+            >
+                <SelectTrigger className="w-[200px] bg-slate-900 border-slate-600 text-sm">
+                    <SelectValue placeholder="Assign to me" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectItem value="_self" className="text-slate-300">Assign to me</SelectItem>
+                    {userMappingData?.localUsers.map((lu) => (
+                        <SelectItem key={lu.id} value={lu.id} className="text-slate-300">
+                            {lu.full_name || lu.username}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </div>
+    );
 
     const handleConfirmImportWithMapping = () => {
         if (importFile) {
@@ -1008,26 +1043,20 @@ export default function EngagementsPage() {
                             </DialogTitle>
                             <DialogDescription className="text-slate-400">
                                 Importing <span className="text-white font-medium">{userMappingData?.engagementName}</span>.
-                                Some users from the export don&apos;t exist on this instance.
-                                Map them to local users or leave blank to assign to you.
+                                Choose who each user from the export becomes here. Local matches are
+                                pre-selected; anyone left on &ldquo;Assign to me&rdquo; is credited to you.
                             </DialogDescription>
                         </DialogHeader>
 
                         <div className="space-y-4 py-4">
-                            {/* Matched users */}
+                            {/* Users with a local match — pre-selected, still editable */}
                             {userMappingData?.matchedUsers && userMappingData.matchedUsers.length > 0 && (
                                 <div>
                                     <h4 className="text-sm font-medium text-emerald-400 mb-2 flex items-center gap-1.5">
-                                        <CheckCircle2 className="h-4 w-4" /> Matched Users ({userMappingData.matchedUsers.length})
+                                        <CheckCircle2 className="h-4 w-4" /> Local match found ({userMappingData.matchedUsers.length})
                                     </h4>
-                                    <div className="space-y-1">
-                                        {userMappingData.matchedUsers.map((u) => (
-                                            <div key={u.id} className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-md text-sm">
-                                                <span className="text-slate-300">{u.full_name || u.username}</span>
-                                                <ArrowRight className="h-3 w-3 text-emerald-400" />
-                                                <span className="text-emerald-400">{u.local_full_name || u.local_username}</span>
-                                            </div>
-                                        ))}
+                                    <div className="space-y-3">
+                                        {userMappingData.matchedUsers.map((u) => renderMappingRow(u, u.match === 'id' ? 'same account' : 'same username'))}
                                     </div>
                                 </div>
                             )}
@@ -1039,35 +1068,7 @@ export default function EngagementsPage() {
                                         <AlertCircle className="h-4 w-4" /> Unmatched Users ({userMappingData.unmatchedUsers.length})
                                     </h4>
                                     <div className="space-y-3">
-                                        {userMappingData.unmatchedUsers.map((u) => (
-                                            <div key={u.id} className="flex items-center gap-3 p-3 bg-slate-800/80 border border-slate-700 rounded-lg">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-white truncate">
-                                                        {u.full_name || u.username}
-                                                    </p>
-                                                    <p className="text-xs text-slate-500">
-                                                        {u.username}{u.email ? ` • ${u.email}` : ''}
-                                                    </p>
-                                                </div>
-                                                <ArrowRight className="h-4 w-4 text-slate-500 flex-shrink-0" />
-                                                <Select
-                                                    value={userMapping[u.id] || ''}
-                                                    onValueChange={(val) => setUserMapping(prev => ({ ...prev, [u.id]: val }))}
-                                                >
-                                                    <SelectTrigger className="w-[200px] bg-slate-900 border-slate-600 text-sm">
-                                                        <SelectValue placeholder="Assign to me" />
-                                                    </SelectTrigger>
-                                                    <SelectContent className="bg-slate-900 border-slate-700">
-                                                        <SelectItem value="_self" className="text-slate-300">Assign to me</SelectItem>
-                                                        {userMappingData.localUsers.map((lu) => (
-                                                            <SelectItem key={lu.id} value={lu.id} className="text-slate-300">
-                                                                {lu.full_name || lu.username}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        ))}
+                                        {userMappingData.unmatchedUsers.map((u) => renderMappingRow(u))}
                                     </div>
                                 </div>
                             )}

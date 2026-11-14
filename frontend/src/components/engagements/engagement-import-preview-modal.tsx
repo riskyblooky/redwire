@@ -42,6 +42,10 @@ const COUNT_ROWS: Array<{ key: string; label: string; Icon: any }> = [
     { key: 'threads', label: 'Discussion threads', Icon: MessageSquare },
     { key: 'attacker_nodes', label: 'Attacker nodes', Icon: Network },
     { key: 'report_layouts', label: 'Report layouts', Icon: FileText },
+    { key: 'markdown_images', label: 'Inline images', Icon: Paperclip },
+    { key: 'spray_campaigns', label: 'Spray campaigns', Icon: KeyRound },
+    { key: 'scan_imports', label: 'Scan imports', Icon: Server },
+    { key: 'automation_rules', label: 'Automation rules (imported off)', Icon: ListChecks },
 ];
 
 function fmtDate(s?: string | null) {
@@ -178,7 +182,7 @@ export function EngagementImportPreviewModal({
                             </div>
                             <div className="flex items-center gap-3 text-sm">
                                 <span className="flex items-center gap-1.5 text-emerald-400">
-                                    <CheckCircle2 className="h-4 w-4" /> {matched} matched
+                                    <CheckCircle2 className="h-4 w-4" /> {matched} with a local match
                                 </span>
                                 {unmatched > 0 && (
                                     <span className="flex items-center gap-1.5 text-amber-400">
@@ -186,12 +190,10 @@ export function EngagementImportPreviewModal({
                                     </span>
                                 )}
                             </div>
-                            {unmatched > 0 && (
-                                <div className="text-xs text-slate-400">
-                                    You'll be asked to map unmatched users to local accounts next, or accept
-                                    the fallback (records get attributed to you).
-                                </div>
-                            )}
+                            <div className="text-xs text-slate-400">
+                                Next you confirm who each user becomes here. Local matches (same account
+                                or same username) are pre-selected; anyone left unmapped is attributed to you.
+                            </div>
                         </div>
                     )}
                 </div>
@@ -200,7 +202,7 @@ export function EngagementImportPreviewModal({
                     <Button variant="outline" onClick={onCancel} disabled={isImporting}>Cancel</Button>
                     <Button onClick={onConfirm} disabled={isImporting}>
                         <Upload className="h-4 w-4 mr-2" />
-                        {unmatched > 0 ? 'Continue to user mapping' : 'Import engagement'}
+                        {totalUsers > 0 ? 'Continue to user mapping' : 'Import engagement'}
                     </Button>
                 </DialogFooter>
             </DialogContent>
