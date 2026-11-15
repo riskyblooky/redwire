@@ -169,7 +169,7 @@ async def create_local_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a local user account directly (admin-only). Bypasses invite codes."""
-    from auth import get_password_hash
+    from auth import get_password_hash_async
     from models.group import Group, user_groups
 
     await _guard_user_admin_action(current_user, db, new_role=user_data.role)
@@ -191,7 +191,7 @@ async def create_local_user(
         email=user_data.email,
         full_name=user_data.full_name or "",
         role=user_data.role,
-        hashed_password=get_password_hash(user_data.password),
+        hashed_password=await get_password_hash_async(user_data.password),
         is_active=True,
     )
     db.add(new_user)
@@ -335,7 +335,7 @@ async def reset_password(
     """Reset a user's password to a temporary one."""
     import secrets
     import string
-    from auth import get_password_hash
+    from auth import get_password_hash_async
     
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -366,7 +366,7 @@ async def reset_password(
     temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
     
     # Update user's password and force them to change it on next login
-    user.hashed_password = get_password_hash(temp_password)
+    user.hashed_password = await get_password_hash_async(temp_password)
     user.must_change_password = True
     from auth.jwt import revoke_user_api_tokens
     await revoke_user_api_tokens(db, user.id)

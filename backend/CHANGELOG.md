@@ -169,6 +169,7 @@ section becomes one release entry.
   of the delete then failed, sub-cases were already gone and the log said
   the item was deleted. Audit entries are now written after the change is
   saved, and a failed audit entry can no longer undo the change it records.
+- **Blocking work no longer stalls the event loop.** bcrypt (password login, password changes, user creation, recovery-code generation and checks), the *Test LDAP connection* button, SAML response verification and the HTTP log ingester's read-and-parse pass now run in a worker thread. Each bcrypt call held the whole worker for ~100–250 ms; a recovery-code miss for over a second. A test now fails if an async handler calls one of these helpers directly.
 
 ## [1.9.0] — 2026-11-11
 

@@ -106,13 +106,13 @@ async def create_own_token(
         )
 
     if current_user.auth_provider == "local":
-        from auth.password import verify_password
+        from auth.password import verify_password_async
         if not body.password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Password is required to mint an API token.",
             )
-        if not verify_password(body.password, current_user.hashed_password):
+        if not await verify_password_async(body.password, current_user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect password",

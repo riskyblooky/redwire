@@ -2,6 +2,8 @@
 Admin authentication settings router.
 Manages LDAP and SAML SSO configuration stored in the auth_settings table.
 """
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -229,7 +231,9 @@ async def test_ldap(
         "tls_ca_cert": raw.get("ldap_tls_ca_cert", ""),
     }
     debug = raw.get("ldap_debug_enabled", "false").lower() == "true"
-    return test_ldap_connection(settings_for_test, debug=debug)
+    # Blocking ldap3 bind (up to its connect timeout per server): off the loop,
+    # as the test-login endpoint below already is.
+    return await asyncio.to_thread(test_ldap_connection, settings_for_test, debug=debug)
 
 
 @router.post(

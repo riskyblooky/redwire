@@ -1,4 +1,4 @@
-from auth.password import verify_password, get_password_hash
+from auth.password import verify_password, get_password_hash, verify_password_async, get_password_hash_async
 from auth.jwt import create_access_token, create_refresh_token, decode_token, blacklist_token, is_token_blacklisted
 from auth.rbac import require_roles, can_modify_resource
 from auth.dependencies import get_current_user, get_current_active_user, require_write
@@ -9,6 +9,8 @@ from auth.saml_auth import build_saml_request_url, process_saml_response, genera
 __all__ = [
     "verify_password",
     "get_password_hash",
+    "verify_password_async",
+    "get_password_hash_async",
     "create_access_token",
     "create_refresh_token",
     "decode_token",

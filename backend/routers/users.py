@@ -12,7 +12,7 @@ from schemas.user import UserResponse, UserSummary, UserUpdate, UserPasswordUpda
 from auth.dependencies import get_current_user
 from auth.permissions import has_global_permission
 from models.permission import Permission
-from auth.password import get_password_hash
+from auth.password import get_password_hash_async, verify_password_async
 from utils.paths import ensure_within
 from utils.uploads import read_upload_capped
 
@@ -186,8 +186,7 @@ async def update_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Email is managed by your identity provider.",
             )
-        from auth.password import verify_password
-        if not user_data.current_password or not verify_password(
+        if not user_data.current_password or not await verify_password_async(
             user_data.current_password, current_user.hashed_password
         ):
             raise HTTPException(
@@ -296,12 +295,11 @@ async def change_password(
     real owner out. On success, all existing sessions for the user are
     revoked so the caller (and any other live session) must re-authenticate.
     """
-    from auth.password import verify_password
     from auth.totp import verify_totp_code
     from auth.crypto import decrypt_totp_secret
     from auth.jwt import revoke_all_user_tokens, revoke_user_api_tokens
 
-    if not verify_password(password_data.old_password, current_user.hashed_password):
+    if not await verify_password_async(password_data.old_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect old password"
@@ -324,7 +322,7 @@ async def change_password(
             )
         current_user.totp_last_timestep = matched_step
 
-    current_user.hashed_password = get_password_hash(password_data.new_password)
+    current_user.hashed_password = await get_password_hash_async(password_data.new_password)
     # A stolen session could have minted an rw_ token; a password change
     # must end that too (email and 2FA changes already do).
     await revoke_user_api_tokens(db, current_user.id)

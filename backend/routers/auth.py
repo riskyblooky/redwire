@@ -18,6 +18,8 @@ from schemas.auth_settings import AuthProvidersResponse, ForgotPasswordRequest, 
 from auth import (
     verify_password,
     get_password_hash,
+    verify_password_async,
+    get_password_hash_async,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -190,7 +192,7 @@ async def register(request: Request, user_data: UserCreate, db: AsyncSession = D
         raise _GENERIC_REGISTER_ERROR
     
     # Create new user
-    hashed_password = get_password_hash(user_data.password)
+    hashed_password = await get_password_hash_async(user_data.password)
     new_user = User(
         username=user_data.username,
         email=user_data.email,
@@ -271,7 +273,7 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
     hash_to_check = (
         user.hashed_password if (user and provider == "local") else _DUMMY_PASSWORD_HASH
     )
-    verify_ok = verify_password(credentials.password, hash_to_check)
+    verify_ok = await verify_password_async(credentials.password, hash_to_check)
     if user and provider == "local" and verify_ok:
         authenticated = True
 
@@ -323,7 +325,7 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
                     id=str(uuid.uuid4()),
                     username=jit_username,
                     email=ldap_info.get("email", f"{credentials.username}@ldap.local"),
-                    hashed_password=get_password_hash(str(uuid.uuid4())),  # random, can't login locally
+                    hashed_password=await get_password_hash_async(str(uuid.uuid4())),  # random, can't login locally
                     full_name=ldap_info.get("full_name", ""),
                     role=UserRole.OPERATOR,
                     auth_provider="ldap",
@@ -548,11 +550,13 @@ async def verify_2fa(
         )
         rows = unused.scalars().all()
 
-        matched: Optional[RecoveryCode] = None
-        for rc in rows:
-            if verify_recovery_code(body.code, rc.code_hash):
-                matched = rc
-                break
+        # Up to ten bcrypt checks: one thread call, off the event loop.
+        def _find_match():
+            for rc in rows:
+                if verify_recovery_code(body.code, rc.code_hash):
+                    return rc
+            return None
+        matched: Optional[RecoveryCode] = await asyncio.to_thread(_find_match)
 
         if matched is None:
             await record_security_event("mfa_challenge", request=request, outcome="failure",
@@ -794,21 +798,21 @@ async def force_change_password(
         )
 
     # Verify current password
-    if not verify_password(body.current_password, current_user.hashed_password):
+    if not await verify_password_async(body.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect current password",
         )
 
     # Prevent reusing the same password
-    if verify_password(body.new_password, current_user.hashed_password):
+    if await verify_password_async(body.new_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="New password must be different from current password",
         )
 
     # Update password and clear the flag
-    current_user.hashed_password = get_password_hash(body.new_password)
+    current_user.hashed_password = await get_password_hash_async(body.new_password)
     current_user.must_change_password = False
     current_user.updated_at = datetime.utcnow()
     from auth.jwt import revoke_user_api_tokens
@@ -879,7 +883,7 @@ async def totp_setup(
     # check, a stolen session token alone is enough to enroll the
     # account into an attacker-controlled authenticator and permanently
     # lock the legitimate owner out.
-    if not verify_password(body.password, current_user.hashed_password):
+    if not await verify_password_async(body.password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
@@ -948,8 +952,9 @@ async def totp_verify_setup(
     from auth.recovery_codes import generate_codes, hash_code
     from models.recovery_code import RecoveryCode
     codes = generate_codes()
-    for plaintext in codes:
-        db.add(RecoveryCode(user_id=current_user.id, code_hash=hash_code(plaintext)))
+    hashes = await asyncio.to_thread(lambda: [hash_code(c) for c in codes])  # ten bcrypts, off the loop
+    for code_hash in hashes:
+        db.add(RecoveryCode(user_id=current_user.id, code_hash=code_hash))
     await db.commit()
 
     try:
@@ -1016,7 +1021,7 @@ async def totp_disable(
         )
     
     # Verify password
-    if not verify_password(body.password, current_user.hashed_password):
+    if not await verify_password_async(body.password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
@@ -1113,7 +1118,7 @@ async def regenerate_recovery_codes(
             detail="Two-factor authentication is not enabled",
         )
 
-    if not verify_password(body.password, current_user.hashed_password):
+    if not await verify_password_async(body.password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
@@ -1142,8 +1147,9 @@ async def regenerate_recovery_codes(
     )
 
     codes = generate_codes()
-    for plaintext in codes:
-        db.add(RecoveryCode(user_id=current_user.id, code_hash=hash_code(plaintext)))
+    hashes = await asyncio.to_thread(lambda: [hash_code(c) for c in codes])  # ten bcrypts, off the loop
+    for code_hash in hashes:
+        db.add(RecoveryCode(user_id=current_user.id, code_hash=code_hash))
     await db.commit()
 
     try:
@@ -1331,8 +1337,10 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
     backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
     request_url = f"{backend_url}/auth/saml/acs"
     logger.info(f"SAML ACS: using request_url = {request_url}")
-    user_info = process_saml_response(post_data, saml_cfg, request_url,
-                                       request_id=request_id)
+    # XML signature verification and the (sync Redis) replay claim block:
+    # run them off the event loop.
+    user_info = await asyncio.to_thread(process_saml_response, post_data, saml_cfg, request_url,
+                                        request_id=request_id)
 
     if not user_info:
         logger.error("SAML ACS: process_saml_response returned None — auth failed")
@@ -1426,7 +1434,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
             id=str(uuid.uuid4()),
             username=await _saml_jit_username(db, username or email.split("@")[0]),
             email=email,
-            hashed_password=get_password_hash(str(uuid.uuid4())),
+            hashed_password=await get_password_hash_async(str(uuid.uuid4())),
             full_name=user_info.get("full_name", ""),
             role=UserRole.OPERATOR,
             auth_provider="saml",
@@ -1672,7 +1680,7 @@ async def reset_password(
     # (e.g. via a stolen session before GHSA-vm6w-9wm5-q367 shipped),
     # the legitimate owner needs to be able to recover via email
     # without being blocked at the TOTP prompt forever.
-    user.hashed_password = get_password_hash(req.new_password)
+    user.hashed_password = await get_password_hash_async(req.new_password)
     user.must_change_password = False
     user.totp_enabled = False
     user.totp_secret = None

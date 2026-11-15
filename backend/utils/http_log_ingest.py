@@ -17,6 +17,7 @@ written in the moment between the final read and the truncate are lost —
 an accepted gap for a monitoring feed.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -145,6 +146,19 @@ def _rollup(rows: list[dict]) -> list[dict]:
     return [{"bucket": k, **v} for k, v in buckets.items()]
 
 
+def _read_and_parse(path: str, offset: int) -> tuple[int, list[dict]]:
+    """Read the next chunk of whole lines from ``offset`` and parse them.
+    Returns (bytes consumed, parsed rows)."""
+    with open(path, "rb") as f:
+        f.seek(offset)
+        chunk = f.read(READ_CHUNK)
+    end = chunk.rfind(b"\n")
+    if end < 0:
+        return 0, []
+    lines = chunk[:end + 1].decode("utf-8", "replace").splitlines()
+    return end + 1, [r for r in (parse_line(l) for l in lines if l.strip()) if r]
+
+
 async def ingest_once(session_factory=None, path: str = LOG_PATH) -> int:
     """One ingest pass; returns the number of lines stored. No-op when the log
     file isn't there (dev without the volume, tests) or another worker holds
@@ -163,21 +177,13 @@ async def ingest_once(session_factory=None, path: str = LOG_PATH) -> int:
         if cursor is None:
             cursor = HttpLogCursor(name=_CURSOR, offset=0)
             db.add(cursor)
-        st = os.stat(path)
+        st = await asyncio.to_thread(os.stat, path)
         if cursor.inode != st.st_ino or st.st_size < (cursor.offset or 0):
             cursor.inode, cursor.offset = st.st_ino, 0  # new or truncated file
 
-        with open(path, "rb") as f:
-            f.seek(cursor.offset)
-            chunk = f.read(READ_CHUNK)
-        end = chunk.rfind(b"\n")
-        if end < 0:
-            consumed, lines = 0, []
-        else:
-            consumed = end + 1
-            lines = chunk[:consumed].decode("utf-8", "replace").splitlines()
-
-        rows = [r for r in (parse_line(l) for l in lines if l.strip()) if r]
+        # Reading up to 4 MB and regex-parsing every line is blocking work:
+        # one thread call, so the event loop keeps serving requests.
+        consumed, rows = await asyncio.to_thread(_read_and_parse, path, cursor.offset or 0)
         if rows:
             await db.execute(pg_insert(HttpRequestLog), rows)
             for agg in _rollup(rows):

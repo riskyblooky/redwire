@@ -266,7 +266,7 @@ async def _seed_admin_user(session_factory):
     """
     from sqlalchemy import select
     from models.user import User, UserRole
-    from auth.password import get_password_hash
+    from auth.password import get_password_hash_async
     import uuid
 
     admin_email = os.getenv("ADMIN_EMAIL")
@@ -309,7 +309,7 @@ async def _seed_admin_user(session_factory):
             id=str(uuid.uuid4()),
             username=admin_username,
             email=admin_email,
-            hashed_password=get_password_hash(admin_password),
+            hashed_password=await get_password_hash_async(admin_password),
             full_name="System Administrator",
             role=UserRole.ADMIN,
             is_active=True,
