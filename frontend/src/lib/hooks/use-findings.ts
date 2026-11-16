@@ -66,9 +66,24 @@ export interface FindingCreate {
     attack_technique_ids?: string[];
 }
 
-export interface FindingUpdate extends Partial<FindingCreate> {
+// Optional text the edit form can clear: send null to clear (undefined
+// means "leave unchanged" — the backend updates only fields that are sent).
+type ClearableFindingField = 'category' | 'impact' | 'technical_details' | 'steps_to_reproduce'
+    | 'mitigations' | 'references' | 'cvss_vector';
+
+export interface FindingUpdate extends Omit<Partial<FindingCreate>, ClearableFindingField> {
     id: string;
     status?: string;
+    category?: string | null;
+    impact?: string | null;
+    technical_details?: string | null;
+    steps_to_reproduce?: string | null;
+    mitigations?: string | null;
+    references?: string | null;
+    cvss_vector?: string | null;
+    asset_port_ids?: Record<string, string[]>;
+    score_model?: string;
+    score_inputs?: Record<string, unknown>;
 }
 
 export type TemplateStatus = 'DRAFT' | 'SUBMITTED' | 'PUBLISHED';
@@ -236,10 +251,21 @@ export function useFindingTemplates(category?: string) {
     });
 }
 
+// null clears an optional field on update; undefined leaves it unchanged.
+export interface FindingTemplateInput {
+    title?: string;
+    description?: string;
+    category?: string | null;
+    impact?: string | null;
+    mitigations?: string | null;
+    references?: string | null;
+    attack_technique_ids?: string[];
+}
+
 export function useCreateFindingTemplate() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async (template: { title: string; category?: string; description: string; impact?: string; mitigations?: string }) => {
+        mutationFn: async (template: FindingTemplateInput & { title: string; description: string }) => {
             const { data } = await api.post<FindingTemplate>('/templates', template);
             return data;
         },
@@ -252,7 +278,7 @@ export function useCreateFindingTemplate() {
 export function useUpdateFindingTemplate() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, ...template }: { id: string; title?: string; category?: string; description?: string; impact?: string; mitigations?: string }) => {
+        mutationFn: async ({ id, ...template }: FindingTemplateInput & { id: string }) => {
             const { data } = await api.put<FindingTemplate>(`/templates/${id}`, template);
             return data;
         },

@@ -127,7 +127,7 @@ export function PersonalRuleEditor({
                 await updateRule.mutateAsync({
                     id: editRule.id,
                     name,
-                    description: description || undefined,
+                    description,  // '' clears (the backend skips null)
                     trigger_type: triggerType,
                     conditions,
                     actions,

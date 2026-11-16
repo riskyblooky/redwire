@@ -309,9 +309,11 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
             saves.push({ label: 'Details', clear: () => setDetailsDirty(false), run: updateEngagement.mutateAsync({
                 id,
                 ...details,
-                client_id:  formData.client_id  || undefined,
+                // Cleared optional fields go as null (undefined = unchanged).
+                // start_date is required, so an empty one is left as it was.
+                client_id:  formData.client_id  || null,
                 start_date: formData.start_date ? `${formData.start_date}T00:00:00` : undefined,
-                end_date:   formData.end_date   ? `${formData.end_date}T23:59:59`   : undefined,
+                end_date:   formData.end_date   ? `${formData.end_date}T23:59:59`   : null,
                 marking_profile_id:            formData.marking_profile_id || null,
                 default_classification_level:  formData.default_classification_level || null,
                 default_classification_suffix: formData.default_classification_suffix || null,
@@ -324,10 +326,9 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
             const updates = Object.entries(editingPhases)
                 .map(([pid, dates]) => ({
                     id: pid,
-                    planned_start: dates.start ? new Date(dates.start).toISOString() : undefined,
-                    planned_end:   dates.end   ? new Date(dates.end).toISOString()   : undefined,
-                }))
-                .filter(p => p.planned_start || p.planned_end);
+                    planned_start: dates.start ? new Date(dates.start).toISOString() : null,
+                    planned_end:   dates.end   ? new Date(dates.end).toISOString()   : null,
+                }));
             if (updates.length > 0) {
                 saves.push({ label: 'Timeline', clear: () => setPhasesEdited(false),
                     run: updatePhases.mutateAsync({ engagementId: engagement.id, phases: updates }) });

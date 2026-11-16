@@ -56,7 +56,7 @@ export interface RunbookCreate {
 export interface RunbookUpdate {
     name?: string;
     description?: string;
-    runbook_type?: string;
+    runbook_type?: string | null;  // null clears
     items?: RunbookItemCreate[];
 }
 

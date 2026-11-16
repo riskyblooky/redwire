@@ -258,7 +258,7 @@ export default function ReportLayoutTemplateEditPage() {
                 await updateTemplate.mutateAsync({
                     id: templateId,
                     name,
-                    description: description || undefined,
+                    description,  // '' clears (the backend skips null)
                     sections: sectionPayload,
                 });
                 toast.success('Template updated');

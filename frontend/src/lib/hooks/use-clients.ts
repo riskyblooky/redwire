@@ -92,12 +92,12 @@ export function useCreateClient() {
     return useMutation({
         mutationFn: async (payload: {
             name: string;
-            description?: string;
-            client_type_id?: string;
-            parent_id?: string;
-            contact_name?: string;
-            contact_email?: string;
-            notes?: string;
+            description?: string | null;
+            client_type_id?: string | null;
+            parent_id?: string | null;
+            contact_name?: string | null;
+            contact_email?: string | null;
+            notes?: string | null;
         }) => {
             const { data } = await api.post<Client>('/clients', payload);
             return data;
@@ -114,12 +114,12 @@ export function useUpdateClient() {
         mutationFn: async ({ id, ...payload }: {
             id: string;
             name?: string;
-            description?: string;
-            client_type_id?: string;
+            description?: string | null;
+            client_type_id?: string | null;
             parent_id?: string | null;
-            contact_name?: string;
-            contact_email?: string;
-            notes?: string;
+            contact_name?: string | null;
+            contact_email?: string | null;
+            notes?: string | null;
         }) => {
             const { data } = await api.put<Client>(`/clients/${id}`, payload);
             return data;

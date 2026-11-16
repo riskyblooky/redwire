@@ -506,12 +506,14 @@ export default function ClientsPage() {
         try {
             const payload = {
                 name: formData.name,
-                description: formData.description || undefined,
-                client_type_id: formData.client_type_id || undefined,
-                parent_id: formData.parent_id || undefined,
-                contact_name: formData.contact_name || undefined,
-                contact_email: formData.contact_email || undefined,
-                notes: formData.notes || undefined,
+                // Shared by create and edit: an emptied field is null, which
+                // clears it on edit (undefined would keep the old value).
+                description: formData.description || null,
+                client_type_id: formData.client_type_id || null,
+                parent_id: formData.parent_id || null,
+                contact_name: formData.contact_name || null,
+                contact_email: formData.contact_email || null,
+                notes: formData.notes || null,
                 custom_fields: formData.custom_fields,
             };
 

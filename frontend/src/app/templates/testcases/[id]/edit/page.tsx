@@ -134,8 +134,9 @@ export default function TestCaseTemplateEditPage() {
             title: title.trim(),
             category: category.trim(),
             description: description.trim(),
-            steps: steps.trim() || undefined,
-            expected_result: expectedResult.trim() || undefined,
+            // Emptied optional fields are null so an edit clears them.
+            steps: steps.trim() || null,
+            expected_result: expectedResult.trim() || null,
             attack_technique_ids: attackTechniqueIds,
         };
 

@@ -83,8 +83,11 @@ export interface EngagementCreate {
     default_score_model?: string | null;
 }
 
-export interface EngagementUpdate extends Partial<EngagementCreate> {
+// null clears an optional field; undefined leaves it unchanged.
+export interface EngagementUpdate extends Omit<Partial<EngagementCreate>, 'client_id' | 'end_date'> {
     id: string;
+    client_id?: string | null;
+    end_date?: string | null;
 }
 
 // Fetch all engagements. Pass `includeProposed` for admins / team leads
@@ -310,7 +313,7 @@ export function useUpdateEngagementPhases() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ engagementId, phases }: { engagementId: string; phases: { id: string; planned_start?: string; planned_end?: string }[] }) => {
+        mutationFn: async ({ engagementId, phases }: { engagementId: string; phases: { id: string; planned_start?: string | null; planned_end?: string | null }[] }) => {
             const { data } = await api.put<EngagementPhase[]>(`/engagements/${engagementId}/phases`, phases);
             return data;
         },

@@ -6,7 +6,9 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from rate_limit import limiter
+import logging
 import os
+import re
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -511,11 +513,22 @@ _UNIQUE_CONFLICTS = {
 }
 
 
+_NOT_NULL_RE = re.compile(r'null value in column "(\w+)"(?: of relation "(\w+)")? violates not-null constraint')
+
+
 async def _integrity_conflict(request: Request, exc: IntegrityError):
     text = str(getattr(exc, "orig", exc))
     for name, detail in _UNIQUE_CONFLICTS.items():
         if name in text:
             return JSONResponse(status_code=409, content={"detail": detail})
+    # Update schemas take every field as optional, and a client that sends
+    # an explicit null for a required one (title, name...) used to get a 500.
+    m = _NOT_NULL_RE.search(text)
+    if m:
+        logging.getLogger(__name__).warning(
+            "NOT NULL violation on %s.%s (%s %s)", m.group(2), m.group(1),
+            getattr(request, "method", "?"), getattr(getattr(request, "url", None), "path", "?"))
+        return JSONResponse(status_code=422, content={"detail": f"'{m.group(1)}' can't be empty."})
     raise exc
 
 

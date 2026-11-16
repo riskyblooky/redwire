@@ -481,7 +481,7 @@ function RuleEditor({
         try {
             if (isEditing) {
                 await updateRule.mutateAsync({
-                    id: editRule.id, name, description: description || undefined,
+                    id: editRule.id, name, description,  // '' clears (the backend skips null)
                     trigger_type: triggerType, conditions, actions,
                 });
                 toast.success('Rule updated');

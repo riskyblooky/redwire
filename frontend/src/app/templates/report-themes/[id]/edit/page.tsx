@@ -239,7 +239,7 @@ export default function ReportThemeEditPage() {
         }
         const payload: ReportThemeCreate = {
             name: name.trim(),
-            description: description.trim() || undefined,
+            description: description.trim() || null,  // null clears on update
             primary_color: primaryColor,
             secondary_color: secondaryColor,
             header_text_color: headerTextColor,

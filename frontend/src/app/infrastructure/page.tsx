@@ -376,10 +376,12 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
                 infraItemId: itemId,
                 vaultId: editingId,
                 name: editForm.name,
-                username: editForm.username || undefined,
-                password: editForm.password || undefined,
-                note: editForm.note || undefined,
-                description: editForm.description || undefined,
+                // The form holds the current secret, so an emptied field
+                // means "clear it": null (undefined would keep the old value).
+                username: editForm.username || null,
+                password: editForm.password || null,
+                note: editForm.note || null,
+                description: editForm.description || null,
             });
             toast.success('Credential updated');
             setEditingId(null);
@@ -1051,16 +1053,18 @@ export default function InfrastructurePage() {
     const [detailItem, setDetailItem] = useState<string | null>(null);
     const [form, setForm] = useState(emptyForm);
 
+    // Used for create and edit: an emptied optional field is null, which
+    // clears it on edit (undefined would leave the old value).
     const payloadFrom = (f: typeof emptyForm) => ({
         ...f,
-        ip_address: f.ip_address || undefined,
-        internal_ip: f.internal_ip || undefined,
-        hostname: f.hostname || undefined,
-        provider: f.provider || undefined,
-        region: f.region || undefined,
-        os: f.os || undefined,
-        point_of_presence: f.point_of_presence || undefined,
-        notes: f.notes || undefined,
+        ip_address: f.ip_address || null,
+        internal_ip: f.internal_ip || null,
+        hostname: f.hostname || null,
+        provider: f.provider || null,
+        region: f.region || null,
+        os: f.os || null,
+        point_of_presence: f.point_of_presence || null,
+        notes: f.notes || null,
     });
 
     const openCreate = () => { setEditingId(null); setForm(emptyForm); setCreateOpen(true); };

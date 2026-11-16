@@ -306,7 +306,7 @@ async def update_runbook(
         runbook.name = data.name
     if data.description is not None:
         runbook.description = data.description
-    if data.runbook_type is not None:
+    if "runbook_type" in data.model_fields_set:  # null clears the type
         runbook.runbook_type = data.runbook_type
     runbook.updated_by = current_user.id
 

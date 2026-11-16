@@ -100,14 +100,14 @@ export function useCreateInfraItem() {
             name: string;
             infra_type?: string;
             status?: string;
-            ip_address?: string;
-            internal_ip?: string;
-            hostname?: string;
-            provider?: string;
-            region?: string;
-            os?: string;
-            point_of_presence?: string;
-            notes?: string;
+            ip_address?: string | null;
+            internal_ip?: string | null;
+            hostname?: string | null;
+            provider?: string | null;
+            region?: string | null;
+            os?: string | null;
+            point_of_presence?: string | null;
+            notes?: string | null;
         }) => {
             const { data } = await api.post<InfraItem>('/infra/items', item);
             return data;

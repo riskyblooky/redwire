@@ -445,7 +445,7 @@ export default function RunbookEditorPage() {
                 await createRunbook.mutateAsync({ name, description, runbook_type: runbookType || undefined, items });
                 toast.success('Runbook created!');
             } else {
-                await updateRunbook.mutateAsync({ id: runbookId, name, description, runbook_type: runbookType || undefined, items });
+                await updateRunbook.mutateAsync({ id: runbookId, name, description, runbook_type: runbookType || null, items });
                 toast.success('Runbook updated!');
             }
             router.push('/templates?tab=runbooks');

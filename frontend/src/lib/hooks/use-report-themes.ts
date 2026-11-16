@@ -53,7 +53,7 @@ export interface ReportTheme {
 
 export interface ReportThemeCreate {
     name: string;
-    description?: string;
+    description?: string | null;  // null clears on update
     primary_color?: string;
     secondary_color?: string;
     header_text_color?: string;

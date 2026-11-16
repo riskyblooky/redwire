@@ -101,9 +101,9 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
                 portId,
                 port_number: portNum,
                 protocol: editPortData.protocol,
-                service_name: editPortData.service_name || undefined,
+                service_name: editPortData.service_name || null,  // null clears
                 state: editPortData.state,
-                version: editPortData.version || undefined,
+                version: editPortData.version || null,
             });
             setEditingPortId(null);
             toast.success('Port updated');

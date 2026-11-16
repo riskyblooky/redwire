@@ -742,14 +742,16 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
         if (assetLinkTarget.findingId) {
             // Finding asset linking — use update finding API
             try {
+                // Every selected asset, empty port lists included, so
+                // deselecting all of an asset's ports actually clears them.
                 const portMap: Record<string, string[]> = {};
-                selectedPortIds.forEach((ports, assetId) => {
-                    if (ports.size > 0) portMap[assetId] = [...ports];
+                selectedAssetIds.forEach((assetId) => {
+                    portMap[assetId] = [...(selectedPortIds.get(assetId) ?? [])];
                 });
                 await updateFindingForAssetLink.mutateAsync({
                     id: assetLinkTarget.findingId,
                     asset_ids: [...selectedAssetIds],
-                    asset_port_ids: Object.keys(portMap).length > 0 ? portMap : undefined,
+                    asset_port_ids: portMap,
                 } as any);
                 toast.success('Finding assets updated');
             } catch (error: any) {

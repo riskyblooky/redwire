@@ -215,9 +215,9 @@ export function useUpdateAssetPort() {
             portId: string;
             port_number?: number;
             protocol?: 'TCP' | 'UDP';
-            service_name?: string;
+            service_name?: string | null;  // null clears
             state?: 'OPEN' | 'CLOSED' | 'FILTERED';
-            version?: string;
+            version?: string | null;
         }) => {
             const { data } = await api.put(`/assets/${assetId}/ports/${portId}`, portData);
             return data;

@@ -28,8 +28,8 @@ export interface TestCaseTemplateCreate {
     title: string;
     category: TestCaseCategory;
     description: string;
-    steps?: string;
-    expected_result?: string;
+    steps?: string | null;  // null clears on update
+    expected_result?: string | null;
     attack_technique_ids?: string[];
 }
 

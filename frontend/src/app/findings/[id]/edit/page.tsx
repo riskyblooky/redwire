@@ -368,34 +368,35 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
 
         const score = parseFloat(formData.cvss_score.toString());
 
-        // Build asset_port_ids map from selected ports
+        // Port selection for every linked asset, empty included: an asset
+        // whose ports were all deselected must be sent as [] or the old
+        // selection stays (the backend only touches assets in the map).
         const assetPortIds: Record<string, string[]> = {};
-        selectedPortIds.forEach((portSet, assetId) => {
-            if (portSet.size > 0) {
-                assetPortIds[assetId] = [...portSet];
-            }
-        });
+        for (const assetId of formData.asset_ids || []) {
+            assetPortIds[assetId] = [...(selectedPortIds.get(assetId) ?? [])];
+        }
 
         // Strictly pick fields that exist in the Backend FindingUpdate schema
         const payload = {
             title: formData.title,
-            category: formData.category || undefined,
+            // Cleared optional fields go as null (undefined = leave unchanged).
+            category: formData.category || null,
             severity: formData.severity,
             status: formData.status,
             description: formData.description,
-            impact: formData.impact || undefined,
-            technical_details: formData.technical_details || undefined,
-            steps_to_reproduce: formData.steps_to_reproduce || undefined,
-            mitigations: formData.mitigations || undefined,
-            references: formData.references || undefined,
+            impact: formData.impact || null,
+            technical_details: formData.technical_details || null,
+            steps_to_reproduce: formData.steps_to_reproduce || null,
+            mitigations: formData.mitigations || null,
+            references: formData.references || null,
             cvss_score: isNaN(score) ? 0 : score,
-            cvss_vector: formData.cvss_vector || undefined,
+            cvss_vector: formData.cvss_vector || null,
             score_model: formData.score_model || undefined,
             score_inputs: formData.score_inputs || undefined,
             classification_level: formData.classification_level || null,
             classification_suffix: formData.classification_suffix || null,
             asset_ids: formData.asset_ids || [],
-            asset_port_ids: Object.keys(assetPortIds).length > 0 ? assetPortIds : undefined,
+            asset_port_ids: assetPortIds,
             tag_ids: formData.tag_ids || [],
             attack_technique_ids: formData.attack_technique_ids || [],
             custom_fields: formData.custom_fields,

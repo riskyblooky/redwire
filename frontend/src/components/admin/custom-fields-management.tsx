@@ -113,8 +113,9 @@ export default function CustomFieldsManagement() {
             field_type: draft.field_type,
             options,
             required: draft.required,
-            help_text: draft.help_text.trim() || undefined,
-            placeholder: draft.placeholder.trim() || undefined,
+            // null clears on edit (undefined would keep the old text).
+            help_text: draft.help_text.trim() || null,
+            placeholder: draft.placeholder.trim() || null,
             show_in_list: draft.show_in_list,
             show_in_report: draft.show_in_report,
         };

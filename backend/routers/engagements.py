@@ -1276,12 +1276,12 @@ async def update_engagement_phases(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Phase {phase_update.id} not found for this engagement"
             )
-        if phase_update.planned_start is not None:
-            dt = phase_update.planned_start
-            phase.planned_start = dt.replace(tzinfo=None) if dt.tzinfo else dt
-        if phase_update.planned_end is not None:
-            dt = phase_update.planned_end
-            phase.planned_end = dt.replace(tzinfo=None) if dt.tzinfo else dt
+        # A field that's sent is applied, null included (clears the date);
+        # one that's left out is unchanged.
+        for field in ("planned_start", "planned_end"):
+            if field in phase_update.model_fields_set:
+                dt = getattr(phase_update, field)
+                setattr(phase, field, dt.replace(tzinfo=None) if dt is not None and dt.tzinfo else dt)
 
     await db.commit()
 

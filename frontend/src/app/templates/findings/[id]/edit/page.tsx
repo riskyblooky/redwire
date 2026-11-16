@@ -141,11 +141,12 @@ export default function FindingTemplateEditPage() {
 
         const data = {
             title: title.trim(),
-            category: category.trim() || undefined,
+            // Emptied optional fields are null so an edit clears them.
+            category: category.trim() || null,
             description: description.trim(),
-            impact: impact.trim() || undefined,
-            mitigations: mitigations.trim() || undefined,
-            references: references.trim() || undefined,
+            impact: impact.trim() || null,
+            mitigations: mitigations.trim() || null,
+            references: references.trim() || null,
             attack_technique_ids: attackTechniqueIds,
         };
 
