@@ -22,6 +22,7 @@
  */
 'use client';
 
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
@@ -158,9 +159,8 @@ export default function ReportThemeEditPage() {
     const [reportReference, setReportReference] = useState('');
     const [reportVersion, setReportVersion] = useState('');
 
-    // Load existing theme
-    useEffect(() => {
-        if (!existing) return;
+    // Load existing theme once per theme: a refetch mustn't replace edits.
+    useFormFromQuery(existing, (existing) => {
         setName(existing.name);
         setDescription(existing.description || '');
         setPrimaryColor(existing.primary_color);
@@ -204,7 +204,7 @@ export default function ReportThemeEditPage() {
         setCoverSubtitle(existing.cover_subtitle || '');
         setReportReference(existing.report_reference || '');
         setReportVersion(existing.report_version || '');
-    }, [existing]);
+    }, { key: themeId });
 
     const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

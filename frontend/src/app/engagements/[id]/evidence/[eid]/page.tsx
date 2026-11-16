@@ -13,6 +13,7 @@
  */
 'use client';
 
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 import { useState, useEffect } from 'react';
 import { UserName } from '@/components/ui/user-name';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -128,11 +129,9 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
     const [exifOpen, setExifOpen] = useState(false);
     const [description, setDescription] = useState('');
 
-    useEffect(() => {
-        if (evidence) {
-            setDescription(evidence.description || '');
-        }
-    }, [evidence]);
+    // Refetches update the description only while it isn't being edited.
+    useFormFromQuery(evidence, (ev) => setDescription(ev.description || ''),
+        { key: evidence?.id, isDirty: isEditingDescription });
 
     useEffect(() => {
         if (!eid) return;

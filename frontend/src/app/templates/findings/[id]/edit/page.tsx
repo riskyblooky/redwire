@@ -11,6 +11,7 @@
  */
 'use client';
 
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -103,28 +104,26 @@ export default function FindingTemplateEditPage() {
         title: '', category: '', description: '', impact: '', mitigations: '', references: '', attackTechniqueIds: [] as string[],
     }));
 
-    useEffect(() => {
-        if (template) {
-            setTitle(template.title);
-            setCategory(template.category || '');
-            setDescription(template.description || '');
-            setImpact(template.impact || '');
-            setMitigations(template.mitigations || '');
-            setReferences(template.references || '');
-            setAttackTechniqueIds(template.attack_technique_ids || []);
-            setInitialSnapshot(JSON.stringify({
-                title: template.title,
-                category: template.category || '',
-                description: template.description || '',
-                impact: template.impact || '',
-                mitigations: template.mitigations || '',
-                references: template.references || '',
-                attackTechniqueIds: template.attack_technique_ids || [],
-            }));
-        }
-    }, [template]);
-
     const currentSnapshot = JSON.stringify({ title, category, description, impact, mitigations, references, attackTechniqueIds });
+    // Refetches (focus, invalidation) reseed only while nothing is edited.
+    useFormFromQuery(template, (template) => {
+        setTitle(template.title);
+        setCategory(template.category || '');
+        setDescription(template.description || '');
+        setImpact(template.impact || '');
+        setMitigations(template.mitigations || '');
+        setReferences(template.references || '');
+        setAttackTechniqueIds(template.attack_technique_ids || []);
+        setInitialSnapshot(JSON.stringify({
+            title: template.title,
+            category: template.category || '',
+            description: template.description || '',
+            impact: template.impact || '',
+            mitigations: template.mitigations || '',
+            references: template.references || '',
+            attackTechniqueIds: template.attack_technique_ids || [],
+        }));
+    }, { key: template?.id, isDirty: currentSnapshot !== initialSnapshot });
     const isDirty = allowedToEdit && currentSnapshot !== initialSnapshot;
     const backPath = '/templates?tab=findings';
     const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);

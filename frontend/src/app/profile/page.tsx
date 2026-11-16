@@ -27,6 +27,7 @@
  */
 'use client';
 
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { useAuthedImageUrl } from '@/lib/hooks/use-authed-image';
@@ -64,7 +65,9 @@ const TABS = [
 type TabId = typeof TABS[number]['id'];
 
 export default function ProfilePage() {
-    const { user } = useAuthStore();
+    // logout clears the whole client session (store, engagement context,
+    // refresh timer), not just the token keys.
+    const { user, logout } = useAuthStore();
     const [activeTab, setActiveTab] = useState<TabId>('profile');
     const updateProfile = useUpdateProfile();
     const updatePassword = useUpdatePassword();
@@ -80,15 +83,12 @@ export default function ProfilePage() {
     const [emailChangePassword, setEmailChangePassword] = useState('');
     const [emailChangeTotpCode, setEmailChangeTotpCode] = useState('');
 
-    // Populate form when user data loads
-    useEffect(() => {
-        if (user) {
-            setProfileData({
-                full_name: user.full_name || '',
-                email: user.email || '',
-            });
-        }
-    }, [user]);
+    // Populate the form from the signed-in user. The store's user changes for
+    // unrelated reasons (avatar, 2FA, settings); keep typed edits when it does.
+    const profileDirty = !!user && (profileData.full_name !== (user.full_name || '')
+        || profileData.email !== (user.email || ''));
+    useFormFromQuery(user, (u) => setProfileData({ full_name: u.full_name || '', email: u.email || '' }),
+        { key: user?.id, isDirty: profileDirty });
 
     const emailChanged = !!user && profileData.email !== (user.email || '');
     const isLocalUser = !user?.auth_provider || user.auth_provider === 'local';
@@ -173,12 +173,7 @@ export default function ProfilePage() {
             // Email change revokes all sessions server-side — bounce to login.
             if (emailChanged) {
                 setProfileMessage({ type: 'success', text: 'Email updated. Signing you out…' });
-                setTimeout(() => {
-                    localStorage.removeItem('access_token');
-                    localStorage.removeItem('refresh_token');
-                    document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
-                    window.location.href = '/login';
-                }, 1200);
+                setTimeout(logout, 1200);
             }
         } catch (error: any) {
             setProfileMessage({ type: 'error', text: apiErrorMessage(error, 'Failed to update profile') });
@@ -210,12 +205,7 @@ export default function ProfilePage() {
             setPasswordMessage({ type: 'success', text: 'Password changed. Signing you out…' });
             setPasswordData({ old_password: '', new_password: '', confirm_password: '', totp_code: '' });
             // All sessions were revoked server-side; force a fresh login.
-            setTimeout(() => {
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
-                document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
-                window.location.href = '/login';
-            }, 1200);
+            setTimeout(logout, 1200);
             return;
         } catch (error: any) {
             setPasswordMessage({ type: 'error', text: apiErrorMessage(error, 'Failed to change password') });
