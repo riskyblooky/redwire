@@ -33,6 +33,7 @@ from utils.vault_crypto import encrypt_bytes, decrypt_bytes
 from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped, content_disposition_attachment
 from utils.storage import storage_service
 from sqlalchemy.orm import selectinload
+from utils import storage_tx
 
 router = APIRouter(prefix="/vault", tags=["vault"])
 
@@ -202,7 +203,7 @@ async def upload_vault_file(
     )
     encrypted_content = encrypt_bytes(content)
     storage_key = f"vault/{uuid.uuid4()}.enc"
-    await storage_service.upload_file(
+    await storage_tx.upload(db,
         encrypted_content,
         storage_key,
         content_type="application/octet-stream",
@@ -434,12 +435,8 @@ async def delete_vault_item(
     await require_owned_perm(current_user, item.engagement_id, item.created_by,
                              Permission.VAULT_DELETE, Permission.VAULT_DELETE_ANY, db, action="delete this vault item")
 
-    # Delete file from MinIO if exists
-    if item.file_path:
-        try:
-            await storage_service.delete_file(item.file_path)
-        except Exception:
-            logger.warning(f"Failed to delete vault file from storage: {item.file_path}")
+    # The stored file goes once the row's delete has committed.
+    storage_tx.delete_after_commit(db, item.file_path)
 
     # Sweep any chain edges this vault item participated in (polymorphic,
     # no DB FK — see utils/chain_links.py).

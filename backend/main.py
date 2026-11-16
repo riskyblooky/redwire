@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 # Import database
 from database import Base, engine
+import utils.storage_tx  # noqa: F401  registers the session events that keep storage in step
 
 # Import routers
 from routers import auth, engagements, engagements_transfer, findings, users, assets, testcases, calendar, analytics, reports, admin, websocket, stats, templates, discussions, evidence, vault, testcase_templates, permissions, notes, tags, runbooks, report_layouts, report_layout_templates, report_themes, marking_profiles, clients, cleanup_artifacts, auth_settings, api_tokens, configurable_types, search, attack_graph, chain_links, wordlist, notifications, automations, ai, intel, infra, skills, dashboard_widgets, stats_pages, custom_fields, changelog, scoring, plugins as plugins_router

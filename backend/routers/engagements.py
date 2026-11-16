@@ -36,6 +36,7 @@ from schemas.evidence import EvidenceResponse
 from fastapi import UploadFile, File, Form
 import os
 import uuid
+from utils import storage_tx
 from utils.storage import storage_service
 from utils.uploads import (
     MAX_EVIDENCE_BYTES,
@@ -1128,7 +1129,7 @@ async def upload_engagement_evidence(
 
     # Upload to MinIO
     try:
-        await storage_service.upload_file(content, storage_filename, content_type=safe_mime)
+        await storage_tx.upload(db, content, storage_filename, content_type=safe_mime)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Storage failure: {str(e)}")
 

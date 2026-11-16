@@ -18,6 +18,7 @@ from models.finding import Finding, Severity, FindingStatus, Tag
 from scoring.registry import scoring_registry
 from scoring.engine import evaluate as evaluate_score, ScoringError
 from scoring.display import outcome_label
+from utils import storage_tx
 from utils.scoring_policy import assert_model_allowed
 from models.evidence import Evidence
 from schemas.finding import FindingCreate, FindingUpdate, FindingResponse, TagResponse
@@ -1122,7 +1123,7 @@ async def upload_evidence(
 
     # Upload to MinIO
     try:
-        await storage_service.upload_file(
+        await storage_tx.upload(db,
             content,
             storage_filename,
             content_type=safe_mime,

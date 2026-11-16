@@ -15,6 +15,7 @@ import logging
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils import storage_tx
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ async def save_bytes_as_evidence(
         ext = os.path.splitext(original_filename or "")[1]
         storage_filename = f"{uuid.uuid4()}{ext}"
         safe_mime = safe_content_type(original_filename)
-        await storage_service.upload_file(content, storage_filename, content_type=safe_mime)
+        await storage_tx.upload(db, content, storage_filename, content_type=safe_mime)
         ev = Evidence(
             engagement_id=engagement_id,
             filename=storage_filename,
@@ -94,7 +95,7 @@ async def save_bytes_as_vault_file(
     try:
         encrypted = encrypt_bytes(content)
         storage_key = f"vault/{uuid.uuid4()}.enc"
-        await storage_service.upload_file(encrypted, storage_key, content_type="application/octet-stream")
+        await storage_tx.upload(db, encrypted, storage_key, content_type="application/octet-stream")
         item = VaultItem(
             engagement_id=engagement_id,
             name=name,

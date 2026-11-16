@@ -20,6 +20,7 @@ from models.testcase import TestCase
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import io
+from utils import storage_tx
 
 logger = logging.getLogger(__name__)
 
@@ -296,12 +297,9 @@ async def delete_evidence(
     filename = evidence.filename
     original_filename = evidence.original_filename
 
-    # Delete from storage
-    try:
-        await storage_service.delete_file(filename)
-    except Exception as e:
-        # Log error but continue to delete DB record? Or alert user?
-        print(f"Failed to delete file from storage: {e}")
+    # The object goes once the row's delete has committed: deleting it first
+    # left a row pointing at nothing whenever the DB delete then failed.
+    storage_tx.delete_after_commit(db, filename)
         
     # Delete from database
     from utils.thread_cleanup import sweep_threads

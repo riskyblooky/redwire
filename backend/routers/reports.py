@@ -86,6 +86,7 @@ from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
 from models.permission import Permission
 from models.user import UserRole
+from utils import storage_tx
 from utils.report_generator import PDFReportGenerator, MarkdownReportGenerator, HTMLReportGenerator
 from utils.storage import storage_service
 from utils.uploads import safe_content_type, content_disposition_attachment, read_upload_capped, sanitize_original_filename, MAX_EVIDENCE_BYTES
@@ -727,7 +728,7 @@ async def save_report_to_engagement(
     # the frontend reads for inline-preview decisions.
     safe_mime = safe_content_type(filename)
     try:
-        await storage_service.upload_file(
+        await storage_tx.upload(db,
             content, storage_filename, content_type=safe_mime
         )
     except Exception as e:

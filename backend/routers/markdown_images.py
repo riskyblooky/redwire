@@ -34,6 +34,7 @@ from models.engagement import Engagement
 from models.permission import Permission
 from auth.dependencies import get_current_user
 from auth.rbac import check_engagement_permission
+from utils import storage_tx
 from utils.storage import storage_service
 from utils.uploads import sanitize_original_filename
 from rate_limit import limiter
@@ -126,7 +127,7 @@ async def upload_markdown_image(
         ext = "." + file.filename.rsplit(".", 1)[-1].lower()
     storage_key = f"markdown/{engagement_id if scope == 'engagement' else 'library'}/{image_id}{ext}"
 
-    await storage_service.upload_file(body, storage_key, content_type)
+    await storage_tx.upload(db, body, storage_key, content_type)
 
     row = MarkdownImage(
         id=image_id,

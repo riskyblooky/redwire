@@ -48,6 +48,7 @@ from utils.vault_access_log import should_log_vault_access
 from utils.vault_crypto import encrypt_bytes, decrypt_bytes
 from utils.storage import storage_service
 from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped, content_disposition_attachment
+from utils import storage_tx
 
 router = APIRouter(prefix="/infra", tags=["infrastructure"])
 
@@ -283,15 +284,8 @@ async def delete_infra_item(
         )
     )
     for (file_path,) in child_files.all():
-        if not file_path:
-            continue
-        try:
-            await storage_service.delete_file(file_path)
-        except Exception:
-            # Non-fatal — DB rows are the source of truth, MinIO orphan
-            # cleanup can be retried offline. Matches the sibling pattern
-            # in delete_infra_vault_item.
-            pass
+        if file_path:
+            storage_tx.delete_after_commit(db, file_path)  # once the rows are gone
 
     await db.delete(item)
     await db.commit()
@@ -553,7 +547,7 @@ async def upload_infra_vault_file(
     )
     encrypted_content = encrypt_bytes(content)
     storage_key = f"infra-vault/{uuid.uuid4()}.enc"
-    await storage_service.upload_file(
+    await storage_tx.upload(db,
         encrypted_content,
         storage_key,
         content_type="application/octet-stream",
@@ -811,12 +805,7 @@ async def delete_infra_vault_item(
     if not vi:
         raise HTTPException(status_code=404, detail="Vault item not found")
 
-    if vi.file_path:
-        try:
-            await storage_service.delete_file(vi.file_path)
-        except Exception:
-            pass
-
+    storage_tx.delete_after_commit(db, vi.file_path)  # once the row is gone
     await db.delete(vi)
     await db.commit()
 

@@ -44,3 +44,7 @@ async def get_db():
             yield session
         finally:
             await session.close()
+            # Storage work tied to this session's transaction: delete uploads
+            # that never got committed, and objects whose rows were deleted.
+            from utils.storage_tx import settle
+            await settle(session)

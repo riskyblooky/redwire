@@ -14,6 +14,7 @@ from auth.rbac import check_engagement_permission, has_engagement_perm, is_engag
 from models.user import UserRole
 from models.permission import Permission
 import uuid
+from utils import storage_tx
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.custom_fields import validate_custom_fields
 from utils.versioning import create_version_snapshot
@@ -873,7 +874,7 @@ async def upload_testcase_evidence(
 
     # Upload to storage
     try:
-        await storage_service.upload_file(
+        await storage_tx.upload(db,
             content,
             storage_filename,
             content_type=safe_mime,

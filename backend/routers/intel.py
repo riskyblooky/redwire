@@ -31,6 +31,7 @@ from utils.uploads import (
 from utils.ssrf import validate_outbound_url, validate_outbound_url_sync, OutboundURLError
 
 import logging
+from utils import storage_tx
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/intel", tags=["intelligence"])
@@ -420,7 +421,7 @@ async def upload_intel_attachments(
         storage_key = f"intel/{item_id}/{_uuid.uuid4()}_{file.filename}"
         content_type = file.content_type or "application/octet-stream"
 
-        await storage_service.upload_file(content, storage_key, content_type)
+        await storage_tx.upload(db, content, storage_key, content_type)
 
         attachment = IntelAttachment(
             intel_item_id=item_id,
@@ -484,11 +485,7 @@ async def delete_intel_attachment(
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    try:
-        await storage_service.delete_file(attachment.filename)
-    except Exception as e:
-        print(f"Failed to delete file from storage: {e}")
-
+    storage_tx.delete_after_commit(db, attachment.filename)  # once the row is gone
     await db.delete(attachment)
     await db.commit()
 
