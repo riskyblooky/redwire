@@ -197,7 +197,7 @@ async def _do_generate_report(
         theme = default_result.scalar_one_or_none()
     if not theme:
         system_result = await db.execute(
-            select(ReportTheme).where(ReportTheme.is_system == True)
+            select(ReportTheme).where(ReportTheme.is_system == True).order_by(ReportTheme.id).limit(1)
         )
         theme = system_result.scalar_one_or_none()
 

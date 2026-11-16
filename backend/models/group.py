@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey, Table
+from sqlalchemy import Column, String, Boolean, ForeignKey, Table, Index, text
 from sqlalchemy.orm import relationship
 from database import Base
 import uuid
@@ -12,6 +12,10 @@ user_groups = Table(
 
 class Group(Base):
     __tablename__ = "groups"
+    # At most one default group: new users join it, and the lookups that
+    # find it expect a single row.
+    __table_args__ = (Index("uq_groups_one_default", "is_default", unique=True,
+                            postgresql_where=text("is_default")),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(100), unique=True, nullable=False, index=True)

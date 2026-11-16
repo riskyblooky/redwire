@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Enum as SQLEnum, ForeignKey, JSON
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Enum as SQLEnum, ForeignKey, JSON, Index, text
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
 from models.associations import EngagementAssignment
@@ -18,6 +18,8 @@ class EngagementStatus(str, enum.Enum):
 
 class Engagement(Base, AuditMixin):
     __tablename__ = "engagements"
+    # Names are unique ignoring case and surrounding spaces.
+    __table_args__ = (Index("uq_engagements_name_ci", text("lower(btrim(name))"), unique=True),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)

@@ -127,6 +127,19 @@ async def get_report_layout(
 
 
 # ── Create a new layout ──
+async def _unset_layout_defaults(db: AsyncSession, engagement_id: str, exclude_id: str | None = None):
+    """One default layout per engagement: clear the others (and flush, so the
+    partial unique index sees the old default gone before the new one)."""
+    from sqlalchemy import update as _update
+    stmt = (_update(ReportLayout)
+            .where(ReportLayout.engagement_id == engagement_id, ReportLayout.is_default == True)  # noqa: E712
+            .values(is_default=False)
+            .execution_options(synchronize_session="fetch"))
+    if exclude_id:
+        stmt = stmt.where(ReportLayout.id != exclude_id)
+    await db.execute(stmt)
+
+
 @router.post("/{engagement_id}/report-layouts", response_model=ReportLayoutResponse, status_code=status.HTTP_201_CREATED)
 async def create_report_layout(
     engagement_id: str,
@@ -137,6 +150,8 @@ async def create_report_layout(
     """Create a new report layout with ordered sections for an engagement."""
     await _check_report_write(current_user, engagement_id, db)
 
+    if data.is_default:
+        await _unset_layout_defaults(db, engagement_id)
     layout = ReportLayout(
         name=data.name,
         engagement_id=engagement_id,
@@ -191,6 +206,8 @@ async def update_report_layout(
     if data.name is not None:
         layout.name = data.name
     if data.is_default is not None:
+        if data.is_default and not layout.is_default:
+            await _unset_layout_defaults(db, layout.engagement_id, exclude_id=layout.id)
         layout.is_default = data.is_default
     if data.sections is not None:
         _assert_layout_current(layout, data.expected_updated_at)

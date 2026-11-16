@@ -33,6 +33,9 @@ async def _unset_defaults(db: AsyncSession, exclude_id: str = None):
     result = await db.execute(query)
     for profile in result.scalars().all():
         profile.is_default = False
+    # Flush now: the one-default index is checked row by row, so the old
+    # default must be cleared before the new one is written.
+    await db.flush()
 
 
 @router.get("", response_model=List[MarkingProfileResponse])

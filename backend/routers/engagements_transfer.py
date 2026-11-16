@@ -8,7 +8,7 @@ POST /engagements/import       →  ZIP upload → new engagement
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, UploadFile, File, Form, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from database import get_db
 from auth.dependencies import get_current_user
@@ -1289,6 +1289,21 @@ async def preview_import(
 #  IMPORT
 # ═════════════════════════════════════════════════════════════════════════
 
+
+async def _free_engagement_name(db: AsyncSession, wanted: str) -> str:
+    """``wanted``, or ``wanted (2)``, ``(3)``… — the first name no engagement
+    has (names are unique ignoring case). Importing the same archive twice
+    used to create two engagements with one name."""
+    from models.engagement import Engagement
+    taken = set((await db.execute(
+        select(func.lower(Engagement.name)).where(
+            func.lower(Engagement.name).startswith(wanted.lower(), autoescape=True))
+    )).scalars().all())
+    name, n = wanted, 2
+    while name.lower() in taken:
+        name, n = f"{wanted} ({n})", n + 1
+    return name
+
 @router.post("/import", status_code=status.HTTP_201_CREATED)
 async def import_engagement(
     file: UploadFile = File(...),
@@ -1513,7 +1528,7 @@ async def import_engagement(
         new_eng = Engagement(
             id=eng_new_id,
             **plain(Engagement, eng_data, handled={"name", "client_name", "engagement_type"}),
-            name=str(eng_data["name"]) + " (imported)",
+            name=await _free_engagement_name(db, f"{str(eng_data['name']).strip()[:230]} (imported)"),
             client_name=client_name or "",
             engagement_type=eng_data.get("engagement_type") if isinstance(eng_data.get("engagement_type"), str) else "Other",
             client_id=client_id,

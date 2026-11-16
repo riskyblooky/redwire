@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Enum as SAEnum
+from sqlalchemy import Column, String, Text, Integer, Boolean, ForeignKey, Enum as SAEnum, Index, text
 from sqlalchemy.orm import relationship
 from database import Base, AuditMixin
 import uuid
@@ -14,6 +14,9 @@ class SectionType(str, enum.Enum):
 
 class ReportLayout(Base, AuditMixin):
     __tablename__ = "report_layouts"
+    # One default layout per engagement.
+    __table_args__ = (Index("uq_report_layouts_one_default", "engagement_id", unique=True,
+                            postgresql_where=text("is_default")),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(500), nullable=False, index=True)

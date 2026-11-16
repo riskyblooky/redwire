@@ -606,6 +606,7 @@ async def create_engagement(
     # engagement-selector dropdowns key on name, so a duplicate makes picking
     # one select the wrong row — or both.
     _name = (data.get("name") or "").strip()
+    data["name"] = _name  # stored trimmed: the unique index is on lower(btrim(name))
     if (await db.execute(
         select(Engagement.id).where(func.lower(Engagement.name) == _name.lower()).limit(1)
     )).scalar_one_or_none():
@@ -755,6 +756,7 @@ async def update_engagement(
     # Enforce the same global name uniqueness on rename (excluding self).
     if "name" in update_data:
         _new_name = (update_data["name"] or "").strip()
+        update_data["name"] = _new_name
         if (await db.execute(
             select(Engagement.id).where(
                 func.lower(Engagement.name) == _new_name.lower(),

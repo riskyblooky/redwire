@@ -172,3 +172,6 @@ async def _unset_defaults(db: AsyncSession, exclude_id: str = None):
     result = await db.execute(query)
     for theme in result.scalars().all():
         theme.is_default = False
+    # Flush now: the one-default index is checked row by row, so the old
+    # default must be cleared before the new one is written.
+    await db.flush()

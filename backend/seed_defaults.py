@@ -50,7 +50,9 @@ async def seed_tags() -> int:
     added = 0
     async with AsyncSessionLocal() as db:
         for t in _DEFAULT_TAGS:
-            res = await db.execute(select(Tag).where(Tag.name == t["name"]))
+            # Tags are unique per (name, entity_type); seeded ones are finding tags.
+            res = await db.execute(select(Tag.id).where(
+                Tag.name == t["name"], Tag.entity_type == t.get("entity_type", "finding")).limit(1))
             if res.scalar_one_or_none() is None:
                 db.add(Tag(**t))
                 added += 1
@@ -360,7 +362,11 @@ async def seed_default_report_theme() -> bool:
         # that one alone and just plant the system row alongside it.
         # If it's the ONLY default and the operator edited it, they can
         # keep using it; the system row is a fallback, not a replacement.
-        db.add(ReportTheme(id=SYSTEM_REPORT_THEME_ID, **_DEFAULT_REPORT_THEME))
+        # Only the default if nothing else is: one default theme at most.
+        has_default = (await db.execute(
+            select(ReportTheme.id).where(ReportTheme.is_default == True).limit(1)  # noqa: E712
+        )).scalar_one_or_none() is not None
+        db.add(ReportTheme(id=SYSTEM_REPORT_THEME_ID, **{**_DEFAULT_REPORT_THEME, "is_default": not has_default}))
         await db.commit()
     return True
 
@@ -423,7 +429,7 @@ async def seed_default_report_layout() -> bool:
     from models.report_layout_template import ReportLayoutTemplate, ReportLayoutTemplateSection
     async with AsyncSessionLocal() as db:
         existing = await db.execute(
-            select(ReportLayoutTemplate).where(ReportLayoutTemplate.name == _DEFAULT_LAYOUT_NAME)
+            select(ReportLayoutTemplate.id).where(ReportLayoutTemplate.name == _DEFAULT_LAYOUT_NAME).limit(1)
         )
         if existing.scalar_one_or_none() is not None:
             return False
@@ -468,7 +474,7 @@ async def seed_finding_templates() -> int:
         added = 0
         for t in finding_templates:
             exists = await db.execute(
-                select(FindingTemplate).where(FindingTemplate.title == t["title"])
+                select(FindingTemplate.id).where(FindingTemplate.title == t["title"]).limit(1)
             )
             if exists.scalar_one_or_none() is None:
                 db.add(FindingTemplate(**t, created_by=admin_id))
@@ -488,7 +494,7 @@ async def seed_testcase_templates() -> int:
         added = 0
         for t in testcase_templates:
             exists = await db.execute(
-                select(TestCaseTemplate).where(TestCaseTemplate.title == t["title"])
+                select(TestCaseTemplate.id).where(TestCaseTemplate.title == t["title"]).limit(1)
             )
             if exists.scalar_one_or_none() is None:
                 db.add(TestCaseTemplate(**t, created_by=admin_id))

@@ -1,10 +1,12 @@
-from sqlalchemy import Column, String, Text, Integer, Boolean
+from sqlalchemy import Column, String, Text, Integer, Boolean, Index, text
 from database import Base, AuditMixin
 import uuid
 
 
 class ReportTheme(Base, AuditMixin):
     __tablename__ = "report_themes"
+    __table_args__ = (Index("uq_report_themes_one_default", "is_default", unique=True,
+                            postgresql_where=text("is_default")),)
 
     # System-owned row marker. Set on the seeded "RedWire Default" theme
     # via a deterministic id (see SYSTEM_REPORT_THEME_ID below and

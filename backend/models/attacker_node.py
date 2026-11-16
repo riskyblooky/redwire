@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey, DateTime
+from sqlalchemy import Column, String, Text, ForeignKey, DateTime, UniqueConstraint
 from database import Base
 from datetime import datetime
 import uuid
@@ -17,6 +17,8 @@ class AttackerNode(Base):
 
 class AttackerNodeEdge(Base):
     __tablename__ = "attacker_node_edges"
+    __table_args__ = (UniqueConstraint("attacker_node_id", "target_node_id",
+                                       name="uq_attacker_node_edges_pair"),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     attacker_node_id = Column(String, ForeignKey("attacker_nodes.id", ondelete="CASCADE"), nullable=False, index=True)

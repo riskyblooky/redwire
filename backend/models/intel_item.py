@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -25,6 +25,10 @@ class IntelSeverity(str, enum.Enum):
 
 class IntelItem(Base):
     __tablename__ = "intel_items"
+    # Feed refresh dedupes on (feed, link); concurrent refreshes insert with
+    # ON CONFLICT DO NOTHING against this index.
+    __table_args__ = (Index("uq_intel_items_feed_source_url", "feed_id", "source_url", unique=True,
+                            postgresql_where=text("feed_id IS NOT NULL AND source_url IS NOT NULL")),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String(500), nullable=False, index=True)

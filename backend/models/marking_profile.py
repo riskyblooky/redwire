@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Boolean, JSON, Enum as SAEnum
+from sqlalchemy import Column, String, Text, Boolean, JSON, Enum as SAEnum, Index, text
 from database import Base, AuditMixin
 import uuid
 import enum
@@ -46,6 +46,8 @@ class MarkingProfile(Base, AuditMixin):
     (classification_suffix on each entity) is carried along but never ranked.
     """
     __tablename__ = "marking_profiles"
+    __table_args__ = (Index("uq_marking_profiles_one_default", "is_default", unique=True,
+                            postgresql_where=text("is_default")),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)

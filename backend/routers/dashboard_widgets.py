@@ -1503,23 +1503,20 @@ def _widget_to_dict(w: DashboardWidget) -> dict:
 
 
 async def _seed_system_widgets(db: AsyncSession):
-    """Seed built-in system widgets if they don't exist."""
+    """Seed built-in system widgets if they don't exist. ON CONFLICT so two
+    workers serving the first dashboard load at once don't collide on the id."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
     for w_data in SYSTEM_WIDGETS:
-        existing = await db.execute(
-            select(DashboardWidget).where(DashboardWidget.id == w_data["id"])
-        )
-        if existing.scalar_one_or_none() is None:
-            widget = DashboardWidget(
-                id=w_data["id"],
-                name=w_data["name"],
-                widget_type=w_data["widget_type"],
-                data_source=w_data["data_source"],
-                size=w_data["size"],
-                category=w_data["category"],
-                icon=w_data.get("icon"),
-                config=w_data.get("config", {}),
-                is_system=True,
-                is_active=True,
-            )
-            db.add(widget)
+        await db.execute(pg_insert(DashboardWidget).values(
+            id=w_data["id"],
+            name=w_data["name"],
+            widget_type=w_data["widget_type"],
+            data_source=w_data["data_source"],
+            size=w_data["size"],
+            category=w_data["category"],
+            icon=w_data.get("icon"),
+            config=w_data.get("config", {}),
+            is_system=True,
+            is_active=True,
+        ).on_conflict_do_nothing(index_elements=["id"]))
     await db.commit()

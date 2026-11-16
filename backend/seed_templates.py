@@ -121,7 +121,7 @@ async def seed_templates():
         
         for t_data in finding_templates:
             # Check if template already exists by title
-            exists = await db.execute(select(FindingTemplate).where(FindingTemplate.title == t_data["title"]))
+            exists = await db.execute(select(FindingTemplate.id).where(FindingTemplate.title == t_data["title"]).limit(1))
             if exists.scalar_one_or_none():
                 print(f"⏩ Template '{t_data['title']}' already exists, skipping.")
                 continue

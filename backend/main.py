@@ -1,4 +1,6 @@
 from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
@@ -107,16 +109,7 @@ openapi_tags = [
 async def _refresh_intel_feeds_background():
     """Periodically refresh intel feeds in the background."""
     from database import AsyncSessionLocal
-    from models.intel_feed import IntelFeed
-    from models.intel_item import IntelItem
-    from sqlalchemy import select
-    import httpx
-    import defusedxml.ElementTree as ET
-    import uuid
-    import re
-    from datetime import datetime
-    from routers.intel import _get_text, _strip_html, _parse_date, _parse_rss_date
-    from utils.ssrf import validate_outbound_url, OutboundURLError
+    from utils.intel_refresh import refresh_enabled_feeds
 
     interval = int(os.getenv("INTEL_REFRESH_INTERVAL", "7200"))  # Default: 2 hours
     print(f"[Intel] Background feed refresh enabled (every {interval}s)")
@@ -135,114 +128,8 @@ async def _refresh_intel_feeds_background():
             continue
         try:
             async with AsyncSessionLocal() as db:
-                result = await db.execute(select(IntelFeed).where(IntelFeed.enabled == True))
-                feeds = result.scalars().all()
-                total_new = 0
-
-                async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
-                    for feed in feeds:
-                        try:
-                            # SSRF guard (GHSA-f33c-g6w5-6xm6): validate before
-                            # the unattended fetch; redirects disabled above.
-                            try:
-                                await validate_outbound_url(feed.url)
-                            except OutboundURLError as exc:
-                                print(f"[Intel] Skipping feed {feed.url!r}: {exc}")
-                                continue
-                            # Per-feed TLS: the shared client verifies; a feed that
-                            # opted out gets a one-off non-verifying client.
-                            if getattr(feed, "verify_tls", True):
-                                resp = await client.get(feed.url, headers={"User-Agent": "RedWire/1.0"})
-                            else:
-                                print(f"[Intel] TLS verification DISABLED for feed {feed.name!r} ({feed.url})")
-                                async with httpx.AsyncClient(timeout=15.0, follow_redirects=False, verify=False) as insecure:
-                                    resp = await insecure.get(feed.url, headers={"User-Agent": "RedWire/1.0"})
-                            if resp.status_code != 200:
-                                continue
-
-                            entries = []
-                            if feed.feed_type == "JSON":
-                                data = resp.json()
-                                vulns = data.get("vulnerabilities", data if isinstance(data, list) else [])
-                                for v in vulns[:30]:
-                                    entries.append({
-                                        "title": v.get("vulnerabilityName") or v.get("cveID", "Unknown"),
-                                        "content": v.get("shortDescription", ""),
-                                        "source_url": f"https://nvd.nist.gov/vuln/detail/{v.get('cveID', '')}",
-                                        "cve_id": v.get("cveID"),
-                                        "item_type": "CVE",
-                                        "severity": "HIGH" if v.get("knownRansomwareCampaignUse") == "Known" else None,
-                                        "published_at": _parse_date(v.get("dateAdded")),
-                                    })
-                            else:
-                                try:
-                                    root = ET.fromstring(resp.text)
-                                except ET.ParseError:
-                                    continue
-                                items_el = root.findall(".//item")
-                                if not items_el:
-                                    ns = {"atom": "http://www.w3.org/2005/Atom"}
-                                    items_el = root.findall(".//atom:entry", ns)
-                                for el in items_el[:30]:
-                                    title = _get_text(el, "title") or _get_text(el, "{http://www.w3.org/2005/Atom}title") or "Untitled"
-                                    link = _get_text(el, "link") or ""
-                                    if not link:
-                                        link_el = el.find("{http://www.w3.org/2005/Atom}link")
-                                        if link_el is not None:
-                                            link = link_el.get("href", "")
-                                    desc = _get_text(el, "description") or _get_text(el, "{http://www.w3.org/2005/Atom}summary") or ""
-                                    pub_date = _get_text(el, "pubDate") or _get_text(el, "{http://www.w3.org/2005/Atom}updated") or ""
-                                    cve_id = None
-                                    cve_match = re.search(r"CVE-\d{4}-\d+", title)
-                                    if cve_match:
-                                        cve_id = cve_match.group(0)
-                                    item_type = "CVE" if cve_id else "ARTICLE"
-                                    if any(kw in title.lower() for kw in ["advisory", "alert", "bulletin"]):
-                                        item_type = "ADVISORY"
-                                    elif any(kw in title.lower() for kw in ["exploit", "poc", "proof of concept"]):
-                                        item_type = "EXPLOIT"
-                                    entries.append({
-                                        "title": title[:500],
-                                        "content": _strip_html(desc)[:2000] if desc else None,
-                                        "source_url": link,
-                                        "cve_id": cve_id,
-                                        "item_type": item_type,
-                                        "published_at": _parse_rss_date(pub_date),
-                                    })
-
-                            for entry in entries:
-                                if entry.get("source_url"):
-                                    existing = await db.execute(
-                                        select(IntelItem).where(
-                                            IntelItem.source_url == entry["source_url"],
-                                            IntelItem.feed_id == feed.id,
-                                        )
-                                    )
-                                    if existing.scalar_one_or_none():
-                                        continue
-                                item = IntelItem(
-                                    id=str(uuid.uuid4()),
-                                    title=entry["title"],
-                                    content=entry.get("content"),
-                                    source=feed.name,
-                                    source_url=entry.get("source_url"),
-                                    item_type=entry.get("item_type", "OTHER"),
-                                    severity=entry.get("severity"),
-                                    cve_id=entry.get("cve_id"),
-                                    published_at=entry.get("published_at"),
-                                    feed_id=feed.id,
-                                    created_at=datetime.utcnow(),
-                                    updated_at=datetime.utcnow(),
-                                )
-                                db.add(item)
-                                total_new += 1
-                            feed.last_fetched_at = datetime.utcnow()
-                        except Exception as e:
-                            print(f"[Intel] Error fetching {feed.name}: {e}")
-                            continue
-
-                await db.commit()
-                print(f"[Intel] Auto-refresh complete: {total_new} new items from {len(feeds)} feeds")
+                total_new, processed = await refresh_enabled_feeds(db)
+                print(f"[Intel] Auto-refresh complete: {total_new} new items from {processed} feeds")
         except Exception as e:
             print(f"[Intel] Background refresh error: {e}")
 
@@ -609,6 +496,30 @@ async def _rate_limited(request: Request, exc: RateLimitExceeded):
 
 
 app.add_exception_handler(RateLimitExceeded, _rate_limited)
+
+
+# Unique indexes that back "one of these" rules. The endpoints check first
+# and answer 409 themselves; these catch the race the check can't (two
+# requests at once), so it's a 409 rather than a 500.
+_UNIQUE_CONFLICTS = {
+    "uq_engagements_name_ci": "An engagement with this name already exists.",
+    "uq_attacker_node_edges_pair": "Connection already exists",
+    "uq_groups_one_default": "Another group was made the default at the same time; try again.",
+    "uq_report_themes_one_default": "Another theme was made the default at the same time; try again.",
+    "uq_marking_profiles_one_default": "Another marking profile was made the default at the same time; try again.",
+    "uq_report_layouts_one_default": "Another layout was made the default at the same time; try again.",
+}
+
+
+async def _integrity_conflict(request: Request, exc: IntegrityError):
+    text = str(getattr(exc, "orig", exc))
+    for name, detail in _UNIQUE_CONFLICTS.items():
+        if name in text:
+            return JSONResponse(status_code=409, content={"detail": detail})
+    raise exc
+
+
+app.add_exception_handler(IntegrityError, _integrity_conflict)
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/profile_photos", exist_ok=True)

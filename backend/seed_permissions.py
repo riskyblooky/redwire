@@ -247,11 +247,16 @@ async def seed_default_groups_and_roles():
             
             if not existing_group:
                 # Create group
+                # A renamed default group isn't found by name above; don't
+                # plant a second default next to it (one default at most).
+                make_default = group_data.get("is_default", False) and (await db.execute(
+                    select(Group.id).where(Group.is_default == True).limit(1)  # noqa: E712
+                )).scalar_one_or_none() is None
                 new_group = Group(
                     name=group_data["name"],
                     description=group_data["description"],
                     is_system=group_data.get("is_system", False),
-                    is_default=group_data.get("is_default", False),
+                    is_default=make_default,
                 )
                 db.add(new_group)
                 await db.flush()
