@@ -51,7 +51,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
+import { useCanEdit, useCanDelete, useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import api, { apiErrorMessage } from '@/lib/api';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
@@ -252,10 +252,10 @@ export default function EngagementsPage() {
     // — same gate is currently inlined in
     // backend/routers/engagements.py for `/engagements/proposed`.
     const currentUser = useAuthStore(s => s.user);
-    const canSeeProposed =
-        currentUser?.role === UserRole.ADMIN ||
-        currentUser?.role === UserRole.READ_ONLY_ADMIN ||
-        currentUser?.role === UserRole.TEAM_LEAD;
+    // The API gates proposed engagements on VIEW_ALL_ENGAGEMENTS (admins pass;
+    // a team lead needs the group grant like anyone else).
+    const viewAll = useGlobalPermission('view_all_engagements');
+    const canSeeProposed = viewAll || currentUser?.role === UserRole.READ_ONLY_ADMIN;
     const [showProposed, setShowProposed] = useState<boolean>(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem('redwire_engagements_show_proposed') === '1';

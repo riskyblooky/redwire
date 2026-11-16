@@ -28,8 +28,6 @@ from tests.conftest import FakeDb, FakeScalarResult, make_fake_user
 from auth.permissions import (
     _is_read_permission,
     has_global_permission,
-    has_engagement_permission,
-    can_modify_resource,
     get_user_engagement_permissions,
 )
 from models.permission import Permission
@@ -112,214 +110,9 @@ async def test_group_without_grant_denies_global_permission():
     )
 
 
-# ── has_engagement_permission ─────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("role", ["admin", "team_lead"])
-async def test_admin_and_team_lead_bypass_engagement_perms(role):
-    db = FakeDb([])
-    assert (
-        await has_engagement_permission(
-            make_fake_user(role), "eng-1", Permission.FINDING_DELETE, db
-        )
-        is True
-    )
-
-
-async def test_read_only_admin_gets_read_engagement_perm():
-    db = FakeDb([])
-    assert (
-        await has_engagement_permission(
-            make_fake_user("read_only_admin"), "eng-1", Permission.FINDING_VIEW, db
-        )
-        is True
-    )
-
-
-async def test_read_only_admin_denied_write_engagement_perm():
-    # Write perm → role assignment lookup (scalar_one_or_none) returns nothing.
-    db = FakeDb([FakeScalarResult(None)])
-    assert (
-        await has_engagement_permission(
-            make_fake_user("read_only_admin"), "eng-1", Permission.FINDING_EDIT, db
-        )
-        is False
-    )
-
-
-async def test_non_engagement_permission_is_rejected():
-    db = FakeDb([])
-    assert (
-        await has_engagement_permission(
-            make_fake_user("operator"), "eng-1", Permission.MANAGE_USERS, db
-        )
-        is False
-    )
-
-
-async def test_engagement_role_grant_confers_permission():
-    # Single query: the role-permissions lookup via scalar_one_or_none.
-    db = FakeDb([FakeScalarResult(["finding_edit", "finding_create"])])
-    assert (
-        await has_engagement_permission(
-            make_fake_user("operator"), "eng-1", Permission.FINDING_EDIT, db
-        )
-        is True
-    )
-
-
-async def test_engagement_role_without_grant_denies():
-    db = FakeDb([FakeScalarResult(None)])
-    assert (
-        await has_engagement_permission(
-            make_fake_user("operator"), "eng-1", Permission.FINDING_EDIT, db
-        )
-        is False
-    )
-
-
-async def test_view_all_engagements_overrides_view_permission():
-    """A view-style engagement perm is granted when the user's group carries
-    VIEW_ALL_ENGAGEMENTS — resolved via has_global_permission BEFORE the
-    per-engagement role lookup. First query is the global-group scan."""
-    db = FakeDb([FakeScalarResult(many=[["view_all_engagements"]])])
-    assert (
-        await has_engagement_permission(
-            make_fake_user("operator"), "eng-1", Permission.FINDING_VIEW, db
-        )
-        is True
-    )
-
-
-async def test_view_all_engagements_does_not_override_write_permission():
-    """The override only maps to view perms; a write perm ignores it and
-    must resolve purely through the role assignment (here: none)."""
-    # No admin_overrides entry matches FINDING_EDIT → only the role query runs.
-    db = FakeDb([FakeScalarResult(None)])
-    assert (
-        await has_engagement_permission(
-            make_fake_user("operator"), "eng-1", Permission.FINDING_EDIT, db
-        )
-        is False
-    )
-
-
-# ── can_modify_resource ───────────────────────────────────────────────────
-
-
-async def test_owner_without_engagement_can_always_modify():
-    user = make_fake_user("operator")
-    db = FakeDb([])
-    assert (
-        await can_modify_resource(
-            resource_owner_id=user.id,
-            current_user=user,
-            engagement_id=None,
-            edit_permission=Permission.NOTE_EDIT,
-            edit_any_permission=Permission.NOTE_EDIT_ANY,
-            db=db,
-        )
-        is True
-    )
-
-
-async def test_owner_with_engagement_needs_edit_permission():
-    user = make_fake_user("operator")
-    # Owner path defers to has_engagement_permission(edit_permission).
-    db = FakeDb([FakeScalarResult(["finding_edit"])])
-    assert (
-        await can_modify_resource(
-            resource_owner_id=user.id,
-            current_user=user,
-            engagement_id="eng-1",
-            edit_permission=Permission.FINDING_EDIT,
-            edit_any_permission=Permission.FINDING_EDIT_ANY,
-            db=db,
-        )
-        is True
-    )
-
-
-async def test_owner_with_engagement_denied_without_edit_permission():
-    user = make_fake_user("operator")
-    db = FakeDb([FakeScalarResult(None)])
-    assert (
-        await can_modify_resource(
-            resource_owner_id=user.id,
-            current_user=user,
-            engagement_id="eng-1",
-            edit_permission=Permission.FINDING_EDIT,
-            edit_any_permission=Permission.FINDING_EDIT_ANY,
-            db=db,
-        )
-        is False
-    )
-
-
-async def test_non_owner_needs_edit_any():
-    user = make_fake_user("operator")
-    db = FakeDb([FakeScalarResult(["finding_edit_any"])])
-    assert (
-        await can_modify_resource(
-            resource_owner_id="someone-else",
-            current_user=user,
-            engagement_id="eng-1",
-            edit_permission=Permission.FINDING_EDIT,
-            edit_any_permission=Permission.FINDING_EDIT_ANY,
-            db=db,
-        )
-        is True
-    )
-
-
-async def test_non_owner_without_edit_any_permission_denied():
-    user = make_fake_user("operator")
-    db = FakeDb([FakeScalarResult(None)])
-    assert (
-        await can_modify_resource(
-            resource_owner_id="someone-else",
-            current_user=user,
-            engagement_id="eng-1",
-            edit_permission=Permission.FINDING_EDIT,
-            edit_any_permission=Permission.FINDING_EDIT_ANY,
-            db=db,
-        )
-        is False
-    )
-
-
-async def test_non_owner_with_no_edit_any_declared_denied():
-    """No edit_any permission passed → non-owner can never modify, no DB hit."""
-    user = make_fake_user("operator")
-    db = FakeDb([])
-    assert (
-        await can_modify_resource(
-            resource_owner_id="someone-else",
-            current_user=user,
-            engagement_id="eng-1",
-            edit_permission=Permission.FINDING_EDIT,
-            edit_any_permission=None,
-            db=db,
-        )
-        is False
-    )
-
-
-async def test_non_owner_edit_any_without_engagement_denied():
-    """edit_any is only consulted when an engagement context exists."""
-    user = make_fake_user("operator")
-    db = FakeDb([])
-    assert (
-        await can_modify_resource(
-            resource_owner_id="someone-else",
-            current_user=user,
-            engagement_id=None,
-            edit_permission=Permission.NOTE_EDIT,
-            edit_any_permission=Permission.NOTE_EDIT_ANY,
-            db=db,
-        )
-        is False
-    )
+# has_engagement_permission / can_modify_resource were unused duplicates of
+# auth.rbac's checks and are gone; tests/test_view_all_engagements.py covers
+# the live path.
 
 
 # ── get_user_engagement_permissions ───────────────────────────────────────
@@ -355,6 +148,7 @@ async def test_get_perms_view_all_engagements_adds_view_perms():
     perms = set(await get_user_engagement_permissions("u-1", "eng-1", db))
     assert Permission.ENGAGEMENT_VIEW.value in perms
     assert Permission.FINDING_VIEW.value in perms
-    assert Permission.VAULT_VIEW.value in perms
+    assert Permission.VAULT_VIEW.value not in perms  # credentials need an engagement role
+    assert Permission.NOTE_VIEW.value in perms and Permission.CLEANUP_VIEW.value in perms
     # Non-view perms are NOT granted by the override.
     assert Permission.FINDING_EDIT.value not in perms

@@ -485,3 +485,21 @@ ENGAGEMENT_PERMISSIONS = [
     Permission.CLEANUP_EDIT_ANY,
     Permission.CLEANUP_DELETE_ANY,
 ]
+
+
+# What a group-granted VIEW_ALL_ENGAGEMENTS (e.g. the Team Leads group) holds on
+# every engagement without an assignment: read access to its content. Not the
+# vault: stored credentials still need an engagement role with vault_view.
+# The one definition: auth.rbac.check_engagement_permission and the
+# /engagements/{id}/my-permissions answer both read it.
+VIEW_ALL_ENGAGEMENT_GRANTS = frozenset({
+    Permission.ENGAGEMENT_VIEW.value,
+    Permission.FINDING_VIEW.value,
+    Permission.ASSET_VIEW.value,
+    Permission.TESTCASE_VIEW.value,
+    Permission.EVIDENCE_VIEW.value,
+    Permission.DISCUSSION_VIEW.value,
+    Permission.REPORT_VIEW.value,
+    Permission.NOTE_VIEW.value,
+    Permission.CLEANUP_VIEW.value,
+})

@@ -95,12 +95,23 @@ async def check_engagement_permission(user_id: str, engagement_id: str, required
     )
     result = await db.execute(query)
     permissions = result.scalar_one_or_none()
-    
-    if not permissions:
-        return False
-    
-    # Check if the required permission is in the user's role permissions
-    return required_permission in permissions
+
+    if permissions and required_permission in permissions:
+        return True
+
+    # Middle tier: a group-granted VIEW_ALL_ENGAGEMENTS reads every engagement's
+    # content without an assignment (lists already honoured it through
+    # resolve_engagement_scope; per-engagement reads 403'd, so the engagement
+    # page itself wouldn't open). Never the vault — see VIEW_ALL_ENGAGEMENT_GRANTS.
+    from models.permission import VIEW_ALL_ENGAGEMENT_GRANTS, Permission
+    if required_permission in VIEW_ALL_ENGAGEMENT_GRANTS:
+        from models.user import User
+        from auth.permissions import has_global_permission
+        user = await db.get(User, user_id)
+        if user is not None and user.is_active and await has_global_permission(
+                user, Permission.VIEW_ALL_ENGAGEMENTS, db):
+            return True
+    return False
 
 def engagements_with_permission(user_id: str, permission: str):
     """Scalar subquery of the engagement ids where the user's engagement role

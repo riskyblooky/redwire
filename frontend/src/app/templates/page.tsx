@@ -22,12 +22,13 @@
  * **Report Themes** — table with name, colour swatches, font family,
  *   default badge. Inline edit and delete actions.
  *
- * Helpers: `canManageTemplates`, `buildRunbookTree`,
+ * Helpers: `buildRunbookTree`,
  * `RunbookTreePreview`. All tab lists use `relevanceComparator` for
  * search sorting. Deep-link to a tab via `?tab=` query parameter.
  */
 'use client';
 
+import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
@@ -143,10 +144,6 @@ import {
 import { MarkingProfilesManager } from '@/components/marking/marking-profiles-manager';
 import { useMarkingProfiles } from '@/lib/hooks/use-marking-profiles';
 
-// ─── Permission helper ───────────────────────────────────────────
-function canManageTemplates(role?: UserRole) {
-    return role === UserRole.ADMIN || role === UserRole.TEAM_LEAD;
-}
 
 // ─── Template status badge ───────────────────────────────────────
 const TEMPLATE_STATUS_STYLES: Record<TemplateStatus, { bg: string; fg: string; border: string; label: string }> = {
@@ -247,7 +244,15 @@ export default function TemplatesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { user } = useAuthStore();
-    const canManage = canManageTemplates(user?.role as UserRole | undefined);
+    // Each tab gates on the permission its endpoints check (assignable through
+    // groups), not on the admin/team-lead role names.
+    const canManageFT = useGlobalPermission('manage_finding_templates');
+    const canManageTCT = useGlobalPermission('manage_testcase_templates');
+    const canManageRB = useGlobalPermission('runbook_edit');
+    const canManageRLT = useGlobalPermission('manage_report_layout_templates');
+    const canManageTheme = useGlobalPermission('manage_report_themes');
+    const canManageMarking = useGlobalPermission('manage_marking_profiles');
+    const canManage = canManageFT || canManageTCT || canManageRB || canManageRLT || canManageTheme || canManageMarking;
 
     // ── Finding templates ──
     const deleteFT = useDeleteFindingTemplate();
@@ -963,8 +968,8 @@ export default function TemplatesPage() {
                                                     const isDraft = template.status === 'DRAFT';
                                                     const isSubmitted = template.status === 'SUBMITTED';
                                                     const isPublished = template.status === 'PUBLISHED';
-                                                    const canEditRow = (isDraft && (isOwner || canManage)) || (isPublished && canManage);
-                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManage);
+                                                    const canEditRow = (isDraft && (isOwner || canManageFT)) || (isPublished && canManageFT);
+                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManageFT);
                                                     return (
                                                         <TableRow key={template.id} className="border-slate-800 hover:bg-slate-800/50 cursor-pointer" onClick={() => setViewingFT(template)}>
                                                             <TableCell className="font-medium text-white">
@@ -1006,17 +1011,17 @@ export default function TemplatesPage() {
                                                                             <Undo2 className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && (isSubmitted || (isDraft && isOwner)) && (
+                                                                    {canManageFT && (isSubmitted || (isDraft && isOwner)) && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-green-400" title="Publish" onClick={(e) => { e.stopPropagation(); handleApproveFT(template); }}>
                                                                             <Check className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && isSubmitted && (
+                                                                    {canManageFT && isSubmitted && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-400" title="Reject" onClick={(e) => { e.stopPropagation(); openRejectFT(template); }}>
                                                                             <X className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && isPublished && (
+                                                                    {canManageFT && isPublished && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-yellow-400" title="Unpublish" onClick={(e) => { e.stopPropagation(); handleUnpublishFT(template); }}>
                                                                             <Undo2 className="h-4 w-4" />
                                                                         </Button>
@@ -1198,8 +1203,8 @@ export default function TemplatesPage() {
                                                     const isDraft = template.status === 'DRAFT';
                                                     const isSubmitted = template.status === 'SUBMITTED';
                                                     const isPublished = template.status === 'PUBLISHED';
-                                                    const canEditRow = (isDraft && (isOwner || canManage)) || (isPublished && canManage);
-                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManage);
+                                                    const canEditRow = (isDraft && (isOwner || canManageTCT)) || (isPublished && canManageTCT);
+                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManageTCT);
                                                     return (
                                                         <TableRow key={template.id} className="border-slate-800 hover:bg-slate-800/50 cursor-pointer" onClick={() => setViewingTC(template)}>
                                                             <TableCell className="font-medium text-white">
@@ -1239,17 +1244,17 @@ export default function TemplatesPage() {
                                                                             <Undo2 className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && (isSubmitted || (isDraft && isOwner)) && (
+                                                                    {canManageTCT && (isSubmitted || (isDraft && isOwner)) && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-green-400" title="Publish" onClick={(e) => { e.stopPropagation(); handleApproveTC(template); }}>
                                                                             <Check className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && isSubmitted && (
+                                                                    {canManageTCT && isSubmitted && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-400" title="Reject" onClick={(e) => { e.stopPropagation(); openRejectTC(template); }}>
                                                                             <X className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && isPublished && (
+                                                                    {canManageTCT && isPublished && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-yellow-400" title="Unpublish" onClick={(e) => { e.stopPropagation(); handleUnpublishTC(template); }}>
                                                                             <Undo2 className="h-4 w-4" />
                                                                         </Button>
@@ -1434,8 +1439,8 @@ export default function TemplatesPage() {
                                                     const isDraft = rb.status === 'DRAFT';
                                                     const isSubmitted = rb.status === 'SUBMITTED';
                                                     const isPublished = rb.status === 'PUBLISHED';
-                                                    const canEditRow = (isDraft && (isOwner || canManage)) || (isPublished && canManage);
-                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManage);
+                                                    const canEditRow = (isDraft && (isOwner || canManageRB)) || (isPublished && canManageRB);
+                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManageRB);
                                                     return (
                                                         <TableRow key={rb.id} className="border-slate-800 hover:bg-slate-800/50 cursor-pointer" onClick={() => setViewingRB(rb)}>
                                                             <TableCell className="font-medium text-white">
@@ -1481,17 +1486,17 @@ export default function TemplatesPage() {
                                                                             <Undo2 className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && (isSubmitted || (isDraft && isOwner)) && (
+                                                                    {canManageRB && (isSubmitted || (isDraft && isOwner)) && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-green-400" title="Publish" onClick={(e) => { e.stopPropagation(); handleApproveRB(rb); }}>
                                                                             <Check className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && isSubmitted && (
+                                                                    {canManageRB && isSubmitted && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-400" title="Reject" onClick={(e) => { e.stopPropagation(); openRejectRB(rb); }}>
                                                                             <X className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
-                                                                    {canManage && isPublished && (
+                                                                    {canManageRB && isPublished && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-yellow-400" title="Unpublish" onClick={(e) => { e.stopPropagation(); handleUnpublishRB(rb); }}>
                                                                             <Undo2 className="h-4 w-4" />
                                                                         </Button>
@@ -1540,7 +1545,7 @@ export default function TemplatesPage() {
                                             />
                                         </div>
                                         <ResultCount count={filteredRLT.length} total={reportLayoutTemplates.length} noun="template" />
-                                        {canManage && (
+                                        {canManageRLT && (
                                             <Button
                                                 className="bg-primary hover:bg-primary/90 text-white gap-2"
                                                 onClick={() => router.push('/templates/report-layouts/new/edit')}
@@ -1584,7 +1589,7 @@ export default function TemplatesPage() {
                                                         </TableCell>
                                                         <TableCell className="text-right">
                                                             <div className="flex justify-end gap-2">
-                                                                {canManage && (
+                                                                {canManageRLT && (
                                                                     <>
                                                                         <Button
                                                                             variant="ghost"
@@ -1636,7 +1641,7 @@ export default function TemplatesPage() {
                                             />
                                         </div>
                                         <ResultCount count={filteredRT.length} total={reportThemes.length} noun="theme" />
-                                        {canManage && (
+                                        {canManageTheme && (
                                             <Button
                                                 className="bg-primary hover:bg-primary/90 text-white gap-2"
                                                 onClick={() => router.push('/templates/report-themes/new/edit')}
@@ -1693,7 +1698,7 @@ export default function TemplatesPage() {
                                                         </TableCell>
                                                         <TableCell className="text-right">
                                                             <div className="flex justify-end gap-2">
-                                                                {canManage && (
+                                                                {canManageTheme && (
                                                                     <>
                                                                         <Button
                                                                             variant="ghost"
@@ -1812,8 +1817,8 @@ export default function TemplatesPage() {
                             {viewingFT && (() => {
                                 const isOwner = viewingFT.created_by === user?.id;
                                 const canEditDialog =
-                                    (viewingFT.status === 'DRAFT' && (isOwner || canManage)) ||
-                                    (viewingFT.status === 'PUBLISHED' && canManage);
+                                    (viewingFT.status === 'DRAFT' && (isOwner || canManageFT)) ||
+                                    (viewingFT.status === 'PUBLISHED' && canManageFT);
                                 if (!canEditDialog) return null;
                                 return (
                                     <Button
@@ -1951,8 +1956,8 @@ export default function TemplatesPage() {
                             {viewingTC && (() => {
                                 const isOwner = viewingTC.created_by === user?.id;
                                 const canEditDialog =
-                                    (viewingTC.status === 'DRAFT' && (isOwner || canManage)) ||
-                                    (viewingTC.status === 'PUBLISHED' && canManage);
+                                    (viewingTC.status === 'DRAFT' && (isOwner || canManageTCT)) ||
+                                    (viewingTC.status === 'PUBLISHED' && canManageTCT);
                                 if (!canEditDialog) return null;
                                 return (
                                     <Button
@@ -2011,8 +2016,8 @@ export default function TemplatesPage() {
                             {viewingRB && (() => {
                                 const isOwner = viewingRB.created_by === user?.id;
                                 const canEditDialog =
-                                    (viewingRB.status === 'DRAFT' && (isOwner || canManage)) ||
-                                    (viewingRB.status === 'PUBLISHED' && canManage);
+                                    (viewingRB.status === 'DRAFT' && (isOwner || canManageRB)) ||
+                                    (viewingRB.status === 'PUBLISHED' && canManageRB);
                                 if (!canEditDialog) return null;
                                 return (
                                     <Button
@@ -2069,7 +2074,7 @@ export default function TemplatesPage() {
                         )}
                         <DialogFooter>
                             <Button variant="ghost" onClick={() => setViewingRLT(null)}>Close</Button>
-                            {canManage && viewingRLT && (
+                            {canManageRLT && viewingRLT && (
                                 <Button
                                     className="bg-primary hover:bg-primary/90 text-white"
                                     onClick={() => { setViewingRLT(null); router.push(`/templates/report-layouts/${viewingRLT.id}/edit`); }}

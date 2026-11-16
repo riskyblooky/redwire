@@ -244,7 +244,9 @@ export default function PlanningPage() {
     const { data: engagementTypes = [] } = useEngagementTypes();
     const { data: clients = [] } = useClients();
     const { data: focusFit = [] } = useFocusFit();
-    const isManageRole = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.TEAM_LEAD;
+    // Same roles the focus-fit endpoint treats as managers (it returns every user's matches to them).
+    const isManageRole = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.READ_ONLY_ADMIN
+        || currentUser?.role === UserRole.TEAM_LEAD;
 
     // Map: engagement_id -> matches (scoped to current user for operators, all users for managers)
     const focusFitByEngagement = useMemo(() => {

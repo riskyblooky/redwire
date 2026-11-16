@@ -11,10 +11,10 @@
  */
 'use client';
 
+import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
-import { UserRole } from '@/lib/types';
 import {
     useTestCaseTemplate,
     useCreateTestCaseTemplate,
@@ -67,7 +67,7 @@ export default function TestCaseTemplateEditPage() {
     const isNew = params?.id === 'new';
     const templateId = isNew ? undefined : params?.id as string;
 
-    const canManage = user?.role === UserRole.ADMIN || user?.role === UserRole.TEAM_LEAD;
+    const canManage = useGlobalPermission('manage_testcase_templates');  // what the API checks
 
     const { data: template, isLoading } = useTestCaseTemplate(templateId);
     const createTemplate = useCreateTestCaseTemplate();

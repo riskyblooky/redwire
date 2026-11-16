@@ -38,7 +38,6 @@ import {
 import { useTestCases, useDeleteTestCase, buildTestCaseTree, flattenTree, TestCaseTreeNode } from '@/lib/hooks/use-testcases';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { toast } from 'sonner';
-import { useAuthStore } from '@/stores/auth-store';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
@@ -69,7 +68,6 @@ const categoryColors: Record<string, string> = {
 
 export default function TestCasesPage() {
     const router = useRouter();
-    const { user } = useAuthStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const tcInitialized = useRef(false);
@@ -221,8 +219,6 @@ export default function TestCasesPage() {
             }
         }
     };
-
-    const isAdmin = user?.role === 'admin' || user?.role === 'read_only_admin' || user?.role === 'team_lead';
 
     return (
         <DashboardLayout>

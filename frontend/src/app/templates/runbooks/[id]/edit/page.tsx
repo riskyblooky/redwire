@@ -22,11 +22,11 @@
  */
 'use client';
 
+import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { useAuthStore } from '@/stores/auth-store';
-import { UserRole } from '@/lib/types';
 import { useTestCaseTemplates, TestCaseTemplate } from '@/lib/hooks/use-testcase-templates';
 import { useRunbook, useCreateRunbook, useUpdateRunbook, RunbookItemCreate, RunbookItemTemplate } from '@/lib/hooks/use-runbooks';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
@@ -188,7 +188,7 @@ export default function RunbookEditorPage() {
     const { user } = useAuthStore();
     const runbookId = params?.id as string;
     const isNew = runbookId === 'new';
-    const canManage = user?.role === UserRole.ADMIN || user?.role === UserRole.TEAM_LEAD;
+    const canManage = useGlobalPermission('runbook_edit');  // what the API checks
 
     // ── Data ──
     const { data: existingRunbook, isLoading: rbLoading } = useRunbook(isNew ? undefined : runbookId);

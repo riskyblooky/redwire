@@ -7,9 +7,8 @@
  */
 'use client';
 
+import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useState } from 'react';
-import { useAuthStore } from '@/stores/auth-store';
-import { UserRole } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -87,8 +86,7 @@ const EMPTY: MarkingProfileCreate = {
 };
 
 export function MarkingProfilesManager() {
-    const { user } = useAuthStore();
-    const canManage = user?.role === UserRole.ADMIN || user?.role === UserRole.TEAM_LEAD;
+    const canManage = useGlobalPermission('manage_marking_profiles');  // what the API checks
     const { data: profiles = [] } = useMarkingProfiles();
     const createMut = useCreateMarkingProfile();
     const updateMut = useUpdateMarkingProfile();

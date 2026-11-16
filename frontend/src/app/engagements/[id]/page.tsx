@@ -1063,10 +1063,6 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
         }
     }, [testcases, updateTestCase]);
 
-    const userAssignment = engagement?.assignment_details?.find(a => a.user_id === currentUser?.id);
-    const isLead = currentUser?.role === UserRole.ADMIN ||
-        currentUser?.role === UserRole.TEAM_LEAD ||
-        userAssignment?.role?.name === 'Engagement Lead';
 
     const handleEdit = () => {
         router.push(`/engagements/${id}/edit`);
