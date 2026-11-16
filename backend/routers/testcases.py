@@ -62,7 +62,7 @@ async def get_testcases(
             engagements_with_permission(current_user.id, Permission.TESTCASE_VIEW.value)
         ))
     
-    query = query.offset(skip).limit(limit).order_by(TestCase.created_at.desc())
+    query = query.offset(skip).limit(limit).order_by(TestCase.created_at.desc(), TestCase.id)
     
     result = await db.execute(query)
     rows = result.all()

@@ -1,5 +1,6 @@
 'use client';
 
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { useState, useMemo, useEffect } from 'react';
 import {
     Dialog,
@@ -65,6 +66,9 @@ export function LinkNoteDialog({
 }: LinkNoteDialogProps) {
     const [activeTab, setActiveTab] = useState<ResourceType>('findings');
     const [search, setSearch] = useState('');
+    // Intel and infra are global and can be long: search them on the server
+    // (a client-side filter over the first 200 couldn't find the rest).
+    const pickerSearch = useDebounce(search.trim(), 250);
     // Per-type selection maps so switching tabs preserves selections
     const [selectionMap, setSelectionMap] = useState<Record<ResourceType, Set<string>>>({
         findings: new Set(), testcases: new Set(), assets: new Set(),
@@ -79,14 +83,14 @@ export function LinkNoteDialog({
     const { data: assets = [] } = useAssets(engagementId);
     const { data: vaultItems = [] } = useVaultItems(engagementId);
     const { data: cleanupArtifacts = [] } = useCleanupArtifacts(engagementId);
-    const { data: intelData } = useIntelItems({ limit: 200 });
+    const { data: intelData } = useIntelItems({ limit: 200, search: pickerSearch || undefined });
     const intelItems = intelData?.items ?? [];
     const { data: linkedIntelItems = [] } = useIntelByEntity('note', note.id);
     const linkIntel = useLinkIntel();
     const unlinkIntel = useUnlinkIntel();
 
     // Infra hooks
-    const { data: infraData } = useInfraItems({ limit: 200 });
+    const { data: infraData } = useInfraItems({ limit: 200, search: pickerSearch || undefined });
     const infraItems = infraData?.items ?? [];
     const { data: linkedInfraItems = [] } = useInfraByEntity('note', note.id);
     const linkInfra = useLinkInfra();

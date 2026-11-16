@@ -74,7 +74,7 @@ async def list_intel_items(
     # Sorting
     sort_column = getattr(IntelItem, sort_by, IntelItem.created_at)
     order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
-    query = base_query.order_by(order).offset(offset).limit(limit)
+    query = base_query.order_by(order, IntelItem.id).offset(offset).limit(limit)
 
     result = await db.execute(query)
     items = result.scalars().all()

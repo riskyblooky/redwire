@@ -101,7 +101,7 @@ async def get_templates(
     sort_col = sort_map.get(sort_by, FindingTemplate.title)
     order = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
 
-    result = await db.execute(base.order_by(order).offset(skip).limit(limit))
+    result = await db.execute(base.order_by(order, FindingTemplate.id).offset(skip).limit(limit))
     return result.scalars().all()
 
 

@@ -772,6 +772,7 @@ async def get_assets(
         query = query.order_by(sort_column.asc())
     else:
         query = query.order_by(sort_column.desc())
+    query = query.order_by(Asset.id)  # stable pages: ties broken by id
     
     query = query.offset(skip).limit(limit)
     

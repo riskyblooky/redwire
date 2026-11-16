@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Query
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -446,6 +446,7 @@ async def get_users(
     result = await db.execute(
         select(User)
         .where(User.is_active == True)
+        .order_by(func.lower(User.username), User.id)  # stable pages
         .offset(skip).limit(limit)
     )
     return result.scalars().all()

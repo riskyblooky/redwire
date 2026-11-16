@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchAllPages } from '../fetch-all';
 
 export type TestCaseCategory = string;
 export type TemplateStatus = 'DRAFT' | 'SUBMITTED' | 'PUBLISHED';
@@ -84,10 +85,8 @@ export function useTestCaseTemplates(category?: string) {
     return useQuery({
         queryKey: ['testcase-templates', category],
         queryFn: async () => {
-            const { data } = await api.get<TestCaseTemplate[]>('/testcase-templates', {
-                params: { category }
-            });
-            return data;
+            // Every page: the template picker stopped at the default 100.
+            return fetchAllPages<TestCaseTemplate>('/testcase-templates', category ? { category } : {});
         },
     });
 }

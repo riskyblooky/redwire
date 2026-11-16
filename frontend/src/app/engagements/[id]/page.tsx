@@ -523,8 +523,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
 
     // Fetch ALL assets for the link dialog (unpaginated) — only when dialog is open
     const { data: allAssets = [] } = useAssets({
-        engagementId: id,
-        limit: 500,
+        engagementId: id,  // no skip/limit: every asset
         enabled: isAssetLinkDialogOpen,
     });
 

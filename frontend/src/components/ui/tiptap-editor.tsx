@@ -1,5 +1,6 @@
 'use client';
 
+import { fetchAllPages } from '@/lib/fetch-all';
 import { useEditor, EditorContent, ReactRenderer, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { activeLineKey, createActiveLineExtension } from './active-line-extension';
@@ -85,8 +86,9 @@ let _fetchPromise: Promise<MentionSuggestionItem[]> | null = null;
 async function fetchAllUsers(): Promise<MentionSuggestionItem[]> {
     if (_cachedUsers) return _cachedUsers;
     if (_fetchPromise) return _fetchPromise;
-    _fetchPromise = api.get<MentionSuggestionItem[]>('/users').then(res => {
-        _cachedUsers = res.data;
+    // Every page: a bare request returned the first 100 users.
+    _fetchPromise = fetchAllPages<MentionSuggestionItem>('/users').then(rows => {
+        _cachedUsers = rows;
         return _cachedUsers!;
     }).catch(() => {
         _fetchPromise = null;

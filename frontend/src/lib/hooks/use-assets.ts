@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchAllPages } from '../fetch-all';
 
 import { Asset } from '../types';
 
@@ -55,7 +56,7 @@ export function useAssets(engagementIdOrOptions?: string | UseAssetsOptions) {
 
     const query = useQuery({
         enabled: enabled ?? true,
-        queryKey: ['assets', engagementId ?? 'all', search ?? '', port ?? '', service ?? '', version ?? '', portState ?? '', sortBy ?? '', sortOrder ?? '', skip ?? 0, limit ?? 100],
+        queryKey: ['assets', engagementId ?? 'all', search ?? '', port ?? '', service ?? '', version ?? '', portState ?? '', sortBy ?? '', sortOrder ?? '', skip ?? 0, limit ?? 'all'],
         queryFn: async () => {
             const params: Record<string, string> = {};
             if (engagementId) params.engagement_id = engagementId;
@@ -66,6 +67,12 @@ export function useAssets(engagementIdOrOptions?: string | UseAssetsOptions) {
             if (portState) params.port_state = portState;
             if (sortBy) params.sort_by = sortBy;
             if (sortOrder) params.sort_order = sortOrder;
+            if (skip === undefined && limit === undefined) {
+                // No page asked for: pickers and tabs want every asset (one
+                // request stopped at the backend default of 100).
+                const items = await fetchAllPages<Asset>('/assets', params, (d) => d.items);
+                return { items, total: items.length };
+            }
             if (skip !== undefined) params.skip = String(skip);
             if (limit !== undefined) params.limit = String(limit);
             const { data } = await api.get<{ items: Asset[]; total: number }>('/assets', { params });

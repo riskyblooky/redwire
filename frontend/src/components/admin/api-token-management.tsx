@@ -1,5 +1,6 @@
 'use client';
 
+import { fetchAllPages } from '@/lib/fetch-all';
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { parseUTCDate } from '@/lib/utils';
@@ -65,8 +66,8 @@ export function ApiTokenManagement() {
 
     const fetchUsers = useCallback(async () => {
         try {
-            const res = await api.get('/users');
-            setUsers(res.data.map((u: UserOption) => ({ id: u.id, username: u.username, full_name: u.full_name })));
+            const all = await fetchAllPages<UserOption>('/users');  // every page, not the first 100
+            setUsers(all.map((u: UserOption) => ({ id: u.id, username: u.username, full_name: u.full_name })));
         } catch { /* ignore */ }
     }, []);
 

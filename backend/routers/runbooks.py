@@ -207,7 +207,7 @@ async def get_runbooks(
 
     result = await db.execute(
         base.options(selectinload(Runbook.items).selectinload(RunbookItem.template))
-            .order_by(order).offset(skip).limit(limit)
+            .order_by(order, Runbook.id).offset(skip).limit(limit)
     )
     return result.scalars().all()
 

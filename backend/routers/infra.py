@@ -160,7 +160,7 @@ async def list_infra_items(
 
     total = (await db.execute(count_query)).scalar() or 0
     result = await db.execute(
-        query.order_by(InfraItem.created_at.desc()).offset(offset).limit(limit)
+        query.order_by(InfraItem.created_at.desc(), InfraItem.id).offset(offset).limit(limit)
     )
     items = result.scalars().all()
 

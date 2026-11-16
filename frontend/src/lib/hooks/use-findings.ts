@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchAllPages } from '../fetch-all';
 import { Asset, Tag, Evidence } from '../types';
 
 export interface Finding {
@@ -115,16 +116,12 @@ export interface FindingTemplate {
 // set — not the endpoint's default page of 100. 500 is the backend's
 // MAX_LIST_LIMIT (its own sanctioned ceiling); request it explicitly so the
 // list doesn't silently truncate at 100 with no paging control to reveal the rest.
-const FINDINGS_FETCH_LIMIT = 500;
-
 export function useFindings(params?: { engagement_id?: string; severity?: string; status?: string }, enabled: boolean = true) {
     return useQuery({
         queryKey: ['findings', params],
         queryFn: async () => {
-            const { data } = await api.get<Finding[]>('/findings', {
-                params: { ...params, limit: FINDINGS_FETCH_LIMIT },
-            });
-            return data;
+            // Every page: one request stopped at 500 findings.
+            return fetchAllPages<Finding>('/findings', { ...params });
         },
         enabled,
         staleTime: 30_000,
@@ -243,9 +240,8 @@ export function useFindingTemplates(category?: string) {
     return useQuery({
         queryKey: ['finding-templates', category],
         queryFn: async () => {
-            const params = category ? { category } : {};
-            const { data } = await api.get<FindingTemplate[]>('/templates', { params });
-            return data;
+            // Every page: the template picker stopped at the default 100.
+            return fetchAllPages<FindingTemplate>('/templates', category ? { category } : {});
         },
         staleTime: 60_000,
     });

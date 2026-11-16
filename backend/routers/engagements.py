@@ -241,7 +241,6 @@ async def get_engagements(
     # previously only checked the role trio, so a user granted the permission
     # could open a single engagement by URL (check_engagement_permission
     # honors it) but saw an empty list here — the regression this fixes.
-    from auth.permissions import has_global_permission
     # `mine=true` lets an all-access user (admin / VIEW_ALL) narrow the list to
     # just their own assignments — so it forces the assignment filter on.
     can_view_all = (not mine) and (
@@ -345,6 +344,9 @@ async def get_engagements(
         query = query.order_by(relevance.asc(), primary)
     else:
         query = query.order_by(primary)
+    # id breaks ties (many rows share a start_date), so paging with skip/limit
+    # neither repeats nor drops rows between pages.
+    query = query.order_by(Engagement.id)
 
     query = query.offset(skip).limit(limit)
 

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchAllPages } from '../fetch-all';
 
 export interface RunbookItemTemplate {
     id: string;
@@ -101,8 +102,8 @@ export function useRunbooks(enabled: boolean = true) {
         queryKey: ['runbooks'],
         queryFn: async () => {
             try {
-                const { data } = await api.get<Runbook[]>('/runbooks');
-                return data;
+                // Every page: a bare request returned the first 100.
+                return await fetchAllPages<Runbook>('/runbooks');
             } catch (err: any) {
                 if (err?.response?.status === 403) return [];
                 throw err;

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchAllPages } from '../fetch-all';
 import { UserRole } from '../types';
 import { EngagementRole } from './use-rbac';
 
@@ -100,13 +101,9 @@ export function useEngagements(options?: { includeProposed?: boolean }) {
         queryFn: async () => {
             // Callers of this hook expect the full engagement list for
             // pickers/dropdowns (asset new, finding new, calendar, dashboard,
-            // etc.). Pull the max page size in one request — the paginated
+            // etc.) — every page, not just the first 500. The paginated
             // /engagements list page uses `useEngagementsPage` instead.
-            const params = new URLSearchParams();
-            params.set('limit', '500');
-            if (includeProposed) params.set('include_proposed', 'true');
-            const { data } = await api.get<Engagement[]>(`/engagements?${params.toString()}`);
-            return data;
+            return fetchAllPages<Engagement>('/engagements', includeProposed ? { include_proposed: true } : {});
         },
         staleTime: 30_000,
     });
@@ -301,8 +298,8 @@ export function useAllEngagementsIncludingProposed() {
     return useQuery({
         queryKey: ['engagements', 'all-with-proposed'],
         queryFn: async () => {
-            const { data } = await api.get<Engagement[]>('/engagements?include_proposed=true');
-            return data;
+            // Every engagement: a bare request returned the default page of 25.
+            return fetchAllPages<Engagement>('/engagements', { include_proposed: true });
         },
         staleTime: 30_000,
     });

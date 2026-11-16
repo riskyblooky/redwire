@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchAllPages } from '../fetch-all';
 import { Group } from './use-rbac';
 
 export interface User {
@@ -36,8 +37,8 @@ export function useUsers(enabled: boolean = true) {
     return useQuery({
         queryKey: ['users'],
         queryFn: async () => {
-            const { data } = await api.get<User[]>('/users');
-            return data;
+            // Every active user: a bare request returned the first 100.
+            return fetchAllPages<User>('/users');
         },
         enabled,
     });

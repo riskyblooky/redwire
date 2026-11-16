@@ -16,6 +16,7 @@
  */
 'use client';
 
+import { fetchAllPages } from '@/lib/fetch-all';
 import { useState, useMemo, useEffect } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
 import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs } from '@/components/custom-fields/custom-field-list-columns';
@@ -673,14 +674,15 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                                 if (selectedCols.length === 0) return;
                                 setIsExporting(true);
                                 try {
-                                    const params: Record<string, string> = { limit: '10000' };
+                                    // Every matching asset, page by page (limit=10000 was over
+                                    // the backend's 500 cap and failed with a 422).
+                                    const params: Record<string, string> = {};
                                     if (engagementId) params.engagement_id = engagementId;
                                     if (parsedSearch.search) params.search = parsedSearch.search;
                                     if (parsedSearch.port !== undefined) params.port = String(parsedSearch.port);
                                     if (parsedSearch.service) params.service = parsedSearch.service;
                                     if (parsedSearch.version) params.version = parsedSearch.version;
-                                    const { data } = await api.get<{ items: any[]; total: number }>('/assets', { params });
-                                    const allExportAssets = data.items;
+                                    const allExportAssets = await fetchAllPages<any>('/assets', params, (d) => d.items);
                                     const isSingleCol = selectedCols.length === 1;
                                     const colKey = selectedCols[0] as keyof typeof exportColumns;
                                     const fieldMap: Record<string, string> = { name: 'name', identifier: 'identifier', type: 'asset_type' };
@@ -701,7 +703,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                                         URL.revokeObjectURL(url);
                                     }
                                     setShowExportDialog(false);
-                                    toast.success(`Exported ${data.items.length} assets`);
+                                    toast.success(`Exported ${allExportAssets.length} assets`);
                                 } catch { toast.error('Export failed'); } finally { setIsExporting(false); }
                             }}
                             disabled={Object.values(exportColumns).filter(Boolean).length === 0 || isExporting}

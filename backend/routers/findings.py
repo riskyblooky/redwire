@@ -92,7 +92,7 @@ async def get_findings(
             engagements_with_permission(current_user.id, Permission.FINDING_VIEW.value)
         ))
     
-    query = query.offset(skip).limit(limit).order_by(Finding.created_at.desc())
+    query = query.offset(skip).limit(limit).order_by(Finding.created_at.desc(), Finding.id)
     
     result = await db.execute(query)
     rows = result.all()
