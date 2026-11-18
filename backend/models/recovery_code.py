@@ -53,3 +53,17 @@ class RecoveryCode(Base):
             postgresql_where=(used_at.is_(None)),
         ),
     )
+
+
+# Defined here, not in models/user.py, because it needs this table.
+from sqlalchemy import func, select  # noqa: E402
+from sqlalchemy.orm import column_property  # noqa: E402
+from models.user import User  # noqa: E402
+
+User.recovery_codes_remaining = column_property(
+    select(func.count(RecoveryCode.id))
+    .where(RecoveryCode.user_id == User.id, RecoveryCode.used_at.is_(None))
+    .correlate_except(RecoveryCode)
+    .scalar_subquery(),
+    deferred=False,
+)

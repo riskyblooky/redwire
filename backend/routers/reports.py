@@ -267,7 +267,8 @@ async def _do_generate_report(
     cleanup_result = await db.execute(
         select(CleanupArtifact)
         .where(CleanupArtifact.engagement_id == config.engagement_id)
-        .options(selectinload(CleanupArtifact.assets))
+        # The generators read both (the cleanup table's linked asset and finding).
+        .options(selectinload(CleanupArtifact.assets), selectinload(CleanupArtifact.findings))
         .order_by(CleanupArtifact.title)
     )
     cleanup_artifacts = list(cleanup_result.scalars().all())

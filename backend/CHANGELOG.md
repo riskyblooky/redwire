@@ -4,6 +4,15 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.9.2] — Unreleased
+
+### Changed
+- **Responses load only the links they show.** The 35 `lazy="selectin"` relationships on findings, assets, test cases, vault items, cleanup artifacts, notes, intel/infra items, spray campaigns and runbook items chained into each other: one finding loaded its assets, every asset's ports, findings, test cases, vault items (decrypting them) and cleanup items, and so on. They are now `lazy="raise"` (an unloaded relationship is an error, not a hidden query), and each response loads one level from a shared set in `models/loaders.py` (`options("FINDING")`, `load(db, Model, id)` after a create or update). On dev data one finding went from 11 statements / 94 objects to 7 / 8, and an engagement's findings from 35 / 171 to 7 / 71. Spray campaigns no longer load every result row unless the endpoint asks for them.
+- `User.recovery_codes_remaining` is a count subquery on the user row instead of loading every recovery code on each authenticated request.
+
+### Fixed
+- Cleanup items in generated reports now get their linked finding (the report loaded only their assets).
+
 ## [1.9.1] — 2026-11-16
 
 ### Added

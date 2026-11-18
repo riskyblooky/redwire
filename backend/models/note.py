@@ -26,8 +26,8 @@ class Note(Base):
     children = relationship("Note", back_populates="parent", foreign_keys="Note.parent_id")
 
     # Linked resources
-    findings = relationship("Finding", secondary="note_findings", lazy="selectin")
-    testcases = relationship("TestCase", secondary="note_testcases", lazy="selectin")
-    assets = relationship("Asset", secondary="note_assets", lazy="selectin")
-    vault_items = relationship("VaultItem", secondary="note_vault_items", lazy="selectin")
-    cleanup_artifacts = relationship("CleanupArtifact", secondary="note_cleanup_artifacts", lazy="selectin")
+    findings = relationship("Finding", secondary="note_findings", lazy="raise")
+    testcases = relationship("TestCase", secondary="note_testcases", lazy="raise")
+    assets = relationship("Asset", secondary="note_assets", lazy="raise")
+    vault_items = relationship("VaultItem", secondary="note_vault_items", lazy="raise")
+    cleanup_artifacts = relationship("CleanupArtifact", secondary="note_cleanup_artifacts", lazy="raise")

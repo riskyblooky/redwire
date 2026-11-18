@@ -31,9 +31,9 @@ class TestCase(Base, AuditMixin):
     # Relationships
     engagement = relationship("Engagement", back_populates="testcases")
     parent = relationship("TestCase", remote_side=[id], backref="children")
-    assets = relationship("Asset", secondary="testcase_assets", backref=backref("testcases", lazy="selectin"), lazy="selectin")
-    tags = relationship("Tag", secondary="testcase_tags", backref=backref("testcases", lazy="selectin"), lazy="selectin")
-    evidence = relationship("Evidence", back_populates="testcase", lazy="selectin")
-    attack_techniques = relationship("TestCaseAttackTechnique", cascade="all, delete-orphan", lazy="selectin")
+    assets = relationship("Asset", secondary="testcase_assets", backref=backref("testcases", lazy="raise"), lazy="raise")
+    tags = relationship("Tag", secondary="testcase_tags", backref=backref("testcases", lazy="raise"), lazy="raise")
+    evidence = relationship("Evidence", back_populates="testcase", lazy="raise")
+    attack_techniques = relationship("TestCaseAttackTechnique", cascade="all, delete-orphan", lazy="raise")
     created_by_user = relationship("User", foreign_keys="TestCase.created_by")
     updated_by_user = relationship("User", foreign_keys="TestCase.updated_by")

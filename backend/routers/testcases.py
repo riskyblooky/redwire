@@ -3,6 +3,7 @@ from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from models.loaders import load, options
 from typing import List, Optional
 import logging
 from database import get_db
@@ -63,7 +64,7 @@ async def get_testcases(
             engagements_with_permission(current_user.id, Permission.TESTCASE_VIEW.value)
         ))
     
-    query = query.offset(skip).limit(limit).order_by(TestCase.created_at.desc(), TestCase.id)
+    query = query.offset(skip).limit(limit).order_by(TestCase.created_at.desc(), TestCase.id).options(*options("TESTCASE"))
     
     result = await db.execute(query)
     rows = result.all()
@@ -110,7 +111,7 @@ async def get_testcase(
         select(TestCase, User.username, User.full_name, User.profile_photo)
         .outerjoin(User, TestCase.created_by == User.id)
         .where(TestCase.id == testcase_id)
-        .options(selectinload(TestCase.findings), selectinload(TestCase.tags))
+        .options(*options("TESTCASE"))
     )
     row = result.first()
     
@@ -230,13 +231,8 @@ async def create_testcase(
 
     db.add(db_testcase)
     await db.commit()
-    await db.refresh(db_testcase)
-
-    # Reload with tags for automation context
-    reload_result = await db.execute(
-        select(TestCase).where(TestCase.id == db_testcase.id).options(selectinload(TestCase.tags))
-    )
-    db_testcase = reload_result.scalar_one()
+    # Reload with the response's links (tags also feed the automation context).
+    db_testcase = await load(db, TestCase, db_testcase.id)
 
     # Log activity (self-contained, never raises)
     await create_activity_log(
@@ -265,7 +261,8 @@ async def update_testcase(
     """Update an existing test case"""
     result = await db.execute(
         select(TestCase).where(TestCase.id == testcase_id)
-        .options(selectinload(TestCase.tags))
+        # Everything the update replaces (tags, techniques) has to be loaded first.
+        .options(*options("TESTCASE"))
     )
     db_testcase = result.scalar_one_or_none()
     
@@ -347,8 +344,8 @@ async def update_testcase(
                 raise HTTPException(status_code=400, detail="A test case cannot be moved under one of its own sub-cases")
     
     await db.commit()
-    await db.refresh(db_testcase)
-    
+    db_testcase = await load(db, TestCase, db_testcase.id)  # with the response's links
+
     # Log activity (self-contained, never raises)
     await create_activity_log(
         db,

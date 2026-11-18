@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from models.loaders import load, options
 from typing import List, Optional
 from database import get_db
 from models.user import User
@@ -395,7 +396,7 @@ async def import_assets(
 
     # Get existing assets for dedup
     existing_result = await db.execute(
-        select(Asset).where(Asset.engagement_id == engagement_id)
+        select(Asset).where(Asset.engagement_id == engagement_id).options(selectinload(Asset.ports))
     )
     existing_assets = {a.identifier.lower(): a for a in existing_result.scalars().all()}
 
@@ -774,7 +775,7 @@ async def get_assets(
         query = query.order_by(sort_column.desc())
     query = query.order_by(Asset.id)  # stable pages: ties broken by id
     
-    query = query.offset(skip).limit(limit)
+    query = query.offset(skip).limit(limit).options(*options("ASSET"))
     
     result = await db.execute(query)
     assets_with_counts = []
@@ -797,13 +798,7 @@ async def get_asset(
     """Get a specific asset by ID"""
     result = await db.execute(
         select(Asset, User.username, User.full_name, User.profile_photo)
-        .options(
-            selectinload(Asset.findings),
-            selectinload(Asset.testcases),
-            selectinload(Asset.vault_items),
-            selectinload(Asset.cleanup_artifacts),
-            selectinload(Asset.ports),
-        )
+        .options(*options("ASSET"))
         .outerjoin(User, Asset.created_by == User.id)
         .where(Asset.id == asset_id)
     )
@@ -859,7 +854,7 @@ async def create_asset(
 
     db.add(db_asset)
     await db.commit()
-    await db.refresh(db_asset)
+    db_asset = await load(db, Asset, db_asset.id)  # with the response's links
     
     # Log activity
     await create_activity_log(
@@ -925,7 +920,7 @@ async def update_asset(
     db_asset.updated_by = current_user.id
     
     await db.commit()
-    await db.refresh(db_asset)
+    db_asset = await load(db, Asset, db_asset.id)  # with the response's links
     
     # Log activity
     await create_activity_log(

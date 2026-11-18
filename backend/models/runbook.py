@@ -58,5 +58,5 @@ class RunbookItem(Base):
 
     # Relationships
     runbook = relationship("Runbook", back_populates="items")
-    template = relationship("TestCaseTemplate", lazy="selectin")
+    template = relationship("TestCaseTemplate", lazy="raise")
     parent = relationship("RunbookItem", remote_side=[id], backref="children")

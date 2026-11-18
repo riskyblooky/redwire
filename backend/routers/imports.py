@@ -8,6 +8,7 @@ Two-step import flow:
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from typing import Optional
 from database import get_db
@@ -252,7 +253,7 @@ async def commit_import(
 
     # Get existing assets for dedup
     existing_result = await db.execute(
-        select(Asset).where(Asset.engagement_id == engagement_id)
+        select(Asset).where(Asset.engagement_id == engagement_id).options(selectinload(Asset.ports))
     )
     existing_assets = {a.identifier.lower(): a for a in existing_result.scalars().all()}
 

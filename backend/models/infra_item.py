@@ -46,6 +46,6 @@ class InfraItem(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships via association tables
-    findings = relationship("Finding", secondary="infra_item_findings", lazy="selectin")
-    testcases = relationship("TestCase", secondary="infra_item_testcases", lazy="selectin")
-    notes_rel = relationship("Note", secondary="infra_item_notes", lazy="selectin")
+    findings = relationship("Finding", secondary="infra_item_findings", lazy="raise")
+    testcases = relationship("TestCase", secondary="infra_item_testcases", lazy="raise")
+    notes_rel = relationship("Note", secondary="infra_item_notes", lazy="raise")

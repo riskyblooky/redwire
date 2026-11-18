@@ -47,7 +47,7 @@ class IntelItem(Base):
     # Relationships
     author = relationship("User", foreign_keys=[created_by])
     feed = relationship("IntelFeed", back_populates="items")
-    findings = relationship("Finding", secondary="intel_item_findings", lazy="selectin")
-    testcases = relationship("TestCase", secondary="intel_item_testcases", lazy="selectin")
-    notes = relationship("Note", secondary="intel_item_notes", lazy="selectin")
-    attachments = relationship("IntelAttachment", back_populates="intel_item", cascade="all, delete-orphan", lazy="selectin")
+    findings = relationship("Finding", secondary="intel_item_findings", lazy="raise")
+    testcases = relationship("TestCase", secondary="intel_item_testcases", lazy="raise")
+    notes = relationship("Note", secondary="intel_item_notes", lazy="raise")
+    attachments = relationship("IntelAttachment", back_populates="intel_item", cascade="all, delete-orphan", lazy="raise")

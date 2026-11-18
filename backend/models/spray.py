@@ -41,7 +41,7 @@ class SprayCampaign(Base, AuditMixin):
     # rows to Postgres. A plain backref made the ORM NULL engagement_id on
     # engagement delete — a NOT NULL violation, so the delete 500'd.
     engagement = relationship("Engagement", backref=backref("spray_campaigns", passive_deletes="all"))
-    results = relationship("SprayResult", back_populates="campaign", cascade="all, delete-orphan", lazy="selectin")
+    results = relationship("SprayResult", back_populates="campaign", cascade="all, delete-orphan", lazy="raise")
     created_by_user = relationship("User", foreign_keys="SprayCampaign.created_by")
 
 

@@ -16,6 +16,7 @@ from auth.rbac import check_engagement_permission, require_engagement_perm
 from models.permission import Permission
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from sqlalchemy.orm import selectinload
+from models.loaders import load, options
 
 router = APIRouter(prefix="/cleanup-artifacts", tags=["cleanup-artifacts"])
 
@@ -151,7 +152,7 @@ async def create_cleanup_artifact(
     )
     db.add(db_item)
     await db.commit()
-    await db.refresh(db_item)
+    db_item = await load(db, CleanupArtifact, db_item.id)  # with the response's links
 
     await create_activity_log(
         db,
@@ -213,7 +214,7 @@ async def update_cleanup_artifact(
 
     artifact.updated_by = current_user.id
     await db.commit()
-    await db.refresh(artifact)
+    artifact = await load(db, CleanupArtifact, artifact.id)  # with the response's links
 
     await create_activity_log(
         db,

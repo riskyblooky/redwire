@@ -74,18 +74,14 @@ class User(Base):
         "RecoveryCode",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="raise",
     )
 
-    @property
-    def recovery_codes_remaining(self) -> int:
-        """Count of un-consumed 2FA recovery codes. Surfaced through
-        UserResponse so the settings UI can warn at low count.
-        GHSA-vm6w-9wm5-q367 follow-up."""
-        return sum(
-            1 for rc in (self.recovery_codes or [])
-            if rc.used_at is None
-        )
+    # recovery_codes_remaining (un-consumed 2FA recovery codes, surfaced
+    # through UserResponse so the settings UI can warn at low count;
+    # GHSA-vm6w-9wm5-q367 follow-up) is a column_property defined at the
+    # bottom of models/recovery_code.py: a count subquery on the user row,
+    # instead of loading every code on every authenticated request.
     findings = relationship("Finding", back_populates="created_by_user", foreign_keys="Finding.created_by")
     created_engagements = relationship("Engagement", back_populates="created_by_user", foreign_keys="Engagement.created_by")
     assignment_details = relationship("EngagementAssignment", back_populates="user", cascade="all, delete-orphan")

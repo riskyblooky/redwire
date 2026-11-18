@@ -33,6 +33,7 @@ from utils.vault_crypto import encrypt_bytes, decrypt_bytes
 from utils.uploads import MAX_VAULT_FILE_BYTES, read_upload_capped, content_disposition_attachment
 from utils.storage import storage_service
 from sqlalchemy.orm import selectinload
+from models.loaders import load, options
 from utils import storage_tx
 
 router = APIRouter(prefix="/vault", tags=["vault"])
@@ -159,7 +160,7 @@ async def create_vault_item(
     )
     db.add(db_item)
     await db.commit()
-    await db.refresh(db_item)
+    db_item = await load(db, VaultItem, db_item.id)
 
     # Log activity
     await create_activity_log(
@@ -223,7 +224,7 @@ async def upload_vault_file(
     )
     db.add(db_item)
     await db.commit()
-    await db.refresh(db_item)
+    db_item = await load(db, VaultItem, db_item.id)
 
     # Log activity
     await create_activity_log(
@@ -250,7 +251,7 @@ async def update_vault_item(
     try:
         result = await db.execute(
             select(VaultItem)
-            .options(selectinload(VaultItem.findings), selectinload(VaultItem.testcases))
+            .options(*options("VAULT_ITEM"))
             .where(VaultItem.id == item_id)
         )
         item = result.scalar_one_or_none()

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from models.loaders import load, options
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -145,6 +146,7 @@ async def get_notes(
         .outerjoin(EditorUser, Note.updated_by == EditorUser.c.id)
         .where(Note.engagement_id == engagement_id)
         .order_by(Note.updated_at.desc())
+        .options(*options("NOTE"))
     )
 
     notes = []
@@ -161,7 +163,7 @@ async def get_note(
     current_user: User = Depends(get_current_user)
 ):
     """Get a single note."""
-    result = await db.execute(select(Note).where(Note.id == note_id))
+    result = await db.execute(select(Note).where(Note.id == note_id).options(*options("NOTE")))
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
@@ -219,7 +221,7 @@ async def create_note(
     )
     db.add(db_note)
     await db.commit()
-    await db.refresh(db_note)
+    db_note = await load(db, Note, db_note.id)  # with the response's links
 
     # Log activity (self-contained, never raises)
     await create_activity_log(
@@ -340,7 +342,7 @@ async def update_note(
     note.updated_at = datetime.utcnow()
 
     await db.commit()
-    await db.refresh(note)
+    note = await load(db, Note, note.id)  # with the response's links
 
     # Build specific change details
     change_parts = []

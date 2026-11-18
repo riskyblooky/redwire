@@ -25,9 +25,9 @@ class Asset(Base, AuditMixin):
 
     # Relationships
     engagement = relationship("Engagement", back_populates="assets")
-    ports = relationship("AssetPort", back_populates="asset", cascade="all, delete-orphan", lazy="selectin")
+    ports = relationship("AssetPort", back_populates="asset", cascade="all, delete-orphan", lazy="raise")
     created_by_user = relationship("User", foreign_keys="Asset.created_by")
     updated_by_user = relationship("User", foreign_keys="Asset.updated_by")
     # Explicit lazy=selectin for findings (Finding.assets back_populates="findings")
     # vault_items, testcases, cleanup_artifacts already provided by their model backrefs with lazy=selectin
-    findings = relationship("Finding", secondary="finding_assets", back_populates="assets", lazy="selectin")
+    findings = relationship("Finding", secondary="finding_assets", back_populates="assets", lazy="raise")

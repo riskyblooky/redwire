@@ -3,6 +3,7 @@ from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from models.loaders import load, options
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -71,10 +72,7 @@ async def get_findings(
     ).outerjoin(
         User,
         Finding.created_by == User.id
-    ).options(
-        selectinload(Finding.evidence),
-        selectinload(Finding.assets),
-    ).group_by(Finding.id, User.username, User.full_name, User.profile_photo)
+    ).options(selectinload(Finding.evidence), *options("FINDING")).group_by(Finding.id, User.username, User.full_name, User.profile_photo)
 
     if engagement_id:
         query = query.where(Finding.engagement_id == engagement_id)
@@ -319,11 +317,7 @@ async def get_finding(
         select(Finding, User.username, User.full_name, User.profile_photo)
         .outerjoin(User, Finding.created_by == User.id)
         .where(Finding.id == finding_id)
-        .options(
-            selectinload(Finding.evidence),
-            selectinload(Finding.assets),
-            selectinload(Finding.testcases)
-        )
+        .options(selectinload(Finding.evidence), *options("FINDING"))
     )
     row = result.first()
     
@@ -522,7 +516,7 @@ async def create_finding(
     result = await db.execute(
         select(Finding)
         .where(Finding.id == new_finding.id)
-        .options(selectinload(Finding.evidence), selectinload(Finding.assets), selectinload(Finding.tags))
+        .options(selectinload(Finding.evidence), *options("FINDING"))
     )
     new_finding = result.scalar_one()
 
@@ -617,7 +611,7 @@ async def update_finding(
     result = await db.execute(
         select(Finding)
         .where(Finding.id == finding_id)
-        .options(selectinload(Finding.evidence), selectinload(Finding.assets), selectinload(Finding.testcases))
+        .options(selectinload(Finding.evidence), *options("FINDING"))
     )
     finding = result.scalar_one_or_none()
     
@@ -710,7 +704,9 @@ async def update_finding(
         ]
 
     await db.commit()
-    await db.refresh(finding)
+    # Re-read with what the response shows (a plain refresh would leave the
+    # relationships unloaded).
+    finding = await load(db, Finding, finding.id, selectinload(Finding.evidence))
 
     # Update port_ids on join table rows if provided
     if finding_data.asset_port_ids:

@@ -38,18 +38,18 @@ class CleanupArtifact(Base, AuditMixin):
     findings = relationship(
         "Finding",
         secondary="cleanup_artifact_findings",
-        backref=backref("cleanup_artifacts", lazy="selectin"),
-        lazy="selectin",
+        backref=backref("cleanup_artifacts", lazy="raise"),
+        lazy="raise",
     )
     testcases = relationship(
         "TestCase",
         secondary="cleanup_artifact_testcases",
-        backref=backref("cleanup_artifacts", lazy="selectin"),
-        lazy="selectin",
+        backref=backref("cleanup_artifacts", lazy="raise"),
+        lazy="raise",
     )
     assets = relationship(
         "Asset",
         secondary="cleanup_artifact_assets",
-        backref=backref("cleanup_artifacts", lazy="selectin"),
-        lazy="selectin",
+        backref=backref("cleanup_artifacts", lazy="raise"),
+        lazy="raise",
     )
