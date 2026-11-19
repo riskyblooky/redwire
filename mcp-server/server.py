@@ -39,38 +39,6 @@ REDWIRE_API_URL = os.getenv("REDWIRE_API_URL", "http://backend:8000")
 MCP_PORT = int(os.getenv("MCP_PORT", "3001"))
 CORS_ORIGINS = [o for o in os.getenv("CORS_ORIGINS", "").split(",") if o]
 
-# ── Enum mirrors ─────────────────────────────────────────────────────────────
-#
-# Hand-kept copies of the backend enums. The MCP server is a separate
-# container and can't import backend models — if you change an enum in
-# backend/models/, change it here too.
-#
-# These are advertised to the model in the tool schemas, so a wrong value
-# here is not cosmetic: the model is *constrained* to whatever we list, and
-# every value it picks then fails. Historically all of these were lowercase
-# and/or invented ("active", "planned", "informational", "blog"), so any
-# tool call carrying one of these filters failed 100% of the time — either
-# a 422 from the backend's Pydantic layer, or (for list_engagements, which
-# the in-app chatbot runs against the DB directly) an asyncpg
-# InvalidTextRepresentationError. Postgres enum values are UPPERCASE.
-ENGAGEMENT_STATUSES = (
-    "PROPOSED",
-    "SCOPING",
-    "PLANNING",
-    "IN_PROGRESS",
-    "REPORTING",
-    "COMPLETED",
-    "ON_HOLD",
-)
-# models/finding.py :: Severity — note INFO, not "informational".
-SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
-# models/finding.py :: FindingStatus
-FINDING_STATUSES = ("OPEN", "IN_REVIEW", "VERIFIED", "REMEDIATED", "CLOSED")
-# models/cleanup_artifact.py :: CleanupArtifactStatus — there is no "completed".
-CLEANUP_STATUSES = ("PENDING", "CLEANED", "PARTIALLY_CLEANED", "NOT_APPLICABLE")
-# models/intel_item.py :: IntelItemType — there is no "blog" or "news".
-INTEL_ITEM_TYPES = ("CVE", "ADVISORY", "ARTICLE", "ZINE", "EXPLOIT", "OTHER")
-
 # ── Per-Session Auth ─────────────────────────────────────────────────────────
 # Each SSE connection MUST present its own bearer (JWT or API token) in the
 # Authorization header. It's validated at connect time and stored per-session;
@@ -187,19 +155,10 @@ async def _write_tools_enabled() -> bool:
         return False
 
 
-# Fields whose legal values are NOT a Postgres enum but rows in the
-# admin-editable `configurable_types` taxonomy (the same list the UI
-# dropdowns are built from). Hardcoding these drifts the moment an admin
-# edits the taxonomy — asset_type was advertised as IP_ADDRESS/DOMAIN
-# while the taxonomy actually said "IP Address"/"Domain", so the model
-# created assets whose type matched no dropdown option. Resolve them live
-# instead.
-_TAXONOMY_FIELDS: dict[tuple[str, str], str] = {
-    ("create_asset", "asset_type"): "asset",
-    ("update_asset", "asset_type"): "asset",
-    ("create_vault_item", "item_type"): "vault",
-    ("create_cleanup_artifact", "artifact_type"): "cleanup",
-}
+# Fields whose legal values aren't an enum but rows of the admin-editable
+# configurable_types taxonomy (the UI dropdowns' source) are flagged in the
+# registry (``taxonomy``) and resolved live, so an admin edit can't leave the
+# model pinned to stale names.
 
 
 async def _taxonomy_values(category: str) -> list[str] | None:
@@ -217,14 +176,38 @@ async def _taxonomy_values(category: str) -> list[str] | None:
     return names or None
 
 
-async def _apply_taxonomy_enums(tools: list[Tool]) -> None:
+# ── Tool registry ────────────────────────────────────────────────────────────
+# The catalog and how each tool calls the API live in the backend
+# (backend/utils/ai_tool_registry.py, served at GET /ai/tool-registry), so
+# they're checked against the real routes and schemas there. This server
+# keeps the security envelope: the write-tool gate, UUID / pattern checks on
+# arguments that land in URL paths, vault-secret redaction and the
+# untrusted-data wrapper.
+
+_REGISTRY_TTL = 60.0
+_registry_cache: dict[str, Any] = {"at": 0.0, "tools": None}
+
+
+async def _registry() -> dict[str, dict]:
+    """name -> spec, fetched with the session's bearer and cached briefly
+    (the registry is the same for every caller)."""
+    import time
+    now = time.monotonic()
+    if _registry_cache["tools"] is None or now - _registry_cache["at"] > _REGISTRY_TTL:
+        data = await _api_get("/ai/tool-registry")
+        _registry_cache["tools"] = {t["name"]: t for t in data["tools"]}
+        _registry_cache["at"] = now
+    return _registry_cache["tools"]
+
+
+async def _apply_taxonomy_enums(tools: list[Tool], specs: dict[str, dict]) -> None:
     """Overlay live taxonomy values onto the taxonomy-backed enum fields."""
     cache: dict[str, list[str] | None] = {}
     for tool in tools:
         props = (tool.input_schema or {}).get("properties") or {}
-        for field, spec in props.items():
-            category = _TAXONOMY_FIELDS.get((tool.name, field))
-            if not category:
+        for field, category in (specs[tool.name].get("taxonomy") or {}).items():
+            spec = props.get(field)
+            if spec is None:
                 continue
             if category not in cache:
                 cache[category] = await _taxonomy_values(category)
@@ -232,752 +215,26 @@ async def _apply_taxonomy_enums(tools: list[Tool]) -> None:
             if values:
                 spec["enum"] = values
             else:
-                # Taxonomy unreadable — drop the stale hardcoded enum so the
-                # model isn't forced to pick a value we can't vouch for.
+                # Taxonomy unreadable — drop any enum so the model isn't
+                # forced to pick a value we can't vouch for.
                 spec.pop("enum", None)
 
 
 async def list_tools() -> list[Tool]:
     """Return all available RedWire tools. Write tools are filtered out when
     the admin toggle ai_write_tools_enabled is off (the default)."""
-    tools = _all_tools()
-    if not await _write_tools_enabled():
-        tools = [t for t in tools if not _is_write_tool(t.name)]
-    await _apply_taxonomy_enums(tools)
+    import copy
+    specs = await _registry()
+    writes_on = await _write_tools_enabled()
+    tools = [
+        Tool(name=s["name"], description=s["description"], input_schema=copy.deepcopy(s["input_schema"]))
+        for s in specs.values()
+        if writes_on or not _is_write_tool(s["name"])
+    ]
+    await _apply_taxonomy_enums(tools, specs)
     return tools
 
 
-def _all_tools() -> list[Tool]:
-    return [
-        # ── Engagements ──────────────────────────────────────────────
-        Tool(
-            name="list_engagements",
-            description=(
-                "List all penetration test engagements. Optionally filter by status. "
-                f"Valid statuses: {', '.join(ENGAGEMENT_STATUSES)}."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "status": {
-                        "type": "string",
-                        "description": (
-                            "Filter by engagement status. Must be one of: "
-                            f"{', '.join(ENGAGEMENT_STATUSES)}."
-                        ),
-                        "enum": list(ENGAGEMENT_STATUSES),
-                    },
-                },
-            },
-        ),
-        Tool(
-            name="get_engagement",
-            description="Get detailed information about a specific engagement by its ID.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-
-        # ── Findings ─────────────────────────────────────────────────
-        Tool(
-            name="list_findings",
-            description="List vulnerability findings for a specific engagement. Returns title, severity, status, and category.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-        Tool(
-            name="get_finding",
-            description="Get full details of a specific finding including description, impact, steps to reproduce, mitigations, and affected assets.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "finding_id": {"type": "string", "description": "The finding UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["finding_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="create_finding",
-            description="Create a new vulnerability finding in an engagement. Requires a title, severity and description. To rate it with a scoring model (CVSS 3.1, USAF RAC, ...), also pass score_model + score_inputs; the server then computes the severity.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "title": {"type": "string", "description": "Finding title"},
-                    "severity": {
-                        "type": "string",
-                        "description": "Severity level",
-                        "enum": list(SEVERITIES),
-                    },
-                    "description": {"type": "string", "description": "Detailed description (markdown, required)"},
-                    "impact": {"type": "string", "description": "Business/technical impact (markdown)"},
-                    "mitigations": {"type": "string", "description": "Recommended remediation (markdown)"},
-                    "category": {"type": "string", "description": "Finding category"},
-                    "score_model": {
-                        "type": "string",
-                        "description": "Optional scoring model id (e.g. 'cvss31', 'usaf-rac'). Call list_scoring_models for the models this engagement permits and get_scoring_model for its metric ids and allowed values. Use together with score_inputs.",
-                    },
-                    "score_inputs": {
-                        "type": "object",
-                        "description": "Metric values for score_model, keyed by metric id (e.g. {\"AV\": \"N\", \"AC\": \"L\", ...} for cvss31). When given, the server computes severity, score and vector from these and they override `severity`.",
-                    },
-                },
-                "required": ["engagement_id", "title", "severity", "description"],
-            },
-        ),
-        Tool(
-            name="update_finding",
-            description="Update fields on an existing finding. Only specified fields are changed.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "finding_id": {"type": "string", "description": "The finding UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "title": {"type": "string", "description": "New title"},
-                    "severity": {"type": "string", "enum": list(SEVERITIES)},
-                    "status": {"type": "string", "description": "New finding status", "enum": list(FINDING_STATUSES)},
-                    "description": {"type": "string", "description": "Updated description (markdown)"},
-                    "impact": {"type": "string", "description": "Updated impact (markdown)"},
-                    "mitigations": {"type": "string", "description": "Updated mitigations (markdown)"},
-                    "score_model": {
-                        "type": "string",
-                        "description": "Optional scoring model id (e.g. 'cvss31', 'usaf-rac'). Call list_scoring_models for the models this engagement permits and get_scoring_model for its metric ids and allowed values. Use together with score_inputs.",
-                    },
-                    "score_inputs": {
-                        "type": "object",
-                        "description": "Metric values for score_model, keyed by metric id (e.g. {\"AV\": \"N\", \"AC\": \"L\", ...} for cvss31). When given, the server computes severity, score and vector from these and they override `severity`.",
-                    },
-                },
-                "required": ["finding_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="list_scoring_models",
-            description="List the finding scoring models permitted for an engagement (site policy combined with the engagement's own policy), the default model, and whether the model is locked. Omit engagement_id for the site-wide policy.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID (optional)"},
-                },
-            },
-        ),
-        Tool(
-            name="get_scoring_model",
-            description="Get a scoring model's definition: its metrics (ids, labels, allowed option values or numeric ranges) — the keys and values to send as score_inputs on create_finding / update_finding.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "model_id": {"type": "string", "description": "Scoring model id from list_scoring_models (e.g. 'cvss31')"},
-                },
-                "required": ["model_id"],
-            },
-        ),
-
-        # ── Assets ───────────────────────────────────────────────────
-        Tool(
-            name="list_assets",
-            description="List target assets for a specific engagement. Returns hostname/IP, type, and status.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-        Tool(
-            name="get_asset",
-            description="Get full details of a specific asset including ports, linked findings, and metadata.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "The asset UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["asset_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="create_asset",
-            description="Create a new target asset in an engagement. Requires a name, asset_type and identifier.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "name": {"type": "string", "description": "Asset name (hostname, IP, URL, etc.)"},
-                    "asset_type": {
-                        "type": "string",
-                        "description": "Type of asset",
-                        "enum": ["IP_ADDRESS", "DOMAIN", "URL", "APPLICATION", "SERVER", "NETWORK", "OTHER"],
-                    },
-                    "identifier": {"type": "string", "description": "The asset's address: IP, hostname, URL or CIDR (required by the API)"},
-                    "description": {"type": "string", "description": "Optional description"},
-                    "os": {"type": "string", "description": "Operating system"},
-                    "in_scope": {"type": "boolean", "description": "Whether asset is in scope (default true)"},
-                },
-                "required": ["engagement_id", "name", "asset_type", "identifier"],
-            },
-        ),
-        Tool(
-            name="update_asset",
-            description="Update fields on an existing asset. Only specified fields are changed.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "The asset UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "name": {"type": "string", "description": "Updated name"},
-                    "asset_type": {"type": "string", "enum": ["IP_ADDRESS", "DOMAIN", "URL", "APPLICATION", "SERVER", "NETWORK", "OTHER"]},
-                    "description": {"type": "string", "description": "Updated description"},
-                    "os": {"type": "string", "description": "Updated OS"},
-                    "in_scope": {"type": "boolean", "description": "Updated scope status"},
-                },
-                "required": ["asset_id", "engagement_id"],
-            },
-        ),
-
-        # ── Test Cases ───────────────────────────────────────────────
-        Tool(
-            name="list_testcases",
-            description="List test cases for a specific engagement. Returns title, category, status, and result.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-        Tool(
-            name="get_testcase",
-            description="Get full details of a specific test case including steps, expected result, and linked findings.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "testcase_id": {"type": "string", "description": "The test case UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["testcase_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="create_testcase",
-            description="Create a new test case in an engagement. Requires at least a title.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "title": {"type": "string", "description": "Test case title"},
-                    "category": {"type": "string", "description": "Category (e.g. Reconnaissance, Exploitation)"},
-                    "description": {"type": "string", "description": "Detailed description (markdown)"},
-                    "steps": {"type": "string", "description": "Test steps (markdown)"},
-                    "expected_result": {"type": "string", "description": "Expected outcome (markdown)"},
-                    "parent_id": {"type": "string", "description": "Parent test case UUID for nesting"},
-                },
-                "required": ["engagement_id", "title"],
-            },
-        ),
-        Tool(
-            name="update_testcase",
-            description="Update fields on an existing test case. Only specified fields are changed.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "testcase_id": {"type": "string", "description": "The test case UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "title": {"type": "string", "description": "Updated title"},
-                    "category": {"type": "string", "description": "Updated category"},
-                    "description": {"type": "string", "description": "Updated description (markdown)"},
-                    "steps": {"type": "string", "description": "Updated steps (markdown)"},
-                    "expected_result": {"type": "string", "description": "Updated expected result (markdown)"},
-                    "status": {"type": "string", "description": "Updated status"},
-                    "result": {"type": "string", "description": "Updated result"},
-                },
-                "required": ["testcase_id", "engagement_id"],
-            },
-        ),
-
-        # ── Notes ────────────────────────────────────────────────────
-        Tool(
-            name="list_notes",
-            description="List notes for a specific engagement.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-        Tool(
-            name="get_note",
-            description="Get full details of a specific note including content and linked resources.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "note_id": {"type": "string", "description": "The note UUID"},
-                },
-                "required": ["note_id"],
-            },
-        ),
-        Tool(
-            name="create_note",
-            description="Create a new note in an engagement.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "title": {"type": "string", "description": "Note title"},
-                    "content": {"type": "string", "description": "Note content (markdown)"},
-                },
-                "required": ["engagement_id", "title"],
-            },
-        ),
-        Tool(
-            name="update_note",
-            description="Update a note's title or content.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "note_id": {"type": "string", "description": "The note UUID"},
-                    "title": {"type": "string", "description": "Updated title"},
-                    "content": {"type": "string", "description": "Updated content (markdown)"},
-                },
-                "required": ["note_id"],
-            },
-        ),
-
-        # ── Vault ────────────────────────────────────────────────────
-        Tool(
-            name="list_vault_items",
-            description="List vault items (credentials, keys, secrets) for a specific engagement.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-        Tool(
-            name="create_vault_item",
-            description="Create a new vault item (credential, key, or note) in an engagement.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "name": {"type": "string", "description": "Item name / label"},
-                    "item_type": {
-                        "type": "string",
-                        "description": "Type of vault item",
-                        "enum": ["Credential", "Key", "File", "Note"],
-                    },
-                    "username": {"type": "string", "description": "Username (for credentials)"},
-                    "password": {"type": "string", "description": "Password (for credentials)"},
-                    "url": {"type": "string", "description": "Associated URL"},
-                    "notes": {"type": "string", "description": "Additional notes"},
-                },
-                "required": ["engagement_id", "name", "item_type"],
-            },
-        ),
-        Tool(
-            name="update_vault_item",
-            description="Update fields on an existing vault item. Only specified fields are changed.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "item_id": {"type": "string", "description": "The vault item UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "name": {"type": "string", "description": "Updated name"},
-                    "username": {"type": "string", "description": "Updated username"},
-                    "password": {"type": "string", "description": "Updated password"},
-                    "url": {"type": "string", "description": "Updated URL"},
-                    "notes": {"type": "string", "description": "Updated notes"},
-                },
-                "required": ["item_id", "engagement_id"],
-            },
-        ),
-
-        # ── Cleanup Artifacts ────────────────────────────────────────
-        Tool(
-            name="list_cleanup_artifacts",
-            description="List cleanup artifacts (files, accounts, backdoors to remove) for an engagement.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-        Tool(
-            name="get_cleanup_artifact",
-            description="Get full details of a specific cleanup artifact.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "artifact_id": {"type": "string", "description": "The cleanup artifact UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["artifact_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="create_cleanup_artifact",
-            description="Create a new cleanup artifact in an engagement.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "title": {"type": "string", "description": "Artifact title"},
-                    "artifact_type": {
-                        "type": "string",
-                        "description": "Type of cleanup item",
-                        "enum": ["SSH Key", "File", "Account", "Permission", "Backdoor", "Implant", "Other"],
-                    },
-                    "location": {"type": "string", "description": "Where the artifact is located"},
-                    "description": {"type": "string", "description": "Details about the artifact"},
-                },
-                "required": ["engagement_id", "title", "artifact_type"],
-            },
-        ),
-        Tool(
-            name="update_cleanup_artifact",
-            description="Update fields on an existing cleanup artifact. Only specified fields are changed.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "artifact_id": {"type": "string", "description": "The cleanup artifact UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                    "title": {"type": "string", "description": "Updated title"},
-                    "location": {"type": "string", "description": "Updated location"},
-                    "description": {"type": "string", "description": "Updated description"},
-                    "status": {"type": "string", "description": "Updated cleanup status", "enum": list(CLEANUP_STATUSES)},
-                },
-                "required": ["artifact_id", "engagement_id"],
-            },
-        ),
-
-        # ── Finding Templates ────────────────────────────────────────
-        Tool(
-            name="list_finding_templates",
-            description="List all finding templates. These are reusable vulnerability definitions that can be applied to engagements.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-            },
-        ),
-        Tool(
-            name="get_finding_template",
-            description="Get full details of a specific finding template.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "template_id": {"type": "string", "description": "The template UUID"},
-                },
-                "required": ["template_id"],
-            },
-        ),
-        Tool(
-            name="create_finding_template",
-            description="Create a new finding template for reuse across engagements.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Template title"},
-                    "severity": {
-                        "type": "string",
-                        "description": "Default severity level",
-                        "enum": list(SEVERITIES),
-                    },
-                    "description": {"type": "string", "description": "Description (markdown)"},
-                    "impact": {"type": "string", "description": "Impact statement (markdown)"},
-                    "mitigations": {"type": "string", "description": "Remediation steps (markdown)"},
-                    "category": {"type": "string", "description": "Finding category"},
-                },
-                "required": ["title", "severity"],
-            },
-        ),
-        Tool(
-            name="update_finding_template",
-            description="Update fields on an existing finding template.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "template_id": {"type": "string", "description": "The template UUID"},
-                    "title": {"type": "string", "description": "Updated title"},
-                    "severity": {"type": "string", "enum": list(SEVERITIES)},
-                    "description": {"type": "string", "description": "Updated description (markdown)"},
-                    "impact": {"type": "string", "description": "Updated impact (markdown)"},
-                    "mitigations": {"type": "string", "description": "Updated mitigations (markdown)"},
-                    "category": {"type": "string", "description": "Updated category"},
-                },
-                "required": ["template_id"],
-            },
-        ),
-
-        # ── Test Case Templates ──────────────────────────────────────
-        Tool(
-            name="list_testcase_templates",
-            description="List all test case templates. These are reusable test procedures for engagements.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-            },
-        ),
-        Tool(
-            name="get_testcase_template",
-            description="Get full details of a specific test case template.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "template_id": {"type": "string", "description": "The template UUID"},
-                },
-                "required": ["template_id"],
-            },
-        ),
-        Tool(
-            name="create_testcase_template",
-            description="Create a new test case template for reuse across engagements.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Template title"},
-                    "category": {"type": "string", "description": "Category (e.g. Reconnaissance, Exploitation)"},
-                    "description": {"type": "string", "description": "Description (markdown)"},
-                    "steps": {"type": "string", "description": "Test steps (markdown)"},
-                    "expected_result": {"type": "string", "description": "Expected outcome (markdown)"},
-                },
-                "required": ["title"],
-            },
-        ),
-        Tool(
-            name="update_testcase_template",
-            description="Update fields on an existing test case template.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "template_id": {"type": "string", "description": "The template UUID"},
-                    "title": {"type": "string", "description": "Updated title"},
-                    "category": {"type": "string", "description": "Updated category"},
-                    "description": {"type": "string", "description": "Updated description (markdown)"},
-                    "steps": {"type": "string", "description": "Updated steps (markdown)"},
-                    "expected_result": {"type": "string", "description": "Updated expected result (markdown)"},
-                },
-                "required": ["template_id"],
-            },
-        ),
-
-        # ── Search ───────────────────────────────────────────────────
-        Tool(
-            name="search",
-            description="Global search across all resources (engagements, findings, assets, test cases, notes). Returns matching items with type, title, and context.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query string"},
-                },
-                "required": ["query"],
-            },
-        ),
-
-        # ── Stats ────────────────────────────────────────────────────
-        Tool(
-            name="get_engagement_stats",
-            description="Get statistics for a specific engagement: finding counts by severity, test case progress, asset count, and remediation status.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "engagement_id": {"type": "string", "description": "The engagement UUID"},
-                },
-                "required": ["engagement_id"],
-            },
-        ),
-        Tool(
-            name="get_global_stats",
-            description="Get platform-wide statistics: total engagements, findings, assets, and severity breakdowns.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-            },
-        ),
-
-        # ── Delete Operations ────────────────────────────────────────
-        Tool(
-            name="delete_finding",
-            description="Permanently delete a finding from an engagement. Irreversible.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "finding_id": {"type": "string", "description": "The finding UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
-                },
-                "required": ["finding_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="delete_asset",
-            description="Permanently delete an asset from an engagement. Irreversible.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "asset_id": {"type": "string", "description": "The asset UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
-                },
-                "required": ["asset_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="delete_testcase",
-            description="Permanently delete a test case from an engagement. Optionally cascade to child test cases.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "testcase_id": {"type": "string", "description": "The test case UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
-                    "cascade": {"type": "boolean", "description": "If true, also delete all child test cases recursively (default false)"},
-                },
-                "required": ["testcase_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="delete_note",
-            description="Permanently delete a note. Irreversible.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "note_id": {"type": "string", "description": "The note UUID"},
-                },
-                "required": ["note_id"],
-            },
-        ),
-        Tool(
-            name="get_vault_item",
-            description="Get a single vault item by ID. Returns metadata only (no plaintext credentials); call the reveal endpoint via the UI to fetch decrypted secrets with audit logging.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "item_id": {"type": "string", "description": "The vault item UUID"},
-                },
-                "required": ["item_id"],
-            },
-        ),
-        Tool(
-            name="delete_vault_item",
-            description="Permanently delete a vault item from an engagement. Irreversible — credential cannot be recovered.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "item_id": {"type": "string", "description": "The vault item UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
-                },
-                "required": ["item_id", "engagement_id"],
-            },
-        ),
-        Tool(
-            name="delete_cleanup_artifact",
-            description="Permanently delete a cleanup artifact from an engagement. Irreversible.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "artifact_id": {"type": "string", "description": "The cleanup artifact UUID"},
-                    "engagement_id": {"type": "string", "description": "The engagement UUID (scope confirmation)"},
-                },
-                "required": ["artifact_id", "engagement_id"],
-            },
-        ),
-
-        # ── Threat Intelligence (read-only) ──────────────────────────
-        Tool(
-            name="list_intel_items",
-            description="List threat intelligence items (CVEs, advisories, blog posts, news). Supports search across title/CVE/content, type and severity filters, sorting, and pagination.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "search": {"type": "string", "description": "Search across title, CVE ID, and content"},
-                    "item_type": {"type": "string", "description": "Filter by intel item type", "enum": list(INTEL_ITEM_TYPES)},
-                    "severity": {"type": "string", "description": "Filter by severity", "enum": list(SEVERITIES)},
-                    "sort_by": {
-                        "type": "string",
-                        "enum": ["title", "created_at", "published_at", "item_type", "severity", "source"],
-                        "description": "Sort column (default created_at)",
-                    },
-                    "sort_dir": {"type": "string", "enum": ["asc", "desc"], "description": "Sort direction (default desc)"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Page size (default 50, max 500)"},
-                    "offset": {"type": "integer", "minimum": 0, "description": "Page offset (default 0)"},
-                },
-            },
-        ),
-        Tool(
-            name="get_intel_item",
-            description="Get full details of a single threat-intel item, including attachments and linked findings/assets/test cases.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "item_id": {"type": "string", "description": "The intel item UUID"},
-                },
-                "required": ["item_id"],
-            },
-        ),
-        Tool(
-            name="list_intel_for_entity",
-            description="List all threat-intel items that have been linked to a specific finding, test case, or note in RedWire. For free-form lookups like 'is there intel about CVE-2023-12345?' use list_intel_items with a search query instead.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "entity_type": {
-                        "type": "string",
-                        "enum": ["finding", "testcase", "note"],
-                        "description": "Which kind of RedWire resource the intel is linked to",
-                    },
-                    "entity_id": {"type": "string", "description": "The UUID of the finding / test case / note"},
-                },
-                "required": ["entity_type", "entity_id"],
-            },
-        ),
-        Tool(
-            name="list_intel_feeds",
-            description="List configured threat-intel feed sources (RSS, CVE feeds, etc.) with their refresh status.",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-
-        # ── AI ────────────────────────────────────────────────────
-        Tool(
-            name="ai_chat",
-            description="Send a message to the built-in AI assistant for cybersecurity advice. Provide context about what you're working on.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "message": {"type": "string", "description": "The message/question to send"},
-                    "editor_content": {"type": "string", "description": "Optional: current editor content for context"},
-                    "field_context": {
-                        "type": "object",
-                        "description": "Optional: field context (resourceType, fieldName)",
-                        "properties": {
-                            "resourceType": {"type": "string"},
-                            "fieldName": {"type": "string"},
-                        },
-                    },
-                },
-                "required": ["message"],
-            },
-        ),
-    ]
-
-
-# GHSA-q4x9-5gmc-fxh5: untrusted-data envelope mirrors the in-backend ai.py
-# loop so an MCP client agent sees the same sentinels and can apply the same
-# system-prompt instruction to ignore embedded commands.
 _TOOL_DATA_BEGIN = "<<<REDWIRE_UNTRUSTED_TOOL_DATA_BEGIN>>>"
 _TOOL_DATA_END = "<<<REDWIRE_UNTRUSTED_TOOL_DATA_END>>>"
 
@@ -1014,12 +271,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text=_wrap_untrusted(f"Error: {str(e)}"))]
 
 
-# Every ``*_id`` argument must be a UUID, except these (validated where used).
-# A fixed list of UUID keys drifted from the tool schemas: the vault and
-# cleanup tools take ``item_id`` / ``artifact_id``, which it didn't name, so
-# ``item_id="<uuid>/reveal"`` reached GET /vault/<uuid>/reveal unchecked.
-_NON_UUID_ID_KEYS = frozenset({"model_id"})
-
+# Every ``*_id`` argument must be a UUID unless its schema gives a pattern
+# (e.g. scoring ``model_id``), which is checked instead. Either way nothing
+# unchecked is interpolated into a URL path.
 
 _VAULT_SECRET_FIELDS = ("username", "password", "note")
 
@@ -1039,14 +293,20 @@ def _redact_vault_secrets(items):
     return _strip(items)
 
 
-def _validate_uuid_args(args: dict[str, Any]) -> None:
+def _validate_uuid_args(args: dict[str, Any], schema: dict | None = None) -> None:
     """GHSA-q4x9-5gmc-fxh5: every *_id argument is interpolated into a backend
     URL path. A model-supplied value containing '..' (or just a non-UUID path
-    fragment) would traverse to unintended routes. Validate as UUID before
-    any URL interpolation."""
+    fragment) would traverse to unintended routes. Validate as UUID (or the
+    schema's pattern) before any URL interpolation."""
     import uuid as _uuid
+    props = (schema or {}).get("properties") or {}
     for k, v in args.items():
-        if not k.endswith("_id") or k in _NON_UUID_ID_KEYS:
+        pattern = (props.get(k) or {}).get("pattern")
+        if pattern:
+            if v is not None and not (isinstance(v, str) and re.fullmatch(pattern, v)):
+                raise ValueError(f"argument {k!r}={v!r} doesn't match {pattern}")
+            continue
+        if not k.endswith("_id"):
             continue
         if v is None or v == "":
             continue
@@ -1058,273 +318,97 @@ def _validate_uuid_args(args: dict[str, Any]) -> None:
             raise ValueError(f"argument {k!r}={v!r} is not a valid UUID")
 
 
+async def _call_route(spec: dict, args: dict[str, Any]) -> Any:
+    """One tool call from its registry entry: path placeholders, query
+    arguments and (for POST/PUT/PATCH) a JSON body of the rest."""
+    method, path = spec["method"], spec["path"]
+    path_args = set(re.findall(r"{(\w+)}", path))
+    for name in path_args:
+        if not args.get(name):
+            raise ValueError(f"argument {name!r} is required")
+        path = path.replace("{" + name + "}", str(args[name]))
+    props = (spec.get("input_schema") or {}).get("properties") or {}
+    query_args = set(props) if spec.get("query") == "*" else set(spec.get("query") or ())
+    rename = spec.get("query_rename") or {}
+    params = {rename.get(a, a): args[a] for a in query_args if args.get(a) is not None}
+    if method in ("GET", "DELETE"):
+        if method == "GET":
+            return await _api_get(path, params=params or None)
+        return await _api_delete(path + ("?" + str(httpx.QueryParams(params)) if params else ""))
+    skip = (path_args | query_args | set(spec.get("scope_args") or ())) - set(spec.get("body_keeps") or ())
+    body = {k: v for k, v in args.items() if k not in skip}
+    if params:
+        path += "?" + str(httpx.QueryParams(params))
+    send = {"POST": _api_post, "PUT": _api_put, "PATCH": _api_patch}[method]
+    return await send(path, body)
+
+
+async def _engagement_stats(args: dict[str, Any]) -> Any:
+    # There is no /stats/engagement/{id} route; build the answer from the
+    # per-engagement endpoints.
+    eid = args["engagement_id"]
+    return {
+        "counts": await _api_get(f"/engagements/{eid}/counts"),
+        "overview": await _api_get("/stats/overview", params={"engagement_id": eid}),
+        "severity_distribution": await _api_get("/stats/severity-distribution", params={"engagement_id": eid}),
+        "findings_by_status": await _api_get("/stats/findings-by-status", params={"engagement_id": eid}),
+    }
+
+
+async def _global_stats(args: dict[str, Any]) -> Any:
+    # Likewise no /stats/global: the overview without an engagement is it.
+    return {
+        "overview": await _api_get("/stats/overview"),
+        "severity_distribution": await _api_get("/stats/severity-distribution"),
+    }
+
+
+async def _ai_chat(args: dict[str, Any]) -> Any:
+    payload = {"messages": [{"role": "user", "content": args["message"]}]}
+    if args.get("editor_content"):
+        payload["editor_content"] = args["editor_content"]
+    if args.get("field_context"):
+        payload["field_context"] = args["field_context"]
+    # Non-streaming for MCP — collect the SSE stream into one answer.
+    async with httpx.AsyncClient(base_url=REDWIRE_API_URL, timeout=120) as client:
+        resp = await client.post("/ai/chat", headers=_headers(), json=payload)
+        resp.raise_for_status()
+        full_text = ""
+        for line in resp.text.split("\n"):
+            if line.startswith("data: "):
+                chunk = line[6:]
+                if chunk == "[DONE]":
+                    break
+                try:
+                    data = json.loads(chunk)
+                    full_text += data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                except json.JSONDecodeError:
+                    continue
+        return {"response": full_text}
+
+
+# Named special cases a registry entry can point at with ``handler``.
+_HANDLERS = {
+    "engagement_stats": _engagement_stats,
+    "global_stats": _global_stats,
+    "ai_chat": _ai_chat,
+}
+
+
 async def _dispatch(name: str, args: dict[str, Any]) -> Any:
-    """Route tool calls to RedWire API endpoints."""
-    _validate_uuid_args(args)
-
-    # ── Engagements ──────────────────────────────────────────────────
-    if name == "list_engagements":
-        params = {}
-        if args.get("status"):
-            params["status"] = args["status"]
-        return await _api_get("/engagements", params=params)
-
-    elif name == "get_engagement":
-        return await _api_get(f"/engagements/{args['engagement_id']}")
-
-    # ── Findings ─────────────────────────────────────────────────────
-    elif name == "list_findings":
-        return await _api_get("/findings", params={"engagement_id": args["engagement_id"]})
-
-    elif name == "get_finding":
-        return await _api_get(
-            f"/findings/{args['finding_id']}",
-            params={"engagement_id": args["engagement_id"]},
-        )
-
-    elif name == "create_finding":
-        # engagement_id stays in the body: FindingCreate requires it there.
-        return await _api_post(f"/findings?engagement_id={args['engagement_id']}", data=args)
-
-    elif name == "update_finding":
-        fid = args.pop("finding_id")
-        eid = args.pop("engagement_id")
-        return await _api_put(f"/findings/{fid}?engagement_id={eid}", data=args)
-
-    # ── Scoring ──────────────────────────────────────────────────────
-    elif name == "list_scoring_models":
-        params = {"engagement_id": args["engagement_id"]} if args.get("engagement_id") else {}
-        return await _api_get("/scoring/effective-policy", params=params)
-
-    elif name == "get_scoring_model":
-        model_id = args.get("model_id") or ""
-        # Interpolated into a URL path — same traversal guard as the *_id UUIDs.
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", model_id):
-            raise ValueError(f"argument 'model_id'={model_id!r} is not a valid scoring model id")
-        return await _api_get(f"/scoring/models/{model_id}")
-
-    # ── Assets ───────────────────────────────────────────────────────
-    elif name == "list_assets":
-        return await _api_get("/assets", params={"engagement_id": args["engagement_id"]})
-
-    elif name == "get_asset":
-        return await _api_get(
-            f"/assets/{args['asset_id']}",
-            params={"engagement_id": args["engagement_id"]},
-        )
-
-    elif name == "create_asset":
-        # engagement_id stays in the body: the Create schema requires it
-        # there (popping it into the query made every call 422).
-        return await _api_post("/assets", data=args)
-
-    elif name == "update_asset":
-        aid = args.pop("asset_id")
-        eid = args.pop("engagement_id")
-        return await _api_put(f"/assets/{aid}?engagement_id={eid}", data=args)
-
-    # ── Test Cases ───────────────────────────────────────────────────
-    elif name == "list_testcases":
-        return await _api_get("/testcases", params={"engagement_id": args["engagement_id"]})
-
-    elif name == "get_testcase":
-        return await _api_get(
-            f"/testcases/{args['testcase_id']}",
-            params={"engagement_id": args["engagement_id"]},
-        )
-
-    elif name == "create_testcase":
-        # engagement_id stays in the body: the Create schema requires it
-        # there (popping it into the query made every call 422).
-        return await _api_post("/testcases", data=args)
-
-    elif name == "update_testcase":
-        tid = args.pop("testcase_id")
-        eid = args.pop("engagement_id")
-        return await _api_put(f"/testcases/{tid}?engagement_id={eid}", data=args)
-
-    # ── Notes ────────────────────────────────────────────────────────
-    elif name == "list_notes":
-        return await _api_get(f"/engagements/{args['engagement_id']}/notes")
-
-    elif name == "get_note":
-        return await _api_get(f"/notes/{args['note_id']}")
-
-    elif name == "create_note":
-        eid = args.pop("engagement_id")
-        return await _api_post(f"/engagements/{eid}/notes", data=args)
-
-    elif name == "update_note":
-        nid = args.pop("note_id")
-        return await _api_patch(f"/notes/{nid}", data=args)
-
-    # ── Vault ────────────────────────────────────────────────────────
-    elif name == "list_vault_items":
-        items = await _api_get("/vault", params={"engagement_id": args["engagement_id"]})
-        # GHSA-q4x9-5gmc-fxh5 (b1): never return plaintext secrets to the
-        # LLM. An injected description that drove a vault read could otherwise
-        # exfiltrate credentials to the model context.
-        return _redact_vault_secrets(items)
-
-    elif name == "create_vault_item":
-        # engagement_id stays in the body: the Create schema requires it
-        # there (popping it into the query made every call 422).
-        return _redact_vault_secrets(await _api_post("/vault", data=args))
-
-    elif name == "update_vault_item":
-        iid = args.pop("item_id")
-        eid = args.pop("engagement_id")
-        return _redact_vault_secrets(await _api_patch(f"/vault/{iid}?engagement_id={eid}", data=args))
-
-    # ── Cleanup Artifacts ────────────────────────────────────────────
-    elif name == "list_cleanup_artifacts":
-        return await _api_get("/cleanup-artifacts", params={"engagement_id": args["engagement_id"]})
-
-    elif name == "get_cleanup_artifact":
-        return await _api_get(
-            f"/cleanup-artifacts/{args['artifact_id']}",
-            params={"engagement_id": args["engagement_id"]},
-        )
-
-    elif name == "create_cleanup_artifact":
-        # engagement_id stays in the body: the Create schema requires it
-        # there (popping it into the query made every call 422).
-        return await _api_post("/cleanup-artifacts", data=args)
-
-    elif name == "update_cleanup_artifact":
-        aid = args.pop("artifact_id")
-        eid = args.pop("engagement_id")
-        return await _api_patch(f"/cleanup-artifacts/{aid}?engagement_id={eid}", data=args)
-
-    # ── Finding Templates ────────────────────────────────────────────
-    elif name == "list_finding_templates":
-        return await _api_get("/templates")
-
-    elif name == "get_finding_template":
-        return await _api_get(f"/templates/{args['template_id']}")
-
-    elif name == "create_finding_template":
-        return await _api_post("/templates", data=args)
-
-    elif name == "update_finding_template":
-        tid = args.pop("template_id")
-        return await _api_put(f"/templates/{tid}", data=args)
-
-    # ── Test Case Templates ──────────────────────────────────────────
-    elif name == "list_testcase_templates":
-        return await _api_get("/testcase-templates")
-
-    elif name == "get_testcase_template":
-        return await _api_get(f"/testcase-templates/{args['template_id']}")
-
-    elif name == "create_testcase_template":
-        return await _api_post("/testcase-templates", data=args)
-
-    elif name == "update_testcase_template":
-        tid = args.pop("template_id")
-        return await _api_put(f"/testcase-templates/{tid}", data=args)
-
-    # ── Search ───────────────────────────────────────────────────────
-    elif name == "search":
-        return await _api_get("/search", params={"q": args["query"]})
-
-    # ── Stats ────────────────────────────────────────────────────────
-    elif name == "get_engagement_stats":
-        # There is no /stats/engagement/{id} route (it always 404'd); build
-        # the documented answer from the per-engagement endpoints.
-        eid = args["engagement_id"]
-        return {
-            "counts": await _api_get(f"/engagements/{eid}/counts"),
-            "overview": await _api_get("/stats/overview", params={"engagement_id": eid}),
-            "severity_distribution": await _api_get("/stats/severity-distribution", params={"engagement_id": eid}),
-            "findings_by_status": await _api_get("/stats/findings-by-status", params={"engagement_id": eid}),
-        }
-
-    elif name == "get_global_stats":
-        # Likewise no /stats/global: the overview without an engagement is it.
-        return {
-            "overview": await _api_get("/stats/overview"),
-            "severity_distribution": await _api_get("/stats/severity-distribution"),
-        }
-
-    # ── Delete Operations ────────────────────────────────────────────
-    # The DELETE endpoints don't read engagement_id from the URL — the
-    # row's own engagement_id drives the backend's permission check — but
-    # we keep it in the tool schema as scope confirmation for the LLM.
-    elif name == "delete_finding":
-        return await _api_delete(f"/findings/{args['finding_id']}")
-
-    elif name == "delete_asset":
-        return await _api_delete(f"/assets/{args['asset_id']}")
-
-    elif name == "delete_testcase":
-        path = f"/testcases/{args['testcase_id']}"
-        if args.get("cascade"):
-            path += "?cascade=true"
-        return await _api_delete(path)
-
-    elif name == "delete_note":
-        return await _api_delete(f"/notes/{args['note_id']}")
-
-    elif name == "get_vault_item":
-        # Redacted like list_vault_items (GHSA-q4x9 b1): the detail response
-        # carries the decrypted username / password / note too.
-        return _redact_vault_secrets(await _api_get(f"/vault/{args['item_id']}"))
-
-    elif name == "delete_vault_item":
-        return await _api_delete(f"/vault/{args['item_id']}")
-
-    elif name == "delete_cleanup_artifact":
-        return await _api_delete(f"/cleanup-artifacts/{args['artifact_id']}")
-
-    # ── Threat Intelligence (read-only) ──────────────────────────────
-    elif name == "list_intel_items":
-        params = {k: v for k, v in args.items() if v is not None}
-        return await _api_get("/intel/items", params=params)
-
-    elif name == "get_intel_item":
-        return await _api_get(f"/intel/items/{args['item_id']}")
-
-    elif name == "list_intel_for_entity":
-        return await _api_get(
-            "/intel/by-entity",
-            params={"entity_type": args["entity_type"], "entity_id": args["entity_id"]},
-        )
-
-    elif name == "list_intel_feeds":
-        return await _api_get("/intel/feeds")
-
-    # ── AI ────────────────────────────────────────────────────────────
-    elif name == "ai_chat":
-        payload = {
-            "messages": [{"role": "user", "content": args["message"]}],
-        }
-        if args.get("editor_content"):
-            payload["editor_content"] = args["editor_content"]
-        if args.get("field_context"):
-            payload["field_context"] = args["field_context"]
-
-        # Non-streaming for MCP — collect full response
-        async with httpx.AsyncClient(base_url=REDWIRE_API_URL, timeout=120) as client:
-            resp = await client.post("/ai/chat", headers=_headers(), json=payload)
-            resp.raise_for_status()
-            # Response is SSE stream, collect text
-            full_text = ""
-            for line in resp.text.split("\n"):
-                if line.startswith("data: "):
-                    chunk = line[6:]
-                    if chunk == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(chunk)
-                        delta = data.get("choices", [{}])[0].get("delta", {})
-                        full_text += delta.get("content", "")
-                    except json.JSONDecodeError:
-                        continue
-            return {"response": full_text}
-
-    else:
+    """Route a tool call to the RedWire API as its registry entry says."""
+    spec = (await _registry()).get(name)
+    if spec is None:
         raise ValueError(f"Unknown tool: {name}")
+    _validate_uuid_args(args, spec.get("input_schema"))
+    if spec.get("handler"):
+        result = await _HANDLERS[spec["handler"]](args)
+    else:
+        result = await _call_route(spec, dict(args))
+    if spec.get("redact_vault_secrets"):
+        # GHSA-q4x9-5gmc-fxh5 (b1): never return plaintext secrets to the LLM.
+        result = _redact_vault_secrets(result)
+    return result
 
 
 # ── MCP 2.x handler registration ─────────────────────────────────────────────
