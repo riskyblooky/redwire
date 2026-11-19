@@ -11,11 +11,16 @@ section becomes one release entry.
 - `User.recovery_codes_remaining` is a count subquery on the user row instead of loading every recovery code on each authenticated request.
 
 - **One AI tool registry.** The MCP server's 50 tools and the in-app chat's tools were separate hand-kept lists (plus a third static list behind `/ai/mcp/tools`). They now come from `backend/utils/ai_tool_registry.py`: each entry carries the tool's schema and the API route it calls. The MCP server reads it from `GET /ai/tool-registry` and dispatches generically (its enum mirrors and per-tool branches are gone; the write gate, UUID/pattern checks, vault redaction and untrusted-data wrapper stay in the MCP server). `tests/test_ai_tool_registry.py` checks every entry against the real routes and request schemas.
+- **One report document behind every format.** `utils/report_content.py` builds what a report says (finding and test-case order, `F01`/`T1` ids, fields and labels, statuses, custom fields, evidence, and each portion's effective mark plus the banner); the PDF, Markdown and interactive HTML renderers keep their own layout and render from it.
+- **Markdown reports are marked.** With a marking profile they open and close with the banner, carry portion marks on section, finding, test-case and cleanup headings (and a mark column in their tables), and end with the distribution statement. Findings are headed by their report id (`F01: ...`) as in the PDF and HTML reports, and test cases get detail entries, not only a table row.
+- The interactive HTML report shows report-visible custom fields and the portion marks of test cases, cleanup items and evidence.
 
 ### Fixed
 - Cleanup items in generated reports now get their linked finding (the report loaded only their assets).
 - AI tool schemas that didn't match the API, found by the new registry test: `create_testcase` / `create_testcase_template` didn't require `category` and `description` (calls without them 422'd); `create_asset` / `update_asset` offered `os`, the vault tools `url` and `notes` (the field is `note`), the finding-template tools `severity`, and `update_testcase` `status` / `result` (it's `actual_result`, `is_executed`, `is_successful`) — none of which the API takes, so they were dropped silently.
 - The in-app chat's `list_notes` tool was advertised but had no executor ("Unknown tool"); its system prompt also promised vault, cleanup and template tools it doesn't have.
+- PDF and Markdown reports left out a finding's Technical Details (only the HTML report showed them).
+- A sub-test's display id in the PDF attack graph and the HTML report came from list order, so a child could be numbered before its parent; ids now follow the test-case tree the PDF lists.
 
 ## [1.9.1] — 2026-11-16
 

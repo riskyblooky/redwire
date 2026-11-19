@@ -303,3 +303,22 @@ Now implemented:
 Remaining Phase C (still deferred, lower priority): custom/embedded TTF fonts (needs regular+bold font upload), DOCX export (needs python-docx dep + image rebuild), finding field selection/reorder/custom-fields, findings grouping/filtering, exec-summary charts / appendix / methodology block types, and a live theme preview/thumbnail.
 
 Operational note: applying b80ed9333c61 in dev surfaced lock contention from stale "idle in transaction" sessions — two concurrent `alembic upgrade` runs stacked on an ALTER TABLE. Resolved by terminating the stuck backends; run migrations one at a time.
+
+## Report document (2026-11-19)
+
+All three formats render from one `ReportDocument` built by
+`backend/utils/report_content.py::build_report_document`. It owns every content
+decision: order (findings most-severe first, test cases as a depth-first
+parent → child tree), display ids (`F01`, `T1`, and `1.2` tree numbers),
+field lists and labels, test-case status (pass / fail / executed / not
+executed), finding status groups, score presentation, report-visible custom
+fields, included evidence, and marking — each portion's effective `Mark`
+(explicit → engagement default → ceiling clamp; evidence inherits its
+finding), the structural-heading mark, the aggregate (engagement-default)
+mark, and the banner (high-water mark of every portion).
+
+`PDFReportGenerator`, `MarkdownReportGenerator` and `HTMLReportGenerator`
+keep only layout. A new field or a marking rule change goes in
+`report_content.py` once; `tests/test_report_content.py` checks the three
+formats agree on ids and marks.
+

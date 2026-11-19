@@ -220,6 +220,7 @@ main{padding:26px 26px 60px; min-width:0}
 .f-id{font-family:var(--font-mono); font-size:12px; color:var(--ink-faint); width:52px; flex:none}
 .f-title{font-weight:600; font-size:15px; flex:1; min-width:0}
 .f-title .pmark{margin-right:7px}
+.tc-title .pmark,.ev-thumb .cap .pmark,#cleantable .pmark{margin-right:6px}
 .f-cvss{font-family:var(--font-mono); font-size:13px; color:var(--ink-muted); min-width:44px; white-space:nowrap; text-align:right}
 .f-caret{color:var(--ink-faint); transition:transform .2s} .finding.open .f-caret{transform:rotate(90deg)}
 .f-body{display:none; padding:2px 18px 20px; border-top:1px solid var(--border-soft)}
@@ -876,9 +877,10 @@ function findingHTML(f){
  if(f.cvss||f.outcome||(f.vec&&f.vec!=='—')) secs.push(`<div class="fsec depth-tech"><span class="lbl">${esc(f.model||'Score')} · ${esc(scoreTxt(f))}${f.cwe?' · '+esc(f.cwe):''}</span>${cvssBreak(f.vec)}</div>`);
  if(f.steps) secs.push(`<div class="fsec depth-tech"><span class="lbl">Steps to reproduce</span><div class="md">${f.steps}</div></div>`);
  if(f.tech) secs.push(`<div class="fsec depth-tech"><span class="lbl">Technical detail</span><div class="md">${f.tech}</div></div>`);
- if(f.ev&&f.ev.length) secs.push(`<div class="fsec"><span class="lbl">Evidence</span><div class="ev-thumbs">${f.ev.map(e=>`<div class="ev-thumb" data-ev data-cap="${esc(e.cap||f.id)}"><img src="${e.img}" alt="${esc(e.cap||'')}"><div class="cap">${esc(e.cap||(f.id+' · captured proof'))}</div></div>`).join('')}</div></div>`);
+ if(f.ev&&f.ev.length) secs.push(`<div class="fsec"><span class="lbl">Evidence</span><div class="ev-thumbs">${f.ev.map(e=>`<div class="ev-thumb" data-ev data-cap="${esc(e.cap||f.id)}"><img src="${e.img}" alt="${esc(e.cap||'')}"><div class="cap">${e.mark?`<span class="pmark">${esc(e.mark)}</span>`:''}${esc(e.cap||(f.id+' · captured proof'))}</div></div>`).join('')}</div></div>`);
  if(f.remed) secs.push(`<div class="fsec remed"><span class="lbl" style="color:var(--ok)">Remediation</span><div class="md">${f.remed}</div></div>`);
  if(f.refs_html) secs.push(`<div class="fsec"><span class="lbl">References</span><div class="md">${f.refs_html}</div></div>`);
+ (f.custom||[]).forEach(r=>secs.push(`<div class="fsec"><span class="lbl">${esc(r[0])}</span><div>${esc(r[1])}</div></div>`));
  const st=f.status==='remediated'?'remediated':f.status==='progress'?'progress':'open';
  const stlabel=f.status==='remediated'?'Remediated':f.status==='progress'?'In progress':'Open';
  return `<div class="finding" data-id="${f.id}" data-sev="${f.sev}" data-status="${esc(f.status)}" style="--sev:var(--sev-${f.sev})">
@@ -904,7 +906,7 @@ function setSevFilter(k){sevFilter=new Set([k]); $$('#fchips .fchip[data-sev]').
 renderFindings();
 
 /* cleanup */
-$('#cleantable').innerHTML=`<thead><tr><th>Artifact</th><th>Type</th><th>System</th><th>Owner</th><th>Status</th></tr></thead><tbody>${CLEANUP.map((c,i)=>`<tr data-cleanup="${i}"><td><div style="font-weight:600">${esc(c.t)}</div><div style="color:var(--ink-muted);font-size:12.5px">${c.note}</div></td><td>${esc(c.type)}</td><td class="mono" style="font-size:12.5px">${esc(c.sys)}</td><td>${esc(c.owner)}</td><td><span class="pill ${c.status==='Reverted'?'remediated':'open'}">${esc(c.status)}</span></td></tr>`).join('')}</tbody>`;
+$('#cleantable').innerHTML=`<thead><tr><th>Artifact</th><th>Type</th><th>System</th><th>Owner</th><th>Status</th></tr></thead><tbody>${CLEANUP.map((c,i)=>`<tr data-cleanup="${i}"><td><div style="font-weight:600">${c.mark?`<span class="pmark">${esc(c.mark)}</span>`:''}${esc(c.t)}</div><div style="color:var(--ink-muted);font-size:12.5px">${c.note}</div></td><td>${esc(c.type)}</td><td class="mono" style="font-size:12.5px">${esc(c.sys)}</td><td>${esc(c.owner)}</td><td><span class="pill ${c.status==='Reverted'?'remediated':'open'}">${esc(c.status)}</span></td></tr>`).join('')}</tbody>`;
 
 /* assets */
 $('#assettable').innerHTML=`<thead><tr><th>Asset</th><th>Type</th><th>Findings by severity</th><th>Highest</th></tr></thead><tbody>${ASSETS.map(a=>{const order=['critical','high','medium','low','info'];const hi=order.find(k=>a.sevs[k]);const total=Object.values(a.sevs).reduce((x,y)=>x+y,0);return `<tr data-asset="${esc(a.n)}"><td class="mono" style="font-weight:600">${esc(a.n)}</td><td>${esc(a.type)}</td><td><div style="display:flex;gap:5px;flex-wrap:wrap">${order.filter(k=>a.sevs[k]).map(k=>`<span class="chip ${k}">${a.sevs[k]} ${k}</span>`).join('')}</div></td><td><span class="chip ${hi}">${hi}</span></td></tr>`;}).join('')}</tbody>`;
@@ -926,7 +928,7 @@ function renderTestcases(){
      </div>${t.notes?`<div class="tcd"><span class="tcd-l">Operator notes</span><div class="md">${md(t.notes)}</div></div>`:''}
    </div>`:'';
    return `<div class="tc-item" data-tc="${t.id}" style="margin-left:${depth*30}px"><span class="tcstat ${cls}">${lab}</span>
-     <div style="flex:1;min-width:0"><div class="tc-title">${esc(t.label)}</div><div class="tc-desc">${md(t.desc||'')}</div>${finds?`<div class="tc-finds">${finds}</div>`:''}${detail}</div></div>`
+     <div style="flex:1;min-width:0"><div class="tc-title">${t.mark?`<span class="pmark">${esc(t.mark)}</span>`:''}${esc(t.label)}</div><div class="tc-desc">${md(t.desc||'')}</div>${finds?`<div class="tc-finds">${finds}</div>`:''}${detail}</div></div>`
      + kids(t.id).map(c=>row(c,depth+1)).join('');};
  $('#tclist').innerHTML=TC.filter(t=>!t.parent).map(t=>row(t,0)).join('');
 }

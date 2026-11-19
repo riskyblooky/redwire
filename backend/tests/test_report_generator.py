@@ -335,8 +335,9 @@ def test_markdown_generator_sorts_findings_by_severity_desc():
         testcases=[],
     )
     md = gen.generate()
-    # Critical finding heading appears before the low one.
-    assert md.index("Finding 1: Crit one") < md.index("Finding 2: Low one")
+    # Critical finding heading appears before the low one, with the same
+    # display ids the PDF and HTML reports use.
+    assert md.index("F01: Crit one") < md.index("F02: Low one")
     assert "**Client:** ACME" in md
 
 

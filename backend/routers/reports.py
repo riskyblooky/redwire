@@ -396,7 +396,7 @@ async def _do_generate_report(
         )
 
     elif config.report_format == ReportFormat.MARKDOWN:
-        generator = MarkdownReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, finding_custom_fields=finding_custom_fields)
+        generator = MarkdownReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, finding_custom_fields=finding_custom_fields, marking_profile=marking_profile)
         md_content = await _render(generator)
         filename = f"Report_{safe_name}.md"
         return Response(

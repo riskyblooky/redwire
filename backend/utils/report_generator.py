@@ -24,14 +24,17 @@ rl_config.trustedHosts = []
 
 from datetime import datetime
 from models.engagement import Engagement
-from models.finding import Finding, Severity
+from models.finding import Finding
 from models.testcase import TestCase
 from models.cleanup_artifact import CleanupArtifact
 from models.report_layout import ReportSection, SectionType
 from models.report_theme import ReportTheme
-from utils.marking import MarkingEngine, MarkedImage
-from scoring.display import outcome_label
-from scoring.registry import DEFAULT_MODEL_ID, scoring_registry
+from utils.marking import MarkedImage
+from utils.report_content import (  # noqa: F401 — helpers re-exported for callers/tests
+    NO_MARK, Mark, SEVERITY_ORDER, ReportDocument, build_report_document,
+    _format_report_cf_value, _report_cf_rows, _score_info, _score_label,
+    TESTCASE_STATUS_LABELS, _severity_rank, _title_case, _v, testcase_status,
+)
 from typing import List, Optional
 import re
 from html import unescape as _html_unescape
@@ -101,7 +104,7 @@ _DEFAULTS = {
 }
 
 # Order findings/severity summaries are rendered in (most → least severe).
-_SEV_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+_SEV_ORDER = SEVERITY_ORDER
 
 # Map a severity to its themeable color key (falls back via _DEFAULTS).
 _SEV_THEME_KEY = {
@@ -129,13 +132,6 @@ _SEV_BG_COLORS = {
     "INFO":     "#F8FAFC",
 }
 
-_SEVERITY_RANK = {
-    'CRITICAL': 5,
-    'HIGH': 4,
-    'MEDIUM': 3,
-    'LOW': 2,
-    'INFO': 1,
-}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -152,71 +148,6 @@ def _t(theme: Optional[ReportTheme], key: str):
 
 def _hex(theme: Optional[ReportTheme], key: str) -> colors.Color:
     return colors.HexColor(_t(theme, key))
-
-
-def _severity_rank(severity) -> int:
-    key = _v(severity).upper()
-    return _SEVERITY_RANK.get(key, 0)
-
-
-def _format_report_cf_value(field_type, value) -> Optional[str]:
-    """Display string for a custom-field value in a report, or None if empty."""
-    if value is None or value == "" or value == []:
-        return None
-    if field_type == "boolean":
-        return "Yes" if value else "No"
-    if isinstance(value, list):
-        return ", ".join(str(v) for v in value)
-    return str(value)
-
-
-def _report_cf_rows(defs, custom_fields) -> list:
-    """(label, display_value) pairs for report-visible custom fields that have
-    a value on this record. ``defs`` is the precomputed show_in_report
-    definition list; ``custom_fields`` is the record's JSON dict (may be None)."""
-    cf = custom_fields or {}
-    rows = []
-    for d in (defs or []):
-        v = _format_report_cf_value(d.field_type, cf.get(d.field_key))
-        if v is not None:
-            rows.append((d.label, v))
-    return rows
-
-
-def _v(val) -> str:
-    if val is None:
-        return 'N/A'
-    return val.value if hasattr(val, 'value') else str(val)
-
-
-def _score_info(finding) -> dict:
-    """How a finding's rating should be presented, given the scoring model that
-    produced it. Legacy findings (no ``score_model``) are CVSS 3.1.
-
-    Returns ``label`` (model name, e.g. "USAF Risk Assessment Matrix"),
-    ``numeric`` (False for categorical models, whose ``cvss_score`` is only a
-    nominal sort key and must not be printed as a score), ``score``,
-    ``outcome`` (categorical display label), ``vector`` and ``text`` (one-line
-    display string, '' when unscored).
-    """
-    model_id = getattr(finding, 'score_model', None) or DEFAULT_MODEL_ID
-    model = scoring_registry.get(model_id)
-    label = model.label if model else 'Score'
-    numeric = model is None or model.score_kind == 'numeric'
-    score = float(finding.cvss_score) if numeric and finding.cvss_score is not None else None
-    outcome = None if numeric else outcome_label(model_id, getattr(finding, 'score_inputs', None))
-    vector = finding.cvss_vector or None
-    head = f'{score:.1f}' if score is not None else (outcome or '')
-    text = f'{head}  |  {vector}' if head and vector else (head or vector or '')
-    return {'label': label, 'numeric': numeric, 'score': score, 'outcome': outcome,
-            'vector': vector, 'text': text}
-
-
-def _score_label(findings) -> str:
-    """Overall label for scores across several findings: the shared model's name
-    when all scored findings use one model, else a generic 'Score'."""
-    labels = {_score_info(f)['label'] for f in findings}
-    return labels.pop() if len(labels) == 1 else 'Score'
 
 
 # ── Attack-chain (ChainLink) resolution ───────────────────────────────
@@ -857,23 +788,28 @@ class PDFReportGenerator:
         chain_vault_items=None,
     ):
         self.engagement = engagement
-        self.sections = sections
-        self.findings = sorted(findings, key=lambda x: _severity_rank(x.severity), reverse=True)
-        self.testcases = testcases
-        self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
         self.storage = storage
+        # What the report says (order, ids, fields, marks, banner) — shared
+        # with the Markdown and HTML renderers; this class only lays it out.
+        self.doc = build_report_document(
+            engagement, sections, findings, testcases, cleanup_artifacts,
+            theme=theme, marking_profile=marking_profile,
+            finding_custom_fields=finding_custom_fields,
+            default_title=_DEFAULTS['cover_title'])
+        # ORM rows in document order, for the attack-graph builders.
+        self.findings = [f.src for f in self.doc.findings]
+        self.testcases = [t.src for t in self.doc.testcases]
+        self.cleanup_artifacts = [c.src for c in self.doc.cleanup]
         # Operator-authored attack-chain edges (ChainLink) + the vault items
         # they touch. Empty → the attack-path graphs fall back to the
         # association-derived subgraphs (byte-identical to pre-chain output).
         self.chain_edges = chain_edges or []
         self.chain_vault_items = chain_vault_items or {}
-        # Report-visible finding custom-field definitions (show_in_report).
-        self.finding_custom_fields = finding_custom_fields or []
         # Portion marking — None when no profile is selected (marking disabled).
-        self.marking = MarkingEngine(marking_profile, engagement) if marking_profile else None
-        # Document banner level (high-water mark), computed in generate().
-        self._banner_level = None
+        self.marking = self.doc.marking
+        # Document banner level (high-water mark of every portion).
+        self._banner_level = self.doc.banner_level
         # { image_id: { storage_key, content_type } } — pre-loaded by the
         # route so this class needs no DB session. Used by _md_to_flowables
         # via _resolve_markdown_image to embed inline pasted/dropped images.
@@ -913,61 +849,27 @@ class PDFReportGenerator:
 
     # ── Portion marking helpers ───────────────────────────────────
 
-    def _eff_mark(self, entity):
-        """Effective (level, suffix) for an entity; (None, None) if marking off."""
-        if not self.marking:
-            return (None, None)
-        return self.marking.resolve(
-            getattr(entity, 'classification_level', None),
-            getattr(entity, 'classification_suffix', None),
-        )
-
-    def _mark_str(self, entity) -> str:
-        """XML-escaped portion-mark token for an entity ('' if marking off)."""
-        if not self.marking:
-            return ''
-        lvl, suf = self._eff_mark(entity)
-        return _escape_xml(self.marking.portion_mark(lvl, suf))
-
-    def _mark_prefix(self, entity) -> str:
-        """Portion mark + trailing space, for prefixing a title/header."""
-        m = self._mark_str(entity)
-        return f'{m} ' if m else ''
-
-    def _static_mark(self):
-        """(level, suffix) for structural/static headings: the lowest level
-        (e.g. (U)/TLP:CLEAR) by default, or the engagement default if the
-        profile's static_heading_marks is 'INHERIT'."""
-        if not self.marking:
-            return (None, None)
-        if self.marking.static_heading_mode == 'INHERIT':
-            return self.marking.resolve(None, None)
-        return (self.marking.lowest_level(), None)
+    def _mark_prefix(self, mark: Mark) -> str:
+        """Escaped portion mark + trailing space, for prefixing a title/header."""
+        return f'{_escape_xml(mark.token)} ' if mark.token else ''
 
     def _heading_mark_token(self, section=None) -> str:
-        """Raw portion-mark token for a heading. An explicitly-marked section
-        wins; else the static-heading mark (U by default). '' if marking off."""
-        if not self.marking:
-            return ''
-        if section is not None and getattr(section, 'classification_level', None):
-            lvl, suf = self.marking.resolve(section.classification_level, section.classification_suffix)
-        else:
-            lvl, suf = self._static_mark()
-        return self.marking.portion_mark(lvl, suf)
+        """Raw portion-mark token for a heading: an explicitly-marked section's
+        own mark, else the structural-heading mark (U by default)."""
+        return (section.heading_mark if section is not None else self.doc.structural_mark).token
 
     def _heading_mark_prefix(self, section=None) -> str:
         """Escaped mark prefix (+ trailing space) for a heading Paragraph."""
         tok = self._heading_mark_token(section)
         return f'{_escape_xml(tok)} ' if tok else ''
 
-    def _eff_mark_evidence(self, ev, finding):
-        """Evidence inherits the owning finding's effective mark when it has no
-        explicit mark of its own (then engagement default → ceiling)."""
-        if not self.marking:
-            return (None, None)
-        if getattr(ev, 'classification_level', None):
-            return self.marking.resolve(ev.classification_level, ev.classification_suffix)
-        return self._eff_mark(finding)
+    def _md_flowables(self, text, style, mark: Mark, **kw):
+        """Markdown → flowables, inline images marked with the portion's mark."""
+        return _md_to_flowables(
+            text, style, image_resolver=self._resolve_markdown_image,
+            mark_text=mark.token or None,
+            mark_anchors=self.marking.image_anchors if self.marking else None,
+            mark_fg=mark.color, **kw)
 
     def _mark_fg(self, level) -> str:
         """Banner color for a level — used to tint image stamps."""
@@ -989,22 +891,16 @@ class PDFReportGenerator:
     def _table_mark_flowables(self, marks):
         """(above, below) small mark-line flowables for a table.
 
-        `marks` is a list of (level, suffix) pairs (one per row/portion). The
+        `marks` is a list of ``Mark`` (one per row/portion). The
         table-level mark is the highest-ranked portion, *carrying its suffix*
         (e.g. (S//SAR/TEST), not just (S))."""
         if not self.marking or not self.marking.table_anchors:
             return [], []
-        best, best_rank = None, -1
-        for lvl, suf in marks:
-            if not lvl:
-                continue
-            r = self.marking._rank(lvl)
-            if r > best_rank:
-                best, best_rank = (lvl, suf), r
+        best = self.doc.table_mark(marks)
         if not best:
             return [], []
-        top, top_suf = best
-        mark = _escape_xml(self.marking.portion_mark(top, top_suf))
+        top = best.level
+        mark = _escape_xml(best.token)
         font_b = f"{_t(self.theme, 'font_family')}-Bold"
         align_map = {'LEFT': 0, 'CENTER': 1, 'RIGHT': 2}
         above, below, seen = [], [], set()
@@ -1045,40 +941,18 @@ class PDFReportGenerator:
             (above if vert == 'TOP' else below).append(Paragraph(mark, style))
         return above, below
 
-    def _row_mark_cell(self, level, suffix, header=False):
+    def _row_mark_cell(self, mark: Mark = NO_MARK, header=False):
         """A leading per-row mark cell for marked tables."""
         font_b = f"{_t(self.theme, 'font_family')}-Bold"
         if header:
             txt, color = 'MARK', colors.white
         else:
-            txt = _escape_xml(self.marking.portion_mark(level, suffix)) if self.marking else ''
-            color = colors.HexColor(self._mark_fg(level) if level else '#64748B')
+            txt = _escape_xml(mark.token)
+            color = colors.HexColor(mark.color if mark else '#64748B')
         return Paragraph(txt, ParagraphStyle(
             name='_rowmk', parent=self.styles['Small'],
             fontName=font_b, fontSize=7, textColor=color,
         ))
-
-    def _compute_banner_level(self):
-        """High-water mark across every effective portion mark in the document."""
-        if not self.marking:
-            return None
-        marks = [getattr(self.engagement, 'default_classification_level', None)]
-        for s in self.sections:
-            lvl, _ = self.marking.resolve(
-                getattr(s, 'classification_level', None),
-                getattr(s, 'classification_suffix', None),
-            )
-            marks.append(lvl)
-        for f in self.findings:
-            marks.append(self._eff_mark(f)[0])
-            for ev in (f.evidence or []):
-                if getattr(ev, 'include_in_report', False):
-                    marks.append(self._eff_mark_evidence(ev, f)[0])
-        for tc in self.testcases:
-            marks.append(self._eff_mark(tc)[0])
-        for ca in self.cleanup_artifacts:
-            marks.append(self._eff_mark(ca)[0])
-        return self.marking.highest(marks)
 
     # ── Banner painter ────────────────────────────────────────────
 
@@ -1734,12 +1608,9 @@ class PDFReportGenerator:
         tiles + exposure-by-asset — mirroring the interactive report overview."""
         if not self.findings:
             return
-        counts = {}
-        for f in self.findings:
-            k = _v(f.severity).upper()
-            counts[k] = counts.get(k, 0) + 1
+        counts = {k: v for k, v in self.doc.severity_counts.items() if v}
         total = len(self.findings)
-        rating = _v(self.findings[0].severity).upper()
+        rating = self.doc.findings[0].severity
         # Only numeric models carry a real score; categorical ones store a
         # nominal sort key that must not be shown as e.g. "CVSS up to 9.5".
         numeric = [f for f in self.findings if _score_info(f)['score']]
@@ -1768,7 +1639,7 @@ class PDFReportGenerator:
             for a in (f.assets or []):
                 d = agg.setdefault(a.name, {})
                 d[sev] = d.get(sev, 0) + 1
-        fixed = sum(1 for f in self.findings if _v(f.status).upper() in ('RESOLVED', 'REMEDIATED', 'CLOSED', 'FIXED'))
+        fixed = sum(1 for f in self.doc.findings if f.status_group == 'remediated')
         tiles = self._metric_tiles([
             ('FINDINGS', total, body),
             ('ASSETS', len(agg), '#3B82F6'),
@@ -1796,14 +1667,16 @@ class PDFReportGenerator:
 
     # ── Finding card ──────────────────────────────────────────────
 
-    def _finding_card(self, idx: int, finding: Finding) -> tuple:
+    def _finding_card(self, item) -> tuple:
         """Flowables for a single finding, as ``(head, body)``.
 
         ``head`` = the header + meta tables (kept together by the caller);
         ``body`` = the field flowables, rendered full-width so long content
         (e.g. an oversized code block) paginates instead of crashing.
         """
-        sev_str   = _v(finding.severity).upper()
+        finding   = item.src
+        idx       = int(item.ref[1:])
+        sev_str   = item.severity
         sev_hex   = self._sev_hex(sev_str)
         sev_bg    = _SEV_BG_COLORS.get(sev_str, '#F8FAFC')
         font      = _t(self.theme, 'font_family')
@@ -1826,8 +1699,8 @@ class PDFReportGenerator:
 
         # -- Header row: number + title (severity now lives in the meta row)
         title_text = Paragraph(
-            f'<font color="{sev_hex}">F{idx:02d}</font>  '
-            f'{self._mark_prefix(finding)}{_escape_xml(finding.title)}',
+            f'<font color="{sev_hex}">{item.ref}</font>  '
+            f'{self._mark_prefix(item.mark)}{_escape_xml(item.title)}',
             ParagraphStyle(
                 name=f'FT_{idx}', parent=self.styles['FindingTitle'],
                 textColor=colors.white, fontSize=11, fontName=font_b, leading=15,
@@ -1849,7 +1722,7 @@ class PDFReportGenerator:
             name=f'MV_{idx}', parent=self.styles['BodyText2'],
             fontSize=10, fontName=font_b, textColor=colors.HexColor(body_c), spaceAfter=0,
         )
-        score_info = _score_info(finding)
+        score_info = item.score
         cvss_text = score_info['text']
         meta_t = Table(
             [
@@ -1896,12 +1769,6 @@ class PDFReportGenerator:
                 fontSize=9, textColor=colors.HexColor(body_c),
             )))
 
-        # Inline images in the finding's markdown fields inherit the finding's
-        # effective mark.
-        _f_lvl, _f_suf = self._eff_mark(finding)
-        _f_mark = self.marking.portion_mark(_f_lvl, _f_suf) if (self.marking and _f_lvl) else None
-        _f_anchors = self.marking.image_anchors if self.marking else None
-
         def _add_md_row(label, value, max_chars=50000):
             """Markdown field — block-level markdown as top-level flowables."""
             if not value:
@@ -1911,29 +1778,24 @@ class PDFReportGenerator:
                 fontSize=9, textColor=colors.HexColor(body_c),
                 spaceAfter=2,
             )
-            flowables = _md_to_flowables(
-                str(value), cell_body_style, max_chars=max_chars,
-                image_resolver=self._resolve_markdown_image,
+            # Inline images inherit the finding's effective mark.
+            flowables = self._md_flowables(
+                str(value), cell_body_style, item.mark, max_chars=max_chars,
                 max_image_width=4.5 * inch, max_image_height=3.0 * inch,
-                mark_text=_f_mark, mark_anchors=_f_anchors, mark_fg=self._mark_fg(_f_lvl),
             )
             if not flowables:
                 return
             body.append(_field_label(label))
             body.extend(flowables)
 
-        asset_names = ', '.join([a.name for a in finding.assets]) if finding.assets else 'N/A'
-        _add_row('AFFECTED ASSETS', asset_names)
-        # (CVSS now shown in the meta row alongside criticality.)
+        _add_row('AFFECTED ASSETS', ', '.join(a.name for a in item.assets) or 'N/A')
+        # (The score is in the meta row alongside criticality.)
 
-        _add_md_row('DESCRIPTION', finding.description)
-        _add_md_row('IMPACT', finding.impact)
-        _add_md_row('STEPS TO REPRODUCE', finding.steps_to_reproduce)
-        _add_md_row('RECOMMENDATIONS', finding.mitigations)
-        _add_md_row('REFERENCES', finding.references)
+        for fld in item.fields:
+            _add_md_row(fld.label.upper(), fld.markdown)
 
         # Admin-defined custom fields flagged show_in_report.
-        for _cf_label, _cf_value in _report_cf_rows(self.finding_custom_fields, finding.custom_fields):
+        for _cf_label, _cf_value in item.custom_fields:
             _add_row(_cf_label.upper(), _cf_value)
 
         # Attack path — the per-finding subgraph (test cases → finding → assets →
@@ -2007,19 +1869,12 @@ class PDFReportGenerator:
 
     @staticmethod
     def _graph_status(tc):
-        if getattr(tc, 'is_successful', None) is True:
-            return 'Pass'
-        if getattr(tc, 'is_successful', None) is False:
-            return 'Fail'
-        if getattr(tc, 'is_executed', None):
-            return 'Executed'
-        return None
+        st = testcase_status(tc)
+        return None if st == 'none' else TESTCASE_STATUS_LABELS[st]
 
     def _display_ids(self):
-        if not hasattr(self, '_did_f'):
-            self._did_f = {f.id: f'F{i:02d}' for i, f in enumerate(self.findings, 1)}
-            self._did_t = {t.id: f'T{i}' for i, t in enumerate(self.testcases, 1)}
-        return self._did_f, self._did_t
+        return ({f.id: f.ref for f in self.doc.findings},
+                {t.id: t.ref for t in self.doc.testcases})
 
     def _node_color(self, n):
         t = n['type']
@@ -2307,9 +2162,6 @@ class PDFReportGenerator:
     def generate(self) -> bytes:
         buffer   = io.BytesIO()
         page_size = _get_page_size(_t(self.theme, 'page_size'))
-        # Compute the document banner (high-water mark) once up front so the
-        # per-page header/footer callback can paint it.
-        self._banner_level = self._compute_banner_level()
         doc = _OutlineDocTemplate(
             buffer, pagesize=page_size,
             rightMargin=54, leftMargin=54,
@@ -2336,17 +2188,17 @@ class PDFReportGenerator:
             self._render_attack_graph_section(elements)
 
         # Sections
-        for section in self.sections:
-            if getattr(section, 'page_break_before', False):
+        render = {
+            'TEXT': self._render_text_section,
+            'FINDINGS': self._render_findings_section,
+            'TESTCASES': self._render_testcases_section,
+            'CLEANUP_ARTIFACTS': self._render_cleanup_artifacts_section,
+        }
+        for section in self.doc.sections:
+            if section.page_break_before:
                 elements.append(PageBreak())
-            if section.section_type == SectionType.TEXT:
-                self._render_text_section(elements, section)
-            elif section.section_type == SectionType.FINDINGS:
-                self._render_findings_section(elements, section)
-            elif section.section_type == SectionType.TESTCASES:
-                self._render_testcases_section(elements, section)
-            elif section.section_type == SectionType.CLEANUP_ARTIFACTS:
-                self._render_cleanup_artifacts_section(elements, section)
+            if section.kind in render:
+                render[section.kind](elements, section)
 
         # Choose which first-page callback to use
         if show_cover:
@@ -2381,23 +2233,14 @@ class PDFReportGenerator:
 
     # ── Section renderers ─────────────────────────────────────────
 
-    def _render_text_section(self, elements, section: ReportSection):
+    def _render_text_section(self, elements, section):
         elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 14))
         if section.content:
-            s_lvl, s_suf = self._eff_mark(section)
-            s_mark = self.marking.portion_mark(s_lvl, s_suf) if (self.marking and s_lvl) else None
-            for fl in _md_to_flowables(
-                section.content, self.styles['BodyText2'],
-                image_resolver=self._resolve_markdown_image,
-                mark_text=s_mark,
-                mark_anchors=self.marking.image_anchors if self.marking else None,
-                mark_fg=self._mark_fg(s_lvl),
-            ):
-                elements.append(fl)
+            elements.extend(self._md_flowables(section.content, self.styles['BodyText2'], section.mark))
         elements.append(Spacer(1, 20))
 
-    def _render_findings_section(self, elements, section: ReportSection):
+    def _render_findings_section(self, elements, section):
         elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 16))
 
@@ -2407,18 +2250,12 @@ class PDFReportGenerator:
             return
 
         # ── Severity overview ──────────────────────────────────────
-        severity_counts = {}
-        for f in self.findings:
-            key = _v(f.severity).upper()
-            severity_counts[key] = severity_counts.get(key, 0) + 1
-
         elements.append(Paragraph(f"{self._heading_mark_prefix()}Severity Distribution", self.styles['SubSectionTitle']))
         # The aggregate chart carries the engagement-default mark.
-        sev_mark = self.marking.resolve(None, None) if self.marking else (None, None)
-        sev_above, sev_below = self._table_mark_flowables([sev_mark])
+        sev_above, sev_below = self._table_mark_flowables([self.doc.default_mark])
         for fl in sev_above:
             elements.append(fl)
-        elements.append(self._severity_summary_table(severity_counts))
+        elements.append(self._severity_summary_table(self.doc.severity_counts))
         for fl in sev_below:
             elements.append(fl)
         elements.append(Spacer(1, 24))
@@ -2427,9 +2264,9 @@ class PDFReportGenerator:
         elements.append(Paragraph(f"{self._heading_mark_prefix()}Detailed Findings", self.styles['SubSectionTitle']))
         elements.append(Spacer(1, 8))
 
-        for idx, finding in enumerate(self.findings, 1):
-            head, body = self._finding_card(idx, finding)
-            above, below = self._table_mark_flowables([self._eff_mark(finding)])
+        for item in self.doc.findings:
+            head, body = self._finding_card(item)
+            above, below = self._table_mark_flowables([item.mark])
             elements.extend(above)
             # Keep the header + meta together so a finding never starts with just
             # its title stranded at a page bottom; the body flows/splits freely.
@@ -2437,7 +2274,7 @@ class PDFReportGenerator:
             elements.extend(body)
             elements.extend(below)
             elements.append(Spacer(1, 8))
-            self._render_evidence(elements, finding)
+            self._render_evidence(elements, item)
             elements.append(Spacer(1, 12))
 
     # ── Evidence helpers ──────────────────────────────────────────
@@ -2456,9 +2293,9 @@ class PDFReportGenerator:
 
     _IMAGE_MIMES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp'}
 
-    def _render_evidence(self, elements, finding: Finding):
+    def _render_evidence(self, elements, item):
         """Embed images and list non-image attachments beneath a finding card."""
-        evidence_list = [e for e in (finding.evidence or []) if e.include_in_report]
+        evidence_list = item.evidence
         if not evidence_list:
             return
 
@@ -2491,11 +2328,10 @@ class PDFReportGenerator:
         show_filenames = _t(self.theme, 'show_evidence_filenames')
 
         for ev in evidence_list:
-            mime = (ev.mime_type or '').lower()
+            mime = ev.mime
 
             # Effective mark for this evidence item (inherits the finding).
-            ev_lvl, ev_suf = self._eff_mark_evidence(ev, finding)
-            ev_mark_raw = self.marking.portion_mark(ev_lvl, ev_suf) if self.marking else ''
+            ev_mark_raw = ev.mark.token
             ev_mark_esc = _escape_xml(ev_mark_raw)
 
             # Build caption (filename optional; mark-prefixed when CAPTION anchor).
@@ -2503,13 +2339,13 @@ class PDFReportGenerator:
             if ev.description:
                 caption_parts.append(ev.description)
             if show_filenames:
-                caption_parts.append(f'[{ev.original_filename}]')
+                caption_parts.append(f'[{ev.filename}]')
             caption_text = _escape_xml('  '.join(caption_parts))
             if ev_mark_esc and 'CAPTION' in anchors:
                 caption_text = f'{ev_mark_esc}  {caption_text}'.strip()
 
             if mime in self._IMAGE_MIMES and self.storage:
-                file_bytes = self._fetch_file_bytes(ev.filename)
+                file_bytes = self._fetch_file_bytes(ev.storage_key)
                 if file_bytes:
                     try:
                         img_stream = io.BytesIO(file_bytes)
@@ -2520,7 +2356,7 @@ class PDFReportGenerator:
                         stamp_anchors = overlay_anchors or (['TOP_LEFT'] if do_stamp else [])
                         if do_stamp and stamp_anchors:
                             img = MarkedImage(img_stream, mark_text=ev_mark_raw,
-                                              anchors=stamp_anchors, mark_fg=self._mark_fg(ev_lvl))
+                                              anchors=stamp_anchors, mark_fg=ev.mark.color)
                         else:
                             img = Image(img_stream)
                         iw, ih = img.imageWidth, img.imageHeight
@@ -2529,7 +2365,7 @@ class PDFReportGenerator:
                             img.drawWidth  = iw * scale
                             img.drawHeight = ih * scale
                         img.hAlign = 'CENTER'
-                        above_lines, below_lines = self._anchor_mark_lines(ev_mark_raw, overlay_anchors, self._mark_fg(ev_lvl))
+                        above_lines, below_lines = self._anchor_mark_lines(ev_mark_raw, overlay_anchors, ev.mark.color)
                         block = above_lines + [img] + below_lines
                         if caption_text:
                             block.append(Paragraph(caption_text, ParagraphStyle(
@@ -2540,7 +2376,7 @@ class PDFReportGenerator:
                         elements.append(Spacer(1, 4))
                         continue
                     except Exception as exc:
-                        _log.warning(f'Could not embed image {ev.filename!r}: {exc}')
+                        _log.warning(f'Could not embed image {ev.storage_key!r}: {exc}')
 
             # Non-image or failed image → text attachment reference. Always carry
             # the mark (an attachment has no figure to stamp).
@@ -2564,14 +2400,7 @@ class PDFReportGenerator:
         'none': ('Not executed', '#64748B'),
     }
 
-    @staticmethod
-    def _tc_status(tc):
-        if tc.is_successful is True:  return 'pass'
-        if tc.is_successful is False: return 'fail'
-        if tc.is_executed:            return 'exec'
-        return 'none'
-
-    def _render_testcases_section(self, elements, section: ReportSection):
+    def _render_testcases_section(self, elements, section):
         """Hierarchical test plan: one detail block per test case (parent → child),
         with a pass/fail status chip and markdown-rendered steps / expected /
         actual / notes and the findings each test discovered — modeled on the
@@ -2590,34 +2419,16 @@ class PDFReportGenerator:
         muted  = _t(self.theme, 'muted_text_color')
 
         # summary line
-        total    = len(self.testcases)
-        passed   = sum(1 for t in self.testcases if t.is_successful is True)
-        failed   = sum(1 for t in self.testcases if t.is_successful is False)
-        executed = sum(1 for t in self.testcases if t.is_executed)
+        summ = self.doc.testcase_summary
+        total = summ['total']
         elements.append(Paragraph(
-            f'{total} test case{"s" if total != 1 else ""} · {executed} executed · '
-            f'{passed} passed · {failed} failed',
+            f'{total} test case{"s" if total != 1 else ""} · {summ["executed"]} executed · '
+            f'{summ["passed"]} passed · {summ["failed"]} failed',
             ParagraphStyle(name='TCSummary', parent=self.styles['BodyText2'], fontSize=9.5,
                            textColor=colors.HexColor(muted), spaceAfter=14)))
 
-        # build the parent → child tree (parent_id is a scalar column, always loaded)
-        id_set = {t.id for t in self.testcases}
-        kids = {}
-        for t in self.testcases:
-            key = t.parent_id if t.parent_id in id_set else None
-            kids.setdefault(key, []).append(t)
-        for lst in kids.values():
-            lst.sort(key=lambda t: ((_v(t.category) or ''), (t.title or '')))
-
-        order = []  # (testcase, depth, hierarchical-number)
-        def _walk(parent, prefix, depth):
-            for i, t in enumerate(kids.get(parent, []), 1):
-                num = f'{prefix}{i}'
-                order.append((t, depth, num))
-                _walk(t.id, num + '.', depth + 1)
-        _walk(None, '', 0)
-
-        for t, depth, num in order:
+        for item in self.doc.testcases:
+            t, depth, num = item.src, item.depth, item.number
             det_rows = []
 
             def _label(label):
@@ -2636,37 +2447,27 @@ class PDFReportGenerator:
                     return
                 cs = ParagraphStyle(name=f'TCM_{t.id}_{label}', parent=self.styles['BodyText2'],
                                     fontSize=9, spaceAfter=2)
-                _lvl, _suf = self._eff_mark(t)
-                _mk = self.marking.portion_mark(_lvl, _suf) if (self.marking and _lvl) else None
-                fls = _md_to_flowables(
-                    str(val), cs, max_chars=max_chars,
-                    image_resolver=self._resolve_markdown_image,
-                    max_image_width=4.5 * inch, max_image_height=3.0 * inch,
-                    mark_text=_mk, mark_anchors=self.marking.image_anchors if self.marking else None,
-                    mark_fg=self._mark_fg(_lvl))
+                fls = self._md_flowables(
+                    str(val), cs, item.mark, max_chars=max_chars,
+                    max_image_width=4.5 * inch, max_image_height=3.0 * inch)
                 if fls:
                     det_rows.append([_label(label), fls])
 
-            if t.category:
-                _add('CATEGORY', _v(t.category).replace('_', ' ').title())
-            _add_md('DESCRIPTION', t.description)
-            _add_md('STEPS', t.steps)
-            _add_md('EXPECTED RESULT', t.expected_result)
-            _add_md('ACTUAL RESULT', t.actual_result)
-            _add_md('NOTES', t.notes)
-            if t.assets:
-                _add('ASSETS', ', '.join(a.name for a in t.assets))
-            tc_findings = getattr(t, 'findings', None) or []
-            if tc_findings:
+            if item.category:
+                _add('CATEGORY', item.category)
+            for fld in item.fields:
+                _add_md(fld.label.upper(), fld.markdown)
+            if item.assets:
+                _add('ASSETS', ', '.join(item.assets))
+            if item.findings:
                 fnames = ', '.join(
-                    f'{_escape_xml(f.title)} ({_v(f.severity).title()})' for f in tc_findings)
+                    f'{_escape_xml(f.title)} ({f.severity.title()})' for f in item.findings)
                 det_rows.append([_label('DISCOVERED FINDINGS'), Paragraph(fnames, ParagraphStyle(
                     name=f'TCF_{t.id}', parent=self.styles['BodyText2'], fontSize=9))])
 
-            sc_key = self._tc_status(t)
-            sc_label, sc_hex = self._TC_STATUS[sc_key]
+            sc_label, sc_hex = self._TC_STATUS[item.status]
             indent = 14 + depth * 16
-            title_p = Paragraph(f'{num}&nbsp;&nbsp;{self._mark_prefix(t)}{_escape_xml(t.title)}',
+            title_p = Paragraph(f'{num}&nbsp;&nbsp;{self._mark_prefix(item.mark)}{_escape_xml(item.title)}',
                 ParagraphStyle(name=f'TCTitle_{t.id}', parent=self.styles['FindingTitle'], fontSize=10))
             status_p = Paragraph(f'<b>{sc_label}</b>', ParagraphStyle(
                 name=f'TCStatus_{t.id}', parent=self.styles['Normal'], fontSize=9, fontName=font_b,
@@ -2682,7 +2483,7 @@ class PDFReportGenerator:
                 ('LINEBEFORE', (0, 0), (0, 0), 4, colors.HexColor(sc_hex)),
             ]))
 
-            tc_above, tc_below = self._table_mark_flowables([self._eff_mark(t)])
+            tc_above, tc_below = self._table_mark_flowables([item.mark])
             block = [header]
             if det_rows:
                 body_t = Table(det_rows, colWidths=[1.3 * inch, 5.2 * inch])
@@ -2701,7 +2502,7 @@ class PDFReportGenerator:
             elements.append(Spacer(1, 10))
         elements.append(Spacer(1, 10))
 
-    def _render_cleanup_artifacts_section(self, elements, section: ReportSection):
+    def _render_cleanup_artifacts_section(self, elements, section):
         elements.append(self._section_header_table(section.title.upper(), section))
         elements.append(Spacer(1, 16))
 
@@ -2733,21 +2534,18 @@ class PDFReportGenerator:
             Paragraph('LOCATION', header_style),
         ]
         if per_row:
-            header_cells = [self._row_mark_cell(None, None, header=True)] + header_cells
+            header_cells = [self._row_mark_cell(header=True)] + header_cells
         rows = [header_cells]
 
-        ca_levels = []
-        for ca in self.cleanup_artifacts:
-            lvl, suf = self._eff_mark(ca)
-            ca_levels.append((lvl, suf))
+        for ca in self.doc.cleanup:
             cells = [
                 Paragraph(_escape_xml(ca.title[:60]), cell_style),
-                Paragraph(_v(ca.artifact_type).replace('_', ' ').title(), cell_style),
-                Paragraph(_v(ca.status).replace('_', ' ').title(), cell_style),
+                Paragraph(_escape_xml(ca.artifact_type), cell_style),
+                Paragraph(_escape_xml(ca.status), cell_style),
                 Paragraph(_escape_xml((ca.location or 'N/A')[:50]), cell_style),
             ]
             if per_row:
-                cells = [self._row_mark_cell(lvl, suf)] + cells
+                cells = [self._row_mark_cell(ca.mark)] + cells
             rows.append(cells)
 
         if per_row:
@@ -2769,7 +2567,7 @@ class PDFReportGenerator:
             style.append(('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, alt_bg]))
         t.setStyle(TableStyle(style))
 
-        above, below = self._table_mark_flowables(ca_levels)
+        above, below = self._table_mark_flowables([ca.mark for ca in self.doc.cleanup])
         for fl in above:
             elements.append(fl)
         elements.append(t)
@@ -2778,7 +2576,7 @@ class PDFReportGenerator:
 
         # Detailed entries
         elements.append(Spacer(1, 24))
-        for idx, ca in enumerate(self.cleanup_artifacts, 1):
+        for idx, ca in enumerate(self.doc.cleanup, 1):
             det_rows = []
 
             def _label(label):
@@ -2808,33 +2606,26 @@ class PDFReportGenerator:
                     name=f'CAV_{idx}_{label}', parent=self.styles['BodyText2'],
                     fontSize=9, spaceAfter=2,
                 )
-                _ca_lvl, _ca_suf = self._eff_mark(ca)
-                _ca_mark = self.marking.portion_mark(_ca_lvl, _ca_suf) if (self.marking and _ca_lvl) else None
-                flowables = _md_to_flowables(
-                    str(val), cell_style, max_chars=max_chars,
-                    image_resolver=self._resolve_markdown_image,
+                flowables = self._md_flowables(
+                    str(val), cell_style, ca.mark, max_chars=max_chars,
                     max_image_width=4.5 * inch, max_image_height=3.0 * inch,
-                    mark_text=_ca_mark,
-                    mark_anchors=self.marking.image_anchors if self.marking else None,
-                    mark_fg=self._mark_fg(_ca_lvl),
                 )
                 if not flowables:
                     return
                 det_rows.append([_label(label), flowables])
 
-            _add('TYPE', _v(ca.artifact_type).replace('_', ' ').title())
-            _add('STATUS', _v(ca.status).replace('_', ' ').title())
+            _add('TYPE', ca.artifact_type)
+            _add('STATUS', ca.status)
             if ca.location:
                 _add('LOCATION', ca.location)
-            _add_md('DESCRIPTION', ca.description)
-            _add_md('CLEANUP NOTES', ca.cleanup_notes)
-            assets = ', '.join([a.name for a in ca.assets]) if ca.assets else None
-            if assets:
-                _add('ASSETS', assets)
+            for fld in ca.fields:
+                _add_md(fld.label.upper(), fld.markdown)
+            if ca.assets:
+                _add('ASSETS', ', '.join(ca.assets))
 
             if det_rows:
                 header = Table(
-                    [[Paragraph(f'{idx}. {self._mark_prefix(ca)}{_escape_xml(ca.title)}', ParagraphStyle(
+                    [[Paragraph(f'{idx}. {self._mark_prefix(ca.mark)}{_escape_xml(ca.title)}', ParagraphStyle(
                         name=f'CATitle_{idx}', parent=self.styles['FindingTitle'],
                         fontSize=10,
                     ))]],
@@ -2859,16 +2650,24 @@ class PDFReportGenerator:
                     ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
                 ]))
                 # Each cleanup entry is its own table → mark per the table guide.
-                ca_above, ca_below = self._table_mark_flowables([self._eff_mark(ca)])
+                ca_above, ca_below = self._table_mark_flowables([ca.mark])
                 elements.append(KeepTogether(ca_above + [header, body_t] + ca_below))
                 elements.append(Spacer(1, 12))
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Markdown Report Generator (unchanged)
+# Markdown Report Generator
 # ═══════════════════════════════════════════════════════════════════
 
+def _md_cell(text) -> str:
+    """A value safe inside a Markdown table cell."""
+    return str(text or '').replace('\n', ' ').replace('|', '\\|')
+
+
 class MarkdownReportGenerator:
+    """Plain Markdown rendering of the report document: same content, order
+    and portion marks as the PDF; the banner opens and closes the file."""
+
     def __init__(
         self,
         engagement: Engagement,
@@ -2878,153 +2677,150 @@ class MarkdownReportGenerator:
         cleanup_artifacts: List[CleanupArtifact] = None,
         theme: Optional[ReportTheme] = None,
         finding_custom_fields=None,
+        marking_profile=None,
     ):
-        self.engagement = engagement
-        self.sections = sections
-        self.findings = sorted(findings, key=lambda x: _severity_rank(x.severity), reverse=True)
-        self.testcases = testcases
-        self.cleanup_artifacts = cleanup_artifacts or []
-        self.theme = theme
-        self.finding_custom_fields = finding_custom_fields or []
+        self.doc = build_report_document(
+            engagement, sections, findings, testcases, cleanup_artifacts,
+            theme=theme, marking_profile=marking_profile,
+            finding_custom_fields=finding_custom_fields,
+            default_title=_DEFAULTS['cover_title'])
+
+    @staticmethod
+    def _p(mark) -> str:
+        return f'{mark.token} ' if mark.token else ''
+
+    def _mark_column(self) -> bool:
+        m = self.doc.marking
+        return bool(m and m.inline_marks)
 
     def generate(self) -> str:
+        doc = self.doc
         parts = []
-        cover_title = _t(self.theme, 'cover_title')
-        parts.append(f'# {cover_title}: {self.engagement.name}\n')
-        parts.append(f'**Client:** {self.engagement.client_name}  ')
+        if doc.banner:
+            parts.append(f'**{doc.banner.text}**\n')
+        parts.append(f'# {doc.title}: {doc.engagement_name}\n')
+        parts.append(f'**Client:** {doc.client}  ')
         parts.append(f'**Date:** {datetime.now().strftime("%B %d, %Y")}\n')
         parts.append('---\n')
 
-        for section in self.sections:
-            if section.section_type == SectionType.TEXT:
-                parts.append(self._render_text_section(section))
-            elif section.section_type == SectionType.FINDINGS:
-                parts.append(self._render_findings_section(section))
-            elif section.section_type == SectionType.TESTCASES:
-                parts.append(self._render_testcases_section(section))
-            elif section.section_type == SectionType.CLEANUP_ARTIFACTS:
-                parts.append(self._render_cleanup_artifacts_section(section))
+        render = {
+            'TEXT': self._render_text_section,
+            'FINDINGS': self._render_findings_section,
+            'TESTCASES': self._render_testcases_section,
+            'CLEANUP_ARTIFACTS': self._render_cleanup_artifacts_section,
+        }
+        for section in doc.sections:
+            if section.kind in render:
+                parts.append(render[section.kind](section))
 
+        if doc.banner:
+            statement = doc.marking.distribution_statement if doc.marking else None
+            if statement:
+                parts.append(f'_{statement}_\n')
+            parts.append(f'**{doc.banner.text}**\n')
         return '\n'.join(parts)
 
-    def _render_text_section(self, section: ReportSection) -> str:
-        md = f'## {section.title}\n\n'
+    def _heading(self, section) -> str:
+        return f'## {self._p(section.heading_mark)}{section.title}\n\n'
+
+    def _fields(self, fields, level='####') -> str:
+        return ''.join(f'{level} {f.label}\n\n{_markdown_from_html(f.markdown)}\n\n' for f in fields)
+
+    def _render_text_section(self, section) -> str:
+        md = self._heading(section)
         content = _markdown_from_html(section.content) if section.content else ''
         if content:
             md += content + '\n'
-        md += '\n'
-        return md
+        return md + '\n'
 
-    def _render_findings_section(self, section: ReportSection) -> str:
-        md = f'## {section.title}\n\n'
+    def _render_findings_section(self, section) -> str:
+        doc = self.doc
+        md = self._heading(section)
+        if not doc.findings:
+            return md + 'No findings recorded.\n\n'
 
-        if not self.findings:
-            md += 'No findings recorded.\n\n'
-            return md
-
-        severity_counts = {}
-        for f in self.findings:
-            sev_key = _v(f.severity)
-            severity_counts[sev_key] = severity_counts.get(sev_key, 0) + 1
-
-        md += '### Severity Summary\n\n'
+        sm = self._p(doc.structural_mark)
+        md += f'### {sm}Severity Summary\n\n'
         md += '| Severity | Count |\n|----------|-------|\n'
-        for s in Severity:
-            md += f'| {_v(s)} | {severity_counts.get(_v(s), 0)} |\n'
+        for sev in SEVERITY_ORDER:
+            md += f'| {sev} | {doc.severity_counts.get(sev, 0)} |\n'
         md += '\n'
 
-        for idx, finding in enumerate(self.findings):
-            md += f'### Finding {idx + 1}: {finding.title}\n\n'
-            md += f'- **Severity:** {_v(finding.severity)}\n'
-
-            asset_names = ', '.join([a.name for a in finding.assets]) if finding.assets else 'N/A'
-            md += f'- **Affected Asset(s):** {asset_names}\n'
-
-            score_info = _score_info(finding)
-            if score_info['text']:
-                md += f'- **{score_info["label"]}:** {score_info["text"]}\n'
-
-            md += f'\n#### Description\n\n{_markdown_from_html(finding.description)}\n\n'
-
-            if finding.impact:
-                md += f'#### Impact\n\n{_markdown_from_html(finding.impact)}\n\n'
-
-            if finding.steps_to_reproduce:
-                md += f'#### Steps to Reproduce\n\n{_markdown_from_html(finding.steps_to_reproduce)}\n\n'
-
-            if finding.mitigations:
-                md += f'#### Mitigations\n\n{_markdown_from_html(finding.mitigations)}\n\n'
-
-            if finding.references:
-                md += f'#### References\n\n{_markdown_from_html(finding.references)}\n\n'
-
-            cf_rows = _report_cf_rows(self.finding_custom_fields, finding.custom_fields)
-            if cf_rows:
-                for _label, _value in cf_rows:
-                    md += f'- **{_label}:** {_value}\n'
+        for f in doc.findings:
+            md += f'### {f.ref}: {self._p(f.mark)}{f.title}\n\n'
+            md += f'- **Severity:** {f.severity}\n'
+            md += f'- **Affected Asset(s):** {", ".join(a.name for a in f.assets) or "N/A"}\n'
+            if f.score['text']:
+                md += f'- **{f.score["label"]}:** {f.score["text"]}\n'
+            for label, value in f.custom_fields:
+                md += f'- **{label}:** {value}\n'
+            md += '\n' + self._fields(f.fields)
+            ev = [e for e in f.evidence]
+            if ev:
+                md += '#### Evidence\n\n'
+                for e in ev:
+                    cap = e.description or e.filename
+                    md += f'- {self._p(e.mark)}{cap}' + (f' [{e.filename}]' if e.description and e.filename else '') + '\n'
                 md += '\n'
-
             md += '---\n\n'
-
         return md
 
-    def _render_testcases_section(self, section: ReportSection) -> str:
-        md = f'## {section.title}\n\n'
+    def _render_testcases_section(self, section) -> str:
+        doc = self.doc
+        md = self._heading(section)
+        if not doc.testcases:
+            return md + 'No test cases recorded.\n\n'
 
-        if not self.testcases:
-            md += 'No test cases recorded.\n\n'
-            return md
-
-        md += '| Title | Category | Executed | Result |\n'
-        md += '|-------|----------|----------|--------|\n'
-
-        for tc in self.testcases:
-            executed = 'Yes' if tc.is_executed else 'No'
-            result = 'Pass' if tc.is_successful else ('Fail' if tc.is_successful is False else 'N/A')
-            category = _v(tc.category).replace('_', ' ').title()
-            md += f'| {tc.title} | {category} | {executed} | {result} |\n'
-
+        mcol = self._mark_column()
+        s = doc.testcase_summary
+        md += (f'{s["total"]} test case{"s" if s["total"] != 1 else ""} · {s["executed"]} executed · '
+               f'{s["passed"]} passed · {s["failed"]} failed\n\n')
+        md += ('| Mark ' if mcol else '') + '| # | Title | Category | Status |\n'
+        md += ('|------' if mcol else '') + '|---|-------|----------|--------|\n'
+        for t in doc.testcases:
+            md += ((f'| {_md_cell(t.mark.token)} ' if mcol else '')
+                   + f'| {t.number} | {_md_cell(t.title)} | {_md_cell(t.category)} | {t.status_label} |\n')
         md += '\n'
+
+        for t in doc.testcases:
+            md += f'### {t.number} {self._p(t.mark)}{t.title}\n\n'
+            md += f'- **Status:** {t.status_label}\n'
+            if t.category:
+                md += f'- **Category:** {t.category}\n'
+            if t.assets:
+                md += f'- **Assets:** {", ".join(t.assets)}\n'
+            if t.findings:
+                found = ', '.join(f'{f.ref + " " if f.ref else ""}{f.title} ({f.severity.title()})' for f in t.findings)
+                md += f'- **Discovered Findings:** {found}\n'
+            md += '\n' + self._fields(t.fields)
         return md
 
-    def _render_cleanup_artifacts_section(self, section: ReportSection) -> str:
-        md = f'## {section.title}\n\n'
+    def _render_cleanup_artifacts_section(self, section) -> str:
+        doc = self.doc
+        md = self._heading(section)
+        if not doc.cleanup:
+            return md + 'No cleanup artifacts recorded.\n\n'
 
-        if not self.cleanup_artifacts:
-            md += 'No cleanup artifacts recorded.\n\n'
-            return md
-
-        md += '| Title | Type | Status | Location |\n'
-        md += '|-------|------|--------|----------|\n'
-
-        for ca in self.cleanup_artifacts:
-            artifact_type = _v(ca.artifact_type).replace('_', ' ').title()
-            status_val = _v(ca.status).replace('_', ' ').title()
-            location = ca.location or 'N/A'
-            md += f'| {ca.title} | {artifact_type} | {status_val} | {location} |\n'
-
+        mcol = self._mark_column()
+        md += ('| Mark ' if mcol else '') + '| Title | Type | Status | Location |\n'
+        md += ('|------' if mcol else '') + '|-------|------|--------|----------|\n'
+        for ca in doc.cleanup:
+            md += ((f'| {_md_cell(ca.mark.token)} ' if mcol else '')
+                   + f'| {_md_cell(ca.title)} | {_md_cell(ca.artifact_type)} | {_md_cell(ca.status)} '
+                   f'| {_md_cell(ca.location or "N/A")} |\n')
         md += '\n'
 
-        for idx, ca in enumerate(self.cleanup_artifacts):
-            md += f'### {idx + 1}. {ca.title}\n\n'
-            md += f'- **Type:** {_v(ca.artifact_type).replace("_", " ").title()}\n'
-            md += f'- **Status:** {_v(ca.status).replace("_", " ").title()}\n'
-
+        for idx, ca in enumerate(doc.cleanup, 1):
+            md += f'### {idx}. {self._p(ca.mark)}{ca.title}\n\n'
+            md += f'- **Type:** {ca.artifact_type}\n'
+            md += f'- **Status:** {ca.status}\n'
             if ca.location:
                 md += f'- **Location:** {ca.location}\n'
-
-            if ca.description:
-                md += f'\n#### Description\n\n{_markdown_from_html(ca.description)}\n\n'
-
-            if ca.cleanup_notes:
-                md += f'#### Cleanup Notes\n\n{_markdown_from_html(ca.cleanup_notes)}\n\n'
-
-            asset_names = ', '.join([a.name for a in ca.assets]) if ca.assets else None
-            if asset_names:
-                md += f'- **Affected Asset(s):** {asset_names}\n'
-
-            md += '\n---\n\n'
-
+            if ca.assets:
+                md += f'- **Affected Asset(s):** {", ".join(ca.assets)}\n'
+            if ca.finding_refs:
+                md += f'- **Findings:** {", ".join(ca.finding_refs)}\n'
+            md += '\n' + self._fields(ca.fields) + '---\n\n'
         return md
 
 
@@ -3044,74 +2840,20 @@ class HTMLReportGenerator:
                  finding_custom_fields=None, chain_edges=None,
                  chain_vault_items=None):
         self.engagement = engagement
-        self.sections = sections
-        self.findings = sorted(findings, key=lambda x: _severity_rank(x.severity), reverse=True)
-        self.testcases = testcases
-        self.cleanup_artifacts = cleanup_artifacts or []
         self.theme = theme
         self.storage = storage
+        self.doc = build_report_document(
+            engagement, sections, findings, testcases, cleanup_artifacts,
+            theme=theme, marking_profile=marking_profile,
+            finding_custom_fields=finding_custom_fields,
+            default_title=_DEFAULTS['cover_title'])
         # Operator-authored attack-chain edges (ChainLink) + touched vault
         # items. Empty → payload's `chain` is [] and the interactive graph
         # renders exactly as before.
         self.chain_edges = chain_edges or []
         self.chain_vault_items = chain_vault_items or {}
-        self.finding_custom_fields = finding_custom_fields or []
         self.markdown_image_map = markdown_image_map or {}
-        self.marking = MarkingEngine(marking_profile, engagement) if marking_profile else None
-        self._banner_level = self._compute_banner_level()
-
-    # ── marking helpers ───────────────────────────────────────────
-    def _eff(self, entity):
-        if not self.marking:
-            return (None, None)
-        return self.marking.resolve(getattr(entity, 'classification_level', None),
-                                    getattr(entity, 'classification_suffix', None))
-
-    def _eff_evidence(self, ev, finding):
-        if not self.marking:
-            return (None, None)
-        if getattr(ev, 'classification_level', None):
-            return self.marking.resolve(ev.classification_level, ev.classification_suffix)
-        return self._eff(finding)
-
-    def _mark_prefix(self, entity):
-        if not self.marking:
-            return ''
-        lvl, suf = self._eff(entity)
-        tok = self.marking.portion_mark(lvl, suf)
-        return f'<span class="pmark">{_escape_xml(tok)}</span> ' if tok else ''
-
-    def _heading_mark_prefix(self, section=None):
-        """Static-heading mark (lowest level by default) for structural headings,
-        unless the section is explicitly marked."""
-        if not self.marking:
-            return ''
-        if section is not None and getattr(section, 'classification_level', None):
-            lvl, suf = self.marking.resolve(section.classification_level, section.classification_suffix)
-        elif self.marking.static_heading_mode == 'INHERIT':
-            lvl, suf = self.marking.resolve(None, None)
-        else:
-            lvl, suf = self.marking.lowest_level(), None
-        tok = self.marking.portion_mark(lvl, suf)
-        return f'<span class="pmark">{_escape_xml(tok)}</span> ' if tok else ''
-
-    def _compute_banner_level(self):
-        if not self.marking:
-            return None
-        marks = [getattr(self.engagement, 'default_classification_level', None)]
-        for s in self.sections:
-            marks.append(self.marking.resolve(getattr(s, 'classification_level', None),
-                                              getattr(s, 'classification_suffix', None))[0])
-        for f in self.findings:
-            marks.append(self._eff(f)[0])
-            for ev in (f.evidence or []):
-                if getattr(ev, 'include_in_report', False):
-                    marks.append(self._eff_evidence(ev, f)[0])
-        for tc in self.testcases:
-            marks.append(self._eff(tc)[0])
-        for ca in self.cleanup_artifacts:
-            marks.append(self._eff(ca)[0])
-        return self.marking.highest(marks)
+        self.marking = self.doc.marking
 
     def _sev_color(self, sev):
         key = _SEV_THEME_KEY.get((sev or '').upper())
@@ -3171,111 +2913,77 @@ class HTMLReportGenerator:
     # ── generate ──────────────────────────────────────────────────
 
     # ── interactive report: build data + inject into the app template ──
-    _FSTATUS = {
-        'OPEN': 'open', 'IN_PROGRESS': 'progress', 'REMEDIATED': 'remediated',
-        'RESOLVED': 'remediated', 'CLOSED': 'remediated', 'FIXED': 'remediated',
-        'ACCEPTED': 'open', 'FALSE_POSITIVE': 'remediated',
-    }
-
-    def _fstatus(self, status):
-        s = _v(status).upper()
-        if s in self._FSTATUS:
-            return self._FSTATUS[s]
-        if 'PROGRESS' in s:
-            return 'progress'
-        if any(k in s for k in ('RESOLV', 'REMEDI', 'CLOS', 'FIX')):
-            return 'remediated'
-        return 'open'
-
-    def _title_case(self, val):
-        return _v(val).replace('_', ' ').title() if val else ''
-
     def _build_report_data(self):
+        doc = self.doc
         eng = self.engagement
-
-        # stable display ids
-        fid = {f.id: f'F{i:02d}' for i, f in enumerate(self.findings, 1)}
-        tid = {t.id: f'T{i}' for i, t in enumerate(self.testcases, 1)}
-        tc_ids = set(tid)
+        fid = {f.id: f.ref for f in doc.findings}
+        tid = {t.id: t.ref for t in doc.testcases}
 
         findings = []
-        for f in self.findings:
+        for f in doc.findings:
             ev = []
-            for e in (f.evidence or []):
-                if not getattr(e, 'include_in_report', False):
-                    continue
-                if (e.mime_type or '').lower().startswith('image/'):
-                    uri = self._data_uri(e.filename, e.mime_type)
+            for e in f.evidence:
+                if e.is_image:
+                    uri = self._data_uri(e.storage_key, e.mime)
                     if uri:
-                        ev.append({'img': uri, 'cap': _escape_xml(e.description or e.original_filename or '')})
-            mark_tok = ''
-            if self.marking:
-                _lvl, _suf = self._eff(f)
-                mark_tok = self.marking.portion_mark(_lvl, _suf) or ''
-            si = _score_info(f)
+                        ev.append({'img': uri, 'cap': _escape_xml(e.description or e.filename),
+                                   'mark': e.mark.token})
+            src, si = f.src, f.score
             findings.append({
-                'id': fid[f.id], 'sev': _v(f.severity).lower(), 'status': self._fstatus(f.status),
+                'id': f.ref, 'sev': f.severity.lower(), 'status': f.status_group,
                 # 'cvss' stays numeric for sorting (nominal for categorical
                 # models); 'num' says whether it is a real score to display.
-                'cvss': (round(float(f.cvss_score), 1) if f.cvss_score is not None else 0),
+                'cvss': (round(float(src.cvss_score), 1) if src.cvss_score is not None else 0),
                 'num': si['numeric'], 'model': si['label'], 'outcome': si['outcome'] or '',
-                'vec': f.cvss_vector or '—',
-                'cwe': self._title_case(f.category),
-                'mark': mark_tok, 'title': f.title or 'Untitled',
-                'assets': [a.name for a in (f.assets or [])],
-                'desc': self._md(f.description), 'impact': self._md(f.impact), 'biz': '',
-                'steps': self._md(f.steps_to_reproduce), 'tech': self._md(f.technical_details),
-                'remed': self._md(f.mitigations),
-                'refs_html': self._md(f.references) if f.references else '',
+                'vec': src.cvss_vector or '—',
+                'cwe': f.category,
+                'mark': f.mark.token, 'title': f.title,
+                'assets': [a.name for a in f.assets],
+                'desc': self._md(src.description), 'impact': self._md(src.impact), 'biz': '',
+                'steps': self._md(src.steps_to_reproduce), 'tech': self._md(src.technical_details),
+                'remed': self._md(src.mitigations),
+                'refs_html': self._md(src.references) if src.references else '',
+                'custom': [[label, value] for label, value in f.custom_fields],
                 'ev': ev,
             })
 
         testcases = []
-        for t in self.testcases:
-            if t.is_successful is True:
-                st = 'Pass'
-            elif t.is_successful is False:
-                st = 'Fail'
-            elif t.is_executed:
-                st = 'Executed'
-            else:
-                st = 'Not Executed'
+        for t in doc.testcases:
+            src = t.src
             testcases.append({
-                'id': tid[t.id], 'label': t.title or 'Untitled', 'status': st,
-                'parent': (tid.get(t.parent_id) if t.parent_id in tc_ids else None),
-                'finds': [fid[x.id] for x in (getattr(t, 'findings', None) or []) if x.id in fid],
-                'desc': self._md(t.description), 'steps': self._md(t.steps),
-                'expected': self._md(t.expected_result), 'actual': self._md(t.actual_result),
-                'notes': self._md(t.notes),
+                'id': t.ref, 'label': t.title, 'status': t.status_label, 'mark': t.mark.token,
+                'parent': t.parent_ref,
+                'finds': [x.ref for x in t.findings if x.ref],
+                'desc': self._md(src.description), 'steps': self._md(src.steps),
+                'expected': self._md(src.expected_result), 'actual': self._md(src.actual_result),
+                'notes': self._md(src.notes),
             })
 
         asset_map = {}
-        for f in self.findings:
-            sev = _v(f.severity).lower()
-            for a in (f.assets or []):
-                d = asset_map.setdefault(a.name, {
-                    'n': a.name, 'type': self._title_case(getattr(a, 'asset_type', None)) or 'Asset', 'sevs': {}})
+        for f in doc.findings:
+            for a in f.assets:
+                d = asset_map.setdefault(a.name, {'n': a.name, 'type': a.asset_type, 'sevs': {}})
+                sev = f.severity.lower()
                 d['sevs'][sev] = d['sevs'].get(sev, 0) + 1
         assets = list(asset_map.values())
 
         cleanup = []
-        for ca in self.cleanup_artifacts:
-            linked_f = next((fid[x.id] for x in (getattr(ca, 'findings', None) or []) if x.id in fid), None)
-            linked_a = next((x.name for x in (getattr(ca, 'assets', None) or [])), None)
+        for ca in doc.cleanup:
+            src = ca.src
             cleanup.append({
-                't': ca.title or 'Artifact', 'type': self._title_case(ca.artifact_type),
-                'sys': ca.location or '', 'owner': '',
-                'status': self._title_case(ca.status) or 'Pending',
-                'finding': linked_f, 'asset': linked_a,
-                'note': _escape_xml((ca.description or ca.cleanup_notes or '')[:400]),
+                't': ca.title, 'type': ca.artifact_type, 'sys': ca.location, 'owner': '',
+                'status': ca.status, 'mark': ca.mark.token,
+                'finding': ca.finding_refs[0] if ca.finding_refs else None,
+                'asset': ca.assets[0] if ca.assets else None,
+                'note': _escape_xml((src.description or src.cleanup_notes or '')[:400]),
             })
 
-        rating = (_v(self.findings[0].severity).upper() if self.findings else 'INFO')
-        cvsses = [f.cvss_score for f in self.findings if f.cvss_score]
+        rating = doc.findings[0].severity if doc.findings else 'INFO'
+        cvsses = [f.src.cvss_score for f in doc.findings if f.src.cvss_score]
         score = max(cvsses) if cvsses else {'CRITICAL': 9.5, 'HIGH': 7.5, 'MEDIUM': 5.0,
                                              'LOW': 3.0, 'INFO': 0.5}.get(rating, 0)
-        top = self.findings[0].title if self.findings else ''
-        n = len(self.findings)
+        top = doc.findings[0].title if doc.findings else ''
+        n = len(doc.findings)
         risk = {
             'rating': rating, 'score': round(float(score), 1),
             'caption': (f'Overall risk posture · driven by {top}' if top else 'Overall risk posture'),
@@ -3284,10 +2992,9 @@ class HTMLReportGenerator:
         }
 
         marking = {}
-        if self.marking and self._banner_level:
-            b = self.marking.banner(self._banner_level)
-            if b:
-                marking = {'banner': b[0], 'caption': (getattr(self.marking, 'distribution_statement', '') or '')}
+        if doc.banner:
+            marking = {'banner': doc.banner.text,
+                       'caption': (getattr(doc.marking, 'distribution_statement', '') or '')}
 
         window = ''
         sd, ed = getattr(eng, 'start_date', None), getattr(eng, 'end_date', None)
@@ -3297,7 +3004,7 @@ class HTMLReportGenerator:
         ver = _t(self.theme, 'report_version') or ''
         ref_full = (f'{ref} · {ver}' if ref and ver else (ref or ver))
         team = len(getattr(eng, 'assigned_users', None) or [])
-        eng_type = self._title_case(getattr(eng, 'engagement_type', None)) or (eng.name or 'Engagement')
+        eng_type = _title_case(getattr(eng, 'engagement_type', None)) or (eng.name or 'Engagement')
 
         fields = [['Client', eng.client_name or '—', None], ['Engagement', eng_type, None]]
         if window:
@@ -3310,12 +3017,12 @@ class HTMLReportGenerator:
         if marking.get('banner'):
             fields.append(['Classification', marking['banner'], '#FFC000'])
         fields.append(['Findings', f'{n} confirmed', None])
-        models = sorted({_score_info(f)['label'] for f in self.findings})
+        models = sorted({f.score['label'] for f in doc.findings})
         if models:
             fields.append(['Scoring', ' · '.join(models), None])
 
         meta = {
-            'title': _t(self.theme, 'cover_title') or 'Security Assessment Report',
+            'title': doc.title,
             'client': eng.client_name or eng.name, 'engagement': eng_type,
             'ref': ref_full, 'summary': '', 'fields': fields,
         }
@@ -3324,7 +3031,7 @@ class HTMLReportGenerator:
         # the interactive graph's display-id space (F##/T#; vault → 'vault-<id>').
         # Vault items aren't otherwise in the report, so surface the ones a chain
         # touches. When there are no chain edges this yields chain=[] and no
-        # chainVault key — byte-identical to the pre-chain payload.
+        # chainVault key.
         cv_nodes, c_edges, _ = _resolve_chain_edges(
             self.chain_edges, tid, fid, self.chain_vault_items)
         chain = [{'s': e['s'], 't': e['t'], 'note': e.get('note') or ''} for e in c_edges]
