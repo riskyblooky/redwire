@@ -1,0 +1,49 @@
+name: image builds
+
+# Builds the three production images exactly as docker-compose.yml does
+# (same contexts, Dockerfiles and targets), without pushing. The frontend
+# build is the real `next build`, so it also catches what only fails there.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: backend
+            file: backend/Dockerfile
+            target: ""
+          - name: frontend
+            context: .
+            file: frontend/Dockerfile
+            target: production
+          - name: mcp-server
+            context: mcp-server
+            file: mcp-server/Dockerfile
+            target: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://ci.invalid/api
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

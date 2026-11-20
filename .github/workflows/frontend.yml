@@ -1,0 +1,37 @@
+name: frontend checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-and-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # Same install as the Dockerfile's build stage.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      # Plugin pages and the generated extension registry are synced into
+      # src/app/plugins at build time; tsc and lint need them in place.
+      - name: Sync plugin frontends
+        run: node scripts/sync-plugin-frontends.mjs
+        env:
+          PLUGINS_SOURCE_DIR: ${{ github.workspace }}/backend/plugins
+      - name: Typecheck
+        run: npx tsc --noEmit -p .
+      - name: Lint
+        run: npx next lint
