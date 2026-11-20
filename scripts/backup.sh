@@ -5,6 +5,8 @@
 #   ./backup.sh                 full backup into backups/<timestamp>/
 #   ./backup.sh --db-only       database dump only (the pre-deploy snapshot)
 #   ./backup.sh --install-cron  install a daily 03:30 full backup (/etc/cron.d)
+#   ./backup.sh --restore-db <db.dump>
+#                               replace the database with a dump (see Restore)
 #
 # Environment:
 #   BACKUP_DIR     where backups go          (default: ./backups)
@@ -17,7 +19,13 @@
 # disk doesn't survive losing the server: set BACKUP_REMOTE or copy them off.
 #
 # Restore:
-#   docker exec -i redwire-db pg_restore -U redwire -d redwire --clean --if-exists < db.dump
+#   ./backup.sh --restore-db backups/<stamp>/db.dump
+#       Stops the app containers, recreates the database empty and restores
+#       the dump into it. Start the stack afterwards with images of the
+#       dump's version or newer (newer ones migrate it forward on start).
+#       Don't pg_restore --clean over the live database instead: tables the
+#       dump doesn't know survive it, and the backend then crash-loops
+#       re-running migrations that created them.
 #   docker run --rm --volumes-from redwire-minio -v "$PWD":/in alpine \
 #       sh -c 'rm -rf /data/* && tar xzf /in/minio.tar.gz -C /data'
 #   tar xzf uploads.tar.gz -C backend/
@@ -33,6 +41,7 @@ MODE=full
 case "${1:-}" in
     "") ;;
     --db-only) MODE=db ;;
+    --restore-db) MODE=restore; DUMP="${2:-}" ;;
     --install-cron)
         cat > /etc/cron.d/redwire-backup <<EOF
 # RedWire daily backup (installed by backup.sh --install-cron)
@@ -44,7 +53,7 @@ EOF
         mkdir -p "${BACKUP_DIR:-$ROOT/backups}" && chmod 700 "${BACKUP_DIR:-$ROOT/backups}"
         echo "Installed /etc/cron.d/redwire-backup (daily 03:30)."
         exit 0 ;;
-    *) echo "usage: $0 [--db-only|--install-cron]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--db-only|--install-cron|--restore-db <db.dump>]" >&2; exit 2 ;;
 esac
 
 BACKUP_DIR="${BACKUP_DIR:-$ROOT/backups}"
@@ -56,6 +65,22 @@ log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
 docker inspect -f '{{.State.Running}}' redwire-db 2>/dev/null | grep -q true \
     || { log "redwire-db is not running — nothing to back up"; exit 1; }
+
+if [ "$MODE" = restore ]; then
+    case "$DUMP" in /*) ;; *) DUMP="$ROOT/$DUMP" ;; esac
+    [ -s "$DUMP" ] || { log "no dump at '$DUMP'"; exit 2; }
+    log "stopping the app containers"
+    docker compose stop backend frontend mcp-server
+    log "recreating database $PGDB_"
+    docker exec redwire-db psql -v ON_ERROR_STOP=1 -U "$PGUSER_" -d postgres \
+        -c "DROP DATABASE IF EXISTS \"$PGDB_\" WITH (FORCE)" \
+        -c "CREATE DATABASE \"$PGDB_\" OWNER \"$PGUSER_\""
+    log "restoring $DUMP"
+    docker exec -i redwire-db pg_restore -U "$PGUSER_" -d "$PGDB_" --exit-on-error < "$DUMP"
+    rev=$(docker exec redwire-db psql -U "$PGUSER_" -d "$PGDB_" -Atc "select string_agg(version_num, ',') from alembic_version" 2>/dev/null || true)
+    log "restored (alembic revision: ${rev:-unknown}). Start the stack: docker compose up -d --wait"
+    exit 0
+fi
 
 # ── Disk check: need the estimated size ×1.5 + 1 GB free ───────────────
 db_bytes=$(docker exec redwire-db psql -U "$PGUSER_" -d "$PGDB_" -Atc "select pg_database_size(current_database())")

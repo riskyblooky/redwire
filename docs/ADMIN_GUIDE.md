@@ -290,7 +290,10 @@ The script:
 - Rebuilds the images.
 - Runs `python migrate.py upgrade heads` (all Alembic branches — core +
   every plugin).
-- Restarts the stack.
+- Restarts the stack and waits until the backend, frontend and MCP
+  server report healthy (`docker compose up -d --wait`); nginx is
+  recreated so changes to its config apply. If a service doesn't come
+  up, the script prints its state and logs and stops.
 
 Downtime during a normal upgrade is ~30–60 seconds while the containers
 restart. Postgres data + MinIO buckets are volume-mounted so they
@@ -298,23 +301,40 @@ survive the container swap.
 
 ### Rolling back
 
-Bring the previous version's images back up:
+Each deploy that starts from a healthy install records a rollback point
+before it upgrades anything: the images that were running, tagged
+`:previous`, and the pre-deploy database snapshot (`backups/rollback/`).
+To go back to it:
 
 ```bash
-docker compose down
-git checkout <previous-tag>
-docker compose up -d --build
+./deploy_server.sh --rollback        # asks first; --yes skips the prompt
 ```
 
-**Alembic migrations are one-way** in most cases — a rollback of the
-images doesn't roll back the DB schema. If the new version added
-columns and you go back, the old backend hits columns it doesn't know
-about (usually fine — it just ignores them). If the new version dropped
-or renamed columns, roll the DB back too:
+It dumps the current database to `backups/<stamp>-prerollback/` (so
+nothing written since the deploy is lost for good), stops the app
+containers, recreates the database from the snapshot, puts the
+`:previous` images back on `:latest` and starts them, waiting until they
+report healthy. The source tree on disk stays the new release; deploy a
+package again to move forward. Uploaded files in MinIO and
+`backend/uploads` are left as they are.
+
+Don't roll back by checking out an older tag and rebuilding: the older
+backend runs its migrations at start, finds a database revision newer
+than any it knows, and restarts in a loop. The images and the database
+have to go back together, which is what `--rollback` does.
+
+To restore any other dump (a daily backup, a pre-deploy snapshot):
 
 ```bash
-python migrate.py downgrade -1
+./backup.sh --restore-db backups/<stamp>/db.dump
+docker compose up -d --wait
 ```
+
+Start it with images of the dump's version or newer; newer ones migrate
+it forward. `--restore-db` recreates the database empty first. Restoring
+with `pg_restore --clean` over the live database instead leaves the
+newer release's tables in place, and the backend then crash-loops
+re-running the migrations that created them.
 
 ---
 

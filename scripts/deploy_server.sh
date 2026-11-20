@@ -6,14 +6,108 @@ set -e
 # Usage:
 #   ./deploy_server.sh                # online: docker compose build (pulls + builds)
 #   ./deploy_server.sh --offline      # offline: docker load redwire_images.tar, no build
+#   ./deploy_server.sh --rollback     # back to the images + database from before the
+#                                     # last successful deploy's upgrade (--yes: no prompt)
+#
+# The whole script is one function, called on the last line. A zip deploy
+# extracts a new copy of this file over the one running; bash has read the
+# function in full by then, so the swap can't change what runs mid-deploy.
 
+# Images deploys build or load (docker-compose.yml `image:`), and where the
+# rollback point lives: their :previous tags plus a hard link to the matching
+# pre-deploy database snapshot (kept out of the snapshot pruning).
+APP_IMAGES="redwire-backend redwire-frontend redwire-mcp-server"
+ROLLBACK_DIR="backups/rollback"
+DEPLOY_OK_MARK="backups/.last-deploy-ok"
+
+backup_script() {
+    if [ -f backup.sh ]; then echo backup.sh; elif [ -f scripts/backup.sh ]; then echo scripts/backup.sh; fi
+}
+
+# Start (or restart) the stack and wait until every service with a
+# healthcheck is healthy; nginx is recreated so edits to its bind-mounted
+# config and templates take effect (up -d alone leaves it running as is).
+start_stack() {
+    if ! docker compose up -d --wait --wait-timeout "${DEPLOY_WAIT_TIMEOUT:-600}" "$@"; then
+        echo -e "${RED}Services did not become healthy:${NC}"
+        docker compose ps
+        docker compose logs --tail 40 backend
+        echo -e "${RED}Fix the cause and rerun, or go back with: ./deploy_server.sh --rollback${NC}"
+        exit 1
+    fi
+    docker compose up -d --no-deps --force-recreate nginx
+}
+
+rollback() {
+    if [ ! -f "$ROLLBACK_DIR/db.dump" ]; then
+        echo -e "${RED}No rollback point ($ROLLBACK_DIR/db.dump). One is recorded by each deploy that starts from a healthy install.${NC}"
+        exit 1
+    fi
+    for img in $APP_IMAGES; do
+        docker image inspect "$img:previous" >/dev/null 2>&1 || {
+            echo -e "${RED}Missing image $img:previous — cannot roll back the images.${NC}"; exit 1; }
+    done
+    BK="$(backup_script)"
+    [ -n "$BK" ] || { echo -e "${RED}backup.sh not found next to this script.${NC}"; exit 1; }
+    echo -e "${BLUE}Rollback point: $(cat "$ROLLBACK_DIR/taken_at" 2>/dev/null || echo unknown), schema $(cat "$ROLLBACK_DIR/alembic_version.txt" 2>/dev/null || echo unknown)${NC}"
+    echo -e "${RED}The database goes back to that snapshot: anything written since is removed from it${NC}"
+    echo -e "${RED}(a dump of the current database is saved first).${NC}"
+    if [ "$ASSUME_YES" -ne 1 ]; then
+        read -p "Roll back? (y/N): " ok
+        [[ "$ok" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
+    fi
+    PG_U="$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2-)"; PG_U="${PG_U:-redwire}"
+    PG_D="$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2-)"; PG_D="${PG_D:-redwire}"
+    KEEP="backups/$(date -u +%Y%m%dT%H%M%SZ)-prerollback"
+    mkdir -p "$KEEP" && chmod 700 "$KEEP"
+    ( umask 077; docker exec redwire-db pg_dump -U "$PG_U" -d "$PG_D" -Fc > "$KEEP/db.dump" )
+    echo "  Current database saved to $KEEP/db.dump"
+    bash "$BK" --restore-db "$ROLLBACK_DIR/db.dump"
+    for img in $APP_IMAGES; do
+        docker tag "$img:previous" "$img:latest"
+    done
+    start_stack --no-build
+    rm -f "$DEPLOY_OK_MARK"
+    echo -e "${GREEN}Rolled back. The source tree on disk is still the new release; redeploy a${NC}"
+    echo -e "${GREEN}package to move forward again.${NC}"
+}
+
+# Tag what is running now as :previous and keep its pre-deploy snapshot, but
+# only when the last deploy finished (or no rollback point exists yet): after
+# a failed deploy the running images and database are the broken ones.
+record_rollback_point() {
+    local snap="$1"
+    if [ -f "$ROLLBACK_DIR/db.dump" ] && [ ! -f "$DEPLOY_OK_MARK" ]; then
+        echo "  The last deploy didn't finish — keeping the existing rollback point."
+        return
+    fi
+    for img in $APP_IMAGES; do
+        local cname="${img/redwire-mcp-server/redwire-mcp}"
+        local id
+        id="$(docker inspect -f '{{.Image}}' "$cname" 2>/dev/null || true)"
+        if [ -n "$id" ]; then docker tag "$id" "$img:previous"; fi
+    done
+    if [ -n "$snap" ] && [ -f "$snap/db.dump" ]; then
+        mkdir -p "$ROLLBACK_DIR" && chmod 700 "$ROLLBACK_DIR"
+        ln -f "$snap/db.dump" "$ROLLBACK_DIR/db.dump" 2>/dev/null || cp "$snap/db.dump" "$ROLLBACK_DIR/db.dump"
+        cp -f "$snap/alembic_version.txt" "$ROLLBACK_DIR/" 2>/dev/null || true
+        date -u +%Y-%m-%dT%H:%M:%SZ > "$ROLLBACK_DIR/taken_at"
+        echo "  Rollback point recorded (images tagged :previous, snapshot $snap)."
+    fi
+}
+
+main() {
 # Parse flags
 OFFLINE=0
+ROLLBACK=0
+ASSUME_YES=0
 for arg in "$@"; do
     case "$arg" in
         --offline) OFFLINE=1 ;;
+        --rollback) ROLLBACK=1 ;;
+        --yes|-y) ASSUME_YES=1 ;;
         -h|--help)
-            sed -n '4,9p' "$0"
+            sed -n '4,11p' "$0"
             exit 0
             ;;
         *)
@@ -30,6 +124,11 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}=== RedWire Platform Deployment ===${NC}"
+if [ "$ROLLBACK" -eq 1 ]; then
+    [ -f .env ] || { echo -e "${RED}No .env here — run from the install directory.${NC}"; exit 1; }
+    rollback
+    return 0
+fi
 if [ "$OFFLINE" -eq 1 ]; then
     echo -e "${BLUE}Mode: OFFLINE (loading images from redwire_images.tar, no build)${NC}"
 fi
@@ -181,10 +280,14 @@ if [ "${SKIP_BACKUP:-0}" != "1" ] && docker inspect -f '{{.State.Running}}' redw
     fi
     docker exec redwire-db psql -U "$PG_U" -d "$PG_D" -Atc "select version_num from alembic_version" > "$SNAP/alembic_version.txt" 2>/dev/null || true
     echo -e "${GREEN}Database snapshot: $SNAP/db.dump ($(du -sh "$SNAP" | cut -f1))${NC}"
-    echo "  Restore: docker exec -i redwire-db pg_restore -U $PG_U -d $PG_D --clean --if-exists < $SNAP/db.dump"
-    # Keep the newest 5 pre-deploy snapshots.
+    echo "  Restore: ./backup.sh --restore-db $SNAP/db.dump   (or ./deploy_server.sh --rollback)"
+    record_rollback_point "$SNAP"
+    # Keep the newest 5 pre-deploy snapshots (the rollback point is a hard
+    # link, so pruning its snapshot dir doesn't remove it).
     ls -1d backups/2*Z-predeploy 2>/dev/null | sort | head -n -5 | xargs -r rm -rf
 fi
+# From here until the end, a failure leaves the install mid-deploy.
+rm -f "$DEPLOY_OK_MARK"
 
 # 3 & 4. Source files.
 #
@@ -305,8 +408,8 @@ if [ "$OFFLINE" -eq 1 ]; then
     fi
     echo "Loading Docker images from redwire_images.tar..."
     docker load -i redwire_images.tar
-    echo "Bringing services up (no build)..."
-    docker compose up -d --no-build
+    echo "Bringing services up (no build) and waiting for them to be healthy..."
+    start_stack --no-build
 else
     echo "Building images (requires internet)..."
     # Bake build metadata into the image so /health can report exactly
@@ -318,15 +421,14 @@ else
     docker compose build \
         --build-arg GIT_COMMIT="$GIT_COMMIT" \
         --build-arg BUILD_TIME="$BUILD_TIME"
-    docker compose up -d
+    echo "Starting services and waiting for them to be healthy..."
+    start_stack
 fi
-
-echo "Waiting for services to be healthy..."
-sleep 15 # Give DB time to initialize
 
 # 7. Database Migration (Safe)
 echo -e "\n${BLUE}[7/8] Running Database Migrations...${NC}"
-echo "Applying alembic migrations to update schema without data loss..."
+# The backend applies them itself before it starts (docker-compose.yml), so
+# this only confirms the schema is at head now that it reports healthy.
 docker compose run --rm backend python migrate.py upgrade heads
 echo -e "${GREEN}Migrations applied successfully!${NC}"
 
@@ -339,6 +441,10 @@ if [ "${NEEDS_ROTATION:-0}" -eq 1 ]; then
     docker compose run --rm backend python3 rotate_encryption_keys.py
     echo -e "${GREEN}Encryption key rotation complete.${NC}"
 fi
+
+# The new release is up, healthy and migrated: the next deploy may take
+# its rollback point from here.
+mkdir -p backups && touch "$DEPLOY_OK_MARK"
 
 # 7c. Daily backups (backup.sh --install-cron), once per host.
 if [ -f backup.sh ] && [ "$(id -u)" -eq 0 ] && [ -d /etc/cron.d ]; then
@@ -402,3 +508,8 @@ fi
 
 echo -e "\n${GREEN}=== Deployment Complete! ===${NC}"
 echo -e "Access your platform at: https://${DOMAIN_NAME}"
+echo "If this release misbehaves: ./deploy_server.sh --rollback"
+}
+
+main "$@"
+exit $?

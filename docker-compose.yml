@@ -182,6 +182,14 @@ services:
     # startup seeding is serialised with a Postgres advisory lock. About
     # 200 MB per worker; set BACKEND_WORKERS in .env to change it.
     command: sh -c "python migrate.py upgrade heads && exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${BACKEND_WORKERS:-2} --proxy-headers --forwarded-allow-ips='172.16.0.0/12'"
+    # Healthy once migrations ran and uvicorn answers; `up --wait` in
+    # deploy_server.sh waits on this. start_period covers long migrations.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 300s
     networks:
       - redwire-network
     restart: always
@@ -207,6 +215,12 @@ services:
     depends_on:
       - backend
     # No volume mounts - use the built image artifacts
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
     networks:
       - redwire-network
     restart: always
@@ -249,6 +263,8 @@ services:
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     networks:
       - redwire-network
+    # Without one, a crash or a host reboot stopped renewals silently.
+    restart: unless-stopped
 
   mcp-server:
     build:
@@ -264,6 +280,12 @@ services:
 
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
     networks:
       - redwire-network
     restart: always

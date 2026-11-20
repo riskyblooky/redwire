@@ -14,11 +14,18 @@ section becomes one release entry.
 - **One report document behind every format.** `utils/report_content.py` builds what a report says (finding and test-case order, `F01`/`T1` ids, fields and labels, statuses, custom fields, evidence, and each portion's effective mark plus the banner); the PDF, Markdown and interactive HTML renderers keep their own layout and render from it.
 - **Markdown reports are marked.** With a marking profile they open and close with the banner, carry portion marks on section, finding, test-case and cleanup headings (and a mark column in their tables), and end with the distribution statement. Findings are headed by their report id (`F01: ...`) as in the PDF and HTML reports, and test cases get detail entries, not only a table row.
 - The interactive HTML report shows report-visible custom fields and the portion marks of test cases, cleanup items and evidence.
+- **Deploys wait for health and can roll back.** The backend, frontend and MCP server have healthchecks; `deploy_server.sh` starts the stack with `docker compose up -d --wait` instead of a fixed `sleep 15`, and stops with the failing service's logs if one doesn't come up. Each deploy that starts from a healthy install keeps a rollback point (the running images tagged `:previous`, plus its pre-deploy database snapshot), and `./deploy_server.sh --rollback` restores both after saving a dump of the current database.
+- `backup.sh --restore-db <dump>` replaces the database safely: it stops the app containers, recreates the database empty and restores into it.
+- CI typechecks and lints the frontend and builds the backend, frontend and MCP server images (`.github/workflows/frontend.yml`, `images.yml`).
 
 ### Fixed
 - Cleanup items in generated reports now get their linked finding (the report loaded only their assets).
 - AI tool schemas that didn't match the API, found by the new registry test: `create_testcase` / `create_testcase_template` didn't require `category` and `description` (calls without them 422'd); `create_asset` / `update_asset` offered `os`, the vault tools `url` and `notes` (the field is `note`), the finding-template tools `severity`, and `update_testcase` `status` / `result` (it's `actual_result`, `is_executed`, `is_successful`) — none of which the API takes, so they were dropped silently.
 - The in-app chat's `list_notes` tool was advertised but had no executor ("Unknown tool"); its system prompt also promised vault, cleanup and template tools it doesn't have.
+- A zip deploy extracted a new `deploy_server.sh` over the copy that was running, and bash went on reading the new file mid-run. The script is now one function, read whole before it starts.
+- The restore command printed after the pre-deploy snapshot (`pg_restore --clean` over the live database) left the newer release's tables behind, and the backend crash-looped re-running the migrations that created them. The documented rollback (check out the old tag and rebuild) crash-looped as well, because the old backend didn't know the database's revision.
+- Changes to nginx's config weren't applied by a redeploy (`up -d` leaves an unchanged container running); nginx is now recreated on each deploy.
+- Certbot had no restart policy, so a crash or reboot stopped certificate renewal.
 - PDF and Markdown reports left out a finding's Technical Details (only the HTML report showed them).
 - A sub-test's display id in the PDF attack graph and the HTML report came from list order, so a child could be numbered before its parent; ids now follow the test-case tree the PDF lists.
 
