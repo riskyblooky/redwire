@@ -45,6 +45,7 @@ section becomes one release entry.
 - An API token expiry given with a UTC offset (`+05:00`) had the offset dropped, so the token expired that many hours late (or early).
 - Setting `REFRESH_TOKEN_EXPIRE_HOURS` above 24 still ended sessions after a day: the refresh cookie's own lifetime was fixed at 24 hours.
 - NetExec scan imports didn't record the command line that produced them.
+- Updating an engagement with `tag_ids: null` (documented as "leave the tags alone") removed all its tags.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

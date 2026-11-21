@@ -875,7 +875,7 @@ async def update_engagement(
     # Replace tags iff caller sent tag_ids (even empty list clears them).
     # Same reason as create: bypass the ORM relationship diff and touch
     # the join table directly so async greenlet doesn't trip.
-    if tag_ids is not _TAG_NOT_SET:
+    if tag_ids is not _TAG_NOT_SET and tag_ids is not None:  # null = leave the tags alone
         from sqlalchemy import delete as _sa_delete
         from models.finding import Tag
         from models.associations import EngagementTag

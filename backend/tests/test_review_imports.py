@@ -25,3 +25,23 @@ async def test_nxc_import_keeps_the_command_line(client, db_session, make_user, 
     cmd = (await db_session.execute(select(ScanImport.command).where(ScanImport.engagement_id == eng.id))).scalar_one()
     assert cmd and "nxc" in cmd and "Hunter2" not in cmd
 
+
+async def test_engagement_update_with_null_tag_ids_keeps_tags(client, db_session, make_user, authenticate_as):
+    from models.associations import EngagementTag
+    from models.finding import Tag
+    admin = await make_user(role="admin")
+    eng = await _make_engagement(db_session)
+    tag = Tag(id=str(uuid.uuid4()), name=f"t-{uuid.uuid4().hex[:6]}", color="#ff0000", entity_type="engagement")
+    db_session.add(tag)
+    await db_session.flush()
+    db_session.add(EngagementTag(engagement_id=eng.id, tag_id=tag.id))
+    await db_session.flush()
+    authenticate_as(admin)
+
+    r = await client.put(f"/engagements/{eng.id}", json={"description": "x", "tag_ids": None})
+
+    assert r.status_code == 200, r.text
+    tags = (await db_session.execute(select(EngagementTag.tag_id).where(EngagementTag.engagement_id == eng.id)
+                                     .execution_options(populate_existing=True))).scalars().all()
+    assert tags == [tag.id]
+
