@@ -31,7 +31,7 @@ import {
 import { FileText, Download, Loader2, Shield, Settings2, FileCode } from 'lucide-react';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { toast } from 'sonner';
-import { useGenerateReport, ReportConfiguration } from '@/lib/hooks/use-reports';
+import { useGenerateReport, ReportConfiguration, downloadBlob } from '@/lib/hooks/use-reports';
 import { useReportLayouts } from '@/lib/hooks/use-report-layouts';
 import { useReportThemes } from '@/lib/hooks/use-report-themes';
 
@@ -76,10 +76,23 @@ export default function ReportsPage() {
             return;
         }
         try {
-            await generateReport.mutateAsync(config);
-        } catch (error) {
-            console.error('Failed to generate report:', error);
-            toast.error('Failed to generate report');
+            const result = await generateReport.mutateAsync(config);
+            downloadBlob(result.blob, result.filename);
+            toast.success('Report generated');
+            if (result.markingWarnings && result.markingWarnings > 0) {
+                toast.warning(`${result.markingWarnings} portion(s) are using the inherited default classification`, {
+                    description: 'Marking profile enforcement is set to WARN. Mark them explicitly to silence this.',
+                });
+            }
+        } catch (error: any) {
+            // responseType is 'blob', so an error body arrives as a Blob.
+            let detail: string | undefined;
+            try {
+                const data = error?.response?.data;
+                const parsed = data instanceof Blob ? JSON.parse(await data.text()) : data;
+                detail = typeof parsed?.detail === 'string' ? parsed.detail : undefined;
+            } catch { /* not JSON */ }
+            toast.error(detail || 'Failed to generate report');
         }
     };
 
