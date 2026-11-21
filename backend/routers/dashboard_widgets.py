@@ -6,6 +6,7 @@ time-series bucketing, and multi-series support.
 
 import logging
 from typing import Optional, List
+import enum
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 
@@ -484,6 +485,12 @@ _DATE_RANGE_MAP = {
     "year": lambda: datetime.utcnow() - timedelta(days=365),
 }
 
+# The period before the last N days ([now-2N, now-N)), for "this period vs
+# the previous one" comparisons. Relative, unlike custom dates, which are
+# fixed once written into a widget config.
+_PRIOR_RANGE_DAYS = {"prior_7d": 7, "prior_30d": 30}
+_DATE_RANGES = ["7d", "30d", "90d", "quarter", "year", "prior_7d", "prior_30d", "all", "custom"]
+
 
 # ── Default system widget definitions ────────────────────────────────
 
@@ -580,9 +587,7 @@ SYSTEM_WIDGETS = [
             {
                 "table": "findings", "group_by": "severity",
                 "aggregation": "count", "value_column": "id",
-                "date_column": "created_at", "date_range": "custom",
-                "date_start": (datetime.utcnow() - timedelta(days=14)).isoformat(),
-                "date_end": (datetime.utcnow() - timedelta(days=7)).isoformat(),
+                "date_column": "created_at", "date_range": "prior_7d",
             },
         ]},
     },
@@ -825,9 +830,14 @@ def _resolve_date_filter(req: QueryPreviewRequest, model):
     if req.date_range == "all":
         return None
 
+    if req.date_range in _PRIOR_RANGE_DAYS:
+        days = _PRIOR_RANGE_DAYS[req.date_range]
+        now = datetime.utcnow()
+        return and_(date_col >= now - timedelta(days=2 * days), date_col < now - timedelta(days=days))
+
     range_fn = _DATE_RANGE_MAP.get(req.date_range)
     if not range_fn:
-        raise HTTPException(400, f"Unknown date_range '{req.date_range}'. Allowed: 7d, 30d, 90d, quarter, year, all, custom")
+        raise HTTPException(400, f"Unknown date_range '{req.date_range}'. Allowed: {', '.join(_DATE_RANGES)}")
     return date_col >= range_fn()
 
 
@@ -979,12 +989,14 @@ def _build_query(req: QueryPreviewRequest, cf_map: dict | None = None):
                 bucket,
                 series_col.label("series"),
                 agg_fn(value_col).label("value"),
-            ).group_by(bucket, series_col).order_by(bucket)
+            ).group_by(bucket, series_col).order_by(bucket.desc())
         else:
+            # Newest first so the limit keeps the latest buckets (the
+            # formatter puts them back in date order).
             query = select(
                 bucket,
                 agg_fn(value_col).label("value"),
-            ).group_by(bucket).order_by(bucket)
+            ).group_by(bucket).order_by(bucket.desc())
     else:
         # ── Standard group-by mode ──
         # Multi-column: emit a labelN column per dim, group by all of them.
@@ -1019,10 +1031,26 @@ def _build_query(req: QueryPreviewRequest, cf_map: dict | None = None):
             conditions.append(op(col, f.value))
         query = query.where(and_(*conditions))
 
-    # Limit
+    # Limit. A series split has one row per (bucket, series), so a row limit
+    # would cut a bucket in half: fetch up to a cap and let the formatter
+    # keep the newest `limit` buckets whole.
     limit = min(max(1, req.limit), 500)
-    query = query.limit(limit)
+    if req.time_bucket and req.date_column and req.series_by:
+        query = query.limit(_SERIES_ROW_CAP)
+    else:
+        query = query.limit(limit)
     return query
+
+
+_SERIES_ROW_CAP = 10_000
+
+
+def _label(v) -> str:
+    """Display label for a group/series value: an enum's value
+    ("CRITICAL"), not its repr ("Severity.CRITICAL")."""
+    if isinstance(v, enum.Enum):
+        return str(v.value)
+    return str(v)
 
 
 def _format_standard_result(rows, group_by_cols: list[str]) -> dict:
@@ -1035,10 +1063,10 @@ def _format_standard_result(rows, group_by_cols: list[str]) -> dict:
     for r in rows:
         raw_labels: list[str] = []
         primary = getattr(r, "label", None)
-        raw_labels.append(str(primary) if primary is not None else "(none)")
+        raw_labels.append(_label(primary) if primary is not None else "(none)")
         for i in range(1, len(group_by_cols)):
             v = getattr(r, f"label{i}", None)
-            raw_labels.append(str(v) if v is not None else "(none)")
+            raw_labels.append(_label(v) if v is not None else "(none)")
         entry: dict = {
             "label": raw_labels[0] if not is_multi else " / ".join(raw_labels),
             "value": float(r.value) if r.value else 0,
@@ -1050,23 +1078,33 @@ def _format_standard_result(rows, group_by_cols: list[str]) -> dict:
     return {"data": data, "mode": "standard", "group_by": group_by_cols}
 
 
-def _format_time_series_result(rows, has_series: bool):
-    """Format time-series query results into chart-ready data."""
+def _format_time_series_result(rows, has_series: bool, limit: int = 500):
+    """Format time-series query results into chart-ready data, oldest
+    first. Rows arrive newest first (see _build_query)."""
     if not has_series:
         return {
             "data": [
                 {"date": r.date.isoformat() if r.date else None, "value": float(r.value) if r.value else 0}
-                for r in rows
+                for r in reversed(rows)
             ],
             "mode": "time_series",
         }
+
+    newest = []
+    for r in rows:
+        if r.date not in newest:
+            if len(newest) == limit:
+                break
+            newest.append(r.date)
+    keep = set(newest)
+    rows = [r for r in rows if r.date in keep]
 
     # Multi-series: pivot rows into {date: ..., SeriesA: val, SeriesB: val}
     date_map = {}
     all_series = set()
     for r in rows:
         date_str = r.date.isoformat() if r.date else None
-        series_val = str(r.series) if r.series else "(none)"
+        series_val = _label(r.series) if r.series else "(none)"
         all_series.add(series_val)
         if date_str not in date_map:
             date_map[date_str] = {"date": date_str}
@@ -1253,7 +1291,7 @@ async def _run_single_query(
 
     rows = (await db.execute(query)).all()
     if req.time_bucket and req.date_column:
-        result = _format_time_series_result(rows, has_series=bool(req.series_by))
+        result = _format_time_series_result(rows, has_series=bool(req.series_by), limit=min(max(1, req.limit), 500))
     else:
         result = _format_standard_result(rows, _group_by_list(req))
 
@@ -1400,7 +1438,7 @@ async def get_query_schema(
         "schema": schema,
         "aggregations": list(_AGG_FUNCS.keys()),
         "filter_operators": list(_FILTER_OPS.keys()),
-        "date_ranges": ["7d", "30d", "90d", "quarter", "year", "all", "custom"],
+        "date_ranges": _DATE_RANGES,
         "time_buckets": ["day", "week", "month"],
         "sensitive_tables": sorted(_SENSITIVE_TABLES),
         "custom_field_labels": cf_labels,

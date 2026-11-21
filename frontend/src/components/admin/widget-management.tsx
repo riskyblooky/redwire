@@ -123,6 +123,8 @@ const DATE_RANGE_OPTIONS = [
     { value: '90d', label: '90 days' },
     { value: 'quarter', label: 'Quarter' },
     { value: 'year', label: 'Year' },
+    { value: 'prior_7d', label: 'Previous 7 days' },
+    { value: 'prior_30d', label: 'Previous 30 days' },
     { value: 'all', label: 'All time' },
 ];
 
