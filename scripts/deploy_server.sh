@@ -19,6 +19,10 @@ set -e
 APP_IMAGES="redwire-backend redwire-frontend redwire-mcp-server"
 ROLLBACK_DIR="backups/rollback"
 DEPLOY_OK_MARK="backups/.last-deploy-ok"
+# Present from when this script generates an at-rest key for an existing
+# install until the re-key (step 7b) succeeds, so a run that fails in
+# between still re-keys on the next one (the key is in .env by then).
+REKEY_MARK="backups/.needs-rekey"
 
 # Export the variables in .env. Read as data, never sourced: docker
 # compose's .env syntax isn't shell, and the old `export $(grep | xargs)`
@@ -200,6 +204,12 @@ if [ -f .env ]; then
         echo "TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY}" >> .env
         export TOTP_ENCRYPTION_KEY
         echo -e "${BLUE}Generated a new TOTP_ENCRYPTION_KEY and added it to .env.${NC}"
+        NEEDS_ROTATION=1
+    fi
+    if [ "$NEEDS_ROTATION" -eq 1 ]; then
+        mkdir -p backups && touch "$REKEY_MARK"
+    elif [ -f "$REKEY_MARK" ]; then
+        echo -e "${BLUE}A previous deploy generated an encryption key but didn't finish re-keying; it runs this time.${NC}"
         NEEDS_ROTATION=1
     fi
     if [ "$NEEDS_ROTATION" -eq 1 ]; then
@@ -466,6 +476,7 @@ echo -e "${GREEN}Migrations applied successfully!${NC}"
 if [ "${NEEDS_ROTATION:-0}" -eq 1 ]; then
     echo -e "\n${BLUE}[7b] Re-keying existing vault/TOTP data onto the new encryption key(s)...${NC}"
     docker compose run --rm backend python3 rotate_encryption_keys.py
+    rm -f "$REKEY_MARK"
     echo -e "${GREEN}Encryption key rotation complete.${NC}"
 fi
 
