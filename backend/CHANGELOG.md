@@ -63,6 +63,7 @@ section becomes one release entry.
 - The deploy script aborted when `.env` had an inline comment, a value with spaces or a `$` in a value; it now reads `.env` the way Docker Compose does.
 - If a deploy that generated new encryption keys failed before re-keying existing data, running it again skipped the re-key and left vault and 2FA data unreadable. The pending re-key is now remembered until it succeeds.
 - The temporary self-signed certificate expired after one day (on-prem installs keep it), and its presence made the first Let's Encrypt request fail. It now lasts 825 days, is renewed by the deploy script when close to expiry, and is moved aside for the Let's Encrypt request.
+- Requests that got a 401 while the background token refresh was running (or while a failed refresh was in flight) never finished, leaving the page stuck loading.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

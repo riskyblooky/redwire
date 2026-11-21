@@ -26,6 +26,8 @@ api.interceptors.request.use(
         const token = localStorage.getItem('access_token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
+            // Which token this request went out with (see the 401 handler).
+            Object.assign(config, { _sentToken: token });
         }
         return config;
     },
@@ -35,20 +37,30 @@ api.interceptors.request.use(
 );
 
 // --- Token refresh with race condition protection ---
-let isRefreshing = false;
-let refreshSubscribers: ((token: string) => void)[] = [];
+// One /auth/refresh at a time: every caller (the 401 interceptor, the
+// proactive timer, WebSocket reconnects) awaits the same in-flight promise,
+// so all of them get its token or its error. (A flag plus a subscriber list
+// left requests queued behind a proactive or failed refresh hanging forever.)
+let refreshInFlight: Promise<string> | null = null;
 
-function subscribeTokenRefresh(cb: (token: string) => void) {
-    refreshSubscribers.push(cb);
-}
-
-function onTokenRefreshed(newToken: string) {
-    refreshSubscribers.forEach((cb) => cb(newToken));
-    refreshSubscribers = [];
-}
-
-function onRefreshFailed() {
-    refreshSubscribers = [];
+function refreshAccessToken(): Promise<string> {
+    if (!refreshInFlight) {
+        refreshInFlight = (async () => {
+            try {
+                // Refresh token lives in an HttpOnly cookie set by /auth/login
+                // (GHSA-gv65-p25x-qrqj); the new access token comes back in the body.
+                const response = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
+                const { access_token } = response.data;
+                localStorage.setItem('access_token', access_token);
+                // Renew session cookie on successful refresh
+                document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
+                return access_token as string;
+            } finally {
+                refreshInFlight = null;
+            }
+        })();
+    }
+    return refreshInFlight;
 }
 
 // GHSA-7x2f-ff7r-h388 #15 (CWE-532): scrub the Authorization header
@@ -94,42 +106,21 @@ api.interceptors.response.use(
         if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
             originalRequest._retry = true;
 
-            // If already refreshing, queue this request to retry after refresh completes
-            if (isRefreshing) {
-                return new Promise((resolve, reject) => {
-                    subscribeTokenRefresh((newToken: string) => {
-                        originalRequest.headers.Authorization = `Bearer ${newToken}`;
-                        resolve(api(originalRequest));
-                    });
-                    // If refresh fails while waiting, the promise will just hang
-                    // which is fine because onRefreshFailed + redirect happens
-                });
+            // Sent with a token that has since been replaced (a refresh
+            // finished while it was in flight): retry with the current one
+            // rather than rotating the refresh cookie again.
+            const current = localStorage.getItem('access_token');
+            const sentWith = originalRequest._sentToken;
+            if (current && sentWith && sentWith !== current && !refreshInFlight) {
+                originalRequest.headers.Authorization = `Bearer ${current}`;
+                return api(originalRequest);
             }
 
-            isRefreshing = true;
-
             try {
-                // Refresh token now lives in an HttpOnly cookie set by
-                // /auth/login (GHSA-gv65-p25x-qrqj); the JS side just calls
-                // /auth/refresh with credentials and reads the new access
-                // token back from the JSON body.
-                const response = await axios.post(`${API_URL}/auth/refresh`, {}, {
-                    withCredentials: true,
-                });
-
-                const { access_token } = response.data;
-                localStorage.setItem('access_token', access_token);
-                // Renew session cookie on successful refresh
-                document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
-
-                isRefreshing = false;
-                onTokenRefreshed(access_token);
-
+                const access_token = await refreshAccessToken();
                 originalRequest.headers.Authorization = `Bearer ${access_token}`;
                 return api(originalRequest);
             } catch (refreshError) {
-                isRefreshing = false;
-                onRefreshFailed();
                 // Refresh failed, clear access token and redirect to login.
                 // The refresh cookie is cleared by /auth/logout, or by the
                 // server when it issues a 401 on an expired/missing cookie.
@@ -164,21 +155,10 @@ function startProactiveRefresh() {
             return;
         }
 
-        // Don't proactively refresh if a reactive refresh is already in flight
-        if (isRefreshing) return;
-
         try {
-            isRefreshing = true;
-            const response = await axios.post(`${API_URL}/auth/refresh`, {}, {
-                withCredentials: true,
-            });
-
-            const { access_token } = response.data;
-            localStorage.setItem('access_token', access_token);
-            document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
-            isRefreshing = false;
+            // Joins a refresh already in flight rather than starting another.
+            await refreshAccessToken();
         } catch {
-            isRefreshing = false;
             // Proactive refresh failed — don't force logout, let the reactive interceptor handle it
         }
     }, PROACTIVE_REFRESH_INTERVAL_MS);
@@ -225,8 +205,8 @@ function jwtExpiry(token: string): number | null {
  * WebSocket (re)connects, which send the token themselves and so never pass
  * through the axios 401 → refresh interceptor: a socket that reconnects
  * after the 30-minute token lapsed (laptop slept, proactive timer drifted)
- * would otherwise be refused forever. Shares the interceptor's in-flight
- * lock; on a failed refresh it returns the current token and lets the
+ * would otherwise be refused forever. Joins any refresh already in flight;
+ * on a failed refresh it returns the current token and lets the
  * server decide.
  */
 export async function getFreshAccessToken(): Promise<string | null> {
@@ -234,27 +214,10 @@ export async function getFreshAccessToken(): Promise<string | null> {
     if (!token) return null;
     const exp = jwtExpiry(token);
     if (exp === null || exp * 1000 - Date.now() > 60_000) return token;
-    if (isRefreshing) {
-        // Another refresh is in flight; take its result (or give up after 10s
-        // — a failed refresh clears subscribers without calling them).
-        return Promise.race([
-            new Promise<string>((resolve) => subscribeTokenRefresh(resolve)),
-            new Promise<string | null>((resolve) => setTimeout(() => resolve(localStorage.getItem('access_token')), 10_000)),
-        ]);
-    }
-    isRefreshing = true;
     try {
-        const response = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
-        const { access_token } = response.data;
-        localStorage.setItem('access_token', access_token);
-        document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
-        onTokenRefreshed(access_token);
-        return access_token;
+        return await refreshAccessToken();
     } catch {
-        onRefreshFailed();
         return localStorage.getItem('access_token');
-    } finally {
-        isRefreshing = false;
     }
 }
 
