@@ -86,7 +86,8 @@ _DUMMY_PASSWORD_HASH = get_password_hash(uuid.uuid4().hex)
 # compatibility, but the only value a client can use is the cookie.
 # GHSA-gv65-p25x-qrqj.
 REFRESH_COOKIE_NAME = "refresh_token"
-REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24  # 24h — matches create_refresh_token
+from auth.jwt import REFRESH_TOKEN_EXPIRE_HOURS  # noqa: E402
+REFRESH_COOKIE_MAX_AGE = REFRESH_TOKEN_EXPIRE_HOURS * 3600  # the refresh token's own lifetime
 
 
 def _reissue_session(response: Response, request: Request, user) -> str:

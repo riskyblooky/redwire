@@ -43,6 +43,7 @@ section becomes one release entry.
 - Comparing engagements showed zero findings for an engagement with no client, and refused engagements a user could open through the "view all engagements" permission.
 - A 2FA secret that could no longer be decrypted (after an encryption key change) made login and the 2FA settings fail with a server error; the code is now just rejected as invalid.
 - An API token expiry given with a UTC offset (`+05:00`) had the offset dropped, so the token expired that many hours late (or early).
+- Setting `REFRESH_TOKEN_EXPIRE_HOURS` above 24 still ended sessions after a day: the refresh cookie's own lifetime was fixed at 24 hours.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
