@@ -108,6 +108,7 @@ import { SchedulingAssistant } from '@/components/calendar/scheduling-assistant'
 import { useAuthStore } from '@/stores/auth-store';
 import { useFocusFit } from '@/lib/hooks/use-skills';
 import { UserRole } from '@/lib/types';
+import { STATUS_PHASE_INDEX } from '@/lib/engagement-status';
 
 // ── Phase colors (distinct from status colors) ─────────────────
 const PHASE_COLORS: Record<string, { bg: string; label: string; border: string }> = {
@@ -118,15 +119,6 @@ const PHASE_COLORS: Record<string, { bg: string; label: string; border: string }
 };
 
 // Status-to-phase index mapping for on-time/late calculation
-const STATUS_PHASE_INDEX: Record<string, number> = {
-    PROPOSED: -1,
-    PLANNING: 0,
-    SCOPING: 1,
-    IN_PROGRESS: 2,
-    REPORTING: 3,
-    COMPLETED: 4,
-    ON_HOLD: -1,
-};
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
     PROPOSED: 'bg-teal-500/10 text-teal-400 border-teal-500/20',

@@ -16,3 +16,11 @@ export function canTransition(from: string | null | undefined, to: string): bool
     const j = STAGES.indexOf(to);
     return j > i || j === i - 1;
 }
+
+/** Position of each phase / status in the engagement lifecycle, for phase
+ *  health (a phase is done once the status is past it). PROPOSED and
+ *  ON_HOLD are outside the sequence. Same order as STAGES and the
+ *  backend's EngagementPhase.DEFAULT_PHASES. */
+export const STATUS_PHASE_INDEX: Record<string, number> = {
+    PROPOSED: -1, SCOPING: 0, PLANNING: 1, IN_PROGRESS: 2, REPORTING: 3, COMPLETED: 4, ON_HOLD: -1,
+};

@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthStore } from '@/stores/auth-store';
-import { canTransition } from '@/lib/engagement-status';
+import { canTransition, STATUS_PHASE_INDEX } from '@/lib/engagement-status';
 import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -64,9 +64,6 @@ const PHASE_COLORS: Record<string, { bg: string; text: string; label: string }> 
     REPORTING:   { bg: 'bg-blue-500',   text: 'text-blue-400',   label: 'Reporting'   },
 };
 
-const STATUS_PHASE_INDEX: Record<string, number> = {
-    PROPOSED: -1, PLANNING: 0, SCOPING: 1, IN_PROGRESS: 2, REPORTING: 3, COMPLETED: 4, ON_HOLD: -1,
-};
 
 function getPhaseHealth(phase: EngagementPhase, engagementStatus: string): 'on-time' | 'late' | 'completed' | 'future' {
     const now       = new Date();
@@ -81,8 +78,9 @@ function getPhaseHealth(phase: EngagementPhase, engagementStatus: string): 'on-t
 }
 
 const ENGAGEMENT_STATUSES = [
-    { value: 'PLANNING',    label: 'Planning'    },
+    { value: 'PROPOSED',    label: 'Proposed'    },
     { value: 'SCOPING',     label: 'Scoping'     },
+    { value: 'PLANNING',    label: 'Planning'    },
     { value: 'IN_PROGRESS', label: 'In Progress' },
     { value: 'REPORTING',   label: 'Reporting'   },
     { value: 'COMPLETED',   label: 'Completed'   },
