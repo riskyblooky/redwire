@@ -28,6 +28,11 @@ section becomes one release entry.
 - Certbot had no restart policy, so a crash or reboot stopped certificate renewal.
 - PDF and Markdown reports left out a finding's Technical Details (only the HTML report showed them).
 - A sub-test's display id in the PDF attack graph and the HTML report came from list order, so a child could be numbered before its parent; ids now follow the test-case tree the PDF lists.
+- A scan or asset import that named the same host twice (Burp vhosts on one IP, a host repeated in an nmap run) or listed a port twice failed with a server error and imported nothing. Repeated hosts now merge and repeated ports are added once.
+- Changing only a finding's custom fields on its edit page didn't count as an edit: Save stayed disabled and leaving the page didn't warn about unsaved changes.
+
+### Removed
+- One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
 
 ## [1.9.1] — 2026-11-16
 

@@ -401,6 +401,32 @@ async def import_assets(
     existing_assets = {a.identifier.lower(): a for a in existing_result.scalars().all()}
 
     result = AssetImportResult()
+    # (port, protocol) keys per identifier for the whole batch: ports added
+    # below go in by asset_id and never appear in Asset.ports, so a repeated
+    # identifier (or port) in one file would re-insert them and hit the
+    # asset_ports unique constraint.
+    port_keys: dict[str, set] = {
+        ident: {(p.port_number, p.protocol) for p in a.ports}
+        for ident, a in existing_assets.items()
+    }
+
+    def add_ports(asset: Asset, identifier_lower: str, ports) -> None:
+        seen = port_keys.setdefault(identifier_lower, set())
+        for port_data in ports:
+            port_key = (port_data["port_number"], port_data["protocol"])
+            if port_key in seen:
+                continue
+            db.add(AssetPort(
+                id=str(uuid.uuid4()),
+                asset_id=asset.id,
+                port_number=port_data["port_number"],
+                protocol=port_data["protocol"],
+                service_name=port_data.get("service_name"),
+                state=port_data.get("state", PortState.OPEN),
+                version=port_data.get("version"),
+            ))
+            seen.add(port_key)
+            result.ports_added += 1
 
     for asset_data in parsed_assets:
         name = asset_data.get("name", "")
@@ -413,26 +439,8 @@ async def import_assets(
         identifier_lower = identifier.lower()
 
         if identifier_lower in existing_assets:
-            # Merge ports for existing assets
-            existing_asset = existing_assets[identifier_lower]
-            existing_ports = {(p.port_number, p.protocol) for p in existing_asset.ports}
-
-            for port_data in asset_data.get("ports", []):
-                port_key = (port_data["port_number"], port_data["protocol"])
-                if port_key not in existing_ports:
-                    db_port = AssetPort(
-                        id=str(uuid.uuid4()),
-                        asset_id=existing_asset.id,
-                        port_number=port_data["port_number"],
-                        protocol=port_data["protocol"],
-                        service_name=port_data.get("service_name"),
-                        state=port_data.get("state", PortState.OPEN),
-                        version=port_data.get("version"),
-                    )
-                    db.add(db_port)
-                    existing_ports.add(port_key)
-                    result.ports_added += 1
-
+            # Merge ports into the existing (or earlier-in-file) asset
+            add_ports(existing_assets[identifier_lower], identifier_lower, asset_data.get("ports", []))
             result.skipped += 1
             continue
 
@@ -449,20 +457,7 @@ async def import_assets(
             created_by=current_user.id,
         )
         db.add(db_asset)
-
-        # Add ports
-        for port_data in asset_data.get("ports", []):
-            db_port = AssetPort(
-                id=str(uuid.uuid4()),
-                asset_id=db_asset.id,
-                port_number=port_data["port_number"],
-                protocol=port_data["protocol"],
-                service_name=port_data.get("service_name"),
-                state=port_data.get("state", PortState.OPEN),
-                version=port_data.get("version"),
-            )
-            db.add(db_port)
-            result.ports_added += 1
+        add_ports(db_asset, identifier_lower, asset_data.get("ports", []))
 
         existing_assets[identifier_lower] = db_asset
         result.created += 1

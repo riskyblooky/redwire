@@ -271,6 +271,39 @@ async def commit_import(
 
     if import_assets:
         type_names = await configured_asset_types(db)
+        # (port, protocol) keys per asset identifier for this whole batch.
+        # Ports added here go in by asset_id and never show up in
+        # Asset.ports, so a second parsed asset with the same identifier
+        # (Burp vhosts on one IP, a host listed twice) would re-insert them
+        # and hit the asset_ports unique constraint.
+        port_keys: dict[str, set] = {
+            ident: {(p.port_number, p.protocol) for p in a.ports}
+            for ident, a in existing_assets.items()
+        }
+
+        def add_ports(db_asset: Asset, identifier_lower: str, ports) -> None:
+            seen = port_keys.setdefault(identifier_lower, set())
+            for p in ports:
+                proto = PortProtocol.UDP if p.protocol == "UDP" else PortProtocol.TCP
+                if (p.port_number, proto) in seen:
+                    continue
+                state = PortState.OPEN
+                if p.state == "CLOSED":
+                    state = PortState.CLOSED
+                elif p.state == "FILTERED":
+                    state = PortState.FILTERED
+                db.add(AssetPort(
+                    id=str(uuid.uuid4()),
+                    asset_id=db_asset.id,
+                    port_number=p.port_number,
+                    protocol=proto,
+                    service_name=p.service_name,
+                    state=state,
+                    version=p.version,
+                ))
+                seen.add((p.port_number, proto))
+                result.ports_added += 1
+
         for i, parsed_asset in enumerate(parsed.assets):
             if selected_asset_idx is not None and i not in selected_asset_idx:
                 continue
@@ -278,35 +311,10 @@ async def commit_import(
             identifier_lower = parsed_asset.identifier.lower()
 
             if identifier_lower in existing_assets:
-                # Asset exists — merge ports
+                # Asset exists (in the engagement or earlier in this file) — merge ports
                 db_asset = existing_assets[identifier_lower]
                 asset_map[i] = db_asset
-                existing_port_keys = {
-                    (p.port_number, p.protocol) for p in db_asset.ports
-                }
-
-                for p in parsed_asset.ports:
-                    proto = PortProtocol.UDP if p.protocol == "UDP" else PortProtocol.TCP
-                    if (p.port_number, proto) not in existing_port_keys:
-                        state = PortState.OPEN
-                        if p.state == "CLOSED":
-                            state = PortState.CLOSED
-                        elif p.state == "FILTERED":
-                            state = PortState.FILTERED
-
-                        db_port = AssetPort(
-                            id=str(uuid.uuid4()),
-                            asset_id=db_asset.id,
-                            port_number=p.port_number,
-                            protocol=proto,
-                            service_name=p.service_name,
-                            state=state,
-                            version=p.version,
-                        )
-                        db.add(db_port)
-                        existing_port_keys.add((p.port_number, proto))
-                        result.ports_added += 1
-
+                add_ports(db_asset, identifier_lower, parsed_asset.ports)
                 result.assets_skipped += 1
             else:
                 # Create new asset
@@ -323,27 +331,7 @@ async def commit_import(
                     created_by=current_user.id,
                 )
                 db.add(db_asset)
-
-                # Add ports
-                for p in parsed_asset.ports:
-                    proto = PortProtocol.UDP if p.protocol == "UDP" else PortProtocol.TCP
-                    state = PortState.OPEN
-                    if p.state == "CLOSED":
-                        state = PortState.CLOSED
-                    elif p.state == "FILTERED":
-                        state = PortState.FILTERED
-
-                    db_port = AssetPort(
-                        id=str(uuid.uuid4()),
-                        asset_id=db_asset.id,
-                        port_number=p.port_number,
-                        protocol=proto,
-                        service_name=p.service_name,
-                        state=state,
-                        version=p.version,
-                    )
-                    db.add(db_port)
-                    result.ports_added += 1
+                add_ports(db_asset, identifier_lower, parsed_asset.ports)
 
                 existing_assets[identifier_lower] = db_asset
                 asset_map[i] = db_asset
