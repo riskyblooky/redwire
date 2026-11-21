@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from sqlalchemy import func, select
 
 from tests.test_authz_boundaries import _make_engagement
@@ -146,3 +148,32 @@ async def test_port_filter_does_not_multiply_the_thread_count(client, db_session
     rows = body["items"] if isinstance(body, dict) else body
     [row] = [a for a in rows if a["id"] == host.id]
     assert row["unresolved_thread_count"] == 1
+
+
+@pytest.mark.parametrize("sort_by", ["unresolved_thread_count", "created_by_username"])
+async def test_asset_list_sorts_by_discussions_and_creator(sort_by, client, db_session, make_user,
+                                                           authenticate_as):
+    from datetime import datetime
+    from models.asset import Asset
+    from models.discussion import Thread
+    admin = await make_user(role="admin", username=f"aaa_{uuid.uuid4().hex[:6]}")
+    zed = await make_user(username=f"zzz_{uuid.uuid4().hex[:6]}")
+    eng = await _make_engagement(db_session)
+    # "quiet" is the newer asset, so created_at order would put it first.
+    busy = Asset(id=str(uuid.uuid4()), engagement_id=eng.id, name="busy", asset_type="Server",
+                 identifier="10.5.5.1", created_by=zed.id, created_at=datetime(2026, 1, 1))
+    quiet = Asset(id=str(uuid.uuid4()), engagement_id=eng.id, name="quiet", asset_type="Server",
+                  identifier="10.5.5.2", created_by=admin.id, created_at=datetime(2026, 2, 1))
+    db_session.add_all([busy, quiet])
+    await db_session.flush()
+    db_session.add_all([Thread(id=str(uuid.uuid4()), engagement_id=eng.id, resource_type="asset",
+                               resource_id=busy.id, title=f"t{i}", created_by=admin.id) for i in range(2)])
+    await db_session.flush()
+    authenticate_as(admin)
+
+    r = await client.get("/assets", params={"engagement_id": eng.id, "sort_by": sort_by, "sort_order": "desc"})
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    rows = body["items"] if isinstance(body, dict) else body
+    assert [a["name"] for a in rows] == ["busy", "quiet"]

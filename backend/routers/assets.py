@@ -746,6 +746,10 @@ async def get_assets(
         sort_column = Asset.name
     elif sort_by == 'asset_type':
         sort_column = Asset.asset_type
+    elif sort_by == 'created_by_username':
+        sort_column = User.username
+    elif sort_by == 'unresolved_thread_count':
+        sort_column = func.count(Thread.id).filter(Thread.is_resolved == False)  # noqa: E712
     elif sort_by and sort_by.startswith('cf:'):
         # Sort by a custom field value (JSON text). Numeric fields sort
         # lexically — acceptable for v1.
