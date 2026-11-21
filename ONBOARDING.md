@@ -294,8 +294,6 @@ Auto-loaded by topic; also invocable explicitly. Start here for any task:
 - **Seed failures don't block startup** (logged WARN) — a missing seed is not necessarily an error.
 - **`.claude/` is gitignored** — skills and this repo's agent config are *not* shared via git
   (this file, `ONBOARDING.md`, lives at root precisely so it is).
-- **No real test suite exists yet** (despite stray `test_*.py` / `pytest_out*.txt` in `backend/`).
-  Don't assume `pytest` green = covered.
-- **There are loose diagnostic scripts in `backend/`** (`check_models.py`, `check_tables.py`,
-  `db_diag.py`, `inspect_schema.py`, `manual_migrate.py`) — ad-hoc tooling, not part of the app.
+- **The backend suite lives in `backend/tests/`** and runs against the dev stack's Postgres
+  (see the `testing` skill). The frontend has no unit tests; CI typechecks and lints it.
 ```

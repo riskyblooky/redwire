@@ -591,20 +591,10 @@ async def get_evidence_exif(
         return {"exif": {}, "has_exif": False}
 
     try:
-        file_stream = await storage_service.get_file_stream(evidence.filename)
-        image_bytes = b""
-        async for chunk in file_stream:
-            image_bytes += chunk
+        image_bytes = await storage_service.download_file(evidence.filename)
     except Exception:
-        # If stream is sync (bytes-like), try reading directly
-        try:
-            file_stream = await storage_service.get_file_stream(evidence.filename)
-            if hasattr(file_stream, 'read'):
-                image_bytes = file_stream.read()
-            else:
-                image_bytes = b"".join(file_stream)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+        logger.exception("Failed to read evidence %s from storage", evidence.id)
+        raise HTTPException(status_code=500, detail="Failed to read file")
 
     exif = _extract_exif_dict(image_bytes)
     return {"exif": exif, "has_exif": len(exif) > 0}
@@ -633,19 +623,10 @@ async def strip_evidence_exif(
 
     # Download file from storage
     try:
-        file_stream = await storage_service.get_file_stream(evidence.filename)
-        image_bytes = b""
-        async for chunk in file_stream:
-            image_bytes += chunk
+        image_bytes = await storage_service.download_file(evidence.filename)
     except Exception:
-        try:
-            file_stream = await storage_service.get_file_stream(evidence.filename)
-            if hasattr(file_stream, 'read'):
-                image_bytes = file_stream.read()
-            else:
-                image_bytes = b"".join(file_stream)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+        logger.exception("Failed to read evidence %s from storage", evidence.id)
+        raise HTTPException(status_code=500, detail="Failed to read file")
 
     # Extract EXIF before stripping
     old_exif = _extract_exif_dict(image_bytes)

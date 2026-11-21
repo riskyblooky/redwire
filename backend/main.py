@@ -709,7 +709,7 @@ async def root():
     """Root endpoint."""
     return {
         "message": "RedWire API",
-        "version": "1.0.0",
+        "version": _BUILD_INFO["version"],
         "docs": "/docs"
     }
 
@@ -762,16 +762,3 @@ async def health_check():
         "service": "redwire-api",
         **_BUILD_INFO,
     }
-
-@app.on_event("startup")
-async def startup():
-    """Legacy startup banner. Real seeding now happens in lifespan via
-    seed_defaults.seed_all_defaults() — see lines above."""
-    print("🚀 RedWire API starting up...")
-    print(f"📝 API documentation available at /docs")
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    """Shutdown event handler."""
-    print("👋 RedWire API shutting down...")

@@ -1239,25 +1239,14 @@ async def call_mcp_tool(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Call an MCP tool on behalf of the current user.
+    """Run one AI tool as the current user.
 
-    The user's JWT is forwarded to the MCP server via the request headers,
-    and the MCP server forwards it to the RedWire backend API.
-    This ensures RBAC is enforced — users can only access data they're
-    authorized to see.
+    Uses the in-app executor (the tools of utils/ai_tool_registry.py), not
+    the MCP server, so the caller's own engagement permissions apply.
     """
-    from fastapi import Request as FastAPIRequest
-    mcp_url = _get_mcp_url()
-
-    # Call the MCP server's tool endpoint directly via the backend API
-    # instead of going through the SSE protocol, we just call the same
-    # backend endpoints the MCP server would call, but with the user's
-    # actual token. This is simpler and avoids MCP protocol complexity.
     tool_name = request.tool_name
     args = request.arguments
 
-    # Runs the in-app executor as the current user (the in-app tools of
-    # utils/ai_tool_registry.py), not the MCP server.
     try:
         result = await _execute_mcp_tool(tool_name, args, current_user, db)
         return {"result": result}
