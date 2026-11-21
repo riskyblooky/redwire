@@ -3,8 +3,10 @@
 The default-data seeder created its templates without a status, so they
 took the ORM default DRAFT and were visible only to the bootstrap admin
 (installs seeded before the status column existed got PUBLISHED from its
-server_default). Publishes the seeded templates that were never
-published or submitted; anything else stays as it is.
+server_default). Publishes the seeded templates nobody has touched:
+still DRAFT, never submitted, and no updated_by (every edit and workflow
+action sets it, unpublish included, so a seeded template an admin
+unpublished stays a draft). Anything else stays as it is.
 
 Revision ID: b2e7c4a9d1f6
 Revises: a8d3f6c2e9b1
@@ -59,6 +61,7 @@ def upgrade() -> None:
         bind.execute(sa.text(
             f"UPDATE {table} SET status = 'PUBLISHED', published_at = now() at time zone 'utc' "  # noqa: S608 — constant
             "WHERE status = 'DRAFT' AND published_at IS NULL AND submitted_at IS NULL "
+            "AND updated_by IS NULL "
             "AND title = ANY(:titles) "
             "AND created_by IN (SELECT id FROM users WHERE role = 'ADMIN')"
         ), {"titles": list(titles)})
