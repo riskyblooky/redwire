@@ -399,6 +399,14 @@ async def update_client(
     for field, value in update_data.items():
         setattr(client, field, value)
 
+    # Engagements keep a copy of the client's name (search, reports,
+    # calendar and stats read it); a rename has to reach them too.
+    if update_data.get("name"):
+        await db.execute(
+            update(Engagement).where(Engagement.client_id == client_id)
+            .values(client_name=update_data["name"])
+        )
+
     client.updated_by = current_user.id
     await db.commit()
     await db.refresh(client)
