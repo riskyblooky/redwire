@@ -238,7 +238,9 @@ async def update_user(
             detail="User not found"
         )
         
-    update_data = user_update.model_dump(exclude={'group_ids'}, exclude_unset=True)
+    # current_password / totp_code are only for the self-service endpoint.
+    update_data = user_update.model_dump(exclude={'group_ids', 'current_password', 'totp_code'},
+                                         exclude_unset=True)
     await _guard_user_admin_action(
         current_user, db,
         target=user,
@@ -280,7 +282,7 @@ async def update_user(
     _sv = lambda v: getattr(v, "value", v)  # noqa: E731
     changes = {k: {"old": _sv(getattr(user, k, None)), "new": _sv(v)}
                for k, v in update_data.items()
-               if k in ("role", "is_active") and _sv(getattr(user, k, None)) != _sv(v)}
+               if k in ("role", "is_active", "email") and _sv(getattr(user, k, None)) != _sv(v)}
     if user_update.group_ids is not None:
         changes["groups"] = {"old": sorted(g.id for g in user.groups), "new": sorted(user_update.group_ids)}
 

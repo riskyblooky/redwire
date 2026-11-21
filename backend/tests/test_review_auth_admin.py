@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pyotp
 import pytest
 from sqlalchemy import func, select
@@ -81,3 +83,31 @@ async def test_last_active_admin_cannot_be_demoted_or_deactivated(change, client
     db_session.expunge_all()
     r = await client.patch(f"/admin/users/{second.id}", json=change)
     assert r.status_code == 200, r.text
+
+
+async def test_admin_email_change_to_a_taken_address_is_409(client, db_session, make_user, authenticate_as):
+    admin = await make_user(role="admin")
+    a = await make_user(email=f"a-{uuid.uuid4().hex[:8]}@example.com")
+    b = await make_user(email=f"b-{uuid.uuid4().hex[:8]}@example.com")
+    authenticate_as(admin)
+    db_session.expunge_all()
+
+    r = await client.patch(f"/admin/users/{a.id}", json={"email": b.email})
+    assert r.status_code == 409, r.text
+
+
+async def test_admin_email_change_is_audited(client, db_session, make_user, authenticate_as, monkeypatch):
+    import routers.admin as admin_router
+    events = []
+
+    async def _record(kind, **kw):
+        events.append((kind, kw.get("details")))
+    monkeypatch.setattr(admin_router, "record_security_event", _record)
+    admin = await make_user(role="admin")
+    a = await make_user(email=f"a-{uuid.uuid4().hex[:8]}@example.com")
+    authenticate_as(admin)
+    db_session.expunge_all()
+
+    r = await client.patch(f"/admin/users/{a.id}", json={"email": f"new-{uuid.uuid4().hex[:8]}@example.com"})
+    assert r.status_code == 200, r.text
+    assert events and "email" in events[-1][1]["changes"]
