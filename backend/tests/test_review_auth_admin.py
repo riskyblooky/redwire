@@ -111,3 +111,11 @@ async def test_admin_email_change_is_audited(client, db_session, make_user, auth
     r = await client.patch(f"/admin/users/{a.id}", json={"email": f"new-{uuid.uuid4().hex[:8]}@example.com"})
     assert r.status_code == 200, r.text
     assert events and "email" in events[-1][1]["changes"]
+
+
+def test_totp_code_against_a_missing_secret_is_just_invalid():
+    """decrypt_totp_secret returns None for an undecryptable secret; every
+    caller passed that on and got a TypeError (a 500 at login)."""
+    from auth.totp import verify_totp_code
+    assert verify_totp_code(None, "123456") is None
+    assert verify_totp_code("", "123456") is None

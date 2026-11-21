@@ -49,7 +49,7 @@ def generate_qr_base64(uri: str) -> str:
 
 
 def verify_totp_code(
-    secret: str,
+    secret: Optional[str],
     code: str,
     last_timestep: Optional[int] = None,
 ) -> Optional[int]:
@@ -67,7 +67,12 @@ def verify_totp_code(
     sees the consumed step. The ``<=`` comparison (rather than ``==``)
     also blocks an attacker from presenting last window's code via the
     valid_window drift tolerance after the current step has been used.
+
+    A missing secret (``decrypt_totp_secret`` returns None when the stored
+    one can't be decrypted, e.g. after a key change) verifies nothing.
     """
+    if not secret:
+        return None
     totp = pyotp.TOTP(secret)
     now = int(time.time())
     current_step = now // totp.interval
