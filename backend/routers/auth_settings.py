@@ -69,7 +69,8 @@ async def _set_setting(db: AsyncSession, key: str, value: str, user_id: str):
 
 
 def _mask(value: str) -> str:
-    """Mask sensitive values for API responses."""
+    """Mask a certificate for API responses: the ends of a PEM let an admin
+    tell which one is set. Never use this for a secret."""
     if not value:
         return ""
     if len(value) <= 8:
@@ -103,7 +104,7 @@ async def get_auth_settings(
         enabled=raw.get("ldap_enabled", "false").lower() == "true",
         server_url=raw.get("ldap_server_url", ""),
         bind_dn=raw.get("ldap_bind_dn", ""),
-        bind_password=_mask(raw.get("ldap_bind_password", "")),
+        bind_password="••••••••" if raw.get("ldap_bind_password") else "",
         search_base=raw.get("ldap_search_base", ""),
         search_filter=raw.get("ldap_search_filter", "(uid={username})"),
         username_attribute=raw.get("ldap_username_attribute", "uid"),

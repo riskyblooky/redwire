@@ -46,3 +46,17 @@ async def test_enabling_2fa_replaces_earlier_codes(client, db_session, make_user
     hashes = (await db_session.execute(select(RecoveryCode.code_hash)
                                        .where(RecoveryCode.user_id == user.id))).scalars().all()
     assert "stale" not in hashes and len(hashes) == len(r.json()["recovery_codes"])
+
+
+async def test_ldap_bind_password_is_fully_masked(client, db_session, make_user, authenticate_as):
+    from models.auth_settings import AuthSetting
+    db_session.add(AuthSetting(key="ldap_bind_password", value="Sup3rSecretBindPw"))
+    await db_session.flush()
+    admin = await make_user(role="admin")
+    authenticate_as(admin)
+
+    r = await client.get("/admin/auth-settings")
+
+    assert r.status_code == 200, r.text
+    masked = r.json()["ldap"]["bind_password"]
+    assert masked and "Sup3" not in masked and "dPw" not in masked

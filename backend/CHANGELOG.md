@@ -35,6 +35,7 @@ section becomes one release entry.
 - PDF reports in a theme set to Times Roman failed to generate (bold text asked ReportLab for "Times-Roman-Bold", which doesn't exist). Theme fonts are now limited to the three the editor offers.
 - JSON + attachments exports were named after the last evidence file instead of the engagement, and two evidence files with the same name overwrote each other in the archive. Each file is now prefixed with the start of its evidence id (the JSON's `attachment_path` matches).
 - A password reset turned 2FA off but left the account's recovery codes, and turning 2FA back on added new codes without removing the old ones, so codes from before the reset worked again. Both now remove the earlier codes.
+- The authentication settings page showed the first and last four characters of the LDAP bind password; it's now fully masked.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
