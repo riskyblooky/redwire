@@ -280,7 +280,7 @@ if [ "${SKIP_BACKUP:-0}" != "1" ] && docker inspect -f '{{.State.Running}}' redw
     fi
     docker exec redwire-db psql -U "$PG_U" -d "$PG_D" -Atc "select version_num from alembic_version" > "$SNAP/alembic_version.txt" 2>/dev/null || true
     echo -e "${GREEN}Database snapshot: $SNAP/db.dump ($(du -sh "$SNAP" | cut -f1))${NC}"
-    echo "  Restore: ./backup.sh --restore-db $SNAP/db.dump   (or ./deploy_server.sh --rollback)"
+    echo "  Restore: ./$(backup_script) --restore-db $SNAP/db.dump   (or ./deploy_server.sh --rollback)"
     record_rollback_point "$SNAP"
     # Keep the newest 5 pre-deploy snapshots (the rollback point is a hard
     # link, so pruning its snapshot dir doesn't remove it).
@@ -447,10 +447,11 @@ fi
 mkdir -p backups && touch "$DEPLOY_OK_MARK"
 
 # 7c. Daily backups (backup.sh --install-cron), once per host.
-if [ -f backup.sh ] && [ "$(id -u)" -eq 0 ] && [ -d /etc/cron.d ]; then
+BK="$(backup_script)"
+if [ -n "$BK" ] && [ "$(id -u)" -eq 0 ] && [ -d /etc/cron.d ]; then
     if [ ! -f /etc/cron.d/redwire-backup ]; then
         echo -e "\n${BLUE}[7c] Installing the daily backup job...${NC}"
-        bash backup.sh --install-cron
+        bash "$BK" --install-cron
     fi
     echo "  Backups land in $(pwd)/backups — copy them off this server (BACKUP_REMOTE in backup.sh)."
 fi

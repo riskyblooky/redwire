@@ -31,6 +31,9 @@
 #   tar xzf uploads.tar.gz -C backend/
 set -euo pipefail
 
+# This script's absolute path, before the cd below (the cron line runs it
+# from wherever it lives: the install root, or scripts/ in a git clone).
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")"
 # Works both from the install root (deploy package) and from scripts/ (git clone).
 [ -f docker-compose.yml ] || cd ..
@@ -47,7 +50,7 @@ case "${1:-}" in
 # RedWire daily backup (installed by backup.sh --install-cron)
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-30 3 * * * root cd "$ROOT" && bash "$ROOT/$(basename "$0")" >> "${BACKUP_DIR:-$ROOT/backups}/backup.log" 2>&1
+30 3 * * * root cd "$ROOT" && bash "$SELF" >> "${BACKUP_DIR:-$ROOT/backups}/backup.log" 2>&1
 EOF
         chmod 644 /etc/cron.d/redwire-backup
         mkdir -p "${BACKUP_DIR:-$ROOT/backups}" && chmod 700 "${BACKUP_DIR:-$ROOT/backups}"
