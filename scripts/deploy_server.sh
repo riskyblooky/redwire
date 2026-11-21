@@ -419,11 +419,24 @@ mkdir -p nginx/certbot/conf/live/${DOMAIN_NAME}
 mkdir -p nginx/certbot/www
 chmod -R 755 nginx/certbot/www
 
-if [ ! -f nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem ]; then
-    echo "Generating temporary self-signed certificate for Nginx..."
-    openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
-        -keyout nginx/certbot/conf/live/${DOMAIN_NAME}/privkey.pem \
-        -out nginx/certbot/conf/live/${DOMAIN_NAME}/fullchain.pem \
+CERT_LIVE="nginx/certbot/conf/live/${DOMAIN_NAME}"
+CERT_RENEWAL="nginx/certbot/conf/renewal/${DOMAIN_NAME}.conf"
+# The self-signed placeholder is what on-prem / offline installs keep
+# serving, so it lasts 825 days and is replaced when it's within a day of
+# expiring. Only ours is replaced: a Let's Encrypt lineage (it has a
+# renewal conf) or a cert someone installed (not self-issued) is left be.
+needs_placeholder() {
+    [ -f "$CERT_RENEWAL" ] && return 1
+    [ -f "$CERT_LIVE/fullchain.pem" ] || return 0
+    [ "$(openssl x509 -noout -subject -in "$CERT_LIVE/fullchain.pem" 2>/dev/null | sed 's/^subject=//')" = \
+      "$(openssl x509 -noout -issuer -in "$CERT_LIVE/fullchain.pem" 2>/dev/null | sed 's/^issuer=//')" ] || return 1
+    ! openssl x509 -checkend 86400 -noout -in "$CERT_LIVE/fullchain.pem" >/dev/null 2>&1
+}
+if needs_placeholder; then
+    echo "Generating a self-signed certificate for Nginx (valid 825 days)..."
+    openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
+        -keyout "$CERT_LIVE/privkey.pem" \
+        -out "$CERT_LIVE/fullchain.pem" \
         -subj "/CN=${DOMAIN_NAME}"
 fi
 
@@ -530,9 +543,29 @@ if [[ "$SETUP_CERTBOT" =~ ^[Yy]$ ]]; then
     docker compose run --rm --entrypoint certbot certbot register \
         --email "$CERTBOT_EMAIL" --agree-tos --no-eff-email --non-interactive || true
 
+    # Certbot refuses to create a lineage over an existing live/<domain>
+    # ("live directory exists"), which is where the placeholder sits on a
+    # first request. Move it aside (nginx keeps serving the copy it loaded)
+    # and put it back if the request fails.
+    PLACEHOLDER_ASIDE=""
+    if [ ! -f "$CERT_RENEWAL" ] && [ -d "$CERT_LIVE" ]; then
+        PLACEHOLDER_ASIDE="${CERT_LIVE}.self-signed"
+        rm -rf "$PLACEHOLDER_ASIDE"
+        mv "$CERT_LIVE" "$PLACEHOLDER_ASIDE"
+    fi
+
     # Request cert (using webroot)
-    docker compose run --rm --entrypoint certbot certbot certonly \
-        --webroot --webroot-path /var/www/certbot -d "$DOMAIN_NAME" --non-interactive --force-renewal
+    if ! docker compose run --rm --entrypoint certbot certbot certonly \
+        --webroot --webroot-path /var/www/certbot -d "$DOMAIN_NAME" --non-interactive --force-renewal; then
+        if [ -n "$PLACEHOLDER_ASIDE" ]; then
+            rm -rf "$CERT_LIVE"
+            mv "$PLACEHOLDER_ASIDE" "$CERT_LIVE"
+        fi
+        echo -e "${RED}Certificate request failed; still serving the self-signed certificate.${NC}"
+        echo "Check that DNS for $DOMAIN_NAME points here and port 80 is reachable, then rerun."
+        exit 1
+    fi
+    if [ -n "$PLACEHOLDER_ASIDE" ]; then rm -rf "$PLACEHOLDER_ASIDE"; fi
 
     echo "Reloading Nginx with new certificate..."
     docker compose restart nginx
