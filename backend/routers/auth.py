@@ -951,8 +951,11 @@ async def totp_verify_setup(
     # hashes are persisted. GHSA-vm6w-9wm5-q367 follow-up.
     from auth.recovery_codes import generate_codes, hash_code
     from models.recovery_code import RecoveryCode
+    from sqlalchemy import delete as _sa_delete
     codes = generate_codes()
     hashes = await asyncio.to_thread(lambda: [hash_code(c) for c in codes])  # ten bcrypts, off the loop
+    # A new batch replaces any earlier one rather than adding to it.
+    await db.execute(_sa_delete(RecoveryCode).where(RecoveryCode.user_id == current_user.id))
     for code_hash in hashes:
         db.add(RecoveryCode(user_id=current_user.id, code_hash=code_hash))
     await db.commit()
@@ -1685,6 +1688,11 @@ async def reset_password(
     user.totp_enabled = False
     user.totp_secret = None
     user.totp_verified_at = None
+    # Recovery codes belong to the cleared second factor; left in place
+    # they'd work again as soon as 2FA is re-enabled.
+    from sqlalchemy import delete as _sa_delete
+    from models.recovery_code import RecoveryCode
+    await db.execute(_sa_delete(RecoveryCode).where(RecoveryCode.user_id == user.id))
     from auth.jwt import revoke_user_api_tokens
     await revoke_user_api_tokens(db, user.id)
     await db.commit()
