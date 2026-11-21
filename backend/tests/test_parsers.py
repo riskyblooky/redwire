@@ -30,27 +30,6 @@ from utils.parsers import burp as burp_parser
 from utils.parsers import nuclei as nuclei_parser
 
 
-def test_nessus_and_burp_parsers_import_cleanly():
-    """Regression pin: both modules must stay importable.
-
-    They annotate helper params as ``Optional[ET.Element]`` where
-    ``ET = defusedxml.ElementTree`` (which does not export ``Element``). Only
-    ``from __future__ import annotations`` in each module keeps that hint from
-    being evaluated at import time and crashing the whole parser — and with it
-    every .nessus / Burp .xml upload through ``detect_and_parse``. Importing
-    the modules at the top of this file already exercises this; assert the
-    guard is present so a refactor that drops it fails loudly here.
-    """
-    import pathlib
-
-    for mod in (nessus_parser, burp_parser):
-        src = pathlib.Path(mod.__file__).read_text()
-        assert "from __future__ import annotations" in src, (
-            f"{mod.__name__}: lost future-annotations guard — Optional[ET.Element] "
-            f"will crash the module at import time again"
-        )
-
-
 def _b(s: str) -> bytes:
     return s.encode("utf-8")
 

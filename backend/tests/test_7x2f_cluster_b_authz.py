@@ -26,98 +26,119 @@ review — captured in the todo.
 
 from __future__ import annotations
 
-import os
+import uuid
 
 import pytest
 from pydantic import ValidationError
-from cryptography.fernet import Fernet
 
-import os as _os
-
-# Backend root, wherever the suite runs (/app in the container, backend/ in CI).
-_BACKEND = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-
-os.environ.setdefault("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
-os.environ.setdefault("VAULT_ENCRYPTION_KEY", Fernet.generate_key().decode())
+from tests.test_authz_boundaries import _assign, _make_engagement, _make_engagement_role
 
 
-# ── Issue 1: is_engagement_member helper ─────────────────────────────
+# ── Issue 1: ex-member creator can't edit or resolve their thread ────
+# (evidence on a creator's finding / test case: test_evidence_ex_member.py)
 
 
-class TestIsEngagementMemberHelperExists:
-    """Regression pin: the helper is what all three site-fixes rely on.
-    A future maintainer inlining the query or deleting the helper
-    should trip this test."""
-
-    def test_helper_importable(self):
-        from auth.rbac import is_engagement_member
-        assert callable(is_engagement_member)
-
-
-class TestIsCreatorBypassRefactor:
-    """The three vulnerable sites all now follow the pattern:
-        if is_creator:
-            if not await is_engagement_member(...):
-                raise 403
-        else:
-            check_engagement_permission(...)
-    Pin by grep so a future refactor that drops the membership check
-    reappears loudly here."""
-
-    def test_discussions_update_thread_uses_membership_gate(self):
-        src = open(_BACKEND + "/routers/discussions.py").read()
-        assert "is_engagement_member" in src, "helper not used in discussions.py"
-        # The two vulnerable sites — update_thread and toggle_resolve —
-        # must each contain the membership gate.
-        assert src.count("is_engagement_member(") >= 2
-
-    def test_testcases_uses_membership_gate(self):
-        src = open(_BACKEND + "/routers/testcases.py").read()
-        assert "is_engagement_member" in src
+async def _thread(db, eng, creator):
+    from models.discussion import Thread
+    t = Thread(id=str(uuid.uuid4()), engagement_id=eng.id, resource_type="engagement",
+               title="t", created_by=creator.id)
+    db.add(t)
+    await db.flush()
+    return t
 
 
-# ── Issue 5: chatbot_enabled server-side enforcement ─────────────────
+@pytest.mark.parametrize("method, suffix, body", [
+    ("put", "", {"title": "edited"}),
+    ("put", "/resolve", None),
+])
+async def test_ex_member_creator_cannot_change_thread(method, suffix, body, client, db_session, make_user, authenticate_as):
+    eng = await _make_engagement(db_session)
+    creator = await make_user(role="operator")
+    thread = await _thread(db_session, eng, creator)
+    authenticate_as(creator)
+
+    r = await client.request(method.upper(), f"/discussions/threads/{thread.id}{suffix}", json=body)
+
+    assert r.status_code == 403
+    assert "no longer a member" in r.json()["detail"]
 
 
-class TestChatbotEnabledEnforced:
-    def test_gate_present_in_chat_handler(self):
-        src = open(_BACKEND + "/routers/ai.py").read()
-        # Pin the specific 403 message this fix emits — that's the
-        # concrete reject shape. Also assert it appears in the
-        # ai_chat function's slice (after `async def ai_chat` and
-        # before the `mcp_enabled =` MCP-dispatch line).
-        marker = '"AI chatbot is disabled on this instance."'
-        assert marker in src
-        chat_idx = src.find("async def ai_chat")
-        loop_idx = src.find("mcp_enabled = ")
-        marker_idx = src.find(marker)
-        assert chat_idx < marker_idx < loop_idx, (
-            "chatbot_enabled 403 must be inside ai_chat and before MCP dispatch"
-        )
+async def test_member_creator_can_resolve_thread(client, db_session, make_user, authenticate_as):
+    eng = await _make_engagement(db_session)
+    creator = await make_user(role="operator")
+    await _assign(db_session, creator, eng, await _make_engagement_role(db_session, ["engagement_view", "discussion_view"]))
+    thread = await _thread(db_session, eng, creator)
+    authenticate_as(creator)
+
+    r = await client.put(f"/discussions/threads/{thread.id}/resolve")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["is_resolved"] is True
 
 
-# ── Issue 6: spray ASSET_CREATE check ────────────────────────────────
+# ── Issue 5: chatbot_enabled enforced server-side ────────────────────
 
 
-class TestSprayAssetCreatePermission:
-    def test_asset_create_check_present(self):
-        src = open(_BACKEND + "/routers/spray.py").read()
-        # The commit endpoint must additionally check ASSET_CREATE when
-        # the caller opts into create_missing_assets.
-        assert "Permission.ASSET_CREATE" in src
-        assert "create_missing_assets" in src
+async def test_chatbot_mode_refused_when_disabled(client, make_user, authenticate_as, monkeypatch):
+    from routers import ai
+
+    async def _settings(db):
+        return {"ai_enabled": "true", "ai_api_key": "k", "chatbot_enabled": "false"}
+    monkeypatch.setattr(ai, "_get_ai_settings", _settings)
+
+    authenticate_as(await make_user(role="operator"))
+    r = await client.post("/ai/chat", json={
+        "messages": [{"role": "user", "content": "hi"}],
+        "field_context": {"resourceType": "chatbot"},
+    })
+
+    assert r.status_code == 403
+    assert r.json()["detail"] == "AI chatbot is disabled on this instance."
 
 
-# ── Issue 7: plugins admin-only ──────────────────────────────────────
+# ── Issue 6: spray auto-inventory needs ASSET_CREATE ─────────────────
 
 
-class TestPluginsListAdminOnly:
-    def test_list_endpoint_has_admin_gate(self):
-        src = open(_BACKEND + "/routers/plugins.py").read()
-        # Both list and detail endpoints require ADMIN_ROLES.
-        assert 'require_roles(ADMIN_ROLES)' in src
-        # Regression pin: at least 2 endpoints protected (list + detail)
-        assert src.count("require_roles(ADMIN_ROLES)") >= 2
+def _spray(eng_id, create_missing_assets):
+    return {
+        "engagement_id": eng_id, "name": "spray", "protocol": "smb",
+        "create_missing_assets": create_missing_assets,
+        "results": [{"username": "bob", "result": "failed", "target_host": "10.1.2.3"}],
+    }
+
+
+async def test_spray_auto_inventory_needs_asset_create(client, db_session, make_user, authenticate_as):
+    from sqlalchemy import func, select
+    from models.asset import Asset
+
+    eng = await _make_engagement(db_session)
+    op = await make_user(role="operator")
+    await _assign(db_session, op, eng, await _make_engagement_role(db_session, ["engagement_view", "vault_create"]))
+    authenticate_as(op)
+
+    r = await client.post("/spray/commit", json=_spray(eng.id, True))
+    assert r.status_code == 403
+    assert "asset_create" in r.json()["detail"]
+
+    # Without the auto-inventory the same user may commit, and no asset appears.
+    r = await client.post("/spray/commit", json=_spray(eng.id, False))
+    assert r.status_code == 201, r.text
+    n = (await db_session.execute(select(func.count()).select_from(Asset).where(Asset.engagement_id == eng.id))).scalar()
+    assert n == 0
+
+
+# ── Issue 7: plugin list and details are admin-only ──────────────────
+
+
+@pytest.mark.parametrize("path", ["/plugins/", "/plugins/some-plugin"])
+async def test_plugin_endpoints_refuse_non_admins(path, client, make_user, authenticate_as):
+    authenticate_as(await make_user(role="operator"))
+    assert (await client.get(path)).status_code == 403
+
+
+async def test_plugin_list_open_to_admins(client, make_user, authenticate_as):
+    authenticate_as(await make_user(role="admin"))
+    assert (await client.get("/plugins/")).status_code == 200
 
 
 # ── Issue 11: email canonicalization symmetry ────────────────────────
@@ -138,14 +159,11 @@ class TestEmailNormalizationParity:
         assert u.email == "foo@bar.com"
 
     def test_admin_create_lowercases_email(self):
-        # Test through the same shape the admin endpoint uses.
         from routers.admin import AdminUserCreate
         u = AdminUserCreate(username="alice", email="Foo@BAR.com", password="passw0rd")
         assert u.email == "foo@bar.com"
 
     def test_admin_create_uses_emailstr_validation(self):
-        # Reject shapes that self-register would also reject — this
-        # was the specific asymmetry the CVE named.
         from routers.admin import AdminUserCreate
         with pytest.raises(ValidationError):
             AdminUserCreate(username="alice", email="not-an-email", password="passw0rd")

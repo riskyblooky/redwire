@@ -1,131 +1,64 @@
-"""GHSA-7x2f-ff7r-h388 deferred #12 — version-history race guarded.
+"""GHSA-7x2f-ff7r-h388 deferred #12 — version-history race.
 
-Two layers of defence:
-
-  1. **DB-level**: `UniqueConstraint('entity_type', 'entity_id',
-     'version')` restored by Alembic revision 199be698dd4a. A losing
-     concurrent writer's INSERT is refused at commit time.
-  2. **App-level**: `create_version_snapshot` wraps its INSERT in a
-     `db.begin_nested()` SAVEPOINT + retry loop. On IntegrityError
-     the SAVEPOINT rolls back (outer transaction unaffected) and we
-     re-read MAX and try again — up to
-     `_VERSION_INSERT_MAX_RETRIES` (5) times.
-
-These tests pin the app-level pieces via static-shape assertions
-(the retry constant + the loop shape + the SAVEPOINT wrapper +
-IntegrityError catch) so a future refactor that reverts to the
-single-shot INSERT reappears loudly here. The DB-level piece is
-exercised by the live smoke documented in the commit message.
+Two layers: the (entity_type, entity_id, version) unique constraint
+refuses a losing concurrent writer, and create_version_snapshot retries
+inside a SAVEPOINT, re-reading MAX, so the caller's update survives and
+its snapshot lands on the next free version.
 """
 
 from __future__ import annotations
 
-import os
+import uuid
 
 import pytest
-from cryptography.fernet import Fernet
+from sqlalchemy import insert, select
+from sqlalchemy.exc import IntegrityError
 
-import os as _os
-
-# Backend root, wherever the suite runs (/app in the container, backend/ in CI).
-_BACKEND = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-
-os.environ.setdefault("TOTP_ENCRYPTION_KEY", Fernet.generate_key().decode())
-os.environ.setdefault("VAULT_ENCRYPTION_KEY", Fernet.generate_key().decode())
+from tests.test_authz_boundaries import _make_engagement, _make_finding
 
 
-# ── Model-level: unique constraint on the ORM class ─────────────────
+def _row(entity_id, version, **kw):
+    return dict(id=str(uuid.uuid4()), entity_type="finding", entity_id=entity_id,
+                version=version, snapshot={}, changed_fields=[], **kw)
 
 
-class TestModelUniqueConstraint:
-    def test_table_args_declares_unique(self):
-        from models.version_history import VersionHistory
-        # __table_args__ is a tuple of Constraint objects. Find the
-        # UniqueConstraint on (entity_type, entity_id, version).
-        args = VersionHistory.__table_args__
-        from sqlalchemy import UniqueConstraint
-        uqs = [c for c in args if isinstance(c, UniqueConstraint)]
-        assert len(uqs) == 1
-        cols = [col.name for col in uqs[0].columns]
-        assert cols == ["entity_type", "entity_id", "version"]
+async def test_duplicate_version_is_refused_by_the_database(db_session):
+    from models.version_history import VersionHistory
+
+    eid = str(uuid.uuid4())
+    await db_session.execute(insert(VersionHistory).values(**_row(eid, 1)))
+    with pytest.raises(IntegrityError):
+        async with db_session.begin_nested():
+            await db_session.execute(insert(VersionHistory).values(**_row(eid, 1)))
 
 
-# ── Helper-level: retry loop shape ───────────────────────────────────
+async def test_snapshot_retries_past_a_concurrent_writer(db_session, make_user, monkeypatch):
+    from models.version_history import VersionHistory
+    from utils.versioning import create_version_snapshot
 
+    user = await make_user()
+    eng = await _make_engagement(db_session)
+    finding = await _make_finding(db_session, eng, created_by=user.id)
 
-class TestRetryLoopShape:
-    def _versioning_src(self) -> str:
-        return open(_BACKEND + "/utils/versioning.py").read()
+    # Another writer takes version 1 between our MAX read and our INSERT.
+    real_execute = db_session.execute
+    raced = []
 
-    def test_max_retries_constant_present(self):
-        src = self._versioning_src()
-        assert "_VERSION_INSERT_MAX_RETRIES = 5" in src
+    async def racing_execute(stmt, *a, **k):
+        result = await real_execute(stmt, *a, **k)
+        if not raced and "max(version_history.version)" in str(stmt).lower():
+            raced.append(True)
+            await real_execute(insert(VersionHistory).values(**_row(finding.id, 1)))
+        return result
+    monkeypatch.setattr(db_session, "execute", racing_execute)
 
-    def test_savepoint_wrapper_present(self):
-        # The nested-begin is what protects the outer transaction from
-        # the rolled-back INSERT on a collision.
-        src = self._versioning_src()
-        assert "db.begin_nested()" in src
+    await create_version_snapshot(db_session, finding, "finding", {"title": "new title"}, user.id)
 
-    def test_integrity_error_caught(self):
-        src = self._versioning_src()
-        assert "from sqlalchemy.exc import IntegrityError" in src
-        assert "except IntegrityError" in src
-
-    def test_loop_wraps_read_and_insert(self):
-        # Regression pin — the MAX read must be INSIDE the loop so
-        # a retry re-reads the current MAX. A single-read + retry-
-        # insert would keep trying the same doomed version number.
-        src = self._versioning_src()
-        loop_idx = src.find("for attempt in range(_VERSION_INSERT_MAX_RETRIES)")
-        max_read_idx = src.find("select(func.coalesce(func.max(VersionHistory.version)", loop_idx)
-        assert loop_idx != -1 and max_read_idx != -1
-        assert loop_idx < max_read_idx, "MAX read must be inside the retry loop"
-
-    def test_no_regression_to_single_shot_insert(self):
-        # Before the fix, the flow was:
-        #   result = await db.execute(select(max))
-        #   next_version = result.scalar() + 1
-        #   db.add(VersionHistory(... version=next_version ...))
-        # WITHOUT any loop or savepoint. Pin that the retry loop
-        # remains — and that a bare `next_version = result.scalar() + 1`
-        # doesn't appear OUTSIDE the loop.
-        src = self._versioning_src()
-        loop_idx = src.find("for attempt in range(_VERSION_INSERT_MAX_RETRIES)")
-        assert loop_idx != -1
-        # The `.scalar() + 1` construct should only appear inside the
-        # loop (which starts at loop_idx). No stray copy outside.
-        preloop = src[:loop_idx]
-        assert "result.scalar() + 1" not in preloop, (
-            "single-shot MAX-read + next_version compute must not appear before the retry loop"
-        )
-
-
-# ── Alembic migration presence ──────────────────────────────────────
-
-
-class TestMigrationPresent:
-    def test_dedupe_and_index_migration_exists(self):
-        import glob
-        matches = glob.glob(
-            _BACKEND + "/alembic/versions/*199be698dd4a*.py"
-        )
-        assert matches, "expected migration 199be698dd4a to be present"
-        src = open(matches[0]).read()
-        # Must dedupe BEFORE creating the constraint — otherwise the
-        # DDL fails on any DB where the race already produced dupes.
-        dedupe_idx = src.find("DELETE FROM version_history")
-        create_idx = src.find("create_unique_constraint")
-        assert dedupe_idx != -1 and create_idx != -1
-        assert dedupe_idx < create_idx, (
-            "dedupe must precede unique-constraint creation"
-        )
-
-    def test_dedupe_keeps_oldest(self):
-        # Regression pin: ORDER BY created_at ASC ensures we keep the
-        # earliest row per key, which is the deterministic choice for
-        # audit trail (older event's snapshot is the "authoritative"
-        # one for that version number).
-        import glob
-        src = open(glob.glob(_BACKEND + "/alembic/versions/*199be698dd4a*.py")[0]).read()
-        assert "ORDER BY created_at ASC" in src
+    monkeypatch.setattr(db_session, "execute", real_execute)
+    rows = (await db_session.execute(
+        select(VersionHistory.version, VersionHistory.changed_by)
+        .where(VersionHistory.entity_id == finding.id).order_by(VersionHistory.version)
+    )).all()
+    assert raced
+    assert [r.version for r in rows] == [1, 2]
+    assert rows[1].changed_by == user.id  # ours, on the retry
