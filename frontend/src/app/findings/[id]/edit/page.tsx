@@ -695,7 +695,7 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
                                                 <CustomFieldsForm
                                                     entity="finding"
                                                     value={formData.custom_fields}
-                                                    onChange={(cf) => setFormData(prev => ({ ...prev, custom_fields: cf }))}
+                                                    onChange={(cf) => handleChange('custom_fields', cf)}
                                                     engagementId={formData.engagement_id}
                                                     hideHeading
                                                 />
