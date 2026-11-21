@@ -45,3 +45,16 @@ async def test_engagement_update_with_null_tag_ids_keeps_tags(client, db_session
                                      .execution_options(populate_existing=True))).scalars().all()
     assert tags == [tag.id]
 
+
+async def test_vault_items_cannot_be_retyped_to_or_from_file(client, db_session, make_user, authenticate_as):
+    from models.vault import VaultItem
+    admin = await make_user(role="admin")
+    eng = await _make_engagement(db_session)
+    file_item = VaultItem(id=str(uuid.uuid4()), engagement_id=eng.id, name="f", item_type="FILE", created_by=admin.id)
+    cred = VaultItem(id=str(uuid.uuid4()), engagement_id=eng.id, name="c", item_type="CREDENTIAL", created_by=admin.id)
+    db_session.add_all([file_item, cred])
+    await db_session.flush()
+    authenticate_as(admin)
+
+    assert (await client.patch(f"/vault/{file_item.id}", json={"item_type": "CREDENTIAL"})).status_code == 400
+    assert (await client.patch(f"/vault/{cred.id}", json={"item_type": "FILE"})).status_code == 400

@@ -263,9 +263,11 @@ async def update_vault_item(
         await require_owned_perm(current_user, item.engagement_id, item.created_by,
                                  Permission.VAULT_EDIT, Permission.VAULT_EDIT_ANY, db, action="edit this vault item")
 
-        # Disallow changing type if it's a file
-        if item.item_type == "File" and item_update.item_type and item_update.item_type != "File":
-            raise HTTPException(status_code=400, detail="Cannot change type of a file vault item")
+        # A file item stays a file (download needs item_type FILE), and only
+        # an upload makes one.
+        is_file = (item.item_type or "").upper() == "FILE"
+        if item_update.item_type and is_file != (item_update.item_type.upper() == "FILE"):
+            raise HTTPException(status_code=400, detail="Cannot change a vault item to or from a file")
 
         # Update fields — encrypt sensitive values before persisting.
         # NOTE: do not decrypt `item` here. build_change_summary redacts
