@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 from schemas._field_limits import (
     DESCRIPTION,
@@ -12,6 +12,10 @@ from schemas._field_limits import (
 )
 
 
+# ReportLab's built-in families the theme editor offers.
+ReportFont = Literal["Helvetica", "Times-Roman", "Courier"]
+
+
 class ReportThemeCreate(BaseModel):
     name: str = Field(..., max_length=NAME)
     description: Optional[str] = Field(None, max_length=DESCRIPTION)
@@ -21,7 +25,7 @@ class ReportThemeCreate(BaseModel):
     body_text_color: str = Field("#334155", max_length=HEX_COLOR)
     table_header_bg: str = Field("#4F46E5", max_length=HEX_COLOR)
     table_header_text: str = Field("#FFFFFF", max_length=HEX_COLOR)
-    font_family: str = Field("Helvetica", max_length=SHORT_LABEL)
+    font_family: ReportFont = "Helvetica"
     font_size_body: int = 10
     font_size_heading: int = 20
     logo_base64: Optional[str] = Field(None, max_length=JSON_BLOB)
@@ -68,7 +72,7 @@ class ReportThemeUpdate(BaseModel):
     body_text_color: Optional[str] = Field(None, max_length=HEX_COLOR)
     table_header_bg: Optional[str] = Field(None, max_length=HEX_COLOR)
     table_header_text: Optional[str] = Field(None, max_length=HEX_COLOR)
-    font_family: Optional[str] = Field(None, max_length=SHORT_LABEL)
+    font_family: Optional[ReportFont] = None
     font_size_body: Optional[int] = None
     font_size_heading: Optional[int] = None
     logo_base64: Optional[str] = Field(None, max_length=JSON_BLOB)

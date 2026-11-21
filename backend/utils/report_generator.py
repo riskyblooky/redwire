@@ -271,6 +271,21 @@ def _escape_xml(text: str) -> str:
     )
 
 
+
+# Bold face of each base font a theme can pick. ReportLab's standard
+# fonts don't follow one pattern ("Times-Roman" -> "Times-Bold"), so
+# appending "-Bold" breaks for Times; an unknown name falls back to
+# Helvetica rather than failing the whole PDF.
+_BOLD_FONTS = {
+    "Helvetica": "Helvetica-Bold", "Helvetica-Bold": "Helvetica-Bold",
+    "Times-Roman": "Times-Bold", "Times-Bold": "Times-Bold",
+    "Courier": "Courier-Bold", "Courier-Bold": "Courier-Bold",
+}
+
+
+def _bold_font(name: str | None) -> str:
+    return _BOLD_FONTS.get(name or "Helvetica", "Helvetica-Bold")
+
 def _md_inline_to_rl(text: str) -> str:
     """Convert inline markdown / TipTap HTML to ReportLab Paragraph-flavoured HTML.
 
@@ -427,9 +442,7 @@ def _md_to_flowables(
     )
     h_st = heading_style or ParagraphStyle(
         name='_md_h', parent=body_style,
-        fontName=(getattr(body_style, 'fontName', 'Helvetica') + '-Bold')
-            if not getattr(body_style, 'fontName', '').endswith('-Bold')
-            else getattr(body_style, 'fontName', 'Helvetica-Bold'),
+        fontName=_bold_font(getattr(body_style, 'fontName', 'Helvetica')),
         fontSize=int(getattr(body_style, 'fontSize', 9)) + 2,
         spaceBefore=4, spaceAfter=2,
     )
@@ -568,9 +581,7 @@ def _md_to_flowables(
             )
             head_style = ParagraphStyle(
                 name='_md_tbl_head', parent=cell_style,
-                fontName=(getattr(body_style, 'fontName', 'Helvetica') + '-Bold')
-                    if not getattr(body_style, 'fontName', '').endswith('-Bold')
-                    else getattr(body_style, 'fontName', 'Helvetica-Bold'),
+                fontName=_bold_font(getattr(body_style, 'fontName', 'Helvetica')),
                 textColor=colors.white,
             )
             cols = max(len(header), max((len(r) for r in body_rows), default=0))
@@ -901,7 +912,7 @@ class PDFReportGenerator:
             return [], []
         top = best.level
         mark = _escape_xml(best.token)
-        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        font_b = _bold_font(_t(self.theme, 'font_family'))
         align_map = {'LEFT': 0, 'CENTER': 1, 'RIGHT': 2}
         above, below, seen = [], [], set()
         for anchor in self.marking.table_anchors:
@@ -923,7 +934,7 @@ class PDFReportGenerator:
         if not mark_raw:
             return [], []
         mark = _escape_xml(mark_raw)
-        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        font_b = _bold_font(_t(self.theme, 'font_family'))
         align_map = {'LEFT': 0, 'CENTER': 1, 'RIGHT': 2}
         above, below, seen = [], [], set()
         for a in anchors:
@@ -943,7 +954,7 @@ class PDFReportGenerator:
 
     def _row_mark_cell(self, mark: Mark = NO_MARK, header=False):
         """A leading per-row mark cell for marked tables."""
-        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        font_b = _bold_font(_t(self.theme, 'font_family'))
         if header:
             txt, color = 'MARK', colors.white
         else:
@@ -969,7 +980,7 @@ class PDFReportGenerator:
             return
         text, bg, fg = b
         W, H = doc.pagesize
-        font_b = f"{_t(self.theme, 'font_family')}-Bold"
+        font_b = _bold_font(_t(self.theme, 'font_family'))
         canvas.saveState()
         if self.marking.banner_top_and_bottom:
             for y in (H - 16, 4):
@@ -995,7 +1006,7 @@ class PDFReportGenerator:
 
     def _setup_custom_styles(self):
         font       = _t(self.theme, 'font_family')
-        font_bold  = f'{font}-Bold' if font != 'Courier' else 'Courier-Bold'
+        font_bold  = _bold_font(font)
         primary    = _t(self.theme, 'primary_color')
         dark       = _t(self.theme, 'secondary_color')
         heading_c  = _t(self.theme, 'header_text_color')
@@ -1108,7 +1119,7 @@ class PDFReportGenerator:
         """Running header + footer: accent rule, L/C/R zones, banner, page no."""
         canvas.saveState()
         font     = _t(self.theme, 'font_family')
-        font_b   = f'{font}-Bold'
+        font_b   = _bold_font(font)
         primary  = _t(self.theme, 'primary_color')
         muted    = _t(self.theme, 'muted_text_color')
         show_num = _t(self.theme, 'show_page_numbers')
@@ -1172,7 +1183,7 @@ class PDFReportGenerator:
         canvas.saveState()
         W, H = doc.pagesize
         font     = _t(self.theme, 'font_family')
-        font_b   = f'{font}-Bold'
+        font_b   = _bold_font(font)
         cover_bg = _t(self.theme, 'cover_bg_color')
         primary  = _t(self.theme, 'primary_color')
 
@@ -1383,7 +1394,7 @@ class PDFReportGenerator:
 
     def _render_toc(self, elements):
         font      = _t(self.theme, 'font_family')
-        font_b    = f'{font}-Bold'
+        font_b    = _bold_font(font)
         body_c    = _t(self.theme, 'body_text_color')
         body_size = _t(self.theme, 'font_size_body')
 
@@ -1452,7 +1463,7 @@ class PDFReportGenerator:
     def _severity_summary_table(self, severity_counts: dict) -> Table:
         """Horizontal mini-bar chart as a styled table."""
         font   = _t(self.theme, 'font_family')
-        font_b = f'{font}-Bold'
+        font_b = _bold_font(font)
         max_count = max((severity_counts.get(s, 0) for s in _SEV_ORDER), default=1) or 1
         bar_max_w = 180  # points
 
@@ -1680,7 +1691,7 @@ class PDFReportGenerator:
         sev_hex   = self._sev_hex(sev_str)
         sev_bg    = _SEV_BG_COLORS.get(sev_str, '#F8FAFC')
         font      = _t(self.theme, 'font_family')
-        font_b    = f'{font}-Bold'
+        font_b    = _bold_font(font)
         body_c    = _t(self.theme, 'body_text_color')
         muted_c   = _t(self.theme, 'muted_text_color')
         dark      = _t(self.theme, 'secondary_color')
@@ -2300,7 +2311,7 @@ class PDFReportGenerator:
             return
 
         font    = _t(self.theme, 'font_family')
-        font_b  = f'{font}-Bold'
+        font_b  = _bold_font(font)
         muted   = _t(self.theme, 'muted_text_color')
         page_w  = 6.5 * inch
         max_img_h = 4.0 * inch
@@ -2414,7 +2425,7 @@ class PDFReportGenerator:
             return
 
         font   = _t(self.theme, 'font_family')
-        font_b = f'{font}-Bold'
+        font_b = _bold_font(font)
         dark   = _t(self.theme, 'secondary_color')
         muted  = _t(self.theme, 'muted_text_color')
 
@@ -2512,7 +2523,7 @@ class PDFReportGenerator:
             return
 
         font   = _t(self.theme, 'font_family')
-        font_b = f'{font}-Bold'
+        font_b = _bold_font(font)
         dark   = _t(self.theme, 'secondary_color')
 
         header_style = ParagraphStyle(

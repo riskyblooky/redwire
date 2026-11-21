@@ -32,6 +32,7 @@ section becomes one release entry.
 - Opening a note recorded you as its last editor (and bumped its modified time) even if you changed nothing, and every keystroke, yours or a co-editor's, made each open editor send the whole note to the server. Notes are now saved after a pause in your own typing (and when you leave the page), and a save that changes nothing is ignored.
 - Changing only a finding's custom fields on its edit page didn't count as an edit: Save stayed disabled and leaving the page didn't warn about unsaved changes.
 - The AI settings form showed defaults for the context budget, recent turns kept and compaction threshold (the settings endpoint didn't return them), so saving the form reset them. A stored "keep recent turns" of 0 also compacted away the turn being answered; it's at least 1.
+- PDF reports in a theme set to Times Roman failed to generate (bold text asked ReportLab for "Times-Roman-Bold", which doesn't exist). Theme fonts are now limited to the three the editor offers.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
