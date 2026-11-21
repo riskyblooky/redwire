@@ -50,6 +50,7 @@ section becomes one release entry.
 - Re-importing a scan didn't link an existing finding to hosts it was newly found on, didn't update a known port's state, service or version, and didn't mark existing hosts as scanned.
 - Filtering assets by port, service or version multiplied each asset's open-discussion count by its number of matching ports.
 - Sorting the assets table by "Created by" or by discussions sorted by creation date instead.
+- Spray imports from NetExec logs turned informational lines such as `Domain: lab.local` into credential attempts (and "successful" ones into vault entries), cut passwords at the first space, recorded an empty password as unknown, and skipped lines whose target was a hostname or IPv6 address.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

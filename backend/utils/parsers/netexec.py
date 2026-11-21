@@ -80,20 +80,39 @@ _COMMAND_PREAMBLE_RE = re.compile(
 # Groups: protocol, host, port, hostname, status_char (+/-/*), detail
 _LINE_RE = re.compile(
     r"^(\w+)\s+"           # protocol (SMB, SSH, LDAP, MSSQL, FTP, WINRM, ...)
-    r"([\d.]+)\s+"         # IP address
+    r"(\S+)\s+"            # target (IPv4, IPv6 or hostname)
     r"(\d+)\s+"            # port
     r"(\S+)\s+"            # hostname (often == IP for SSH)
     r"\[([+\-*!])\]\s+"   # status indicator
     r"(.+)$"               # detail
 )
 
-# Regex to extract domain\user:password [trailing] from detail.
-# Password is captured as the first non-whitespace run after `:`, so trailing
-# text (e.g. SSH's "Linux - Shell access!" after Pwn3d, or SMB's STATUS_X) is
-# captured separately for inspection.
-_CRED_RE = re.compile(
-    r"^(?:(\S+?)\\)?(\S+?):(\S+)(?:\s+(.*))?\s*$"
+# A result detail is "[domain\\]user:password", then optionally one of the
+# suffixes nxc appends. The password is everything up to that suffix, so it
+# may be empty or contain spaces. Anything else ("Domain: lab.local",
+# "Error: ...") isn't a credential and yields no result.
+_CRED_RE = re.compile(r"^(?:([^\s\\:]+)\\)?([^\s\\:]+):(.*)$")
+_CRED_SUFFIX_RE = re.compile(
+    r"(?:^|\s+)(STATUS_\S+.*|\(Pwn3d!\).*|\(admin\).*|\S+ - Shell access!.*)$"
 )
+
+
+def _parse_cred(detail: str):
+    """(domain, user, password, status_code) for a credential detail, or None."""
+    m = _CRED_RE.match(detail)
+    if not m:
+        return None
+    domain, user, rest = m.groups()
+    status = None
+    suffix = _CRED_SUFFIX_RE.search(rest)
+    if suffix:
+        tail = suffix.group(1)
+        if tail.startswith("STATUS_"):
+            status = tail.split()[0]
+        rest = rest[:suffix.start()]
+    elif rest[:1].isspace():
+        return None  # "Key: value" prose, not user:password
+    return domain, user, rest.rstrip(), status
 
 # Status codes that indicate lockout
 _LOCKOUT_CODES = {
@@ -190,42 +209,13 @@ def parse_netexec_log(content: str) -> ParsedSprayCampaign:
         # Parse credential detail
         # Check for (Pwn3d!) anywhere in the detail
         is_admin = "(Pwn3d!)" in detail
-        # Clean the detail for credential parsing
-        clean_detail = detail.replace("(Pwn3d!)", "").strip()
-
-        cred_match = _CRED_RE.match(clean_detail)
-        if not cred_match:
-            # Try simpler parsing: domain\user:password
-            # Some nxc output has spaces in unusual places
-            parts = clean_detail.split(":", 1)
-            if len(parts) < 2:
-                continue
-            user_part = parts[0]
-            password_part = parts[1].strip().split(" ")[0] if parts[1] else ""
-            if "\\" in user_part:
-                domain_str, username = user_part.rsplit("\\", 1)
-            else:
-                domain_str, username = None, user_part
-            status_code = None
-            remaining = parts[1].strip()
-            status_parts = remaining.split(" ", 1)
-            if len(status_parts) > 1 and status_parts[1].startswith("STATUS_"):
-                status_code = status_parts[1].strip()
-        else:
-            domain_str = cred_match.group(1)
-            username = cred_match.group(2)
-            password_part = cred_match.group(3).strip()
-            # `trailing` may be any leftover text (e.g. "STATUS_LOGON_FAILURE",
-            # "Linux - Shell access!" on SSH success). Only the first token
-            # matters here: if it starts with STATUS_ we treat it as a status
-            # code; otherwise it's protocol-specific descriptive text we ignore.
-            trailing = cred_match.group(4) or ""
-            first_token = trailing.split()[0] if trailing else ""
-            status_code = first_token if first_token.startswith("STATUS_") else None
+        cred = _parse_cred(detail.strip())
+        if cred is None:
+            continue
+        domain_str, username, password_part, status_code = cred
 
         # Track passwords and domain
-        if password_part:
-            passwords_seen.add(password_part)
+        passwords_seen.add(password_part)  # "" is a real (empty) password
         if domain_str and not campaign.domain:
             campaign.domain = domain_str
 
@@ -247,7 +237,7 @@ def parse_netexec_log(content: str) -> ParsedSprayCampaign:
             is_admin=is_admin,
             target_host=host,
             target_port=port_int,
-            password=password_part or None,
+            password=password_part,
         )
         campaign.results.append(spray_result)
 

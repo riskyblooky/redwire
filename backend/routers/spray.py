@@ -402,7 +402,7 @@ async def vault_spray_hits(
         #   1. Per-result password (correct for wordlist runs) — already
         #      decrypted by EncryptedText on ORM read.
         #   2. Campaign-level password (fallback for legacy/single-pwd runs).
-        result_password = spray_result.password or campaign_password
+        result_password = spray_result.password if spray_result.password is not None else campaign_password
 
         username_display = f"{spray_result.domain}\\{spray_result.username}" if spray_result.domain else spray_result.username
         host_tag = f"@{spray_result.target_host}" if spray_result.target_host else ""

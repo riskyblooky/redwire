@@ -177,3 +177,27 @@ async def test_asset_list_sorts_by_discussions_and_creator(sort_by, client, db_s
     body = r.json()
     rows = body["items"] if isinstance(body, dict) else body
     assert [a["name"] for a in rows] == ["busy", "quiet"]
+
+
+SPRAY_LOG = """\
+SMB   10.0.0.5   445  DC01   [*] Windows Server 2019 (name:DC01) (domain:lab.local)
+SMB   10.0.0.5   445  DC01   [-] lab.local\\alice:Summer2025! STATUS_LOGON_FAILURE
+SMB   10.0.0.5   445  DC01   [+] lab.local\\bob:Winter 2025 (Pwn3d!)
+SMB   10.0.0.5   445  DC01   [+] lab.local\\guest:
+SMB   10.0.0.5   445  DC01   [-] Domain: lab.local
+SMB   10.0.0.5   445  DC01   [+] Error: could not enumerate shares
+SSH   dc02.lab.local 22  dc02  [+] pi:raspberry  Linux - Shell access!
+SSH   fe80::1    22  fe80::1 [-] pi:wrong
+"""
+
+
+def test_spray_parser_keeps_real_credentials_only():
+    from utils.parsers.netexec import parse_netexec_log
+    got = {(r.target_host, r.username, r.password, r.result) for r in parse_netexec_log(SPRAY_LOG).results}
+    assert got == {
+        ("10.0.0.5", "alice", "Summer2025!", "failed"),
+        ("10.0.0.5", "bob", "Winter 2025", "success_admin"),
+        ("10.0.0.5", "guest", "", "success"),
+        ("dc02.lab.local", "pi", "raspberry", "success"),
+        ("fe80::1", "pi", "wrong", "failed"),
+    }
