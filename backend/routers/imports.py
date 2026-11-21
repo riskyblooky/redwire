@@ -257,11 +257,15 @@ async def commit_import(
     )
     existing_assets = {a.identifier.lower(): a for a in existing_result.scalars().all()}
 
-    # Get existing finding titles for dedup
+    # Existing findings by title, for dedup. A re-import of a known finding
+    # still links it to any hosts it's newly seen on.
     existing_finding_result = await db.execute(
-        select(Finding.title).where(Finding.engagement_id == engagement_id)
+        select(Finding).where(Finding.engagement_id == engagement_id).options(selectinload(Finding.assets))
     )
-    existing_titles = {row[0].lower() for row in existing_finding_result.all() if row[0]}
+    existing_findings: dict[str, Finding] = {}
+    for f in existing_finding_result.scalars().all():
+        if f.title:
+            existing_findings.setdefault(f.title.lower(), f)
 
     result = CommitResponse()
 
@@ -276,23 +280,29 @@ async def commit_import(
         # Asset.ports, so a second parsed asset with the same identifier
         # (Burp vhosts on one IP, a host listed twice) would re-insert them
         # and hit the asset_ports unique constraint.
-        port_keys: dict[str, set] = {
-            ident: {(p.port_number, p.protocol) for p in a.ports}
+        port_keys: dict[str, dict] = {
+            ident: {(p.port_number, p.protocol): p for p in a.ports}
             for ident, a in existing_assets.items()
         }
 
         def add_ports(db_asset: Asset, identifier_lower: str, ports) -> None:
-            seen = port_keys.setdefault(identifier_lower, set())
+            seen = port_keys.setdefault(identifier_lower, {})
             for p in ports:
                 proto = PortProtocol.UDP if p.protocol == "UDP" else PortProtocol.TCP
-                if (p.port_number, proto) in seen:
-                    continue
                 state = PortState.OPEN
                 if p.state == "CLOSED":
                     state = PortState.CLOSED
                 elif p.state == "FILTERED":
                     state = PortState.FILTERED
-                db.add(AssetPort(
+                known = seen.get((p.port_number, proto))
+                if known is not None:
+                    # A newer scan of a known port: take what it observed,
+                    # without blanking details it didn't report.
+                    known.state = state
+                    known.service_name = p.service_name or known.service_name
+                    known.version = p.version or known.version
+                    continue
+                port = AssetPort(
                     id=str(uuid.uuid4()),
                     asset_id=db_asset.id,
                     port_number=p.port_number,
@@ -300,8 +310,9 @@ async def commit_import(
                     service_name=p.service_name,
                     state=state,
                     version=p.version,
-                ))
-                seen.add((p.port_number, proto))
+                )
+                db.add(port)
+                seen[(p.port_number, proto)] = port
                 result.ports_added += 1
 
         for i, parsed_asset in enumerate(parsed.assets):
@@ -315,6 +326,8 @@ async def commit_import(
                 db_asset = existing_assets[identifier_lower]
                 asset_map[i] = db_asset
                 add_ports(db_asset, identifier_lower, parsed_asset.ports)
+                if parsed.source_tool in ("nmap", "httpx", "nxc"):
+                    db_asset.is_scanned = True
                 result.assets_skipped += 1
             else:
                 # Create new asset
@@ -352,8 +365,14 @@ async def commit_import(
             if selected_finding_idx is not None and i not in selected_finding_idx:
                 continue
 
-            # Dedup by title
-            if parsed_finding.title.lower() in existing_titles:
+            # Dedup by title; a known finding picks up hosts it's new on.
+            known = existing_findings.get(parsed_finding.title.lower())
+            if known is not None:
+                for asset_idx in parsed_finding.affected_asset_indices:
+                    asset = asset_map.get(asset_idx)
+                    if asset is not None and asset not in known.assets:
+                        known.assets.append(asset)
+                        result.finding_asset_links += 1
                 result.findings_skipped += 1
                 continue
 
@@ -387,7 +406,7 @@ async def commit_import(
                     db_finding.assets.append(asset_map[asset_idx])
                     result.finding_asset_links += 1
 
-            existing_titles.add(parsed_finding.title.lower())
+            existing_findings[parsed_finding.title.lower()] = db_finding
             result.findings_created += 1
 
     await db.commit()
