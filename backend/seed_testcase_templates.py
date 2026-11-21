@@ -1,8 +1,10 @@
 import asyncio
 import uuid
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import AsyncSessionLocal, engine
 from models.testcase_template import TestCaseTemplate
+from models.template_status import TemplateStatus
 from models.user import User, UserRole
 from sqlalchemy import select
 
@@ -128,7 +130,9 @@ async def seed_testcase_templates():
                 
             template = TestCaseTemplate(
                 **t_data,
-                created_by=admin.id
+                created_by=admin.id,
+                status=TemplateStatus.PUBLISHED,
+                published_at=datetime.utcnow(),
             )
             db.add(template)
             print(f"✅ Added: {t_data['title']}")

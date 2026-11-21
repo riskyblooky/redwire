@@ -464,8 +464,10 @@ async def _admin_id(db) -> str | None:
 
 async def seed_finding_templates() -> int:
     """Idempotent — only adds templates whose title isn't already present."""
+    from datetime import datetime
     from seed_templates import finding_templates
     from models.finding_template import FindingTemplate
+    from models.template_status import TemplateStatus
 
     async with AsyncSessionLocal() as db:
         admin_id = await _admin_id(db)
@@ -477,15 +479,19 @@ async def seed_finding_templates() -> int:
                 select(FindingTemplate.id).where(FindingTemplate.title == t["title"]).limit(1)
             )
             if exists.scalar_one_or_none() is None:
-                db.add(FindingTemplate(**t, created_by=admin_id))
+                # Published: the ORM default (DRAFT) would make the library
+                # visible only to the bootstrap admin.
+                db.add(FindingTemplate(**t, created_by=admin_id, status=TemplateStatus.PUBLISHED, published_at=datetime.utcnow()))
                 added += 1
         await db.commit()
         return added
 
 
 async def seed_testcase_templates() -> int:
+    from datetime import datetime
     from seed_testcase_templates import testcase_templates
     from models.testcase_template import TestCaseTemplate
+    from models.template_status import TemplateStatus
 
     async with AsyncSessionLocal() as db:
         admin_id = await _admin_id(db)
@@ -497,7 +503,7 @@ async def seed_testcase_templates() -> int:
                 select(TestCaseTemplate.id).where(TestCaseTemplate.title == t["title"]).limit(1)
             )
             if exists.scalar_one_or_none() is None:
-                db.add(TestCaseTemplate(**t, created_by=admin_id))
+                db.add(TestCaseTemplate(**t, created_by=admin_id, status=TemplateStatus.PUBLISHED, published_at=datetime.utcnow()))
                 added += 1
         await db.commit()
         return added
