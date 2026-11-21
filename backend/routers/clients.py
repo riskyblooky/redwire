@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 from database import get_db
 from models.user import User, UserRole
 from models.client import Client
@@ -709,16 +709,22 @@ async def _resolve_client_scope(client_id: str, include_descendants: bool, db: A
     return await get_descendant_client_ids(db, {client_id})
 
 
-async def _build_engagement_summaries(client_ids: set[str], db: AsyncSession) -> List[EngagementSummary]:
-    """Aggregate per-engagement metrics for the given clients in two queries."""
+async def _build_engagement_summaries(client_ids: set[str], db: AsyncSession, *,
+                                      engagement_ids: Optional[list[str]] = None) -> List[EngagementSummary]:
+    """Aggregate per-engagement metrics for the given clients (or, with
+    ``engagement_ids``, for those engagements) in two queries."""
     from models.finding import Finding, Severity, FindingStatus
 
-    if not client_ids:
+    if engagement_ids is not None:
+        scope = Engagement.id.in_(engagement_ids)
+    elif client_ids:
+        scope = Engagement.client_id.in_(client_ids)
+    else:
         return []
 
     eng_result = await db.execute(
         select(Engagement)
-        .where(Engagement.client_id.in_(client_ids))
+        .where(scope)
         .order_by(Engagement.start_date.asc().nullslast(), Engagement.created_at.asc())
     )
     engagements = eng_result.scalars().all()

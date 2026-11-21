@@ -1302,12 +1302,6 @@ async def update_engagement_phases(
 from schemas.client import EngagementCompareResponse, EngagementSummary  # noqa: E402
 
 
-def _is_engagement_visible(engagement: Engagement, user: User) -> bool:
-    if user.role in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
-        return True
-    return any(u.id == user.id for u in (engagement.assigned_users or []))
-
-
 @router.get("/compare/summary", response_model=EngagementCompareResponse)
 async def compare_engagements(
     a: str = Query(..., description="Engagement A id"),
@@ -1324,46 +1318,20 @@ async def compare_engagements(
     if a == b:
         raise HTTPException(status_code=400, detail="Engagement A and B must be different")
 
-    eng_result = await db.execute(
-        select(Engagement)
-        .where(Engagement.id.in_([a, b]))
-        .options(selectinload(Engagement.assigned_users))
-    )
+    eng_result = await db.execute(select(Engagement).where(Engagement.id.in_([a, b])))
     eng_map = {e.id: e for e in eng_result.scalars().all()}
     if a not in eng_map or b not in eng_map:
         raise HTTPException(status_code=404, detail="Engagement not found")
 
-    for eng in (eng_map[a], eng_map[b]):
-        if not _is_engagement_visible(eng, current_user):
+    # The same read gate as opening the engagement (admin roles, VIEW_ALL,
+    # or a role on it).
+    from auth.rbac import can_view_engagement
+    for eid in (a, b):
+        if not await can_view_engagement(current_user.id, eid, db):
             raise HTTPException(status_code=404, detail="Engagement not found")
 
-    # Reuse the per-engagement aggregator from clients.py — call once per client_id
-    # set and merge results so two engagements from different clients still work.
     from routers.clients import _build_engagement_summaries
-    client_ids: set[str] = set()
-    for eng in (eng_map[a], eng_map[b]):
-        if eng.client_id:
-            client_ids.add(eng.client_id)
-
-    summaries: List[EngagementSummary] = []
-    if client_ids:
-        summaries = await _build_engagement_summaries(client_ids, db)
-
-    by_id = {s.id: s for s in summaries}
-    # Engagements without a client_id won't appear above — synthesise empty summaries.
-    for eid in (a, b):
-        if eid not in by_id:
-            eng = eng_map[eid]
-            by_id[eid] = EngagementSummary(
-                id=eng.id,
-                name=eng.name,
-                status=eng.status.value if hasattr(eng.status, "value") else str(eng.status),
-                engagement_type=eng.engagement_type,
-                client_id=eng.client_id,
-                client_name=eng.client_name,
-                start_date=eng.start_date,
-                end_date=eng.end_date,
-            )
+    by_id = {s.id: s for s in await _build_engagement_summaries(set(), db, engagement_ids=[a, b])}
 
     sa, sb = by_id[a], by_id[b]
     sev_keys = set(sa.findings_by_severity) | set(sb.findings_by_severity)
