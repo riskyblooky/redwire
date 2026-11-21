@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/table';
 import { CustomFieldListHeads, CustomFieldListCells } from '@/components/custom-fields/custom-field-list-columns';
 import {
-    Plus, Search, Eye, Edit, Trash2, Bug, Filter, Loader2,
+    Plus, Search, Eye, Edit, Trash2, Bug, Loader2,
     AlertTriangle, AlertCircle, Info, ShieldAlert, MessageSquare,
     ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
@@ -289,10 +289,6 @@ export default function FindingsPage() {
                                     className="pl-10 bg-slate-800/50 border-slate-700 text-white focus:ring-red-500 focus:border-red-500"
                                 />
                             </div>
-                            <Button variant="outline" className="border-slate-700 text-slate-300">
-                                <Filter className="h-4 w-4 mr-2" />
-                                Filters
-                            </Button>
                         </div>
                     </CardContent>
                 </Card>
