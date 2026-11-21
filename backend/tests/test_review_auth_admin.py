@@ -60,3 +60,24 @@ async def test_ldap_bind_password_is_fully_masked(client, db_session, make_user,
     assert r.status_code == 200, r.text
     masked = r.json()["ldap"]["bind_password"]
     assert masked and "Sup3" not in masked and "dPw" not in masked
+
+
+@pytest.mark.parametrize("change", [{"role": "operator"}, {"is_active": False}])
+async def test_last_active_admin_cannot_be_demoted_or_deactivated(change, client, db_session, make_user,
+                                                                   authenticate_as):
+    from sqlalchemy import update
+    from models.user import User, UserRole
+    admin = await make_user(role="admin")
+    # Only this one admin in the (rolled-back) test transaction.
+    await db_session.execute(update(User).where(User.role == UserRole.ADMIN, User.id != admin.id)
+                             .values(is_active=False))
+    authenticate_as(admin)
+    db_session.expunge_all()  # the handler loads its own copy, as in a real request
+
+    r = await client.patch(f"/admin/users/{admin.id}", json=change)
+    assert r.status_code == 400, r.text
+
+    second = await make_user(role="admin")
+    db_session.expunge_all()
+    r = await client.patch(f"/admin/users/{second.id}", json=change)
+    assert r.status_code == 200, r.text

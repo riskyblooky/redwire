@@ -260,6 +260,23 @@ async def update_user(
         and user.is_active is True
     )
 
+    # Never leave the install without an active admin: refuse to demote or
+    # deactivate the last one (yourself included).
+    losing_admin = user.role == UserRole.ADMIN and user.is_active and (
+        ("role" in update_data and update_data["role"] != UserRole.ADMIN)
+        or ("is_active" in update_data and update_data["is_active"] is False)
+    )
+    if losing_admin:
+        others = (await db.execute(
+            select(sa.func.count()).select_from(User)
+            .where(User.role == UserRole.ADMIN, User.is_active.is_(True), User.id != user.id)
+        )).scalar_one()
+        if not others:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This is the only active admin. Make another user an admin first.",
+            )
+
     _sv = lambda v: getattr(v, "value", v)  # noqa: E731
     changes = {k: {"old": _sv(getattr(user, k, None)), "new": _sv(v)}
                for k, v in update_data.items()
