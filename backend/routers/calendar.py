@@ -7,7 +7,7 @@ from typing import List, Optional
 from database import get_db
 from models.user import User, UserRole
 from models.calendar import CalendarEvent
-from models.engagement import Engagement
+from models.engagement import Engagement, EngagementStatus
 from models.engagement_phase import EngagementPhase
 from models.associations import EngagementAssignment
 from models.skill import UserSkill, Skill, SkillCategory
@@ -470,7 +470,8 @@ async def auto_assign_users(
     )
     all_users = users_result.scalars().all()
 
-    # Get overlapping engagements with assigned users
+    # Get overlapping engagements with assigned users. A completed one is
+    # no longer load, even if its planned end date is still ahead.
     eng_query = (
         select(Engagement)
         .options(selectinload(Engagement.assigned_users))
@@ -479,9 +480,22 @@ async def auto_assign_users(
             or_(
                 Engagement.end_date >= start_naive,
                 Engagement.end_date.is_(None)
-            )
+            ),
+            Engagement.status != EngagementStatus.COMPLETED,
         )
     )
+    # Same scope as /team-availability (GHSA-fpj5-2p59-xq8r): the response
+    # names each engagement, so only ones the caller may see.
+    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+    can_view_all = is_admin or await has_global_permission(
+        current_user, Permission.VIEW_ALL_ENGAGEMENTS, db
+    )
+    if not can_view_all:
+        eng_query = (
+            eng_query
+            .join(EngagementAssignment, EngagementAssignment.engagement_id == Engagement.id)
+            .where(EngagementAssignment.user_id == current_user.id)
+        )
     eng_result = await db.execute(eng_query)
     engagements = eng_result.scalars().all()
 

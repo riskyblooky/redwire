@@ -56,6 +56,7 @@ section becomes one release entry.
 - The New Finding page had a Status picker that did nothing (findings always start Open); it's removed.
 - The AI assistant panel could drop words from a streamed answer where a network read ended mid-line.
 - Ticking "always allow" for a tool in the AI chat didn't apply to further calls in the same answer.
+- Calendar auto-assign suggestions listed the names and clients of every engagement a suggested user was on, including ones the caller isn't on; they're now limited the same way as team availability. Completed engagements no longer count towards a user's load.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
