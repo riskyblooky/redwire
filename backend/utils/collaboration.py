@@ -8,9 +8,55 @@ import json
 import logging
 import os
 import traceback as tb
+from datetime import datetime
 from fastapi import WebSocket
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+
+# ── Work that must wait for the commit ─────────────────────────────────
+# A notification's live push and email describe a row the caller hasn't
+# committed yet; sent at once, a rolled-back transaction still pinged
+# the user about a notification that doesn't exist. Queue them on the
+# session and start them when the outer transaction commits (dropped on
+# rollback). Savepoint events are ignored, as in utils/storage_tx.py.
+
+_POST_COMMIT_KEY = "collab_post_commit"
+
+
+def _after_commit_do(db, make_coro) -> None:
+    sync = getattr(db, "sync_session", db)
+    sync.info.setdefault(_POST_COMMIT_KEY, []).append(make_coro)
+
+
+async def _run_post_commit(make_coro) -> None:
+    try:
+        await make_coro()
+    except Exception as e:
+        logger.warning("post-commit notification work failed: %s", e)
+
+
+@event.listens_for(Session, "after_commit")
+def _collab_after_commit(session: Session) -> None:
+    if session.in_nested_transaction():
+        return
+    pending = session.info.pop(_POST_COMMIT_KEY, None)
+    if not pending:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # sync session outside an event loop: nothing to push to
+        return
+    for make_coro in pending:
+        loop.create_task(_run_post_commit(make_coro))
+
+
+@event.listens_for(Session, "after_rollback")
+def _collab_after_rollback(session: Session) -> None:
+    if not session.in_nested_transaction():
+        session.info.pop(_POST_COMMIT_KEY, None)
 
 
 async def create_notification(
@@ -48,7 +94,10 @@ async def create_notification(
     email_muted = pref.email_muted if pref else True
 
     # Always persist the notification (user can view history)
+    # id and created_at set here (not at flush) so the push payload is complete.
     notif = Notification(
+        id=str(uuid.uuid4()),
+        created_at=datetime.utcnow(),
         user_id=user_id,
         event_type=event_type,
         title=title,
@@ -60,22 +109,20 @@ async def create_notification(
     db.add(notif)
     # Note: caller must commit
 
-    # Push via WebSocket if not site-muted
+    # Push via WebSocket if not site-muted, once the row is committed.
     if not site_muted:
-        try:
-            await manager.broadcast_to_resource("user", user_id, {
-                "type": "notification",
-                "notification": {
-                    "id": notif.id,
-                    "event_type": event_type,
-                    "title": title,
-                    "message": message,
-                    "link": link,
-                    "created_at": notif.created_at.isoformat() if notif.created_at else None,
-                },
-            })
-        except Exception as e:
-            logger.warning(f"Failed to push notification via WebSocket: {e}")
+        payload = {
+            "type": "notification",
+            "notification": {
+                "id": notif.id,
+                "event_type": event_type,
+                "title": title,
+                "message": message,
+                "link": link,
+                "created_at": notif.created_at.isoformat(),
+            },
+        }
+        _after_commit_do(db, lambda: manager.broadcast_to_resource("user", user_id, payload))
 
     # Email dispatch (opt-in per event via email_muted). Sent on a background
     # task with its own DB session so a slow SMTP relay never blocks the request
@@ -89,16 +136,14 @@ async def create_notification(
             to_email = urow.scalar_one_or_none()
             if to_email:
                 event_label = EVENT_TYPES.get(event_type, event_type)
-                asyncio.create_task(
-                    _dispatch_notification_email(
-                        to_email=to_email,
-                        subject=f"RedWire — {title}",
-                        title=title,
-                        message=message,
-                        link=link,
-                        heading=event_label,
-                    )
-                )
+                _after_commit_do(db, lambda: _dispatch_notification_email(
+                    to_email=to_email,
+                    subject=f"RedWire — {title}",
+                    title=title,
+                    message=message,
+                    link=link,
+                    heading=event_label,
+                ))
         except Exception as e:
             logger.warning(f"Failed to queue notification email: {e}")
 
