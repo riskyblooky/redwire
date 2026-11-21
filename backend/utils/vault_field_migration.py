@@ -64,7 +64,16 @@ _TABLE_SPECS: List[Tuple[str, Tuple[str, ...]]] = [
     ("infra_vault_items", ("username", "password", "note")),
     ("spray_campaigns", ("password_used",)),
     ("spray_results", ("username", "password")),
+    # Was plain Text (with the API key in clear) until it became
+    # EncryptedText; existing rows are encrypted here on first boot.
+    ("ai_settings", ("value",)),
 ]
+# Primary key column where it isn't "id".
+_PK = {"ai_settings": "key"}
+
+
+def _pk(table: str) -> str:
+    return '"%s"' % _PK.get(table, "id")
 
 
 def _is_decryptable(f, value: str) -> bool:
@@ -81,7 +90,7 @@ async def _walk_table(
     """Raw-SQL pass: SELECT each row's id + secret columns, evaluate
     decrypt-status, UPDATE the row in place for any legacy-plaintext
     columns. Skips empty / None / wrong-keyed-Fernet values."""
-    cols_sql = ", ".join(["id"] + list(columns))
+    cols_sql = ", ".join([_pk(table)] + list(columns))
     select_sql = f"SELECT {cols_sql} FROM {table}"  # noqa: S608 — table+cols from a constant registry, not user input
     result = await db.execute(sa_text(select_sql))
 
@@ -124,7 +133,7 @@ async def _walk_table(
             set_sql = ", ".join(f"{col} = :{col}" for col in updates)
             params = {**updates, "row_id": row_id}
             await db.execute(
-                sa_text(f"UPDATE {table} SET {set_sql} WHERE id = :row_id"),
+                sa_text(f"UPDATE {table} SET {set_sql} WHERE {_pk(table)} = :row_id"),
                 params,
             )
             stats["fields_re_encrypted"] += len(updates)
@@ -182,7 +191,7 @@ async def unwrap_double_encrypted_fields(db: AsyncSession) -> dict:
     f = _get_fernet()
 
     for table, columns in _TABLE_SPECS:
-        cols_sql = ", ".join(["id"] + list(columns))
+        cols_sql = ", ".join([_pk(table)] + list(columns))
         result = await db.execute(sa_text(f"SELECT {cols_sql} FROM {table}"))  # noqa: S608
         for row in result.fetchall():
             row_id = row[0]
@@ -209,7 +218,7 @@ async def unwrap_double_encrypted_fields(db: AsyncSession) -> dict:
                 set_sql = ", ".join(f"{col} = :{col}" for col in updates)
                 params = {**updates, "row_id": row_id}
                 await db.execute(
-                    sa_text(f"UPDATE {table} SET {set_sql} WHERE id = :row_id"),
+                    sa_text(f"UPDATE {table} SET {set_sql} WHERE {_pk(table)} = :row_id"),
                     params,
                 )
             stats["rows_checked"] += 1
@@ -230,7 +239,7 @@ async def count_legacy_field_rows(db: AsyncSession) -> int:
     f = _get_fernet()
     bad = 0
     for table, columns in _TABLE_SPECS:
-        cols_sql = ", ".join(["id"] + list(columns))
+        cols_sql = ", ".join([_pk(table)] + list(columns))
         result = await db.execute(sa_text(f"SELECT {cols_sql} FROM {table}"))  # noqa: S608
         for row in result.fetchall():
             for value in row[1:]:

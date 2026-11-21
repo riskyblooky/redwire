@@ -65,4 +65,9 @@ class EncryptedText(TypeDecorator):
     def process_result_value(self, value: Optional[str], dialect) -> Optional[str]:
         if value is None:
             return None
+        if value == "":
+            # Never ciphertext (encrypting "" gives a token), so a row
+            # stored empty before its column was encrypted: nothing secret,
+            # and not a decrypt failure worth a warning.
+            return ""
         return decrypt_field(value)

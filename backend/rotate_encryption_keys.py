@@ -66,6 +66,7 @@ VAULT_DB_FIELDS = {
     "spray_campaigns": ("id", ("password_used",)),
     "spray_results": ("id", ("username", "password")),
     "auth_settings": ("key", ("value",)),
+    "ai_settings": ("key", ("value",)),
     "plugin_settings": ("id", ("value",)),
 }
 # MinIO-backed file columns (object key in column, Fernet-encrypted body)

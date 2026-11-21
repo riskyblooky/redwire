@@ -1,18 +1,20 @@
 """
 AiSetting model — stores AI/LLM configuration as key-value pairs.
-Sensitive values (API keys) are flagged via is_encrypted
-so they can be masked in API responses.
+Values are Fernet-encrypted at rest (EncryptedText, as auth_settings);
+``is_encrypted`` marks the secret ones (the API key) for masking in
+API responses.
 """
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
 from datetime import datetime
 from database import Base
+from utils.encrypted_types import EncryptedText
 
 
 class AiSetting(Base):
     __tablename__ = "ai_settings"
 
     key = Column(String(128), primary_key=True)
-    value = Column(Text, nullable=True)
+    value = Column(EncryptedText, nullable=True)
     is_encrypted = Column(Boolean, default=False, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # Real FK to users.id — was a bare string before (GHSA-jw3p follow-up).

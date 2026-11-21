@@ -129,6 +129,7 @@ class TestTableSpecs:
             "infra_vault_items": ("username", "password", "note"),
             "spray_campaigns": ("password_used",),
             "spray_results": ("username", "password"),
+            "ai_settings": ("value",),
         }
 
     def test_specs_are_strings_not_models(self):

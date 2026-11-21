@@ -58,6 +58,7 @@ section becomes one release entry.
 - Ticking "always allow" for a tool in the AI chat didn't apply to further calls in the same answer.
 - Calendar auto-assign suggestions listed the names and clients of every engagement a suggested user was on, including ones the caller isn't on; they're now limited the same way as team availability. Completed engagements no longer count towards a user's load.
 - **Security:** an engagement member allowed to edit only their own findings could add and remove test case, vault item and cleanup links on other people's findings. These links now need permission to edit any finding.
+- **Security:** the AI provider API key was stored unencrypted in the database (the "encrypted" flag only hid it in API responses). AI settings are now encrypted at rest like the other secrets; existing values are encrypted on first startup after upgrading, and key rotation covers them.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
