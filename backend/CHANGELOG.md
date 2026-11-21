@@ -48,6 +48,7 @@ section becomes one release entry.
 - Updating an engagement with `tag_ids: null` (documented as "leave the tags alone") removed all its tags.
 - A vault file could be changed to another item type, after which it couldn't be downloaded, and other items could be changed into files with no file attached.
 - Re-importing a scan didn't link an existing finding to hosts it was newly found on, didn't update a known port's state, service or version, and didn't mark existing hosts as scanned.
+- Filtering assets by port, service or version multiplied each asset's open-discussion count by its number of matching ports.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

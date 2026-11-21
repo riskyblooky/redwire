@@ -713,18 +713,19 @@ async def get_assets(
         )
 
     # Port / service / version filtering
+    # An EXISTS, not a join: joining one row per matching port multiplied
+    # the thread rows behind unresolved_count.
     if port is not None or service or version:
-        query = query.join(AssetPort, AssetPort.asset_id == Asset.id)
+        from sqlalchemy import exists as _exists
+        port_conds = [AssetPort.asset_id == Asset.id,
+                      AssetPort.state == (port_state or PortState.OPEN)]
         if port is not None:
-            query = query.where(AssetPort.port_number == port)
+            port_conds.append(AssetPort.port_number == port)
         if service:
-            query = query.where(AssetPort.service_name.ilike(f"%{service}%"))
+            port_conds.append(AssetPort.service_name.ilike(f"%{service}%"))
         if version:
-            query = query.where(AssetPort.version.ilike(f"%{version}%"))
-        if port_state:
-            query = query.where(AssetPort.state == port_state)
-        else:
-            query = query.where(AssetPort.state == PortState.OPEN)
+            port_conds.append(AssetPort.version.ilike(f"%{version}%"))
+        query = query.where(_exists().where(*port_conds))
     
     # Restrict to engagements where the caller's role can view these
     # (same rule as the single-item GET) for non-admins

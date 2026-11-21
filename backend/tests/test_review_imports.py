@@ -119,3 +119,30 @@ async def test_reimport_updates_a_known_port_and_marks_the_asset_scanned(client,
     scanned = (await db_session.execute(select(Asset.is_scanned).where(Asset.id == host.id)
                                         .execution_options(populate_existing=True))).scalar_one()
     assert scanned is True
+
+
+async def test_port_filter_does_not_multiply_the_thread_count(client, db_session, make_user, authenticate_as):
+    from models.asset import Asset
+    from models.asset_port import AssetPort
+    from models.discussion import Thread
+    admin = await make_user(role="admin")
+    eng = await _make_engagement(db_session)
+    host = Asset(id=str(uuid.uuid4()), engagement_id=eng.id, name="web", asset_type="Server",
+                 identifier="10.6.6.6", created_by=admin.id)
+    db_session.add(host)
+    await db_session.flush()
+    for n in (80, 443, 8080):
+        db_session.add(AssetPort(id=str(uuid.uuid4()), asset_id=host.id, port_number=n, protocol="TCP",
+                                 state="OPEN", service_name="http"))
+    db_session.add(Thread(id=str(uuid.uuid4()), engagement_id=eng.id, resource_type="asset",
+                          resource_id=host.id, title="t", created_by=admin.id))
+    await db_session.flush()
+    authenticate_as(admin)
+
+    r = await client.get("/assets", params={"engagement_id": eng.id, "service": "http"})
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    rows = body["items"] if isinstance(body, dict) else body
+    [row] = [a for a in rows if a["id"] == host.id]
+    assert row["unresolved_thread_count"] == 1
