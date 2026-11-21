@@ -20,6 +20,33 @@ APP_IMAGES="redwire-backend redwire-frontend redwire-mcp-server"
 ROLLBACK_DIR="backups/rollback"
 DEPLOY_OK_MARK="backups/.last-deploy-ok"
 
+# Export the variables in .env. Read as data, never sourced: docker
+# compose's .env syntax isn't shell, and the old `export $(grep | xargs)`
+# aborted the deploy on an inline comment or a value with spaces.
+# Handles KEY=value, optional `export `, "double"/'single' quoted values
+# (quotes removed) and ` # comment` after an unquoted value; skips blank,
+# comment and malformed lines.
+load_env() {
+    local line key val
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        case "$line" in ''|'#'*) continue ;; esac
+        line="${line#export }"
+        case "$line" in *=*) ;; *) continue ;; esac
+        key="${line%%=*}"; key="${key%"${key##*[![:space:]]}"}"
+        val="${line#*=}"; val="${val#"${val%%[![:space:]]*}"}"
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        if [[ "$val" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]] || [[ "$val" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
+            val="${BASH_REMATCH[1]}"
+        else
+            val="${val%%[[:space:]]#*}"
+            val="${val%"${val##*[![:space:]]}"}"
+        fi
+        export "$key=$val"
+    done < "${1:-.env}"
+}
+
 backup_script() {
     if [ -f backup.sh ]; then echo backup.sh; elif [ -f scripts/backup.sh ]; then echo scripts/backup.sh; fi
 }
@@ -154,7 +181,7 @@ NEEDS_ROTATION=0
 
 if [ -f .env ]; then
     echo ".env file already exists. Loading configuration..."
-    export $(grep -v '^#' .env | xargs)
+    load_env .env
 
     # The backend fails closed if either at-rest encryption key is missing
     # (GHSA-pg99). For an existing .env from before these keys existed, generate

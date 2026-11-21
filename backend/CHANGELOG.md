@@ -60,6 +60,7 @@ section becomes one release entry.
 - **Security:** an engagement member allowed to edit only their own findings could add and remove test case, vault item and cleanup links on other people's findings. These links now need permission to edit any finding.
 - **Security:** the AI provider API key was stored unencrypted in the database (the "encrypted" flag only hid it in API responses). AI settings are now encrypted at rest like the other secrets; existing values are encrypted on first startup after upgrading, and key rotation covers them.
 - Installs from a git clone never got the daily backup job (the deploy script looked for `backup.sh` only in the install root), and installing it by hand with `scripts/backup.sh --install-cron` wrote a path that doesn't exist into the cron job.
+- The deploy script aborted when `.env` had an inline comment, a value with spaces or a `$` in a value; it now reads `.env` the way Docker Compose does.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
