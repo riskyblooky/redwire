@@ -54,6 +54,7 @@ section becomes one release entry.
 - Phase health on the planning page and the engagement edit page treated Planning as coming before Scoping, so an engagement still in Scoping showed its Planning phase as complete. The edit page's status list is in lifecycle order and includes Proposed.
 - Generate on the Reports page built the report and then did nothing with it; it now downloads.
 - The New Finding page had a Status picker that did nothing (findings always start Open); it's removed.
+- The AI assistant panel could drop words from a streamed answer where a network read ended mid-line.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

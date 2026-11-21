@@ -147,11 +147,15 @@ export function AiAssistantPanel({ editor, fieldContext, maxHeight }: AiAssistan
             let assistantContent = '';
             let currentEvent = 'chunk';
             if (reader) {
+                // A read can end mid-line (or mid-character): keep the
+                // unfinished tail for the next one, as the chatbot does.
+                let buffer = '';
                 while (true) {
                     const { done, value: chunk } = await reader.read();
                     if (done) break;
-                    const text = decoder.decode(chunk);
-                    const lines = text.split('\n');
+                    buffer += decoder.decode(chunk, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
                     for (const line of lines) {
                         if (line.startsWith('event: ')) { currentEvent = line.slice(7).trim(); continue; }
                         if (line.startsWith('data: ')) {
