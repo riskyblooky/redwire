@@ -119,3 +119,13 @@ def test_totp_code_against_a_missing_secret_is_just_invalid():
     from auth.totp import verify_totp_code
     assert verify_totp_code(None, "123456") is None
     assert verify_totp_code("", "123456") is None
+
+
+def test_api_token_expiry_offset_is_converted_not_dropped():
+    from datetime import datetime, timedelta, timezone
+    from routers.api_tokens import _naive_utc
+    plus5 = datetime(2026, 6, 1, 12, 0, tzinfo=timezone(timedelta(hours=5)))
+    assert _naive_utc(plus5) == datetime(2026, 6, 1, 7, 0)
+    assert _naive_utc(datetime(2026, 6, 1, 12, 0)) == datetime(2026, 6, 1, 12, 0)
+    assert _naive_utc(None) is None
+

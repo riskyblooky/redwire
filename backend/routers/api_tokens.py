@@ -22,7 +22,7 @@ from schemas.api_token import (
     ApiTokenResponse, ApiTokenCreated, ApiTokenAdminResponse,
 )
 from auth.dependencies import get_current_user
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import hashlib
 import secrets
@@ -48,6 +48,14 @@ def _generate_token(permission: str) -> tuple[str, str, str]:
 
 
 # ─── User endpoints ──────────────────────────────────────────────────────────
+
+
+def _naive_utc(value):
+    """Stored expiries are naive UTC (compared with utcnow()): convert an
+    offset-aware input rather than just dropping its offset."""
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 @router.get(
     "/api-tokens",
@@ -139,7 +147,7 @@ async def create_own_token(
     raw_token, token_hash, token_prefix = _generate_token(body.permission)
 
     # Strip timezone info if present (DB uses naive timestamps)
-    expires = body.expires_at.replace(tzinfo=None) if body.expires_at else None
+    expires = _naive_utc(body.expires_at)
 
     token = ApiToken(
         id=str(uuid.uuid4()),
@@ -281,7 +289,7 @@ async def admin_create_token(
     raw_token, token_hash, token_prefix = _generate_token(body.permission)
 
     # Strip timezone info if present (DB uses naive timestamps)
-    expires = body.expires_at.replace(tzinfo=None) if body.expires_at else None
+    expires = _naive_utc(body.expires_at)
 
     token = ApiToken(
         id=str(uuid.uuid4()),
