@@ -964,6 +964,8 @@ async def delete_asset(
 
     from utils.thread_cleanup import sweep_threads
     await sweep_threads(db, "asset", asset_id)
+    from utils.versioning import sweep_versions
+    await sweep_versions(db, "asset", asset_id)
     await db.delete(db_asset)
     await db.commit()
 

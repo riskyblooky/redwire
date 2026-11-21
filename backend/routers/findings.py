@@ -1031,6 +1031,8 @@ async def delete_finding(
     await sweep_chain_links(db, "finding", finding.id)
     from utils.thread_cleanup import sweep_threads
     await sweep_threads(db, ["finding", "finding_remediation"], finding.id)
+    from utils.versioning import sweep_versions
+    await sweep_versions(db, "finding", finding.id)
 
     # Evidence rows go with the finding (cascade); their objects don't.
     from utils.storage_cleanup import delete_objects, finding_object_keys

@@ -439,6 +439,8 @@ async def delete_note(
 
     from utils.thread_cleanup import sweep_threads
     await sweep_threads(db, "note", note.id)
+    from utils.versioning import sweep_versions
+    await sweep_versions(db, "note", note.id)
     await db.delete(note)
     await db.commit()
 

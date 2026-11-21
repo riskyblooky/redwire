@@ -153,3 +153,39 @@ async def create_version_snapshot(
         "dropping the snapshot but continuing the update.",
         entity_type, entity.id, _VERSION_INSERT_MAX_RETRIES,
     )
+
+
+# version_history is polymorphic (no FK to the entity), so deleting an
+# entity leaves its versions behind unless they're swept with it — as
+# sweep_threads does for discussions. Neither helper commits; the caller's
+# delete/commit covers it.
+
+async def sweep_versions(db: AsyncSession, entity_type: str, entity_ids) -> None:
+    """Delete the version history of ``entity_ids`` (one id or a list)."""
+    from sqlalchemy import delete as sa_delete
+    from models.version_history import VersionHistory
+    if isinstance(entity_ids, str):
+        entity_ids = [entity_ids]
+    ids = [i for i in entity_ids if i]
+    if not ids:
+        return
+    await db.execute(sa_delete(VersionHistory).where(
+        VersionHistory.entity_type == entity_type, VersionHistory.entity_id.in_(ids),
+    ))
+
+
+async def sweep_engagement_versions(db: AsyncSession, engagement_id: str) -> None:
+    """Delete the version history of every versioned entity in an
+    engagement, ahead of deleting the engagement (its findings, test
+    cases, assets and notes go with it; their versions wouldn't)."""
+    from sqlalchemy import delete as sa_delete
+    from models.asset import Asset
+    from models.version_history import VersionHistory
+    from models.finding import Finding
+    from models.note import Note
+    from models.testcase import TestCase
+    for entity_type, model in (("finding", Finding), ("testcase", TestCase), ("asset", Asset), ("note", Note)):
+        await db.execute(sa_delete(VersionHistory).where(
+            VersionHistory.entity_type == entity_type,
+            VersionHistory.entity_id.in_(select(model.id).where(model.engagement_id == engagement_id)),
+        ))

@@ -1005,6 +1005,8 @@ async def delete_engagement(
     engagement_id_val = engagement.id
     from utils.storage_cleanup import delete_objects, engagement_object_keys
     object_keys = await engagement_object_keys(db, engagement_id_val)
+    from utils.versioning import sweep_engagement_versions
+    await sweep_engagement_versions(db, engagement_id_val)
     await db.delete(engagement)
     await db.commit()
 

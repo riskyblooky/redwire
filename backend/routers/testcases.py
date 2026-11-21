@@ -586,6 +586,8 @@ async def delete_testcase(
     await sweep_chain_links(db, "testcase", swept_ids)
     from utils.thread_cleanup import sweep_threads
     await sweep_threads(db, "testcase", swept_ids)
+    from utils.versioning import sweep_versions
+    await sweep_versions(db, "testcase", swept_ids)
 
     await db.delete(db_testcase)
     await db.commit()
