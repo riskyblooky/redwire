@@ -83,17 +83,6 @@ export function useEngagementNoteLinks(engagementId: string, enabled: boolean = 
     });
 }
 
-export function useNote(noteId: string) {
-    return useQuery({
-        queryKey: ['note', noteId],
-        queryFn: async () => {
-            const { data } = await api.get<Note>(`/notes/${noteId}`);
-            return data;
-        },
-        enabled: !!noteId,
-    });
-}
-
 export function useCreateNote() {
     const queryClient = useQueryClient();
     return useMutation({

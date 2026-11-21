@@ -113,7 +113,7 @@ const SortIcon = ({ field, currentField, order }: { field: string; currentField:
 };
 
 /** Single finding table row with severity badge, linked entity tooltips, and action menu. */
-const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, onLinkAsset, onLinkIntel, onLinkInfra, noteItems = [], col = () => true, onViewDetail }: any) => {
+const FindingRow = ({ finding, engagementId, onAddVaultItem, onAddCleanup, noteItems = [], col = () => true, onViewDetail }: any) => {
     const router = useRouter();
     const canEdit = useCanEdit(engagementId, 'finding', finding.created_by);
     const canDelete = useCanDelete(engagementId, 'finding', finding.created_by);
@@ -353,9 +353,6 @@ interface FindingsTabProps {
     engagementId: string;
     onAddVaultItem: (target: any) => void;
     onAddCleanup: (target: any) => void;
-    onLinkAsset: (target: any) => void;
-    onLinkIntel: (target: any) => void;
-    onLinkInfra: (target: any) => void;
 }
 
 const FINDINGS_COLUMNS: ColumnDef[] = [
@@ -370,7 +367,7 @@ const FINDINGS_COLUMNS: ColumnDef[] = [
     { key: 'actions',     label: 'Actions',     required: true },
 ];
 
-export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLinkAsset, onLinkIntel, onLinkInfra }: FindingsTabProps) {
+export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: FindingsTabProps) {
     const router = useRouter();
     const canCreateFinding = usePermission(engagementId, 'finding_create');
     const cfListDefs = useCustomFieldListDefs('finding');
@@ -685,9 +682,6 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup, onLink
                                     engagementId={engagementId}
                                     onAddVaultItem={onAddVaultItem}
                                     onAddCleanup={onAddCleanup}
-                                    onLinkAsset={onLinkAsset}
-                                    onLinkIntel={onLinkIntel}
-                                    onLinkInfra={onLinkInfra}
                                     noteItems={notesByFinding[finding.id] || []}
                                     col={col}
                                     onViewDetail={handleFindingClick}

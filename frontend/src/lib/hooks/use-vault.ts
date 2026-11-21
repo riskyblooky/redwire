@@ -53,31 +53,6 @@ export function useVaultItems(engagementId: string) {
     });
 }
 
-// Lazy reveal hook. ``enabled=false`` keeps the query idle so a page
-// load doesn't trip every item's audit log. Set ``enabled=true`` on
-// eye-icon click; the query fires, the server writes an audit row
-// (deduped per 5-min window), and the plaintext lands in the cache.
-// Setting ``enabled=false`` again removes the query from refetch
-// rotation but keeps the cached value until the cache entry expires
-// or the user navigates away.
-export function useVaultItemReveal(itemId: string | null | undefined, enabled: boolean) {
-    return useQuery({
-        queryKey: ['vault', itemId, 'reveal'],
-        queryFn: async () => {
-            const { data } = await api.get<VaultItemReveal>(`/vault/${itemId}/reveal`);
-            return data;
-        },
-        enabled: !!itemId && enabled,
-        // Match the server-side 5-minute dedup window. Within that
-        // window, a refetch is treated as the same access event and
-        // shouldn't generate a fresh audit row — staleTime here
-        // mirrors that intent so React Query reuses the cached
-        // reveal rather than hitting the endpoint again.
-        staleTime: 5 * 60 * 1000,
-        gcTime: 5 * 60 * 1000,
-    });
-}
-
 export function useLinkVaultToFinding() {
     const queryClient = useQueryClient();
     return useMutation({

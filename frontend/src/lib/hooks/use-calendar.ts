@@ -147,24 +147,6 @@ export function useTeamAvailability(start: Date, end: Date, enabled = true) {
     });
 }
 
-export function useAutoAssign(start: Date, end: Date, count = 3, excludeBusy = false, enabled = false) {
-    return useQuery({
-        queryKey: ['calendar', 'auto-assign', start.toISOString(), end.toISOString(), count, excludeBusy],
-        queryFn: async () => {
-            const { data } = await api.get<AutoAssignSuggestion[]>('/calendar/auto-assign', {
-                params: {
-                    start: start.toISOString(),
-                    end: end.toISOString(),
-                    count,
-                    exclude_busy: excludeBusy,
-                },
-            });
-            return data;
-        },
-        enabled,
-    });
-}
-
 export function useCreateCalendarEvent() {
     const queryClient = useQueryClient();
 

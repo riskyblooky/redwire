@@ -85,17 +85,6 @@ export function useEngagementMarkingProfile(engagementId: string | null | undefi
     return profile && profile.levels.length > 0 ? profile : undefined;
 }
 
-export function useMarkingProfile(id: string | null) {
-    return useQuery<MarkingProfile>({
-        queryKey: ['marking-profiles', id],
-        queryFn: async () => {
-            const { data } = await api.get(`/marking-profiles/${id}`);
-            return data;
-        },
-        enabled: !!id,
-    });
-}
-
 export function useCreateMarkingProfile() {
     const queryClient = useQueryClient();
     return useMutation({

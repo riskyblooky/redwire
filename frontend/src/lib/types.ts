@@ -46,18 +46,6 @@ export interface User {
     theme_accent_custom?: string | null;
 }
 
-export interface LoginCredentials {
-    username: string;
-    password: string;
-}
-
-export interface AuthTokens {
-    access_token: string;
-    refresh_token: string;
-    token_type: string;
-    requires_2fa?: boolean;
-}
-
 // Engagement types
 export enum EngagementStatus {
     PLANNING = 'PLANNING',
@@ -67,17 +55,6 @@ export enum EngagementStatus {
     ON_HOLD = 'ON_HOLD',
 }
 
-export enum EngagementType {
-    EXTERNAL_PENTEST = 'EXTERNAL_PENTEST',
-    INTERNAL_PENTEST = 'INTERNAL_PENTEST',
-    WEB_APPLICATION = 'WEB_APPLICATION',
-    MOBILE_APPLICATION = 'MOBILE_APPLICATION',
-    SOCIAL_ENGINEERING = 'SOCIAL_ENGINEERING',
-    PHYSICAL_SECURITY = 'PHYSICAL_SECURITY',
-    RED_TEAM = 'RED_TEAM',
-    PURPLE_TEAM = 'PURPLE_TEAM',
-    OTHER = 'OTHER',
-}
 // Client types
 export interface ClientType {
     id: string;
@@ -107,46 +84,6 @@ export interface Client {
     children?: Client[];
 }
 
-export interface Engagement {
-    custom_fields?: Record<string, unknown>;
-    id: string;
-    name: string;
-    client_name: string;
-    client_id?: string;
-    client?: Client;
-    engagement_type: EngagementType;
-    status: EngagementStatus;
-    description?: string;
-    start_date?: string;
-    end_date?: string;
-    created_by: string;
-    updated_by?: string;
-    created_at: string;
-    updated_at: string;
-    assigned_users?: Partial<User>[];
-    assignment_details?: EngagementAssignment[];
-    // Portion marking
-    marking_profile_id?: string | null;
-    default_classification_level?: string | null;
-    default_classification_suffix?: string | null;
-    ceiling_classification_level?: string | null;
-    allowed_score_models?: string[] | null;
-    default_score_model?: string | null;
-}
-
-export interface EngagementRole {
-    id: string;
-    name: string;
-    description?: string;
-}
-
-export interface EngagementAssignment {
-    user_id: string;
-    engagement_id: string;
-    role_id?: string;
-    role?: EngagementRole;
-}
-
 // Finding types
 export enum Severity {
     CRITICAL = 'CRITICAL',
@@ -156,52 +93,10 @@ export enum Severity {
     INFO = 'INFO',
 }
 
-export enum FindingStatus {
-    OPEN = 'OPEN',
-    IN_REVIEW = 'IN_REVIEW',
-    VERIFIED = 'VERIFIED',
-    CLOSED = 'CLOSED',
-    FALSE_POSITIVE = 'FALSE_POSITIVE',
-}
-
 export interface Tag {
     id: string;
     name: string;
     color?: string;
-}
-
-export interface Finding {
-    custom_fields?: Record<string, unknown>;
-    id: string;
-    engagement_id: string;
-    title: string;
-    description: string;
-    severity: Severity;
-    status: FindingStatus;
-    affected_asset?: string;
-    steps_to_reproduce?: string;
-    impact?: string;
-    remediation?: string;
-    references?: string;
-    cvss_score?: number;
-    cvss_vector?: string;
-    score_model?: string | null;
-    score_inputs?: Record<string, unknown> | null;
-    /** Categorical models' outcome label (e.g. "Extremely High"); their
-     *  cvss_score is only a nominal sort key. Null for numeric models. */
-    score_outcome?: string | null;
-    created_by: string;
-    updated_by?: string;
-    created_by_username?: string;
-    created_by_full_name?: string;
-    created_by_profile_photo?: string;
-    created_at: string;
-    updated_at: string;
-    tags?: Tag[];
-    assets?: Asset[];
-    // Portion marking — null level = inherit
-    classification_level?: string | null;
-    classification_suffix?: string | null;
 }
 
 // Asset types
@@ -270,44 +165,6 @@ export interface Evidence {
 }
 
 // Test Case types
-
-export interface TestCase {
-    custom_fields?: Record<string, unknown>;
-    id: string;
-    engagement_id?: string;
-    title: string;
-    category: string;
-    description: string;
-    steps?: string;
-    expected_result?: string;
-    actual_result?: string;
-    is_executed: boolean;
-    is_successful?: boolean;
-    notes?: string;
-    created_at: string;
-    updated_at: string;
-    created_by: string;
-    updated_by?: string;
-    created_by_username?: string;
-    created_by_full_name?: string;
-    created_by_profile_photo?: string;
-    unresolved_thread_count?: number;
-    evidence?: Evidence[];
-}
-
-// Calendar types
-export interface CalendarEvent {
-    id: string;
-    title: string;
-    description?: string;
-    start_time: string;
-    end_time: string;
-    location?: string;
-    is_all_day: boolean;
-    created_by: string;
-    created_at: string;
-    updated_at: string;
-}
 
 // Activity Log types
 export interface ActivityLog {

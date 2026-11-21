@@ -59,12 +59,3 @@ export function useDeleteStatsPage() {
         onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
     });
 }
-
-export function useReorderStatsPages() {
-    const qc = useQueryClient();
-    return useMutation({
-        mutationFn: async (pages: Array<{ id: string; position: number }>) =>
-            (await api.post('/stats-pages/reorder', { pages })).data as StatsPage[],
-        onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    });
-}

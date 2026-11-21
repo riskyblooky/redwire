@@ -125,19 +125,6 @@ export function useCreateIntelItem() {
     });
 }
 
-export function useUpdateIntelItem() {
-    const queryClient = useQueryClient();
-    return useMutation({
-        mutationFn: async ({ id, ...updates }: { id: string; [key: string]: any }) => {
-            const { data } = await api.put<IntelItem>(`/intel/items/${id}`, updates);
-            return data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['intel-items'] });
-        },
-    });
-}
-
 export function useDeleteIntelItem() {
     const queryClient = useQueryClient();
     return useMutation({

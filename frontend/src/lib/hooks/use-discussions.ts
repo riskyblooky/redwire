@@ -90,17 +90,6 @@ export function useThreads(params?: { engagement_id?: string; resource_type?: Re
     });
 }
 
-export function useThread(id: string) {
-    return useQuery({
-        queryKey: ['threads', id],
-        queryFn: async () => {
-            const { data } = await api.get<Thread>(`/discussions/threads/${id}`);
-            return data;
-        },
-        enabled: !!id,
-    });
-}
-
 export function useCreateThread() {
     const queryClient = useQueryClient();
 
@@ -246,19 +235,5 @@ export function useDeleteComment() {
             queryClient.invalidateQueries({ queryKey: ['comments', data.thread_id] });
             queryClient.invalidateQueries({ queryKey: ['threads'] });
         },
-    });
-}
-
-// Activity Log
-export function useActivityLog(engagement_id: string, resource_type?: ResourceType) {
-    return useQuery({
-        queryKey: ['activity', engagement_id, resource_type],
-        queryFn: async () => {
-            const params: any = { engagement_id };
-            if (resource_type) params.resource_type = resource_type;
-            const { data } = await api.get<ActivityLog[]>('/discussions/activity', { params });
-            return data;
-        },
-        enabled: !!engagement_id,
     });
 }

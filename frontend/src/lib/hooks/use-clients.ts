@@ -76,17 +76,6 @@ export function useClientTree() {
     });
 }
 
-export function useClient(id: string) {
-    return useQuery({
-        queryKey: ['clients', id],
-        queryFn: async () => {
-            const { data } = await api.get<Client>(`/clients/${id}`);
-            return data;
-        },
-        enabled: !!id,
-    });
-}
-
 export function useCreateClient() {
     const queryClient = useQueryClient();
     return useMutation({

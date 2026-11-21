@@ -167,7 +167,7 @@ const RootDropZone = () => {
 };
 
 /** Single test case table row with tree-indent, DnD handle, category badge, status, and action menu. */
-const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, isExpanded = false, onToggleExpand, onAddVaultItem, onAddCleanup, onAddFinding, onLinkAsset, onLinkIntel, onLinkInfra, onMove, noteItems = [], isDraggable = false, col = () => true, onViewDetail }: any) => {
+const TestCaseRow = ({ testcase, engagementId, depth = 0, hasChildren = false, isExpanded = false, onToggleExpand, onAddVaultItem, onAddCleanup, onMove, noteItems = [], isDraggable = false, col = () => true, onViewDetail }: any) => {
     const router = useRouter();
     const canEdit = useCanEdit(engagementId, 'testcase', testcase.created_by);
     const canDelete = useCanDelete(engagementId, 'testcase', testcase.created_by);
@@ -412,10 +412,6 @@ interface TestCasesTabProps {
     engagementId: string;
     onAddVaultItem: (target: any) => void;
     onAddCleanup: (target: any) => void;
-    onAddFinding: (target: any) => void;
-    onLinkAsset: (target: any) => void;
-    onLinkIntel: (target: any) => void;
-    onLinkInfra: (target: any) => void;
 }
 
 const TESTCASES_COLUMNS: ColumnDef[] = [
@@ -431,7 +427,7 @@ const TESTCASES_COLUMNS: ColumnDef[] = [
     { key: 'actions',     label: 'Actions',     required: true },
 ];
 
-export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAddFinding, onLinkAsset, onLinkIntel, onLinkInfra }: TestCasesTabProps) {
+export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: TestCasesTabProps) {
     const router = useRouter();
     const canCreateTestCase = usePermission(engagementId, 'testcase_create');
     const updateTestCase = useUpdateTestCase();
@@ -847,7 +843,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup, onAdd
                                 </TableHeader>
                                 <TableBody>
                                     {visibleTestCases.map(tc => (
-                                        <TestCaseRow key={tc.id} testcase={tc} engagementId={engagementId} depth={isTreeView ? tc.depth : 0} hasChildren={isTreeView && tc.children.length > 0} isExpanded={tcExpandedIds.has(tc.id)} onToggleExpand={toggleTcExpand} onAddVaultItem={onAddVaultItem} onAddCleanup={onAddCleanup} onAddFinding={onAddFinding} onLinkAsset={onLinkAsset} onLinkIntel={onLinkIntel} onLinkInfra={onLinkInfra} onMove={handleOpenMove} noteItems={notesByTestCase[tc.id] || []} isDraggable={isTreeView} col={col} onViewDetail={handleTestcaseClick} />
+                                        <TestCaseRow key={tc.id} testcase={tc} engagementId={engagementId} depth={isTreeView ? tc.depth : 0} hasChildren={isTreeView && tc.children.length > 0} isExpanded={tcExpandedIds.has(tc.id)} onToggleExpand={toggleTcExpand} onAddVaultItem={onAddVaultItem} onAddCleanup={onAddCleanup} onMove={handleOpenMove} noteItems={notesByTestCase[tc.id] || []} isDraggable={isTreeView} col={col} onViewDetail={handleTestcaseClick} />
                                     ))}
                                 </TableBody>
                             </Table>

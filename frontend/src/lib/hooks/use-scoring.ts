@@ -119,15 +119,6 @@ export function useScoreModelPolicyIssue(finding?: {
     return { model: modelLabel, allowed: policy.allowed.map((m) => m.label) };
 }
 
-/** The default scoring model id for new findings. */
-export function useDefaultScoringModel() {
-    return useQuery<ScoringModelSummary>({
-        queryKey: ['scoring', 'default'],
-        queryFn: async () => (await api.get('/scoring/default')).data,
-        staleTime: 5 * 60_000,
-    });
-}
-
 /** Evaluate a model over inputs server-side (used for the calculator's live
  *  preview — the same engine runs authoritatively on save, so no drift). */
 export function useEvaluateScoring() {

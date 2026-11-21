@@ -39,17 +39,6 @@ export function useReportLayouts(engagementId?: string) {
     });
 }
 
-export function useReportLayout(engagementId?: string, layoutId?: string) {
-    return useQuery({
-        queryKey: ['report-layout', engagementId, layoutId],
-        queryFn: async () => {
-            const { data } = await api.get<ReportLayout>(`/engagements/${engagementId}/report-layouts/${layoutId}`);
-            return data;
-        },
-        enabled: !!engagementId && !!layoutId,
-    });
-}
-
 export function useCreateReportLayout() {
     const queryClient = useQueryClient();
     return useMutation({
