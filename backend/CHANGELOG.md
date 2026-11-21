@@ -68,6 +68,7 @@ section becomes one release entry.
 - Deleting a finding, test case, asset, note or engagement left its edit history in the database. It is now deleted with it, and an upgrade migration removes the history already left behind.
 - On new installs the built-in finding and test case templates were drafts visible only to the first admin. They are now published, and the upgrade publishes the ones already seeded as drafts.
 - Global search: lowercase "and", "or" and "not" were treated as operators; `engagement:` and `client:` filters, bare scopes like `vault:` (and the page's quick filters built on them) did nothing; `NOT` hid every result with an empty field; and relevance only reordered the most recent results. All work as documented now.
+- Deleting a test case template silently removed it from every runbook that used it. Templates in use can't be deleted now; the error names the runbooks.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

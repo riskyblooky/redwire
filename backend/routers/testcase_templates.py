@@ -208,6 +208,21 @@ async def delete_testcase_template(
         if not await _can_manage(current_user, db):
             raise HTTPException(status_code=403, detail="Insufficient permissions")
 
+    # runbook_items.template_id cascades on delete, so deleting a template
+    # in use would silently strip it out of every runbook (approved ones
+    # included). Refuse and say where it's used.
+    from models.runbook import Runbook, RunbookItem
+    used_in = (await db.execute(
+        select(Runbook.name).join(RunbookItem, RunbookItem.runbook_id == Runbook.id)
+        .where(RunbookItem.template_id == template_id).distinct().order_by(Runbook.name)
+    )).scalars().all()
+    if used_in:
+        shown = ", ".join(used_in[:5]) + (f" and {len(used_in) - 5} more" if len(used_in) > 5 else "")
+        raise HTTPException(
+            status_code=409,
+            detail=f"This template is used in {len(used_in)} runbook(s): {shown}. Remove it from them first.",
+        )
+
     await db.delete(template)
     await db.commit()
     return None
