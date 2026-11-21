@@ -5,17 +5,18 @@ Supports a rich query language:
 
   bare terms          'SSRF vuln'           full-text AND across all resources
   quoted phrases      '"SQL injection"'     exact phrase match
-  boolean ops         'SSRF AND severity:HIGH'
+  boolean ops         'SSRF AND severity:HIGH'   (uppercase only; 'and' is a word)
                       'XSS OR CSRF'
                       'SSRF NOT remediated'
   grouping            'status:open AND (severity:critical OR severity:high)'
   category dorks      'finding:SSRF'        scope to a resource category
+                      'asset: engagement:acme'   bare category: scope only
   field dorks         'severity:HIGH'       filter specific model column
                       'status:OPEN'
                       'type:web'
                       'cat:injection'
-                      'engagement:acme'
-                      'client:corp'
+                      'engagement:acme'     findings/assets/... in that engagement
+                      'client:corp'         (with a value these filter; bare, they scope)
 
 Grammar (informal):
   query   = clause (OP clause)*
@@ -34,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, cast, func, not_, or_, select, String
+from sqlalchemy import and_, cast, false, func, not_, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
@@ -73,14 +74,18 @@ _FIELD_DORKS = {"severity", "status", "type", "cat", "engagement", "client"}
 # combined for regex
 _ALL_FIELDS = _CATEGORY_FIELDS | _FIELD_DORKS
 
+# Operators are uppercase only: "and", "or" and "not" are ordinary words
+# (a phrase like "remote code or command" must not turn into an OR).
+# Field and category names are case-insensitive. A category name with no
+# value ("asset:") scopes the search to that category.
 _TOKEN_RE = re.compile(
-    r'(?i)'
     r'(?P<LPAREN>\()'
     r'|(?P<RPAREN>\))'
     r'|(?P<AND>\bAND\b)'
     r'|(?P<OR>\bOR\b)'
     r'|(?P<NOT>\bNOT\b)'
-    r'|(?P<DORK>(?:' + '|'.join(sorted(_ALL_FIELDS, key=len, reverse=True)) + r'):(?:"[^"]*"|\S+))'
+    r'|(?P<SCOPE>(?i:' + '|'.join(sorted(_CATEGORY_FIELDS, key=len, reverse=True)) + r'):)(?=\s|\)|$)'
+    r'|(?P<DORK>(?i:' + '|'.join(sorted(_ALL_FIELDS, key=len, reverse=True)) + r'):(?:"[^"]*"|\S+))'
     r'|(?P<QUOTED>"[^"]*")'
     r'|(?P<WORD>\S+)'
 )
@@ -88,7 +93,7 @@ _TOKEN_RE = re.compile(
 
 @dataclass
 class Token:
-    kind: str   # LPAREN RPAREN AND OR NOT DORK QUOTED WORD
+    kind: str   # LPAREN RPAREN AND OR NOT SCOPE DORK QUOTED WORD
     value: str
 
 
@@ -201,13 +206,20 @@ class Parser:
                 self.consume("RPAREN")
             return node
 
+        if tok.kind == "SCOPE":
+            self.consume("SCOPE")
+            return CategoryNode(category=tok.value[:-1].lower(), term="")
+
         if tok.kind == "DORK":
             self.consume("DORK")
             # split on first ':'
             colon_idx = tok.value.index(":")
             raw_field = tok.value[:colon_idx].lower()
             raw_value = tok.value[colon_idx + 1:].strip('"').lower()
-            if raw_field in _CATEGORY_FIELDS:
+            # engagement: and client: are both categories and fields; with a
+            # value they filter by engagement / client name across every
+            # category ("asset: engagement:acme"), bare they scope.
+            if raw_field in _CATEGORY_FIELDS and raw_field not in _FIELD_DORKS:
                 return CategoryNode(category=raw_field, term=raw_value)
             return FieldNode(field=raw_field, value=raw_value)
 
@@ -248,6 +260,13 @@ def extract_category_scope(node: Any) -> Tuple[Optional[str], Any]:
 
 
 # ── SQLAlchemy clause builder ────────────────────────────────────────────
+
+def _negate(inner):
+    """NOT for a match clause. A column that is NULL makes the match NULL,
+    and NOT NULL is NULL too, which drops the row: "NOT x" would hide
+    every row with an empty field. Treat no value as no match."""
+    return not_(func.coalesce(inner, false()))
+
 
 def _like(col, term: str):
     """Case-insensitive LIKE on a column for a term."""
@@ -297,7 +316,7 @@ def build_finding_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_finding_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -333,7 +352,7 @@ def build_note_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_note_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -363,7 +382,7 @@ def build_comment_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_comment_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -416,7 +435,7 @@ def build_asset_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_asset_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -454,7 +473,7 @@ def build_engagement_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_engagement_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -475,6 +494,8 @@ def build_testcase_clause(node: Any):
             return TestCase.category.ilike(f"%{node.value}%")
         if node.field == "engagement":
             return Engagement.name.ilike(f"%{node.value}%")
+        if node.field == "client":
+            return Engagement.client_name.ilike(f"%{node.value}%")
         return TestCase.title.ilike(f"%{node.value}%")
     if isinstance(node, CategoryNode):
         if node.category == "testcase":
@@ -488,7 +509,7 @@ def build_testcase_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_testcase_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -508,6 +529,9 @@ def build_client_clause(node: Any):
     if isinstance(node, FieldNode):
         if node.field == "client":
             return Client.name.ilike(f"%{node.value}%")
+        if node.field == "engagement":
+            # Clients with an engagement of that name.
+            return Client.id.in_(select(Engagement.client_id).where(Engagement.name.ilike(f"%{node.value}%")))
         return Client.name.ilike(f"%{node.value}%")
     if isinstance(node, CategoryNode):
         if node.category == "client":
@@ -521,7 +545,7 @@ def build_client_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_client_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -539,6 +563,10 @@ def build_vault_clause(node: Any):
     if isinstance(node, FieldNode):
         if node.field == "type":
             return VaultItem.item_type.ilike(f"%{node.value}%")
+        if node.field == "engagement":
+            return Engagement.name.ilike(f"%{node.value}%")
+        if node.field == "client":
+            return Engagement.client_name.ilike(f"%{node.value}%")
         return VaultItem.name.ilike(f"%{node.value}%")
     if isinstance(node, CategoryNode):
         if node.category == "vault":
@@ -552,7 +580,7 @@ def build_vault_clause(node: Any):
         return or_(*clauses) if clauses else None
     if isinstance(node, NotNode):
         inner = build_vault_clause(node.child)
-        return not_(inner) if inner is not None else None
+        return _negate(inner) if inner is not None else None
     return None
 
 
@@ -658,6 +686,10 @@ async def global_search(
             ))
         return query
 
+    # Relevance is ranked here, after the query, so rank a wider window than
+    # is returned (else it only reorders the `limit` most recent rows).
+    fetch = min(limit * 10, 200) if sort == "relevance" else limit
+
     results = []
 
     # ── Engagements ──────────────────────────────────────────────────────
@@ -676,7 +708,7 @@ async def global_search(
             eng_q = eng_q.order_by(Engagement.updated_at.desc())
         else:
             eng_q = eng_q.order_by(Engagement.updated_at.desc())
-        eng_q = eng_q.limit(limit)
+        eng_q = eng_q.limit(fetch)
         rows = (await db.execute(eng_q)).all()
         items = []
         for row in rows:
@@ -698,6 +730,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "engagements", "items": items})
 
@@ -713,7 +746,7 @@ async def global_search(
         if clause is not None:
             find_q = find_q.where(clause)
         find_q = scope_to_engagements(find_q, Finding.engagement_id, Permission.FINDING_VIEW)
-        find_q = find_q.order_by(Finding.updated_at.desc()).limit(limit)
+        find_q = find_q.order_by(Finding.updated_at.desc()).limit(fetch)
         rows = (await db.execute(find_q)).all()
         items = []
         for row in rows:
@@ -737,6 +770,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "findings", "items": items})
 
@@ -751,7 +785,7 @@ async def global_search(
         if clause is not None:
             asset_q = asset_q.where(clause)
         asset_q = scope_to_engagements(asset_q, Asset.engagement_id, Permission.ASSET_VIEW)
-        asset_q = asset_q.order_by(Asset.updated_at.desc()).limit(limit)
+        asset_q = asset_q.order_by(Asset.updated_at.desc()).limit(fetch)
         rows = (await db.execute(asset_q)).all()
         items = []
         for row in rows:
@@ -774,6 +808,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "assets", "items": items})
 
@@ -789,7 +824,7 @@ async def global_search(
         if clause is not None:
             tc_q = tc_q.where(clause)
         tc_q = scope_to_engagements(tc_q, TestCase.engagement_id, Permission.TESTCASE_VIEW)
-        tc_q = tc_q.order_by(TestCase.updated_at.desc()).limit(limit)
+        tc_q = tc_q.order_by(TestCase.updated_at.desc()).limit(fetch)
         rows = (await db.execute(tc_q)).all()
         items = []
         for row in rows:
@@ -813,6 +848,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "testcases", "items": items})
 
@@ -833,7 +869,7 @@ async def global_search(
                     select(Engagement.client_id).where(Engagement.id.in_(accessible_ids))
                 )
             )
-        client_q = client_q.order_by(Client.name).limit(limit)
+        client_q = client_q.order_by(Client.name).limit(fetch)
         rows = (await db.execute(client_q)).all()
         items = []
         for row in rows:
@@ -855,6 +891,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "clients", "items": items})
 
@@ -880,7 +917,7 @@ async def global_search(
             vault_q = vault_q.where(clause)
         if vault_eids is not None:
             vault_q = vault_q.where(VaultItem.engagement_id.in_(vault_eids))
-        vault_q = vault_q.limit(limit)
+        vault_q = vault_q.limit(fetch)
         rows = (await db.execute(vault_q)).all()
         items = []
         for row in rows:
@@ -901,6 +938,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "vault", "items": items})
 
@@ -914,7 +952,7 @@ async def global_search(
         if clause is not None:
             note_q = note_q.where(clause)
         note_q = scope_to_engagements(note_q, Note.engagement_id, Permission.NOTE_VIEW)
-        note_q = note_q.order_by(Note.updated_at.desc()).limit(limit)
+        note_q = note_q.order_by(Note.updated_at.desc()).limit(fetch)
         rows = (await db.execute(note_q)).all()
         items = []
         for row in rows:
@@ -935,6 +973,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "notes", "items": items})
 
@@ -950,7 +989,7 @@ async def global_search(
         if clause is not None:
             comment_q = comment_q.where(clause)
         comment_q = scope_to_engagements(comment_q, Thread.engagement_id, Permission.DISCUSSION_VIEW)
-        comment_q = comment_q.order_by(Comment.created_at.desc()).limit(limit)
+        comment_q = comment_q.order_by(Comment.created_at.desc()).limit(fetch)
         rows = (await db.execute(comment_q)).all()
         items = []
         for row in rows:
@@ -971,6 +1010,7 @@ async def global_search(
             })
         if sort == "relevance":
             items.sort(key=lambda x: x["match_count"], reverse=True)
+        items = items[:limit]
         if items:
             results.append({"category": "comments", "items": items})
 

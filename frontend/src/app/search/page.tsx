@@ -400,7 +400,7 @@ function SyntaxHelp() {
                                     ['finding:SSRF', 'Findings only'],
                                     ['asset:192.168', 'Assets only'],
                                     ['testcase:sql', 'Test cases only'],
-                                    ['engagement:pen', 'Engagements only'],
+                                    ['engagement: pen', 'Engagements only'],
                                     ['vault:', 'All vault items'],
                                 ].map(([ex, desc]) => (
                                     <tr key={ex}>
