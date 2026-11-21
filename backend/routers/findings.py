@@ -1224,8 +1224,12 @@ async def _require_finding(finding_id: str, db: AsyncSession, current_user: User
     finding = result.scalar_one_or_none()
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
-    # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
-    await require_engagement_perm(current_user, finding.engagement_id, Permission.FINDING_EDIT, db)
+    # Write gate: the same owner-vs-ANY rule as editing the finding itself —
+    # FINDING_EDIT covers your own findings only; anyone else's needs
+    # FINDING_EDIT_ANY. (READ_ONLY_ADMIN still needs an explicit grant.)
+    await require_owned_perm(current_user, finding.engagement_id, finding.created_by,
+                             Permission.FINDING_EDIT, Permission.FINDING_EDIT_ANY, db,
+                             action="change this finding's links")
     return finding
 
 
