@@ -9,7 +9,7 @@
  *  - Assets tab: searchable grid of engagement assets with per-asset
  *    port selection toggles.
  *
- * Sidebar: severity picker, status, CVSS 3.1 score + calculator modal,
+ * Sidebar: severity picker, CVSS 3.1 score + calculator modal,
  * engagement selector (lockable via ?engagementId query param), and
  * tag multi-select. Supports pre-filling from finding templates via
  * TemplatePickerDialog and auto-linking a test case via ?testCaseId.
@@ -65,14 +65,6 @@ const severities = [
     { value: 'INFO', label: 'Info', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20' },
 ];
 
-const statuses = [
-    { value: 'OPEN', label: 'Open' },
-    { value: 'IN_REVIEW', label: 'In Review' },
-    { value: 'VERIFIED', label: 'Verified' },
-    { value: 'REMEDIATED', label: 'Remediated' },
-    { value: 'CLOSED', label: 'Closed' },
-];
-
 export default function NewFindingPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -90,7 +82,6 @@ export default function NewFindingPage() {
         engagement_id: engagementIdParam || '',
         category: '',
         severity: 'MEDIUM',
-        status: 'OPEN',
         description: '',
         impact: '',
         technical_details: '',
@@ -630,22 +621,6 @@ export default function NewFindingPage() {
                                         <SelectContent className="bg-slate-900 border-slate-800 text-white">
                                             {severities.map((s) => (
                                                 <SelectItem key={s.value} value={s.value} className={cn("font-bold my-1 mx-1 rounded-md", s.color)}>
-                                                    {s.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Label className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Status</Label>
-                                    <Select value={formData.status} onValueChange={(val) => handleChange('status', val)}>
-                                        <SelectTrigger className="bg-slate-950/50 border-slate-800 text-white h-11">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                            {statuses.map((s) => (
-                                                <SelectItem key={s.value} value={s.value}>
                                                     {s.label}
                                                 </SelectItem>
                                             ))}
