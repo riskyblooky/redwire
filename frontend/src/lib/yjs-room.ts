@@ -25,6 +25,7 @@ import * as decoding from 'lib0/decoding';
 import { fixedCursorPlugin } from '@/lib/fixed-cursor-plugin';
 import { useAuthStore } from '@/stores/auth-store';
 import { getFreshAccessToken } from '@/lib/api';
+import { createReconnectPolicy } from '@/lib/ws-reconnect';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -209,8 +210,6 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         if (!token) return;
 
         let ws: WebSocket;
-        let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
-        let retryCount = 0;
         let isCleaningUp = false;
         let initialContentPending: string | null = null;
         let initialContentTimer: ReturnType<typeof setTimeout> | undefined;
@@ -289,7 +288,6 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
             ws.onopen = () => {
                 if (isCleaningUp) { ws.close(); return; }
                 setStatus('connected');
-                retryCount = 0;
                 clearTimeout(readyFallbackTimer);
                 readyFallbackTimer = setTimeout(() => setHasSynced(true), 2_000);
 
@@ -318,6 +316,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
             };
 
             ws.onmessage = (event) => {
+                reconnect.onMessage();
                 if (typeof event.data === 'string') {
                     let data: any;
                     try { data = JSON.parse(event.data); } catch { return; }
@@ -416,19 +415,17 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                 }
             };
 
-            ws.onclose = () => {
+            ws.onclose = (event) => {
                 if (isCleaningUp) return;
                 setStatus('disconnected');
                 current = null;
                 setSocket(null);
-                if (retryCount < 10) {
-                    const delay = Math.max(2000, Math.min(1000 * Math.pow(2, retryCount), 30000));
-                    reconnectTimeout = setTimeout(() => { retryCount++; connect(); }, delay);
-                }
+                reconnect.onClose(event.code);
             };
             ws.onerror = () => { ws.close(); };
         };
 
+        const reconnect = createReconnectPolicy(() => { connect(); });
         connect();
 
         // Aggressive stale-awareness cleanup: y-protocols' default timeout is
@@ -476,7 +473,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
             isCleaningUp = true;
             clearTimeout(initialContentTimer);
             clearTimeout(readyFallbackTimer);
-            clearTimeout(reconnectTimeout);
+            reconnect.dispose();
             clearInterval(staleCleanupInterval);
             awareness.off('change', trackPeerActivity);
             // 1. Remove our awareness state FIRST — while the update handler

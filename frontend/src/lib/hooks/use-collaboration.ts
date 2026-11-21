@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import { getFreshAccessToken } from '@/lib/api';
+import { createReconnectPolicy } from '@/lib/ws-reconnect';
 
 export interface PresenceUser {
     id: string;
@@ -51,10 +52,7 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
         const token = localStorage.getItem('access_token');
         if (!token) return;
 
-        let reconnectTimeout: NodeJS.Timeout;
         let userClearTimeout: NodeJS.Timeout;
-        let retryCount = 0;
-        const maxRetries = 10;
         let isCleaningUp = false;
 
         const connect = async () => {
@@ -116,7 +114,6 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
                 // WS connected — reconnection logic handles retries
                 setIsConnected(true);
                 clearTimeout(userClearTimeout); // Cancel any pending user clear
-                retryCount = 0;
 
                 if (currentUser) {
                     ws.send(JSON.stringify({
@@ -134,6 +131,7 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
             };
 
             ws.onmessage = (event) => {
+                reconnect.onMessage();
                 try {
                     const data = JSON.parse(event.data);
 
@@ -175,7 +173,7 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
                 }
             };
 
-            ws.onclose = () => {
+            ws.onclose = (event) => {
                 if (isCleaningUp) return;
 
                 // WS disconnected — reconnect timer handles retry
@@ -189,13 +187,7 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
                     setActiveUsers([]);
                 }, 5000);
 
-                if (retryCount < maxRetries) {
-                    const delay = Math.max(2000, Math.min(1000 * Math.pow(2, retryCount), 30000));
-                    reconnectTimeout = setTimeout(() => {
-                        retryCount++;
-                        connect();
-                    }, delay);
-                }
+                reconnect.onClose(event.code);
             };
 
             ws.onerror = (err) => {
@@ -204,6 +196,7 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
             };
         };
 
+        const reconnect = createReconnectPolicy(() => { connect(); });
         connect();
 
         return () => {
@@ -211,7 +204,7 @@ export function useCollaboration({ resourceType, resourceId, enabled = true, onM
             if (wsRef.current) {
                 wsRef.current.close();
             }
-            clearTimeout(reconnectTimeout);
+            reconnect.dispose();
             clearTimeout(userClearTimeout);
             wsRef.current = null;
         };
