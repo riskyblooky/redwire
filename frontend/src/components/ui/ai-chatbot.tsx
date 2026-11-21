@@ -370,6 +370,11 @@ export function AiChatbot() {
     // name so a user who's approved `update_finding` once doesn't
     // get re-prompted for every subsequent update in the same turn.
     const [toolAllowlist, setToolAllowlist] = useState<Set<string>>(new Set());
+    // The streaming loop outlives the render that started it: read the
+    // allowlist through a ref so ticking "always allow" mid-turn applies
+    // to the rest of that turn.
+    const toolAllowlistRef = useRef(toolAllowlist);
+    toolAllowlistRef.current = toolAllowlist;
     const scrollRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -506,7 +511,7 @@ export function AiChatbot() {
                             // ticked "always allow" for this tool name
                             // this session. Fire-and-forget POST; the
                             // backend's BLPOP wakes up immediately.
-                            if (newCall.requiresApproval && toolAllowlist.has(newCall.name)) {
+                            if (newCall.requiresApproval && toolAllowlistRef.current.has(newCall.name)) {
                                 api.post(`/ai/chat/tool-approval/${newCall.callId}`, { decision: 'approve' })
                                     .catch(() => { /* will surface as denied via timeout */ });
                             }
