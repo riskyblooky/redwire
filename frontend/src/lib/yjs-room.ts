@@ -158,6 +158,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
     const socketRef = useRef<WebSocket | null>(null);
     const savePending = useRef(false);
     const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const contentSourceRef = useLatest(contentSource);
     // The doc's Markdown as last loaded or sent. Only a difference is sent:
     // editor housekeeping on load can fire "local" updates that change
     // nothing, and those mustn't count as edits (or show "Saved").
@@ -167,8 +168,10 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         clearTimeout(saveTimer.current);
         const get = autosaveRef.current;
         const ws = socketRef.current;
-        // Not open → stays pending; onopen retries.
+        // Not open → stays pending; onopen retries. No content source yet →
+        // the doc may be a placeholder: stays pending until it's known.
         if (!savePending.current || !get || !ws || ws.readyState !== WebSocket.OPEN) return;
+        if (contentSourceRef.current === null) return;
         savePending.current = false;
         const content = get();
         if (content === lastSent.current) {
@@ -183,7 +186,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         } catch {
             savePending.current = true;
         }
-    }, [autosaveRef]);
+    }, [autosaveRef, contentSourceRef]);
     const scheduleSave = useCallback((delay = AUTOSAVE_DEBOUNCE_MS) => {
         const get = autosaveRef.current;
         if (!get) return;
@@ -197,7 +200,8 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
     // Baseline once the doc holds real content (DB seed or peer sync).
     useEffect(() => {
         if (contentSource && lastSent.current === null) lastSent.current = autosaveRef.current?.() ?? null;
-    }, [contentSource, autosaveRef]);
+        if (contentSource && savePending.current) flushSave();
+    }, [contentSource, autosaveRef, flushSave]);
 
     useEffect(() => {
         if (typeof window === 'undefined' || !wsUrl || !currentUser) return;
@@ -367,7 +371,8 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                         setServerCanEdit(false);
                         setStatus('disconnected');
                     } else if (data.type === 'request_save') {
-                        onRequestSaveRef.current?.(data);
+                        // Never answer from a placeholder doc: it'd be saved over the note.
+                        if (contentSourceRef.current !== null) onRequestSaveRef.current?.(data);
                     } else if (data.type === 'content_saved') {
                         setSaveState(savePending.current ? 'pending' : data.ok ? 'saved' : 'error');
                     } else if (data.type === 'peer_disconnected') {

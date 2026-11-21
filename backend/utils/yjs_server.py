@@ -55,6 +55,10 @@ class YjsRoom:
         self.client_yjs_ids: Dict[WebSocket, int] = {}   # ws → Y.js clientID for awareness cleanup
         self.last_activity = time.time()
         self._save_task: Optional[asyncio.Task] = None
+        # The client that last sent content. Asked for the save: its doc is
+        # known to hold the note (a client that just joined may still show
+        # an empty placeholder), and the save is credited to whoever edited.
+        self.last_editor: Optional[WebSocket] = None
 
     async def add_client(self, ws: WebSocket, user_id: str):
         """Add a client to this room."""
@@ -71,6 +75,8 @@ class YjsRoom:
         self.clients.discard(ws)
         self.client_user_ids.pop(ws, None)
         yjs_id = self.client_yjs_ids.pop(ws, None)
+        if self.last_editor is ws:
+            self.last_editor = None
         self.last_activity = time.time()
         return yjs_id
 
@@ -117,6 +123,7 @@ class YjsRoom:
         await bus.publish("yjs_frame", {"note": self.note_id, "data": b64(data)})
 
         if carries_update:
+            self.last_editor = sender
             self._schedule_save()
 
     async def _relay_local(self, sender: Optional[WebSocket], data: bytes):
@@ -163,7 +170,7 @@ class YjsRoom:
         if not await bus.claim(f"yjs-save:{self.note_id}", 2):
             return
 
-        saver = next(iter(self.clients))
+        saver = self.last_editor if self.last_editor in self.clients else next(iter(self.clients))
         try:
             import json
             await saver.send_text(json.dumps({

@@ -87,3 +87,34 @@ async def test_only_content_frames_schedule_a_save(carries_update, schedules, mo
         if room._save_task:
             room._save_task.cancel()
         yjs_server.yjs_store.remove_room(note)
+
+
+async def test_save_is_requested_from_the_client_that_edited(monkeypatch):
+    """Not from whichever client happens to be first: one that just joined
+    may still hold an empty placeholder and send that back as the note."""
+    import json
+    from utils import ws_bus, yjs_server
+    from tests.test_ws_fanout import FakeWS, RecordingBus
+
+    bus = RecordingBus()
+
+    async def _claim(*a, **k):
+        return True
+    bus.claim = _claim
+    monkeypatch.setattr(ws_bus, "bus", bus)
+    note = f"n-{uuid.uuid4().hex[:6]}"
+    room = yjs_server.yjs_store.get_or_create_room(note)
+    a, b = FakeWS(), FakeWS()
+    await room.add_client(a, "u1")
+    await room.add_client(b, "u2")
+    # The editor is whichever one a plain "first client" pick would skip.
+    newcomer = next(iter(room.clients))
+    editor = b if newcomer is a else a
+    try:
+        await room.relay_binary(editor, b"\x00\x02", carries_update=True)
+        room._save_task.cancel()
+        await room._request_save()
+        asked = [ws for ws in (newcomer, editor) if any("request_save" in t for t in ws.text)]
+        assert asked == [editor]
+    finally:
+        yjs_server.yjs_store.remove_room(note)

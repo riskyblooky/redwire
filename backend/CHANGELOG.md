@@ -38,6 +38,7 @@ section becomes one release entry.
 - The authentication settings page showed the first and last four characters of the LDAP bind password; it's now fully masked.
 - The only active admin could change their own role or deactivate their account, leaving the install with no admin. That's now refused until another user is an admin.
 - Changing a user's email to one another account already has returned a server error instead of saying so (409). An admin's change to a user's email is now recorded in the security events log, as role and active-status changes are.
+- A note could be overwritten with an empty one: when the server asked for the note's text to save, it could ask a browser that had just opened the note and hadn't loaded it yet, and a slow load let you type into the empty editor. The server now asks whoever made the last edit, and the editor accepts typing and saves only once the note has loaded.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

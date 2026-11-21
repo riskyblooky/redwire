@@ -514,7 +514,7 @@ export default function CollaborativeEditor({
 
     // Y.js doc + room connection. Parent uses key={noteId} to force a full
     // remount (fresh doc) on note switch.
-    const { ydoc, awareness, status: connectionStatus, hasSynced, peerCount, socket, serverCanEdit, revoked, scheduleSave } = useYjsRoom({
+    const { ydoc, awareness, status: connectionStatus, hasSynced, contentSource, peerCount, socket, serverCanEdit, revoked, scheduleSave } = useYjsRoom({
         path: `note/${noteId}`,
         editorRef,
         seed: (ed, content) => { ed.commands.setContent(content); },
@@ -643,10 +643,12 @@ export default function CollaborativeEditor({
     // Keep ref in sync
     editorRef.current = editor;
 
-    // The room re-checks access mid-session and can take edit away.
+    // The room re-checks access mid-session and can take edit away. Typing
+    // is also held until the doc holds the note (DB seed or peer sync):
+    // text typed into the empty placeholder would stop the note loading.
     useEffect(() => {
-        editor?.setEditable(!disabled && serverCanEdit !== false && !revoked);
-    }, [editor, disabled, serverCanEdit, revoked]);
+        editor?.setEditable(!disabled && contentSource !== null && serverCanEdit !== false && !revoked);
+    }, [editor, disabled, contentSource, serverCanEdit, revoked]);
 
     // Sync the line-numbers toggle into the active-line decoration and nudge a
     // transaction so it recomputes immediately (see active-line-extension).
