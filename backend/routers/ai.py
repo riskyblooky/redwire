@@ -324,6 +324,10 @@ async def get_ai_settings(
         "chatbot_enabled": settings.get("chatbot_enabled", "false"),
         "mcp_enabled": settings.get("mcp_enabled", "false"),
         "ai_write_tools_enabled": settings.get("ai_write_tools_enabled", "false"),
+        # Token-budget compaction. Empty → the chat handler's defaults.
+        "ai_max_context_tokens": settings.get("ai_max_context_tokens", ""),
+        "ai_compact_keep_recent_turns": settings.get("ai_compact_keep_recent_turns", ""),
+        "ai_compact_threshold_pct": settings.get("ai_compact_threshold_pct", ""),
         "mcp_url": MCP_SERVER_URL,
     }
 
@@ -806,7 +810,9 @@ async def ai_chat(
             return default
 
     max_context_tokens = _int_setting("ai_max_context_tokens", 8000)
-    keep_recent_turns = _int_setting("ai_compact_keep_recent_turns", 4)
+    # At least one: split_for_compaction cuts at user_indices[-n], and -0
+    # is the first turn, which would summarise nothing.
+    keep_recent_turns = max(1, _int_setting("ai_compact_keep_recent_turns", 4))
     threshold_pct = max(1, min(99, _int_setting("ai_compact_threshold_pct", 75)))
 
     async def stream_response():
