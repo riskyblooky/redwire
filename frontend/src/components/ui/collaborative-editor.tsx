@@ -66,6 +66,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ySyncPluginKey } from '@tiptap/y-tiptap';
 
 const lowlight = createLowlight(common);
 
@@ -513,11 +514,14 @@ export default function CollaborativeEditor({
 
     // Y.js doc + room connection. Parent uses key={noteId} to force a full
     // remount (fresh doc) on note switch.
-    const { ydoc, awareness, status: connectionStatus, hasSynced, peerCount, socket, serverCanEdit, revoked } = useYjsRoom({
+    const { ydoc, awareness, status: connectionStatus, hasSynced, peerCount, socket, serverCanEdit, revoked, scheduleSave } = useYjsRoom({
         path: `note/${noteId}`,
         editorRef,
-        // Emits an update, so the seeded DB copy flows into the normal save path.
         seed: (ed, content) => { ed.commands.setContent(content); },
+        // This user's edits are sent after a pause in typing, and flushed on
+        // close / page hide (the server's own save request needs a client
+        // still in the room). Only a real change is sent.
+        autosave: () => (editorRef.current?.storage as any)?.markdown?.getMarkdown?.() ?? '',
         // Server wants the current content for its debounced DB save.
         onRequestSave: (data) => {
             const ed = editorRef.current;
@@ -579,16 +583,9 @@ export default function CollaborativeEditor({
         ],
         editable: !disabled,
         immediatelyRender: false,
-        onUpdate: ({ editor: ed }) => {
-            // Schedule a server-side DB save via the WS
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-                const markdown = (ed.storage as any).markdown?.getMarkdown?.() || '';
-                wsRef.current.send(JSON.stringify({
-                    type: 'save_content',
-                    content: markdown,
-                    note_id: noteId,
-                }));
-            }
+        onUpdate: ({ transaction }) => {
+            // Peers' edits are saved by their own clients; only ours count.
+            if (!transaction.getMeta(ySyncPluginKey)?.isChangeOrigin) scheduleSave();
         },
         onSelectionUpdate: () => {
             setForceUpdate(prev => prev + 1);

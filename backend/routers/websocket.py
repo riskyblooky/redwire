@@ -642,8 +642,9 @@ async def _serve_yjs_room(
                 # content, so a viewer's are dropped: relayed, an editor
                 # would merge them and its next save_content would
                 # persist the viewer's text.
-                if can_edit or _is_viewer_safe_binary(message["bytes"]):
-                    await room.relay_binary(websocket, message["bytes"])
+                viewer_safe = _is_viewer_safe_binary(message["bytes"])
+                if can_edit or viewer_safe:
+                    await room.relay_binary(websocket, message["bytes"], carries_update=not viewer_safe)
 
             elif "text" in message and message["text"]:
                 # JSON control message (save_content, register_client_id)

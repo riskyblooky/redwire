@@ -101,21 +101,23 @@ class YjsRoom:
             self.client_user_ids.pop(d, None)
             self.client_yjs_ids.pop(d, None)
 
-    async def relay_binary(self, sender: WebSocket, data: bytes):
+    async def relay_binary(self, sender: WebSocket, data: bytes, carries_update: bool = True):
         """
         Relay a binary message to all clients EXCEPT the sender.
 
         Binary messages contain Y.js sync protocol (doc updates, sync steps)
         and awareness protocol data. The server does not interpret them —
-        it simply forwards to all other connected peers.
+        it simply forwards to all other connected peers. ``carries_update``
+        is False for awareness and sync-step-1 frames, which change no
+        content and so don't schedule a DB save.
         """
         await self._relay_local(sender, data)
 
         from utils.ws_bus import bus, b64
         await bus.publish("yjs_frame", {"note": self.note_id, "data": b64(data)})
 
-        # Schedule a debounced DB save
-        self._schedule_save()
+        if carries_update:
+            self._schedule_save()
 
     async def _relay_local(self, sender: Optional[WebSocket], data: bytes):
         self.last_activity = time.time()
@@ -263,7 +265,11 @@ async def save_note_content(note_id: str, content: str, user_id: str):
             if not note:
                 return
 
-            changed = (note.content or "") != content
+            if (note.content or "") == content:
+                # Opening a note, or a save request after cursor moves only,
+                # sends back the content as it is: not an edit, so leave
+                # updated_by / updated_at alone.
+                return
             engagement_id = note.engagement_id
             note_title = note.title
 
@@ -274,7 +280,7 @@ async def save_note_content(note_id: str, content: str, user_id: str):
             # The same decision gates both so they stay correlated — the feed's
             # diff logic pairs a log with the snapshot taken just before it.
             starts_session = bool(
-                changed and engagement_id and not await _recent_note_log_exists(db, note_id)
+                engagement_id and not await _recent_note_log_exists(db, note_id)
             )
 
             if starts_session:

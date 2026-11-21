@@ -29,6 +29,7 @@ section becomes one release entry.
 - PDF and Markdown reports left out a finding's Technical Details (only the HTML report showed them).
 - A sub-test's display id in the PDF attack graph and the HTML report came from list order, so a child could be numbered before its parent; ids now follow the test-case tree the PDF lists.
 - A scan or asset import that named the same host twice (Burp vhosts on one IP, a host repeated in an nmap run) or listed a port twice failed with a server error and imported nothing. Repeated hosts now merge and repeated ports are added once.
+- Opening a note recorded you as its last editor (and bumped its modified time) even if you changed nothing, and every keystroke, yours or a co-editor's, made each open editor send the whole note to the server. Notes are now saved after a pause in your own typing (and when you leave the page), and a save that changes nothing is ignored.
 - Changing only a finding's custom fields on its edit page didn't count as an edit: Save stayed disabled and leaving the page didn't warn about unsaved changes.
 
 ### Removed

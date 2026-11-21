@@ -58,7 +58,7 @@ def harness(db_session, monkeypatch):
     relayed = []
 
     from utils.yjs_server import YjsRoom
-    async def spy_relay(self, ws, data):
+    async def spy_relay(self, ws, data, carries_update=True):
         relayed.append(data)
     monkeypatch.setattr(YjsRoom, "relay_binary", spy_relay)
     return relayed
