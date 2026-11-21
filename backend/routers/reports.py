@@ -70,6 +70,13 @@ def _safe_arcname(name: str) -> str:
     cleaned = cleaned.replace("..", "_")
     return cleaned or "unnamed"
 
+
+def _evidence_arcname(e) -> str:
+    """Archive name for one evidence file. Prefixed with the start of its
+    id so two files with the same name in one finding (or among the
+    engagement's files) don't become duplicate ZIP entries."""
+    return f"{str(e.id)[:8]}_{_safe_arcname(e.original_filename)}"
+
 from database import get_db
 from models.user import User
 from models.engagement import Engagement
@@ -472,7 +479,7 @@ async def _do_generate_report(
                             "file_size": e.file_size,
                             "description": e.description,
                             "include_in_report": e.include_in_report,
-                            "attachment_path": f"attachments/findings/{f.id}/{_safe_arcname(e.original_filename)}" if e.include_in_report else None,
+                            "attachment_path": f"attachments/findings/{f.id}/{_evidence_arcname(e)}" if e.include_in_report else None,
                         }
                         for e in (f.evidence or [])
                     ],
@@ -524,7 +531,7 @@ async def _do_generate_report(
                     "file_size": e.file_size,
                     "description": e.description,
                     "include_in_report": e.include_in_report,
-                    "attachment_path": f"attachments/engagement/{_safe_arcname(e.original_filename)}" if e.include_in_report else None,
+                    "attachment_path": f"attachments/engagement/{_evidence_arcname(e)}" if e.include_in_report else None,
                 }
                 for e in standalone_evidence
             ],
@@ -624,14 +631,14 @@ async def _do_generate_report(
                             if e.include_in_report and e.filename:
                                 try:
                                     file_bytes = await storage_service.download_file(e.filename)
-                                    safe_name = _safe_arcname(e.original_filename)
-                                    if safe_name != (e.original_filename or ""):
+                                    arc_name = _evidence_arcname(e)
+                                    if not arc_name.endswith("_" + (e.original_filename or "")):
                                         logger.warning(
                                             "GHSA-fwvp: sanitized evidence %s original_filename %r → %r for ZIP export",
-                                            e.id, e.original_filename, safe_name,
+                                            e.id, e.original_filename, arc_name,
                                         )
                                     # DEFLATE is CPU-bound: off the event loop.
-                                    await asyncio.to_thread(zf.writestr, f"attachments/findings/{f.id}/{safe_name}", file_bytes)
+                                    await asyncio.to_thread(zf.writestr, f"attachments/findings/{f.id}/{arc_name}", file_bytes)
                                 except Exception:
                                     pass  # Skip files that can't be downloaded
 
@@ -640,13 +647,13 @@ async def _do_generate_report(
                         if e.include_in_report and e.filename:
                             try:
                                 file_bytes = await storage_service.download_file(e.filename)
-                                safe_name = _safe_arcname(e.original_filename)
-                                if safe_name != (e.original_filename or ""):
+                                arc_name = _evidence_arcname(e)
+                                if not arc_name.endswith("_" + (e.original_filename or "")):
                                     logger.warning(
                                         "GHSA-fwvp: sanitized standalone evidence %s original_filename %r → %r for ZIP export",
-                                        e.id, e.original_filename, safe_name,
+                                        e.id, e.original_filename, arc_name,
                                     )
-                                await asyncio.to_thread(zf.writestr, f"attachments/engagement/{safe_name}", file_bytes)
+                                await asyncio.to_thread(zf.writestr, f"attachments/engagement/{arc_name}", file_bytes)
                             except Exception:
                                 pass
         except Exception:
