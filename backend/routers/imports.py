@@ -447,7 +447,7 @@ async def commit_import(
             source_tool=parsed.source_tool,
             source_format=meta.get("format") or None,
             filename=filename,
-            command=(meta.get("args") or None),
+            command=(meta.get("args") or meta.get("command") or None),  # nxc stores "command"
             scanner=(meta.get("scanner") or None),
             scanner_version=(meta.get("version") or None),
             started_at=(meta.get("start") or None),
