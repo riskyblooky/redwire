@@ -83,6 +83,7 @@ section becomes one release entry.
 - Interactive HTML reports shipped sample content from the template design: a fake "Meridian Financial" scope and methodology page, made-up remediation numbers and a sample timeline on the overview, and wrong sidebar counts. Every page now shows only the engagement's own data. Scope & Method shows the engagement's scope, objectives and the layout's text sections (which this format previously left out). Non-image evidence is listed instead of dropped, captions no longer show `&amp;`, and `·`/`–` display correctly when the file is opened from disk.
 - The "chain, in words" list in interactive HTML reports showed blank step numbers, bare IDs and no notes. Each step now reads "source → target" with names, the operator's note, and a link to the finding.
 - Generating a report while the layout builder had unsaved changes produced a report without them. Generate now offers to save the changes first.
+- Editing a note's title and switching to another note (or leaving the page) within a second or two lost the edit, and another user's update could overwrite a title you were typing. Both are fixed.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

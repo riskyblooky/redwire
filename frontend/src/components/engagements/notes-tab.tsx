@@ -131,6 +131,11 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
 
     const titleSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastSavedTitleRef = useRef<string>('');
+    // An edited title not yet saved, with the note it belongs to (the
+    // selection can change before the debounce fires).
+    const pendingTitleRef = useRef<{ id: string; title: string } | null>(null);
+    const updateNoteRef = useRef(updateNote);
+    updateNoteRef.current = updateNote;
 
     const selectedNote = notes.find(n => n.id === selectedNoteId) || null;
 
@@ -151,7 +156,9 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
                         // Update title from fresh cache (content is Y.js-synced)
                         const freshNotes = queryClient.getQueryData<Note[]>(['notes', engagementId]);
                         const freshNote = freshNotes?.find(n => n.id === data.note_id);
-                        if (freshNote) {
+                        // Don't overwrite a title the user is still typing;
+                        // their save follows and wins.
+                        if (freshNote && !pendingTitleRef.current) {
                             setEditTitle(freshNote.title);
                             lastSavedTitleRef.current = freshNote.title;
                         }
@@ -191,30 +198,36 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
         }
     }, [selectedNoteId, selectedNote?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Save the pending title now (debounce fired, blur, note switch, unmount).
+    const flushTitle = useCallback(() => {
+        if (titleSaveTimeoutRef.current) {
+            clearTimeout(titleSaveTimeoutRef.current);
+            titleSaveTimeoutRef.current = null;
+        }
+        const pending = pendingTitleRef.current;
+        pendingTitleRef.current = null;
+        if (!pending) return;
+        setIsTitleSaving(true);
+        updateNoteRef.current.mutateAsync({ id: pending.id, title: pending.title })
+            .then(() => {
+                if (pending.id === selectedNoteIdRef.current) lastSavedTitleRef.current = pending.title;
+            })
+            .catch(() => toast.error('Failed to save title'))
+            .finally(() => setIsTitleSaving(false));
+    }, []);
+
     // Debounced title save (content is synced via Y.js)
     const handleTitleChange = useCallback((value: string) => {
         setEditTitle(value);
+        if (!selectedNoteId) return;
+        pendingTitleRef.current = value === lastSavedTitleRef.current ? null : { id: selectedNoteId, title: value };
         if (titleSaveTimeoutRef.current) clearTimeout(titleSaveTimeoutRef.current);
-        titleSaveTimeoutRef.current = setTimeout(async () => {
-            if (!selectedNoteId || value === lastSavedTitleRef.current) return;
-            setIsTitleSaving(true);
-            try {
-                await updateNote.mutateAsync({ id: selectedNoteId, title: value });
-                lastSavedTitleRef.current = value;
-            } catch {
-                toast.error('Failed to save title');
-            } finally {
-                setIsTitleSaving(false);
-            }
-        }, 1500);
-    }, [selectedNoteId, updateNote]);
+        titleSaveTimeoutRef.current = setTimeout(flushTitle, 1500);
+    }, [selectedNoteId, flushTitle]);
 
-    // Flush pending title save on unmount or note switch
-    useEffect(() => {
-        return () => {
-            if (titleSaveTimeoutRef.current) clearTimeout(titleSaveTimeoutRef.current);
-        };
-    }, [selectedNoteId]);
+    // On note switch or unmount, save the previous note's pending title
+    // rather than dropping it (the timer used to be cleared, losing the edit).
+    useEffect(() => flushTitle, [selectedNoteId, flushTitle]);
 
     const handleCreate = async () => {
         if (!newTitle.trim()) {
@@ -647,6 +660,7 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
                                 <Input
                                     value={editTitle}
                                     onChange={(e) => handleTitleChange(e.target.value)}
+                                    onBlur={flushTitle}
                                     className="h-8 text-lg font-semibold bg-transparent border-none px-0 focus-visible:ring-0 text-white placeholder:text-slate-600"
                                     placeholder="Untitled note..."
                                     disabled={!canEditNote}
