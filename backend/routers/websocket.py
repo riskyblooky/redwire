@@ -164,6 +164,55 @@ def _apply_identify(user_info: dict, claimed) -> None:
         user_info["mode"] = claimed["mode"]
 
 
+async def _engagement_view_allowed(user_row: User, engagement_id: str, db: AsyncSession) -> bool:
+    """The presence socket's view gate for an engagement-scoped resource.
+
+    Admin / read-only-admin / team-lead bypass the per-engagement gate, the
+    same pattern as every REST view endpoint; without it an admin who isn't
+    a direct member couldn't open the collaboration WS at all."""
+    role = getattr(user_row.role, "value", user_row.role)
+    if role in (UserRole.ADMIN.value, UserRole.READ_ONLY_ADMIN.value, UserRole.TEAM_LEAD.value):
+        return True
+    return await check_engagement_permission(user_row.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db)
+
+
+async def _presence_still_allowed(user_id: str, engagement_id: Optional[str]) -> bool:
+    """Whether an open presence socket's user may still have it: active, no
+    forced password change pending, and (engagement-scoped) still able to
+    view the engagement. Uses a fresh session, like the live-edit recheck."""
+    import database as _database
+    async with _database.AsyncSessionLocal() as rdb:
+        live = (await rdb.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if live is None or not live.is_active or live.must_change_password:
+            return False
+        if engagement_id is None:
+            return True
+        return await _engagement_view_allowed(live, engagement_id, rdb)
+
+
+async def _presence_recheck_loop(websocket: WebSocket, user_id: str, engagement_id: Optional[str]) -> None:
+    """Every ``_ACCESS_RECHECK_S``, close the socket (1008) once its user may
+    no longer have it. A transient DB error keeps the socket (fail open for
+    a receive-only channel; the next tick retries)."""
+    while True:
+        await asyncio.sleep(_ACCESS_RECHECK_S or 1)
+        try:
+            if await _presence_still_allowed(user_id, engagement_id):
+                continue
+        except Exception as e:  # noqa: BLE001
+            logger.warning("presence access recheck failed for %s: %s", user_id, e)
+            continue
+        try:
+            await websocket.send_json({"type": "access_revoked"})
+        except Exception:
+            pass
+        try:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass
+        return
+
+
 @router.websocket("/ws/{resource_type}/{resource_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -273,17 +322,9 @@ async def websocket_endpoint(
         # isn't a direct member of the engagement can't open the
         # collaboration WS at all, so /notes and every other real-time
         # surface silently 1008-close for them.
-        if engagement_id is not None:
-            is_admin_view = role in (
-                UserRole.ADMIN.value,
-                UserRole.READ_ONLY_ADMIN.value,
-                UserRole.TEAM_LEAD.value,
-            )
-            if not is_admin_view and not await check_engagement_permission(
-                user_id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db
-            ):
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-                return
+        if engagement_id is not None and not await _engagement_view_allowed(user_row, engagement_id, db):
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
     # 3. Connect to manager. Identity comes from the authenticated DB row;
     # the client's `identify` frame may only set its edit/view mode (see
@@ -297,6 +338,10 @@ async def websocket_endpoint(
         "mode": "view",
     }
     await manager.connect(websocket, resource_type, resource_id, user_info)
+    # Access is re-checked while the socket is open, as the live-edit sockets
+    # do: a deactivated user, or one removed from the engagement, otherwise
+    # kept receiving its events until they closed the tab.
+    recheck_task = asyncio.create_task(_presence_recheck_loop(websocket, user_id, engagement_id))
 
     # GHSA-c96m-c63f-3f2c: route cleanup through `finally` so the slot is
     # released on every exit path — clean disconnect, malformed frame,
@@ -345,6 +390,7 @@ async def websocket_endpoint(
             resource_type, resource_id, user_id, type(exc).__name__, exc,
         )
     finally:
+        recheck_task.cancel()
         await manager.leave(websocket, resource_type, resource_id)
         try:
             await manager.broadcast_to_resource(resource_type, resource_id, {
