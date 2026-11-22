@@ -597,7 +597,14 @@ async def _serve_yjs_room(
     room = yjs_store.get_or_create_room(key, persist=persist)
     await room.add_client(websocket, user_id)
     _yjs_conn = _uuid.uuid4().hex
-    await _bus.presence_add("yjs", key, _yjs_conn, {"id": user_id})
+    # tab + can_edit let the version-restore guard skip read-only viewers and
+    # the restoring tab's own editors (utils/collab_fields.py).
+    _qp = getattr(websocket, "query_params", None)
+    _tab = ((_qp.get("tab") if _qp is not None else None) or "")[:64]
+
+    async def _publish_presence() -> None:
+        await _bus.presence_add("yjs", key, _yjs_conn, {"id": user_id, "tab": _tab, "can_edit": bool(can_edit)})
+    await _publish_presence()
 
     # Start cleanup loop if not running
     yjs_store.start_cleanup_loop()
@@ -644,6 +651,7 @@ async def _serve_yjs_room(
             if can_edit:
                 can_edit = False
                 await _send_json({"type": "access_changed", "can_edit": False})
+                await _publish_presence()
             last_check = 0.0  # try again on the next frame
             return True
         if allowed is None:
@@ -653,6 +661,7 @@ async def _serve_yjs_room(
         if allowed != can_edit:
             can_edit = allowed
             await _send_json({"type": "access_changed", "can_edit": can_edit})
+            await _publish_presence()
         return True
 
     async def _send_json(payload: dict) -> None:

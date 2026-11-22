@@ -1,3 +1,4 @@
+import { TAB_ID } from '../tab-id';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
@@ -63,7 +64,10 @@ export function useRestoreVersion(entityType: VersionedEntity, entityId: string)
     const basePath = BASE_PATHS[entityType];
     return useMutation({
         mutationFn: async (versionId: string) => {
-            const { data } = await api.post(`/${basePath}/${entityId}/versions/${versionId}/restore`);
+            // X-Tab-Id: this tab's own live editors don't block the restore
+            // (the panel reloads them); the same user's other tabs do.
+            const { data } = await api.post(`/${basePath}/${entityId}/versions/${versionId}/restore`, undefined,
+                { headers: { 'X-Tab-Id': TAB_ID } });
             return data;
         },
         onSuccess: () => {

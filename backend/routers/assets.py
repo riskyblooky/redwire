@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header
 from schemas._field_limits import MAX_LIST_LIMIT
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1075,6 +1075,7 @@ async def restore_asset_version(
     version_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    x_tab_id: Optional[str] = Header(None, max_length=64),
 ):
     """Restore an asset to a prior version's field values (snapshotting the
     current state first, so a restore is reversible)."""
@@ -1102,7 +1103,7 @@ async def restore_asset_version(
         update_data["asset_type"] = await resolve_asset_type(update_data["asset_type"], db, fallback="Other") or update_data["asset_type"]
 
     from utils.collab_fields import assert_no_other_live_editors
-    await assert_no_other_live_editors("asset", asset.id, current_user.id)
+    await assert_no_other_live_editors("asset", asset.id, current_user.id, tab_id=x_tab_id)
     await create_version_snapshot(db, asset, "asset", update_data, current_user.id)
     for field, value in update_data.items():
         setattr(asset, field, value)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -960,6 +960,7 @@ async def restore_finding_version(
     version_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    x_tab_id: Optional[str] = Header(None, max_length=64),
 ):
     """Restore a finding to a prior version's field values. The current state
     is snapshotted first, so a restore is itself reversible."""
@@ -1004,7 +1005,7 @@ async def restore_finding_version(
 
     # Snapshot the current state first, then apply the restored values.
     from utils.collab_fields import assert_no_other_live_editors
-    await assert_no_other_live_editors("finding", finding.id, current_user.id)
+    await assert_no_other_live_editors("finding", finding.id, current_user.id, tab_id=x_tab_id)
     await create_version_snapshot(db, finding, "finding", update_data, current_user.id)
     from utils.peer_review import withdraw_approvals_if_reviewed_changed
     await withdraw_approvals_if_reviewed_changed(

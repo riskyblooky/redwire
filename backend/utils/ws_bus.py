@@ -252,6 +252,17 @@ class WsBus:
         except Exception as e:
             logger.debug("ws_bus: presence_remove failed: %s", e)
 
+    def presence_local(self, resource_type: str, resource_id: str) -> List[dict]:
+        """This worker's own presence entries for the channel (the fallback
+        when the registry is unavailable)."""
+        out = []
+        for v in self._local_presence.get(self._presence_key(resource_type, resource_id), {}).values():
+            try:
+                out.append(json.loads(v))
+            except ValueError:
+                continue
+        return out
+
     async def presence_list(self, resource_type: str, resource_id: str) -> Optional[List[dict]]:
         """User infos connected to the channel on any live worker, or None if
         the registry is unavailable (caller falls back to local sockets)."""

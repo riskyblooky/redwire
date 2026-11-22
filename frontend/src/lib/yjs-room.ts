@@ -13,6 +13,7 @@
  * doc is still empty.
  */
 
+import { TAB_ID } from './tab-id';
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import type { Editor } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
@@ -56,7 +57,7 @@ export function yjsSocketUrl(path: string): string {
         : `${protocol}//${host}/api`;
     // Token is intentionally NOT in the URL — it's sent as the first frame
     // after open. CWE-598 (bearer-in-URL).
-    return `${base}/ws/yjs/${path}`;
+    return `${base}/ws/yjs/${path}?tab=${encodeURIComponent(TAB_ID)}`;
 }
 
 /** TipTap extension drawing peers' carets from awareness. */

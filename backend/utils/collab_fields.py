@@ -226,25 +226,35 @@ async def _announce_field_saved(resource_type: str, resource_id: str, field: str
         logger.warning("collab field: record_updated broadcast failed: %s", e)
 
 
-async def assert_no_other_live_editors(resource_type: str, resource_id: str, user_id: str) -> None:
-    """409 if someone else has one of the record's text fields open live.
+async def assert_no_other_live_editors(resource_type: str, resource_id: str, user_id: str,
+                                      tab_id: str | None = None) -> None:
+    """409 if another live editor has one of the record's text fields open.
 
     A version restore rewrites the stored text, but an open live editor still
-    holds the old text and would auto-save it back on the next keystroke."""
+    holds the old text and would auto-save it back on the next keystroke.
+
+    Counted: every socket that can edit, except the restoring tab's own
+    (``tab_id``; that tab reloads its editors after the restore). That
+    includes the caller's editor in another tab, which the user-id check
+    used to skip. Not counted: read-only viewers, which never save (they
+    used to block the restore). A socket from before presence carried
+    can_edit / tab counts as an editor; without ``tab_id`` the caller's own
+    sockets are skipped as before."""
     from fastapi import HTTPException, status as http_status
     from utils.ws_bus import bus
-    from utils.yjs_server import yjs_store
 
     others = 0
     for field in COLLAB_FIELDS.get(resource_type, ()):
         key = room_key(resource_type, resource_id, field)
         members = await bus.presence_list("yjs", key)
         if members is None:  # no registry — this worker's sockets only
-            room = yjs_store.rooms.get(key)
-            ids = list(room.client_user_ids.values()) if room else []
-        else:
-            ids = [m.get("id") for m in members]
-        others += sum(1 for uid in ids if uid and uid != user_id)
+            members = bus.presence_local("yjs", key)
+        for m in members:
+            if not m.get("id") or m.get("can_edit") is False:
+                continue
+            if m["id"] == user_id and (not tab_id or m.get("tab") == tab_id):
+                continue
+            others += 1
     if others:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,

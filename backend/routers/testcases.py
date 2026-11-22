@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -447,6 +447,7 @@ async def restore_testcase_version(
     version_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    x_tab_id: Optional[str] = Header(None, max_length=64),
 ):
     """Restore a test case to a prior version's field values (snapshotting the
     current state first, so a restore is reversible)."""
@@ -479,7 +480,7 @@ async def restore_testcase_version(
     update_data = {f: snap[f] for f in TESTCASE_VERSIONED_FIELDS if f in snap}
 
     from utils.collab_fields import assert_no_other_live_editors
-    await assert_no_other_live_editors("testcase", tc.id, current_user.id)
+    await assert_no_other_live_editors("testcase", tc.id, current_user.id, tab_id=x_tab_id)
     await create_version_snapshot(db, tc, "testcase", update_data, current_user.id)
     for field, value in update_data.items():
         setattr(tc, field, value)
