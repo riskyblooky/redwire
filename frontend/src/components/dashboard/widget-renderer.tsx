@@ -23,7 +23,7 @@ import {
     ScatterChart, Scatter, ZAxis,
 } from 'recharts';
 import { formatDistanceToNow, format } from 'date-fns';
-import { parseUTCDate } from '@/lib/utils';
+import { parseDateOnly, parseUTCDate } from '@/lib/utils';
 import {
     useOverviewStats, useSeverityDistribution, useEngagementStatus,
     useFindingsByStatus, useFindingsTimeline, useEngagementTypes,
@@ -955,7 +955,7 @@ function OverlayWidget({ widget, isEditing, onRemove }: {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis
                         dataKey="date"
-                        tickFormatter={(v: string) => v ? format(new Date(v), 'MMM d') : ''}
+                        tickFormatter={(v: string) => v ? format(parseDateOnly(v), 'MMM d') : ''}
                         stroke="#94a3b8"
                         fontSize={10}
                     />

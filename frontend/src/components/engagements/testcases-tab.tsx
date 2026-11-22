@@ -29,7 +29,7 @@ import {
     CornerDownRight, GripVertical, FolderTree, TreePine, Table2, Zap,
     Flag, Layout, Circle, ArrowUpCircle, GitBranch, Globe, Settings, Filter, X,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, parseDateOnly } from '@/lib/utils';
 import { toast } from 'sonner';
 import { ResultCount } from '@/components/ui/result-count';
 import {
@@ -525,7 +525,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
             const matchesStatus = !filters.status || (filters.status === 'executed' ? node.is_executed : !node.is_executed);
             const matchesResult = !filters.result || (node.is_executed && (filters.result === 'passed' ? node.is_successful === true : node.is_successful === false));
             const matchesCreatedBy = !filters.createdBy || (node.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
-            const matchesDate = !filters.dateAfter || new Date(node.created_at) >= new Date(filters.dateAfter);
+            const matchesDate = !filters.dateAfter || parseUTCDate(node.created_at) >= parseDateOnly(filters.dateAfter);
             return matchesText && matchesCat && matchesTags && matchesStatus && matchesResult && matchesCreatedBy && matchesDate;
         }
         if (!search && !hasActiveFilters) return testCaseTree;

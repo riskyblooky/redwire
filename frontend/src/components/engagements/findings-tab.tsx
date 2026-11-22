@@ -24,7 +24,7 @@ import {
     Lock, Sparkles, Server, MoreVertical, Trash2, Edit, MessageSquare,
     StickyNote, Radar, Settings, Filter, X, Link as LinkIcon, Paperclip, GitBranch, CheckSquare,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, parseDateOnly } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useFindings, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
 import { ResultCount } from '@/components/ui/result-count';
@@ -466,7 +466,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
             const matchesCategory = filters.categories.length === 0 || (f.category != null && filters.categories.includes(f.category));
             const matchesTags = filters.tags.length === 0 || (f.tags || []).some((t: any) => filters.tags.includes(t.id));
             const matchesCreatedBy = !filters.createdBy || (f.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
-            const matchesDate = !filters.dateAfter || new Date(f.created_at) >= new Date(filters.dateAfter);
+            const matchesDate = !filters.dateAfter || parseUTCDate(f.created_at) >= parseDateOnly(filters.dateAfter);
             return matchesText && matchesSeverity && matchesStatus && matchesCategory && matchesTags && matchesCreatedBy && matchesDate;
         })
         .sort(relevanceComparator(

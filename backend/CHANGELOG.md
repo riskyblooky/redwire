@@ -152,6 +152,7 @@ section becomes one release entry.
 - Attack graph: nodes you moved no longer jump back when the graph refreshes (e.g. after adding an attacker) or when switching to fullscreen.
 - Filtering test cases now shows matching test cases nested under collapsed parents.
 - Version history showed wrong relative times ("just now" for hours, or hours off) outside the UTC timezone. Fixed.
+- Outside UTC, some dates showed or filtered a day off (scheduling date range, dashboard chart labels, "created after" filters). Fixed.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

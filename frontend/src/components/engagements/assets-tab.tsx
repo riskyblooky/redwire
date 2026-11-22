@@ -32,7 +32,7 @@ import {
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
     Settings,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, parseDateOnly } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAssets, useUpdateAsset, useDeleteAsset, useAssetPortFilters } from '@/lib/hooks/use-assets';
 import { useFindings } from '@/lib/hooks/use-findings';
@@ -521,7 +521,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
             if (assetFilters.pwned === 'yes' && !a.is_pwned) return false;
             if (assetFilters.pwned === 'no' && a.is_pwned) return false;
             if (assetFilters.createdBy.length > 0 && !assetFilters.createdBy.includes(a.created_by_username)) return false;
-            if (assetFilters.dateAfter && new Date(a.created_at) < new Date(assetFilters.dateAfter)) return false;
+            if (assetFilters.dateAfter && parseUTCDate(a.created_at) < parseDateOnly(assetFilters.dateAfter)) return false;
             return true;
         });
     }, [assets, assetFilters, hasAssetFilters]);

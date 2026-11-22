@@ -31,7 +31,7 @@ import {
     CommandItem,
     CommandList,
 } from '@/components/ui/command';
-import { cn } from '@/lib/utils';
+import { cn, parseDateOnly } from '@/lib/utils';
 import {
     Users, Loader2, Clock,
     Target,
@@ -126,7 +126,7 @@ export function SchedulingAssistant({
     // Determine the effective date range based on mode
     const { rangeStart, rangeEnd } = useMemo(() => {
         if (dateMode === 'custom') {
-            return { rangeStart: new Date(customStart), rangeEnd: new Date(customEnd) };
+            return { rangeStart: parseDateOnly(customStart), rangeEnd: parseDateOnly(customEnd) };
         }
         if (dateMode === 'engagement' && selectedEngagementId) {
             const eng = allEngagements.find(e => e.id === selectedEngagementId);
