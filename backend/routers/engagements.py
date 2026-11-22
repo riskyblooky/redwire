@@ -757,8 +757,20 @@ async def update_engagement(
         )
 
     # Enforce the same global name uniqueness on rename (excluding self).
+    # Required columns can't be cleared: an explicit null used to be coerced
+    # to "" and saved (then the response failed validation: a 500 with the
+    # engagement renamed to nothing).
+    for _req in ("name", "client_name", "engagement_type", "status"):
+        if _req in update_data and (update_data[_req] is None or (isinstance(update_data[_req], str) and not update_data[_req].strip())):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail=f"'{_req}' can't be empty.")
+    # client_id "" means "no client" (a form's cleared select), not a client
+    # id that doesn't exist (which failed the foreign key with a 500).
+    if update_data.get("client_id") == "":
+        update_data["client_id"] = None
+
     if "name" in update_data:
-        _new_name = (update_data["name"] or "").strip()
+        _new_name = update_data["name"].strip()
         update_data["name"] = _new_name
         if (await db.execute(
             select(Engagement.id).where(

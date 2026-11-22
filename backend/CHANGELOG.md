@@ -107,6 +107,7 @@ section becomes one release entry.
 - The Shodan plugin's "Rate limit (per minute)" setting had no effect. It's now enforced, and manual lookups reuse recently fetched results instead of spending API quota again.
 - SAML sign-in and SP metadata failed with a server error when the SP entity ID was left blank. A blank ID now defaults to the metadata URL, and a broken SAML setup returns a clear "not configured" message.
 - Changing a calculator-scored finding's severity or CVSS by hand kept the old calculator inputs, which no longer matched the score. The finding now counts as manually scored.
+- Clearing an engagement's name through the API saved it as blank and returned a server error, and clearing its client returned a server error. A blank name is now rejected, and a cleared client unlinks the client.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
