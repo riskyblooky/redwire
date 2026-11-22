@@ -524,7 +524,7 @@ export default function TemplatesPage() {
     const handleUnpublishFT = async (template: FindingTemplate) => {
         const confirmed = await confirm({
             title: 'Unpublish Template',
-            description: `Move "${template.title}" back to draft? It will no longer be visible to other users.`,
+            description: `Unpublish "${template.title}"? Other users will no longer see it. If you didn't create it, it goes back to the review queue (its author and managers can see it there).`,
             confirmLabel: 'Unpublish',
             variant: 'warning',
         });
@@ -589,7 +589,7 @@ export default function TemplatesPage() {
     const handleUnpublishTC = async (template: TestCaseTemplate) => {
         const confirmed = await confirm({
             title: 'Unpublish Template',
-            description: `Move "${template.title}" back to draft? It will no longer be visible to other users.`,
+            description: `Unpublish "${template.title}"? Other users will no longer see it. If you didn't create it, it goes back to the review queue (its author and managers can see it there).`,
             confirmLabel: 'Unpublish',
             variant: 'warning',
         });
@@ -654,7 +654,7 @@ export default function TemplatesPage() {
     const handleUnpublishRB = async (rb: Runbook) => {
         const confirmed = await confirm({
             title: 'Unpublish Runbook',
-            description: `Move "${rb.name}" back to draft? It will no longer be visible to other users.`,
+            description: `Unpublish "${rb.name}"? Other users will no longer see it. If you didn't create it, it goes back to the review queue (its author and managers can see it there).`,
             confirmLabel: 'Unpublish',
             variant: 'warning',
         });

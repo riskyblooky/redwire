@@ -345,7 +345,7 @@ async def unpublish_template(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Move a published template back to draft (PUBLISHED → DRAFT). Manage roles only."""
+    """Unpublish (PUBLISHED → DRAFT for the creator, else → SUBMITTED). Manage roles only."""
     if not await _can_manage(current_user, db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
@@ -356,7 +356,17 @@ async def unpublish_template(
     if template.status != TemplateStatus.PUBLISHED:
         raise HTTPException(status_code=409, detail="Only published templates can be unpublished")
 
-    template.status = TemplateStatus.DRAFT
+    # A draft is visible only to its creator, so unpublishing someone else's
+    # template (or a seeded one, with no creator) to DRAFT left it where no
+    # manager could see, re-publish or delete it. It goes back to the review
+    # queue instead (creator + managers see it; the creator can withdraw it
+    # to edit). A manager unpublishing their own template gets a draft.
+    if template.created_by == current_user.id:
+        template.status = TemplateStatus.DRAFT
+        template.submitted_at = None
+    else:
+        template.status = TemplateStatus.SUBMITTED
+        template.submitted_at = datetime.utcnow()
     template.published_at = None
     template.published_by = None
     template.updated_by = current_user.id

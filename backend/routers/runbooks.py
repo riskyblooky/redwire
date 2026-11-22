@@ -510,7 +510,15 @@ async def unpublish_runbook(
     if runbook.status != TemplateStatus.PUBLISHED:
         raise HTTPException(status_code=409, detail="Only published runbooks can be unpublished")
 
-    runbook.status = TemplateStatus.DRAFT
+    # Same rule as templates: another user's (or a seeded) runbook goes back
+    # to the review queue, since a DRAFT is visible only to its creator and
+    # would be stranded where no manager could see it.
+    if runbook.created_by == current_user.id:
+        runbook.status = TemplateStatus.DRAFT
+        runbook.submitted_at = None
+    else:
+        runbook.status = TemplateStatus.SUBMITTED
+        runbook.submitted_at = datetime.utcnow()
     runbook.published_at = None
     runbook.published_by = None
     runbook.updated_by = current_user.id

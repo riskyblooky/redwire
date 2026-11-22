@@ -110,6 +110,7 @@ section becomes one release entry.
 - Clearing an engagement's name through the API saved it as blank and returned a server error, and clearing its client returned a server error. A blank name is now rejected, and a cleared client unlinks the client.
 - Editing, replacing or deleting evidence that wasn't tied to an engagement returned a server error even though the change was saved, and the change was missing from the activity log. It now succeeds and is logged.
 - A cleanup artifact created as Cleaned didn't record who cleaned it or when, and one moved back out of Cleaned still showed it as cleaned. Both now follow the status.
+- Unpublishing a template or runbook created by someone else hid it from every manager. It now goes back to the review queue instead.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
