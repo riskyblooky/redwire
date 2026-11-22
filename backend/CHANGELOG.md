@@ -120,6 +120,7 @@ section becomes one release entry.
 - Users without calendar edit permission could add their own out-of-office entry but not change it. They can now edit their own.
 - An automation rule that still listed a deleted user could stop its notifications from reaching anyone. Deleted and deactivated users are now skipped.
 - Clearing a discussion thread's title through the API returned a server error. It's now rejected with a clear message.
+- Discussions: an edited comment now updates for everyone viewing the thread, and plugins subscribed to thread and comment events now receive them.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

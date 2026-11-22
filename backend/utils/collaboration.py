@@ -551,7 +551,13 @@ async def create_activity_log(
     ``origin_engagement_id`` is for an entry about an engagement that no
     longer exists (its deletion), where ``engagement_id`` can't be set.
     """
+    import enum
     import traceback as tb
+
+    # A str-Enum member (ResourceType.THREAD) formats as "ResourceType.THREAD",
+    # which named plugin events "ResourceType.THREAD.created". Use its value.
+    if isinstance(resource_type, enum.Enum):
+        resource_type = resource_type.value
 
     # ── 1. Persist the activity log entry ──────────────────────────────
     caller_pending = bool(db.new or db.dirty or db.deleted)

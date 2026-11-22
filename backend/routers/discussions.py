@@ -419,7 +419,8 @@ async def resolve_thread(
         except Exception:
             pass
     
-    await _broadcast_discussion_update(thread.engagement_id, thread.id, "resolved_thread")
+    # The action matches the log's (a reopen was broadcast as "resolved").
+    await _broadcast_discussion_update(thread.engagement_id, thread.id, f"{action_word}_thread")
     return response
 
 @router.delete("/threads/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -668,6 +669,11 @@ async def update_comment(
         .where(Comment.id == comment_id)
     )
     comment = result.scalar_one()
+    # Other viewers' open threads refresh on an edit, as on create/delete
+    # (an edit used to broadcast nothing).
+    _t = (await db.execute(select(Thread.engagement_id).where(Thread.id == comment.thread_id))).scalar_one_or_none()
+    if _t:
+        await _broadcast_discussion_update(_t, comment.thread_id, "updated_comment")
     comment_dict = CommentResponse.model_validate(comment).model_dump()
     comment_dict["author_name"] = (comment.author.full_name or comment.author.username) if comment.author else None
     comment_dict["author_profile_photo"] = comment.author.profile_photo if comment.author else None
