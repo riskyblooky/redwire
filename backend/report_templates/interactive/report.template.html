@@ -892,7 +892,11 @@ const allEv=FINDINGS.flatMap(f=>(f.ev||[]).filter(e=>e.img).map(e=>({e,f})));
 $('#gallery').innerHTML=allEv.length?allEv.map(({e,f})=>`<div class="gcard" data-ev data-cap="${esc(e.cap||f.id)}"><img src="${e.img}" alt="${esc(e.cap||'')}"><div class="gm"><div class="gt">${f.id}</div><div class="gs">${esc(f.title)}</div></div></div>`).join(''):'<div class="card pad" style="grid-column:1/-1;text-align:center;color:var(--ink-muted)">No evidence attached to findings.</div>';
 
 /* attack chain */
-if(!CHAIN.length){const c=$('#chain'),card=c&&c.closest('.card'); if(card){card.style.display='none'; const h=card.previousElementSibling; if(h&&h.tagName==='H3')h.style.display='none';}} else $('#chain').innerHTML=CHAIN.map(s=>`<div class="step"><div class="step-n"><div class="step-dot">${esc(s.n)}</div><div class="step-line"></div></div><div class="step-c"><h4>${esc(s.t)}</h4><p class="st-x">${esc(s.x)}</p><div class="st-meta"><span class="chip ${esc(s.sev)}" style="cursor:pointer" data-open="${esc(s.f)}">${esc(s.f)}</span></div></div></div>`).join('');
+if(!CHAIN.length){const c=$('#chain'),card=c&&c.closest('.card'); if(card){card.style.display='none'; const h=card.previousElementSibling; if(h&&h.tagName==='H3')h.style.display='none';}} else { /* chain edges are {s, t, note} (display ids); name each end and chip any finding */
+ const chainLabel=id=>{const f=FINDINGS.find(x=>x.id===id); if(f) return f.id+' · '+f.title; const t=TC.find(x=>x.id===id); if(t) return t.label; const v=CHAIN_VAULT.find(x=>x.id===id); return v?v.label:id;};
+ $('#chain').innerHTML=CHAIN.map((s,i)=>{const fs=[s.s,s.t].map(id=>FINDINGS.find(x=>x.id===id)).filter(Boolean);
+   return `<div class="step"><div class="step-n"><div class="step-dot">${i+1}</div><div class="step-line"></div></div><div class="step-c"><h4>${esc(chainLabel(s.s))} → ${esc(chainLabel(s.t))}</h4>${s.note?`<p class="st-x">${esc(s.note)}</p>`:''}<div class="st-meta">${fs.map(f=>`<span class="chip ${esc(f.sev)}" style="cursor:pointer" data-open="${esc(f.id)}">${esc(f.id)}</span>`).join('')}</div></div></div>`;}).join('');
+}
 
 /* ---------- interactions ---------- */
 // render the full attack graph once
