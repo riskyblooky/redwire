@@ -524,8 +524,8 @@ async def create_infra_vault_item(
 @router.post("/items/{item_id}/vault/upload", response_model=InfraVaultItemResponse, status_code=status.HTTP_201_CREATED)
 async def upload_infra_vault_file(
     item_id: str,
-    name: str = Form(...),
-    description: Optional[str] = Form(None),
+    name: str = Form(..., max_length=255),
+    description: Optional[str] = Form(None, max_length=32768),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

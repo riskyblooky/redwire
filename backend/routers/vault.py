@@ -182,8 +182,8 @@ async def create_vault_item(
 @router.post("/upload", response_model=VaultItemResponse)
 async def upload_vault_file(
     engagement_id: str = Form(...),
-    name: str = Form(...),
-    description: Optional[str] = Form(None),
+    name: str = Form(..., max_length=255),
+    description: Optional[str] = Form(None, max_length=32768),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)

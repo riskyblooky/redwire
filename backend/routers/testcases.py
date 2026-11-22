@@ -818,7 +818,7 @@ async def unlink_asset_from_testcase(
 async def upload_testcase_evidence(
     testcase_id: str,
     file: UploadFile = File(...),
-    description: Optional[str] = Form(None),
+    description: Optional[str] = Form(None, max_length=500),  # evidence.description is String(500)
     include_in_report: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)

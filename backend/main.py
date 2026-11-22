@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, DBAPIError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
@@ -536,6 +536,25 @@ async def _integrity_conflict(request: Request, exc: IntegrityError):
 
 
 app.add_exception_handler(IntegrityError, _integrity_conflict)
+
+_TOO_LONG_RE = re.compile(r"value too long for type character varying\((\d+)\)")
+
+
+async def _data_error(request: Request, exc: DBAPIError):
+    """A string longer than its column. Schemas cap most fields, but one
+    without a max_length used to surface as a 500; it's the client's input,
+    so a 422. (Postgres doesn't name the column in this error.)"""
+    m = _TOO_LONG_RE.search(str(getattr(exc, "orig", exc)))
+    if m:
+        logging.getLogger(__name__).warning(
+            "String too long for a varchar(%s) column (%s %s)", m.group(1),
+            getattr(request, "method", "?"), getattr(getattr(request, "url", None), "path", "?"))
+        return JSONResponse(status_code=422,
+                            content={"detail": f"A field is longer than allowed (max {m.group(1)} characters)."})
+    raise exc
+
+
+app.add_exception_handler(DBAPIError, _data_error)  # asyncpg raises it as a bare DBAPIError
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/profile_photos", exist_ok=True)
