@@ -301,12 +301,12 @@ def test_markdown_from_html_converts_basic_tags():
 
 
 def test_markdown_from_html_strips_entity_encoded_markup():
-    # The comment in-source: entity-encoded markup must not survive the
-    # unescape-then-strip pass (defends against &lt;img onerror=…&gt;).
+    # Entity-encoded markup (&lt;img onerror=…&gt;) must not come out as a
+    # raw tag. It used to be deleted outright, which also deleted author text
+    # such as <username>; it is kept now, as inert text.
     out = _markdown_from_html("safe &lt;img src=x onerror=alert(1)&gt; text")
     assert "<img" not in out
-    assert "onerror" not in out
-    assert "safe" in out and "text" in out
+    assert out == "safe &lt;img src=x onerror=alert(1)> text"
 
 
 def test_markdown_from_html_strips_raw_tags():

@@ -683,9 +683,19 @@ def _md_to_flowables(
 
 
 def _markdown_from_html(html: str) -> str:
+    """Report field bodies to markdown. They are stored as markdown by the
+    editor (tiptap-markdown, html:false: prose "<" is saved as "&lt;", code
+    is saved verbatim); the HTML conversions handle any legacy HTML. Code
+    spans and fences already in the source pass through untouched, so a
+    literal "<file>" in code isn't taken for a tag."""
     if not html:
         return ""
-    text = html
+    parts = _CODE_RE.split(html)
+    return ''.join(p if i % 2 else _html_segment_to_markdown(p)
+                   for i, p in enumerate(parts)).strip()
+
+
+def _html_segment_to_markdown(text: str) -> str:
     text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1\n', text, flags=re.DOTALL)
     text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1\n', text, flags=re.DOTALL)
     text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1\n', text, flags=re.DOTALL)
@@ -699,13 +709,24 @@ def _markdown_from_html(html: str) -> str:
     text = re.sub(r'</?[uo]l[^>]*>', '', text)
     text = re.sub(r'<pre[^>]*><code[^>]*>(.*?)</code></pre>', r'```\n\1\n```\n', text, flags=re.DOTALL)
     text = re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.DOTALL)
-    # Decode entities before the catch-all tag strip, so entity-encoded markup
-    # (e.g. &lt;img onerror=…&gt;) can't survive sanitisation. html.unescape
-    # covers named + numeric entities. Normalise nbsp back to ASCII space to
-    # preserve prior behaviour.
-    text = _html_unescape(text).replace('\xa0', ' ')
+    # Strip the remaining real tags while text is still entity-encoded, so
+    # only markup goes: decoding first deleted any "<…>" the author wrote as
+    # text (<username>, List<String>, code). Then decode, and write "<" as
+    # "&lt;" outside code so decoded text such as "<img onerror=…>" can't act
+    # as raw HTML in a markdown viewer. An entity is inert in every renderer
+    # (a backslash escape isn't: Python-Markdown passes "\<tag>" through);
+    # inside code spans and fences a literal "<" is already inert.
     text = re.sub(r'<[^>]+>', '', text)
-    return text.strip()
+    text = _html_unescape(text).replace('\xa0', ' ')
+    return _escape_lt_outside_code(text)
+
+
+_CODE_RE = re.compile(r'(```.*?```|`[^`\n]*`)', re.DOTALL)
+
+
+def _escape_lt_outside_code(text: str) -> str:
+    parts = _CODE_RE.split(text)
+    return ''.join(p if i % 2 else p.replace('<', '&lt;') for i, p in enumerate(parts))
 
 
 def _decode_logo(logo_base64: str) -> Optional[io.BytesIO]:
@@ -2839,6 +2860,21 @@ class MarkdownReportGenerator:
 # HTML Report Generator — self-contained, styled, marking-aware
 # ═══════════════════════════════════════════════════════════════════
 
+def _markdown_without_raw_html(text: str) -> str:
+    """Render markdown with raw HTML switched off: Python-Markdown's HTML
+    block preprocessor and inline-HTML pattern are removed, so author
+    content can't inject <script> / <img onerror=…> (any "<…>" is output
+    as escaped text) while all markdown syntax still works. Escaping the
+    source first instead (the previous approach) double-escaped code
+    ("&lt;" shown literally) and turned "> quote" into "&gt; quote".
+    Dangerous URL schemes in links are stripped by the caller."""
+    import markdown as _markdown
+    md = _markdown.Markdown(extensions=['extra', 'sane_lists', 'nl2br'])
+    md.preprocessors.deregister('html_block')
+    md.inlinePatterns.deregister('html')
+    return md.convert(text)
+
+
 class HTMLReportGenerator:
     """Produces a single self-contained HTML document (inline CSS, base64
     images) — an editable deliverable clients can open in a browser or import
@@ -2905,14 +2941,8 @@ class HTMLReportGenerator:
     def _md(self, text):
         if not text:
             return ''
-        import html as _html
         try:
-            import markdown as _markdown
-            # Report fields are markdown. Escape any raw HTML first so author
-            # content (finding descriptions, etc.) cannot inject <script>/<img
-            # onerror=…> into the rendered report — markdown syntax still works.
-            safe = _html.escape(str(text), quote=False)
-            html = _markdown.markdown(safe, extensions=['extra', 'sane_lists', 'nl2br'])
+            html = _markdown_without_raw_html(str(text))
         except Exception:
             html = '<p>' + _escape_xml(str(text)).replace('\n', '<br/>') + '</p>'
         # Neutralize dangerous URL schemes markdown may emit from links like
