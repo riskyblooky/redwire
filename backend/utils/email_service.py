@@ -121,6 +121,17 @@ def _build_smtp_tls_context(settings: Dict[str, str]) -> ssl.SSLContext:
     return ssl.create_default_context()
 
 
+def smtp_port(raw) -> int:
+    """The configured SMTP port; 587 when blank or not a valid port (a blank
+    port field used to raise ValueError on every send and on the settings
+    page)."""
+    try:
+        port = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return 587
+    return port if 0 < port < 65536 else 587
+
+
 def _send_smtp(
     host: str,
     port: int,
@@ -172,8 +183,12 @@ def _send_smtp(
         tls_context = ssl.create_default_context()
 
     try:
-        if use_tls and port == 465:
-            # Implicit TLS (SMTPS)
+        if port == 465:
+            # Implicit TLS (SMTPS). 465 is TLS-only: with TLS unticked, plain
+            # SMTP sat waiting for a greeting the server never sends in
+            # cleartext until the timeout. Always TLS here.
+            if not use_tls:
+                logger.warning("SMTP port 465 is implicit TLS; connecting with TLS although it is turned off")
             server = smtplib.SMTP_SSL(host, port, timeout=15, context=tls_context)
         else:
             server = smtplib.SMTP(host, port, timeout=15)
@@ -212,7 +227,7 @@ async def send_email(
         return False
 
     host = cfg.get("smtp_host", "")
-    port = int(cfg.get("smtp_port", "587"))
+    port = smtp_port(cfg.get("smtp_port"))
     username = cfg.get("smtp_username", "")
     password = cfg.get("smtp_password", "")
     use_tls = cfg.get("smtp_use_tls", "true").lower() == "true"

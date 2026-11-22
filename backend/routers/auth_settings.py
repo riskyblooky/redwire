@@ -351,12 +351,13 @@ async def update_splash_settings(
 @router.get("/smtp", dependencies=[Depends(require_roles(ADMIN_ROLES))])
 async def get_smtp_settings(db: AsyncSession = Depends(get_db)):
     """Return current SMTP settings (password masked)."""
+    from utils.email_service import smtp_port
     raw = await _get_all_settings(db)
     return {
         "smtp": SmtpSettings(
             enabled=raw.get("smtp_enabled", "false").lower() == "true",
             host=raw.get("smtp_host", ""),
-            port=int(raw.get("smtp_port", "587")),
+            port=smtp_port(raw.get("smtp_port")),
             username=raw.get("smtp_username", ""),
             password="••••••••" if raw.get("smtp_password") else "",
             from_email=raw.get("smtp_from_email", ""),
