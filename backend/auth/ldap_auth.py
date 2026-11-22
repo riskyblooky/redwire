@@ -4,7 +4,6 @@ Uses ldap3 to bind and search against an LDAP/Active Directory server.
 """
 from typing import Optional, Dict, Any, List
 import logging
-import tempfile
 import os
 import time
 
@@ -144,11 +143,9 @@ def _build_tls_config(settings: Dict[str, str]):
         return Tls(validate=ssl.CERT_NONE)
 
     if ca_cert_pem:
-        # Write CA cert to temp file for ssl context
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem", mode="w")
-        tmp.write(ca_cert_pem)
-        tmp.close()
-        return Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=tmp.name)
+        # Passed in memory: writing it to a NamedTemporaryFile(delete=False)
+        # left one .pem in /tmp per LDAP login, never removed.
+        return Tls(validate=ssl.CERT_REQUIRED, ca_certs_data=ca_cert_pem)
 
     return Tls(validate=ssl.CERT_REQUIRED)
 
@@ -255,6 +252,7 @@ def authenticate_ldap(
     settings: Dict[str, str],
     *,
     debug: bool = False,
+    _trace_out: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Authenticate a user against LDAP.
@@ -267,7 +265,7 @@ def authenticate_ldap(
     (which step failed, how long each took, what search filter actually
     hit the server). The trace never contains passwords.
     """
-    trace: Optional[List[Dict[str, Any]]] = [] if debug else None
+    trace: Optional[List[Dict[str, Any]]] = (_trace_out if _trace_out is not None else []) if debug else None
     try:
         from ldap3 import SUBTREE
     except ImportError:
@@ -376,24 +374,11 @@ def authenticate_ldap_with_trace(
     trace: List[Dict[str, Any]] = []
     user_info: Optional[Dict[str, Any]] = None
 
-    # authenticate_ldap builds its own trace when debug=True and hands
-    # it to _emit_trace. We need the raw list, so re-implement the
-    # dispatch by temporarily swapping in a collector that captures the
-    # trace before logging. Simpler than plumbing an out-param through
-    # every callsite.
-    global _emit_trace  # noqa: PLW0603
-    original_emit = _emit_trace
-
-    def _capture(t, u, *, ok):
-        if t:
-            trace.extend(t)
-        original_emit(t, u, ok=ok)
-
-    _emit_trace = _capture
-    try:
-        user_info = authenticate_ldap(username, password, settings, debug=True)
-    finally:
-        _emit_trace = original_emit
+    # The trace is collected into our own list. (This used to swap the
+    # module-level _emit_trace for a capturing wrapper; logins run in worker
+    # threads, so a concurrent login's trace could land in this one, or the
+    # swap be undone mid-call.)
+    user_info = authenticate_ldap(username, password, settings, debug=True, _trace_out=trace)
     return user_info, trace
 
 
