@@ -10,6 +10,7 @@ function. The registry auto-detects the correct parser from file
 extension and content sniffing.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -81,6 +82,32 @@ def _first_json_object(content: bytes) -> dict:
     return {}
 
 
+_XML_PROLOG_RE = re.compile(
+    r"\s*(?:<\?.*?\?>|<!--.*?-->|<!DOCTYPE(?:[^\[>]|\[.*?\])*>)", re.S | re.I)
+_XML_ROOT_RE = re.compile(r"\s*<([A-Za-z_][\w.:-]*)")
+
+
+def _xml_root_name(content: bytes, limit: int = 1 << 20) -> str:
+    """Lower-cased name of the document's root element, skipping the XML
+    declaration, comments and a DOCTYPE with its internal subset.
+
+    Sniffing for "<issues" in the first 2 KB missed Burp exports, whose
+    inline DTD runs past that, and sent them to the Nmap parser."""
+    head = content[:limit]
+    if head.startswith(b"\xff\xfe") or head.startswith(b"\xfe\xff"):
+        text = head.decode("utf-16", errors="ignore")
+    else:
+        text = head.decode("utf-8", errors="ignore").lstrip("\ufeff")
+    pos = 0
+    while True:
+        m = _XML_PROLOG_RE.match(text, pos)
+        if not m or m.end() == pos:
+            break
+        pos = m.end()
+    m = _XML_ROOT_RE.match(text, pos)
+    return m.group(1).split(":")[-1].lower() if m else ""
+
+
 def detect_and_parse(content: bytes, filename: str) -> ParsedImportData:
     """
     Auto-detect the file format and parse with the appropriate parser.
@@ -98,26 +125,19 @@ def detect_and_parse(content: bytes, filename: str) -> ParsedImportData:
         return parse(content)
 
     if lower.endswith(".xml"):
-        # Sniff root element to distinguish Burp vs Nmap
-        try:
-            head = content[:2000].decode("utf-8", errors="ignore").lower()
-        except Exception:
-            head = ""
-
-        if "<issues" in head or "<issue>" in head:
+        root = _xml_root_name(content)
+        if root == "issues":
             from utils.parsers.burp import parse
-            return parse(content)
-        elif "<nmaprun" in head:
+        elif root == "nmaprun":
             from utils.parsers.nmap import parse
-            return parse(content)
+        elif root == "nessusclientdata_v2":
+            from utils.parsers.nessus import parse
         else:
-            # Try Nessus-style (NessusClientData_v2)
-            if "<nessusclientdata_v2" in head or "<report " in head:
-                from utils.parsers.nessus import parse
-                return parse(content)
-            # Fallback: try Nmap
-            from utils.parsers.nmap import parse
-            return parse(content)
+            raise ValueError(
+                f"Unrecognised XML in {filename} (root element {root or 'not found'!r}; "
+                "expected Burp <issues>, Nmap <nmaprun> or Nessus <NessusClientData_v2>)."
+            )
+        return parse(content)
 
     if lower.endswith(".json") or lower.endswith(".jsonl"):
         from utils.parsers.httpx import looks_like_httpx

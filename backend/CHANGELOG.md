@@ -95,6 +95,7 @@ section becomes one release entry.
 - "Strip EXIF" on evidence lowered JPEG quality, made phone photos display sideways, reduced animated images to their first frame, and removed the capture date it was documented to keep. It now removes only identifying metadata (GPS, camera, etc.) and leaves the image itself as it was.
 - AI ATT&CK auto-suggest on a large engagement could run past the server's timeout and lose every suggestion it had made. It now works through items one request at a time and shows its progress.
 - The ATT&CK Navigator export left out techniques mapped only on test cases. They're now included, shown in green as "Tested, no finding".
+- Some Burp Suite XML exports were sent to the Nmap parser on import and imported nothing. The format is now detected from the file's real root element, and an XML file of an unsupported format gets a clear error.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

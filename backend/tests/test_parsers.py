@@ -377,3 +377,19 @@ def test_detect_nuclei_by_json_extension():
 def test_detect_unsupported_extension_raises():
     with pytest.raises(ValueError):
         detect_and_parse(b"whatever", "report.pdf")
+
+
+def test_detect_burp_with_a_long_inline_dtd():
+    """Real Burp exports carry an inline DTD longer than the old 2 KB sniff
+    window; they must still go to the Burp parser, not Nmap."""
+    dtd = "<!DOCTYPE issues [\n" + "".join(
+        f"<!ELEMENT element{i} (#PCDATA)>\n<!ATTLIST element{i} type CDATA \"\">\n" for i in range(60)) + "]>\n"
+    assert len(dtd) > 3000
+    doc = _BURP_XML.replace('<?xml version="1.0"?>\n', '<?xml version="1.0"?>\n' + dtd, 1)
+    r = detect_and_parse(_b(doc), "export.xml")
+    assert r.source_tool == "burp" and r.findings
+
+
+def test_detect_unknown_xml_is_rejected_not_sent_to_nmap():
+    with pytest.raises(ValueError, match="Unrecognised XML"):
+        detect_and_parse(b'<?xml version="1.0"?><!-- c --><zaproot/>', "x.xml")
