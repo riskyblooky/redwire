@@ -133,6 +133,7 @@ section becomes one release entry.
 - Deleting an engagement left behind the stored files of older evidence that was linked only to one of its findings or test cases. Those files are now removed too.
 - Docs: development migration commands now target the development setup, and the plugin install steps now work on a production install.
 - SAML sign-in could fail with "request too large" for identity providers that send many attributes or groups. The sign-in callback now accepts larger responses.
+- Docs: the MCP server isn't reachable from outside on a default production install. The Admin Guide now says so and explains how to opt in.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

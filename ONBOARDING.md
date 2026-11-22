@@ -198,7 +198,8 @@ Each row is roughly: **router** (`backend/routers/`) ↔ **model(s)** (`backend/
   `router.py`. Discovered/loaded/mounted at startup; can subscribe to the `event_bus` and define
   settings. Examples: `servicenow_cmdb`, `shodan_enricher`. See the **`plugins`** skill.
 - **MCP server** (`mcp-server/server.py`): Starlette + SSE; forwards the session JWT to the backend
-  so LLM clients (e.g. Claude Desktop) and the in-app chatbot can call RedWire as tools.
+  so the in-app chatbot (and, if an admin routes it, external LLM clients such as Claude Desktop)
+  can call RedWire as tools. Production nginx doesn't route it by default.
   See the **`mcp-server`** skill.
 
 ---

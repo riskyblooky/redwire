@@ -34,7 +34,7 @@ RedWire centralizes the operational side of an engagement: who is doing what, wh
 - **Reporting** — PDF and Markdown report generation with customisable layouts, themes, inline images, tables, and rich-text content.
 - **Collaboration** — Real-time presence, version history, soft-locks while another user is editing, and a full audit log for create/update/delete operations.
 - **Automations** — Trigger actions on finding and test case state changes with tag-based conditions.
-- **MCP server** — Exposes RedWire as MCP tools for LLM clients (Claude Desktop, in-app chatbot).
+- **MCP server** — Exposes RedWire as MCP tools for the in-app chatbot, and for external LLM clients (Claude Desktop) where an admin routes it — not exposed by default in production (see the Admin Guide, *External MCP clients*).
 - **Plugin system** — Drop-in backend plugins with manifest, event bus, and settings.
 
 ## Technology stack

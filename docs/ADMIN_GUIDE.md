@@ -476,6 +476,44 @@ Admin → Auth Settings → SMTP:
 
 ---
 
+## External MCP clients
+
+The MCP server (`mcp-server`, port 3001 inside the Docker network) is what
+the in-app AI chat uses. **Production doesn't expose it**: it has no
+published port and nginx has no route to it, so an external client such
+as Claude Desktop can't reach it on a default install. (In development
+`docker-compose.dev.yml` publishes it on `127.0.0.1:3001`.)
+
+To allow external clients, add these to the HTTPS `server` block of
+`nginx/conf.d/default.conf.template` and restart nginx. The SSE stream
+tells the client to POST back to `/messages/`, so both paths are needed:
+
+```nginx
+location = /mcp/sse {
+    set $mcp_url http://mcp-server:3001;
+    rewrite ^/mcp/sse$ /sse break;
+    proxy_pass $mcp_url;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Authorization $http_authorization;
+    proxy_buffering off;            # SSE
+    proxy_read_timeout 1h;
+}
+location ^~ /messages/ {
+    set $mcp_url http://mcp-server:3001;
+    proxy_pass $mcp_url;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+}
+```
+
+Clients connect to `https://<your-domain>/mcp/sse` with
+`Authorization: Bearer <token>` (a RedWire API token is best); the session
+has exactly that token's permissions. Routing it publicly adds an
+internet-facing endpoint, so only do this if you need it.
+
+---
+
 ## Plugins
 
 RedWire ships two example plugins (`servicenow_cmdb`, `shodan_enricher`)
