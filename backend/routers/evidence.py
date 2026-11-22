@@ -257,7 +257,7 @@ async def update_evidence(
     # Log activity
     await create_activity_log(
         db,
-        engagement_id=evidence.engagement_id or "global", # Fallback if engagement_id somehow null
+        engagement_id=evidence.engagement_id,  # may be None: logged without an engagement
         user_id=current_user.id,
         action="updated_evidence",
         resource_type="evidence",
@@ -292,7 +292,7 @@ async def delete_evidence(
     await _assert_evidence_mutable(db, evidence, current_user, "delete")
 
     # Capture details before deletion
-    engagement_id = evidence.engagement_id or "global"
+    engagement_id = evidence.engagement_id
     evidence_id = evidence.id
     filename = evidence.filename
     original_filename = evidence.original_filename
@@ -381,7 +381,7 @@ async def replace_evidence_file(
     # Log activity
     await create_activity_log(
         db,
-        engagement_id=evidence.engagement_id or "global",
+        engagement_id=evidence.engagement_id,
         user_id=current_user.id,
         action="edited_evidence_image",
         resource_type="evidence",
@@ -697,7 +697,7 @@ async def strip_evidence_exif(
     # Log activity
     await create_activity_log(
         db,
-        engagement_id=evidence.engagement_id or "global",
+        engagement_id=evidence.engagement_id,
         user_id=current_user.id,
         action="stripped_exif",
         resource_type="evidence",
