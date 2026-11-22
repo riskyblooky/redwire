@@ -132,6 +132,19 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
+def is_session_jwt(token: Optional[str]) -> bool:
+    """Whether ``token`` is a JWT this instance signed (expired or not) —
+    i.e. something blacklist_token can revoke. API tokens and malformed
+    values are not."""
+    if not token:
+        return False
+    try:
+        jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
+        return True
+    except Exception:
+        return False
+
+
 def blacklist_token(token: str) -> bool:
     """Add a token to the per-token blacklist, keyed on its jti claim.
 

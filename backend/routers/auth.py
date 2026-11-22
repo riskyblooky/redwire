@@ -755,12 +755,17 @@ async def logout(
     # the HttpOnly cookie per GHSA-gv65-p25x-qrqj). A silent failure here
     # leaves the tokens live after a "successful" logout — surface the
     # failure instead. GHSA-832g-v288-v593.
-    if not blacklist_token(access_token):
+    #
+    # Only our own session JWTs are revocable: an API token (rw_…) or a
+    # malformed bearer has no session to end, and used to 500 here because
+    # blacklist_token can't take it.
+    from auth.jwt import is_session_jwt
+    if is_session_jwt(access_token) and not blacklist_token(access_token):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Session revocation failed. Please retry.",
         )
-    if refresh_token:
+    if is_session_jwt(refresh_token):
         if not blacklist_token(refresh_token):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

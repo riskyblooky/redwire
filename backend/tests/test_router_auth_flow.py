@@ -266,3 +266,11 @@ async def test_register_without_code_generic_failure(client):
     )
     assert resp.status_code == 400
     assert resp.json()["detail"] == "Registration failed"
+
+
+async def test_logout_with_a_non_session_bearer_is_not_a_500(client):
+    """An API token or malformed bearer has no session to revoke; logout
+    used to 500 because blacklist_token can't take it."""
+    for bearer in ("rw_notajwt_0123456789", "garbage"):
+        r = await client.post("/auth/logout", headers={"Authorization": f"Bearer {bearer}"})
+        assert r.status_code == 200, (bearer, r.status_code, r.text)
