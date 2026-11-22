@@ -46,7 +46,9 @@ const FIELD_LABELS: Record<string, string> = {
 // Severity / status badge colors
 
 function timeAgo(dateStr: string) {
-    const diff = Date.now() - new Date(dateStr).getTime();
+    // Naive UTC timestamps from the API: new Date() read them as local time,
+    // skewing "x ago" by the viewer's UTC offset.
+    const diff = Date.now() - parseUTCDate(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
     if (mins < 60) return `${mins}m ago`;
