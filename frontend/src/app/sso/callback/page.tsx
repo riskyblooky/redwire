@@ -102,7 +102,9 @@ export default function SSOCallbackPage() {
 
     const handleVerify2fa = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!totpCode || totpCode.length !== 6) return;
+        // 6-digit TOTP or an 8-character recovery code (hyphen / spaces
+        // optional); /auth/verify-2fa dispatches by shape, as on the login page.
+        if (totpCode.replace(/[-\s]/g, '').length < 6) return;
 
         setVerifying(true);
         setError(null);
@@ -132,7 +134,8 @@ export default function SSOCallbackPage() {
                         </div>
                         <h1 className="text-lg font-bold text-zinc-100">Two-Factor Authentication</h1>
                         <p className="text-zinc-400 text-sm mt-1">
-                            Enter the 6-digit code from your authenticator app
+                            Enter the 6-digit code from your authenticator app, or one of
+                            the recovery codes you saved at enrollment
                         </p>
                     </div>
 
@@ -140,13 +143,11 @@ export default function SSOCallbackPage() {
                         <input
                             ref={inputRef}
                             type="text"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            maxLength={6}
+                            maxLength={16}
                             value={totpCode}
-                            onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
-                            placeholder="000000"
-                            className="w-full text-center text-2xl tracking-[0.5em] font-mono py-3 px-4
+                            onChange={(e) => setTotpCode(e.target.value.slice(0, 16))}
+                            placeholder="000000  or  XXXX-XXXX"
+                            className="w-full text-center text-xl tracking-[0.25em] font-mono py-3 px-4
                                        bg-[#0f1729] border border-zinc-700 rounded-lg text-zinc-100
                                        focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-hidden
                                        placeholder:text-zinc-600"
@@ -160,7 +161,7 @@ export default function SSOCallbackPage() {
 
                         <button
                             type="submit"
-                            disabled={totpCode.length !== 6 || verifying}
+                            disabled={totpCode.replace(/[-\s]/g, '').length < 6 || verifying}
                             className="w-full py-2.5 rounded-lg font-medium text-sm
                                        bg-blue-600 hover:bg-blue-500 text-white
                                        disabled:opacity-50 disabled:cursor-not-allowed
