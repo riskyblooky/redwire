@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# Longest one WebSocket send may take before the socket is dropped (see
+# ConnectionManager._deliver_local).
+_SEND_TIMEOUT_S = 5.0
+
 
 # ── Work that must wait for the commit ─────────────────────────────────
 # A notification's live push and email describe a row the caller hasn't
@@ -855,7 +859,7 @@ class ConnectionManager:
                     gating_engagement = message.get("engagement_id")
 
                 encoded_message = json.dumps(message)
-                dead_connections = []
+                recipients = []
                 # Snapshot before iteration: the gating filter is async and
                 # other tasks may mutate `self.active_connections` while we
                 # await; iterating a list copy keeps the loop deterministic.
@@ -883,20 +887,46 @@ class ConnectionManager:
                             allowed = False
                         if not allowed:
                             continue
-                    try:
-                        await connection.send_text(encoded_message)
-                    except Exception:
-                        # Send failed → socket is dead on every channel it's
-                        # registered in, not just this one. The
-                        # GHSA-c96m-c63f-3f2c follow-up: prune *all*
-                        # registrations now so the leak doesn't have to wait
-                        # for each individual channel to broadcast.
-                        dead_connections.append(connection)
+                    recipients.append(connection)
 
-                for conn in dead_connections:
+                # Send to everyone at once, each bounded by _SEND_TIMEOUT_S.
+                # Sequential awaits let one client that stopped reading (full
+                # TCP buffer) stall every recipient after it, the request that
+                # triggered the broadcast and, via the bus, the worker's
+                # delivery of every other worker's events.
+                results = await asyncio.gather(
+                    *(asyncio.wait_for(c.send_text(encoded_message), _SEND_TIMEOUT_S) for c in recipients),
+                    return_exceptions=True,
+                )
+                for conn, result in zip(recipients, results):
+                    if not isinstance(result, BaseException):
+                        continue
+                    # Send failed or timed out → treat the socket as dead on
+                    # every channel it's registered in, not just this one
+                    # (GHSA-c96m-c63f-3f2c follow-up). A slow one is closed so
+                    # its client reconnects instead of silently missing events.
                     self._purge_socket_everywhere(conn)
+                    if isinstance(result, asyncio.TimeoutError):
+                        logger.info("ws: dropping a socket that didn't accept a send within %ss", _SEND_TIMEOUT_S)
+                        _spawn_close(conn)
 
 manager = ConnectionManager()
+
+
+def _spawn_close(websocket) -> None:
+    """Close a stalled socket in the background (the close frame can block
+    on the same full buffer), bounded so the task can't linger."""
+    async def _close():
+        try:
+            await asyncio.wait_for(websocket.close(code=1013), _SEND_TIMEOUT_S)
+        except BaseException:
+            pass
+    task = asyncio.get_running_loop().create_task(_close())
+    _background_closes.add(task)
+    task.add_done_callback(_background_closes.discard)
+
+
+_background_closes: set = set()
 
 
 async def _republish_local_presence() -> None:

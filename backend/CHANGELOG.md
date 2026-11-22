@@ -89,6 +89,7 @@ section becomes one release entry.
 - **Security:** a user who was deactivated, or removed from an engagement, kept receiving that engagement's live updates (and their notification feed) until they closed the tab. Open connections now re-check access every 15 seconds and are closed once it's gone.
 - In timezones away from UTC, calendar views missed events near the edges of the range shown, such as an early-morning event in US Pacific time missing from its own day. Views now query in the same local time the events are entered in.
 - A collaborator joining a note that others were already editing could, after a brief Redis hiccup or on a room left open for over a day, load a second copy of the note's text into it. Each server worker now re-publishes its open connections every 10 seconds.
+- One collaborator with a stalled connection (e.g. a sleeping laptop) could delay live updates for everyone on the same engagement, and slow down the save that triggered them. Updates now go out to everyone at once, and a connection that doesn't accept one within 5 seconds is dropped so it reconnects.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
