@@ -600,13 +600,60 @@ async def get_evidence_exif(
     return {"exif": exif, "has_exif": len(exif) > 0}
 
 
+# EXIF tags strip-exif keeps: when the shot was taken (the documented
+# behaviour) and Orientation (without it a phone photo displays sideways).
+_EXIF_KEEP_IFD0 = (0x0112,)            # Orientation
+_EXIF_KEEP_EXIFIFD = (0x9003, 0x9004)  # DateTimeOriginal, DateTimeDigitized
+
+
+def _strip_exif_bytes(image_bytes: bytes) -> bytes:
+    """Re-save the image with only the kept EXIF tags.
+
+    JPEGs keep their quantisation tables and subsampling (a plain save
+    re-encoded at quality 75), every frame of an animated image is kept,
+    and so is the ICC colour profile."""
+    from PIL import ExifTags
+    img = Image.open(io.BytesIO(image_bytes))
+    fmt = img.format or "JPEG"
+    old = img.getexif()
+    new = Image.Exif()
+    for tag in _EXIF_KEEP_IFD0:
+        if tag in old:
+            new[tag] = old[tag]
+    old_ifd = old.get_ifd(ExifTags.IFD.Exif)
+    kept = {t: old_ifd[t] for t in _EXIF_KEEP_EXIFIFD if t in old_ifd}
+    if kept:
+        new.get_ifd(ExifTags.IFD.Exif).update(kept)
+
+    opts: dict = {"format": fmt}
+    if fmt in ("JPEG", "PNG", "WEBP", "TIFF"):
+        opts["exif"] = new.tobytes()
+    if img.info.get("icc_profile"):
+        opts["icc_profile"] = img.info["icc_profile"]
+    if fmt == "JPEG":
+        opts.update(quality="keep", subsampling="keep")
+    elif fmt == "WEBP":
+        opts["lossless"] = bool(img.info.get("lossless"))
+        if not opts["lossless"]:
+            opts["quality"] = 95
+    if getattr(img, "n_frames", 1) > 1 and fmt in ("GIF", "PNG", "WEBP", "TIFF"):
+        opts["save_all"] = True
+        for k in ("duration", "loop", "disposal", "transparency", "background"):
+            if k in img.info:
+                opts[k] = img.info[k]
+    out = io.BytesIO()
+    img.save(out, **opts)
+    return out.getvalue()
+
+
 @router.post("/{evidence_id}/strip-exif")
 async def strip_evidence_exif(
     evidence_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Strip all EXIF data from an image except DateTimeOriginal and DateTimeDigitized."""
+    """Strip all EXIF data from an image except DateTimeOriginal,
+    DateTimeDigitized and Orientation (see _strip_exif_bytes)."""
     result = await db.execute(select(Evidence).where(Evidence.id == evidence_id))
     evidence = result.scalar_one_or_none()
 
@@ -632,14 +679,11 @@ async def strip_evidence_exif(
     old_exif = _extract_exif_dict(image_bytes)
     date_taken = old_exif.get('DateTimeOriginal') or old_exif.get('DateTimeDigitized') or old_exif.get('DateTime')
 
-    # Open image, strip EXIF by saving without exif
-    img = Image.open(io.BytesIO(image_bytes))
-    output = io.BytesIO()
-    # Determine format
-    fmt = img.format or 'JPEG'
-    # Save without EXIF
-    img.save(output, format=fmt)
-    clean_bytes = output.getvalue()
+    try:
+        clean_bytes = _strip_exif_bytes(image_bytes)
+    except Exception:
+        logger.exception("Failed to strip EXIF from evidence %s", evidence.id)
+        raise HTTPException(status_code=400, detail="Could not process this image")
 
     # Re-upload the clean image
     content_type = evidence.mime_type or "application/octet-stream"
