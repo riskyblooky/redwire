@@ -505,16 +505,25 @@ For the full plugin author reference, see
   restart needed.
 - **Configure plugin settings:** Admin → Plugins → click the plugin.
 - **Install a new plugin:** drop the plugin dir into `backend/plugins/<slug>/`,
-  restart the backend (`docker compose restart backend`). If the plugin
-  ships frontend pages, rebuild the frontend image too:
+  then rebuild. The production images bake the code in (nothing is
+  bind-mounted), so a restart alone doesn't see the new directory:
   ```
-  docker compose build frontend
-  docker compose up -d frontend
+  docker compose build backend frontend
+  docker compose up -d backend frontend
   ```
-- **Uninstall:** `rm -rf backend/plugins/<slug>/` + restart. Any data the
-  plugin persisted stays until you drop its tables (they're on their
-  own Alembic branch — see `backend/migrate.py` for the multi-head
-  handling).
+  (The frontend rebuild is what picks up a plugin's React pages; skip it
+  if the plugin has none.) In development (`docker-compose.dev.yml`) the
+  backend is bind-mounted, so `docker compose -f docker-compose.dev.yml
+  restart backend` is enough there.
+
+  `scripts/deploy_server.sh` replaces everything in `backend/` (except
+  `uploads/`, `evidence/` and `.env*`) with the deploy package, so a
+  plugin added on the server by hand is removed by the next deploy. Put
+  it in the package (`backend/plugins/` of the release you deploy).
+- **Uninstall:** remove `backend/plugins/<slug>/` (and from the deploy
+  package), then rebuild as above. Any data the plugin persisted stays
+  until you drop its tables (they're on their own Alembic branch — see
+  `backend/migrate.py` for the multi-head handling).
 
 ---
 

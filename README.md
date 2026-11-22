@@ -148,15 +148,17 @@ npm run dev
 
 ### Database migrations
 
+Against the dev stack (plain `docker compose` targets the production file, see below):
+
 ```bash
 # Create a new migration after model changes
-docker compose run --rm backend alembic revision --autogenerate -m "description"
+docker compose -f docker-compose.dev.yml run --rm backend alembic revision --autogenerate -m "description"
 
 # Apply migrations
-docker compose run --rm backend alembic upgrade head
+docker compose -f docker-compose.dev.yml run --rm backend alembic upgrade head
 
 # Rollback one revision
-docker compose run --rm backend alembic downgrade -1
+docker compose -f docker-compose.dev.yml run --rm backend alembic downgrade -1
 ```
 
 Migration files follow the convention `YYYY-MM-DD_<revid>_<desc>.py`.
