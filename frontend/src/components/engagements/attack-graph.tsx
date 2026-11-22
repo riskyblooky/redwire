@@ -605,8 +605,11 @@ function DetailPanel({ node, onClose, onDeleteAttacker, onConnectAttacker, onDel
 }
 
 // ── Inner Graph (needs ReactFlowProvider above) ──
-function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true, isFullscreen, onToggleFullscreen, onRefresh, isRefreshing, layouts, onRefreshLayouts }: {
+function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true, isFullscreen, onToggleFullscreen, onRefresh, isRefreshing, layouts, onRefreshLayouts, allPositionsRef }: {
     graphData: GraphData;
+    /** Node positions this session. Owned by AttackGraph so they survive the
+     *  remount when toggling fullscreen (portal vs inline tree). */
+    allPositionsRef: React.MutableRefObject<Record<string, { x: number; y: number }>>;
     engagementId: string;
     focusEntity?: { type: string; id: string };
     canEdit?: boolean;
@@ -692,7 +695,19 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
     );
 
     // Ref to hold positions for ALL nodes (not just currently visible ones)
-    const allPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+    // Current positions straight from React Flow. The handlers that refresh
+    // the graph used to snapshot a stale `nodes` closure (missing from their
+    // deps), restoring positions from before the user's last drags.
+    const snapshotPositions = useCallback(() => {
+        reactFlowInstance.getNodes().forEach(n => {
+            allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y };
+        });
+    }, [reactFlowInstance, allPositionsRef]);
+    // A drag is kept even when something else (another user's edit, a WS
+    // push) refreshes the graph before any of the handlers above run.
+    const onNodeDragStop = useCallback((_: React.MouseEvent, _node: Node, dragged: Node[]) => {
+        dragged.forEach(n => { allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y }; });
+    }, [allPositionsRef]);
 
     // Convert API data → React Flow nodes/edges with dagre layout or pinned positions
     useEffect(() => {
@@ -762,6 +777,10 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
             }
         }
 
+        // Decided before the positions below are stored (after that every node
+        // is "known", which made the fit-view branch further down dead).
+        const ranLayout = allRfNodes.some(n => !allPositionsRef.current[n.id]);
+
         // Store ALL positions in ref
         positionedAllNodes.forEach(n => {
             allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y };
@@ -793,18 +812,13 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
         setNodes(displayNodes);
         setEdges(displayEdges);
 
-        // Only fitView on first load or when dagre actually ran (new nodes)
-        const hadNewNodes = allRfNodes.some(n => !allPositionsRef.current[n.id]);
-        if (hadNewNodes || !Object.keys(allPositionsRef.current).length) {
-            // Store positions AFTER dagre ran
-            positionedAllNodes.forEach(n => {
-                allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y };
-            });
+        // Only fitView on first load or when new nodes were placed
+        if (ranLayout) {
             setTimeout(() => {
                 reactFlowInstance.fitView({ padding: 0.2 });
             }, 50);
         }
-    }, [graphData, showUnlinked, selectedChain, linkedNodeIds, focusNodeId, focusSubgraphIds, setNodes, setEdges, reactFlowInstance]);
+    }, [graphData, showUnlinked, selectedChain, linkedNodeIds, focusNodeId, focusSubgraphIds, setNodes, setEdges, reactFlowInstance, allPositionsRef]);
 
     const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
         setSelectedNode(node as Node<GraphNodeData>);
@@ -850,9 +864,7 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
             const targetType = connection.target.split('-')[0];
             try {
                 // Snapshot current positions before refresh so nodes don't move
-                nodes.forEach(n => {
-                    allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y };
-                });
+                snapshotPositions();
                 await api.post(`/engagements/${engagementId}/attack-graph/attacker/${attackerEntityId}/edge`, {
                     target_node_id: connection.target,
                     target_node_type: targetType,
@@ -863,7 +875,7 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
                 toast.error('Failed to create edge');
             }
         }
-    }, [engagementId, onRefresh, canEdit]);
+    }, [engagementId, onRefresh, canEdit, edges, snapshotPositions]);
 
     const resetLayout = useCallback(async () => {
         // Unpin from server
@@ -995,7 +1007,7 @@ ${edgeCells.join('\n')}
         } finally {
             setIsSaving(false);
         }
-    }, [nodes, engagementId, onRefresh]);
+    }, [nodes, engagementId, onRefresh, allPositionsRef]);
 
     const POP_OPTIONS = ['External', 'Internal LAN', 'VPN', 'Wireless', 'Cloud', 'Physical', 'Supply Chain'];
 
@@ -1010,37 +1022,38 @@ ${edgeCells.join('\n')}
             setAttackerName('Threat Actor');
             setAttackerPoP('External');
             // Snapshot positions so existing nodes don't jump
-            nodes.forEach(n => { allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y }; });
+            snapshotPositions();
             onRefresh();
         } catch (e) {
             toast.error('Failed to add attacker node');
         }
-    }, [engagementId, attackerName, attackerPoP, onRefresh]);
+    }, [engagementId, attackerName, attackerPoP, onRefresh, snapshotPositions]);
 
     const handleDeleteAttacker = useCallback(async (entityId: string) => {
         try {
             await api.delete(`/engagements/${engagementId}/attack-graph/attacker/${entityId}`);
             toast.success('Attacker node removed');
             setSelectedNode(null);
-            const attackerNodeId = `attacker-${entityId}`;
-            delete allPositionsRef.current[attackerNodeId];
-            nodes.forEach(n => { allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y }; });
+            // Snapshot first: it reads the still-rendered nodes, and would put
+            // the deleted attacker's position straight back.
+            snapshotPositions();
+            delete allPositionsRef.current[`attacker-${entityId}`];
             onRefresh();
         } catch (e) {
             toast.error('Failed to delete attacker node');
         }
-    }, [engagementId, onRefresh, nodes]);
+    }, [engagementId, onRefresh, snapshotPositions, allPositionsRef]);
 
     const handleDeleteEdge = useCallback(async (attackerEntityId: string, edgeId: string) => {
         try {
             await api.delete(`/engagements/${engagementId}/attack-graph/attacker/${attackerEntityId}/edge/${edgeId}`);
             toast.success('Connection removed');
-            nodes.forEach(n => { allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y }; });
+            snapshotPositions();
             onRefresh();
         } catch (e) {
             toast.error('Failed to remove connection');
         }
-    }, [engagementId, onRefresh, nodes]);
+    }, [engagementId, onRefresh, snapshotPositions]);
 
     const handleConnectAttacker = useCallback(async (attackerEntityId: string, targetNodeId: string, targetNodeType: string) => {
         try {
@@ -1051,12 +1064,12 @@ ${edgeCells.join('\n')}
             toast.success('Edge created');
             setShowConnectDialog(null);
             // Snapshot positions so existing nodes don't jump
-            nodes.forEach(n => { allPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y }; });
+            snapshotPositions();
             onRefresh();
         } catch (e) {
             toast.error('Failed to create edge');
         }
-    }, [engagementId, onRefresh]);
+    }, [engagementId, onRefresh, snapshotPositions]);
 
     // Counts for the legend
     const counts = useMemo(() => {
@@ -1100,6 +1113,7 @@ ${edgeCells.join('\n')}
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={onNodesChange}
+                onNodeDragStop={onNodeDragStop}
                 onEdgesChange={onEdgesChange}
                 onNodeClick={onNodeClick}
                 onConnect={onConnect}
@@ -1362,6 +1376,7 @@ export function AttackGraph({ engagementId, focusEntity, canEdit = true, heightC
     const { data: layouts = [], refetch: refetchLayouts } = useGraphLayouts(engagementId);
 
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const allPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
 
     // Listen for real-time layout pin/unpin events from other users
     useCollaboration({
@@ -1431,6 +1446,7 @@ export function AttackGraph({ engagementId, focusEntity, canEdit = true, heightC
                 isRefreshing={isFetching}
                 layouts={layouts}
                 onRefreshLayouts={() => refetchLayouts()}
+                allPositionsRef={allPositionsRef}
             />
         </ReactFlowProvider>
     );
