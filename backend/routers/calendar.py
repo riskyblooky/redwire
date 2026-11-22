@@ -40,6 +40,8 @@ async def get_calendar_events(
     query = select(CalendarEvent)
     
     if start and end:
+        # Calendar times are wall-clock values with no zone (as entered); the
+        # client sends ranges the same way. A zone, if sent, is dropped.
         start_naive = start.replace(tzinfo=None) if start.tzinfo else start
         end_naive = end.replace(tzinfo=None) if end.tzinfo else end
         query = query.where(
@@ -180,6 +182,8 @@ async def get_calendar_feed(
             )
 
     # Ensure naive datetimes for SQL comparison against naive columns
+    # Calendar times are wall-clock values with no zone (as entered); the
+    # client sends ranges the same way. A zone, if sent, is dropped.
     start_naive = start.replace(tzinfo=None) if start.tzinfo else start
     end_naive = end.replace(tzinfo=None) if end.tzinfo else end
 
@@ -337,6 +341,8 @@ async def get_team_availability(
                 detail="Insufficient permissions."
             )
 
+    # Calendar times are wall-clock values with no zone (as entered); the
+    # client sends ranges the same way. A zone, if sent, is dropped.
     start_naive = start.replace(tzinfo=None) if start.tzinfo else start
     end_naive = end.replace(tzinfo=None) if end.tzinfo else end
 
@@ -461,6 +467,8 @@ async def auto_assign_users(
             detail="Insufficient permissions for auto-assign."
         )
 
+    # Calendar times are wall-clock values with no zone (as entered); the
+    # client sends ranges the same way. A zone, if sent, is dropped.
     start_naive = start.replace(tzinfo=None) if start.tzinfo else start
     end_naive = end.replace(tzinfo=None) if end.tzinfo else end
 

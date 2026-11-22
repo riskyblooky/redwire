@@ -87,6 +87,7 @@ section becomes one release entry.
 - API tokens (admin and profile), authentication settings, engagement export and AI chat failed once your session's access token expired instead of refreshing it, and revoking an API token could report success when the server refused. They now refresh like the rest of the app and show real errors.
 - Automation rules on "Evidence Uploaded" only fired for test case uploads, not for evidence added to findings or engagements. They now fire for all three.
 - **Security:** a user who was deactivated, or removed from an engagement, kept receiving that engagement's live updates (and their notification feed) until they closed the tab. Open connections now re-check access every 15 seconds and are closed once it's gone.
+- In timezones away from UTC, calendar views missed events near the edges of the range shown, such as an early-morning event in US Pacific time missing from its own day. Views now query in the same local time the events are entered in.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

@@ -1,5 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { format } from 'date-fns';
+
+/**
+ * Calendar times are stored as wall-clock values without a zone (the event
+ * form's datetime-local input), so range queries must be in the same terms.
+ * Sending UTC (toISOString) — the backend drops the zone — shifted every
+ * range by the viewer's UTC offset: west of UTC an early-morning event fell
+ * out of its own day view.
+ */
+const wallClock = (d: Date) => format(d, "yyyy-MM-dd'T'HH:mm:ss");
 
 export interface CalendarEvent {
     id: string;
@@ -118,8 +128,8 @@ export function useCalendarFeed(start: Date, end: Date, userIds?: string[]) {
         queryKey: ['calendar', 'feed', start.toISOString(), end.toISOString(), userIds],
         queryFn: async () => {
             const params: Record<string, string> = {
-                start: start.toISOString(),
-                end: end.toISOString(),
+                start: wallClock(start),
+                end: wallClock(end),
             };
             if (userIds && userIds.length > 0) {
                 params.user_ids = userIds.join(',');
@@ -137,8 +147,8 @@ export function useTeamAvailability(start: Date, end: Date, enabled = true) {
         queryFn: async () => {
             const { data } = await api.get<TeamMemberAvailability[]>('/calendar/team-availability', {
                 params: {
-                    start: start.toISOString(),
-                    end: end.toISOString(),
+                    start: wallClock(start),
+                    end: wallClock(end),
                 },
             });
             return data;
