@@ -37,7 +37,10 @@ export function EvidenceUpload({ findingId, testcaseId }: EvidenceUploadProps) {
     };
 
     const handleUpload = async () => {
-        const failed: string[] = [];
+        // The File objects, not their names: two files can share a name, and
+        // matching by name kept (and re-uploaded on retry) one that had
+        // already succeeded.
+        const failed = new Set<File>();
         let successCount = 0;
 
         for (const item of staged) {
@@ -49,19 +52,19 @@ export function EvidenceUpload({ findingId, testcaseId }: EvidenceUploadProps) {
                 });
                 successCount++;
             } catch {
-                failed.push(item.file.name);
+                failed.add(item.file);
             }
         }
 
         if (successCount > 0) {
             toast.success(`Uploaded ${successCount} file${successCount > 1 ? 's' : ''}`);
         }
-        if (failed.length > 0) {
-            toast.error(`Failed to upload ${failed.join(', ')}`);
+        if (failed.size > 0) {
+            toast.error(`Failed to upload ${[...failed].map(f => f.name).join(', ')}`);
         }
 
         // Keep whatever failed staged so the user can retry without re-picking.
-        setStaged((prev) => prev.filter((item) => failed.includes(item.file.name)));
+        setStaged((prev) => prev.filter((item) => failed.has(item.file)));
     };
 
     return (
