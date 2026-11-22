@@ -48,14 +48,20 @@ _DEFAULT_TAGS = [
 async def seed_tags() -> int:
     from models.finding import Tag
     added = 0
+    from utils.seed_ledger import SeedLedger
     async with AsyncSessionLocal() as db:
+        ledger = await SeedLedger.open(db, "tags", Tag)
         for t in _DEFAULT_TAGS:
             # Tags are unique per (name, entity_type); seeded ones are finding tags.
-            res = await db.execute(select(Tag.id).where(
-                Tag.name == t["name"], Tag.entity_type == t.get("entity_type", "finding")).limit(1))
-            if res.scalar_one_or_none() is None:
-                db.add(Tag(**t))
-                added += 1
+            key = f'{t.get("entity_type", "finding")}|{t["name"]}'
+            if ledger.should_create(key):
+                res = await db.execute(select(Tag.id).where(
+                    Tag.name == t["name"], Tag.entity_type == t.get("entity_type", "finding")).limit(1))
+                if res.scalar_one_or_none() is None:
+                    db.add(Tag(**t))
+                    added += 1
+            ledger.mark(key)
+        await ledger.save()
         await db.commit()
     return added
 
@@ -171,17 +177,25 @@ _DEFAULT_CONFIGURABLE_TYPES = [
 async def seed_configurable_types() -> int:
     from models.configurable_type import ConfigurableType
     added = 0
+    from utils.seed_ledger import SeedLedger
     async with AsyncSessionLocal() as db:
+        ledger = await SeedLedger.open(db, "configurable_types", ConfigurableType)
         for ct in _DEFAULT_CONFIGURABLE_TYPES:
-            res = await db.execute(
-                select(ConfigurableType).where(
-                    ConfigurableType.category == ct["category"],
-                    ConfigurableType.name == ct["name"],
+            key = f'{ct["category"]}|{ct["name"]}'
+            if ledger.should_create(key):
+                # limit(1): duplicate rows (possible — no unique constraint)
+                # made scalar_one_or_none raise and abort the whole seed.
+                res = await db.execute(
+                    select(ConfigurableType.id).where(
+                        ConfigurableType.category == ct["category"],
+                        ConfigurableType.name == ct["name"],
+                    ).limit(1)
                 )
-            )
-            if res.scalar_one_or_none() is None:
-                db.add(ConfigurableType(**ct))
-                added += 1
+                if res.scalar_one_or_none() is None:
+                    db.add(ConfigurableType(**ct))
+                    added += 1
+            ledger.mark(key)
+        await ledger.save()
         await db.commit()
     return added
 
@@ -204,10 +218,10 @@ async def sync_template_categories_to_configurable_types() -> int:
             )
             for tpl_cat in [row[0] for row in res.all()]:
                 exists = await db.execute(
-                    select(ConfigurableType).where(
+                    select(ConfigurableType.id).where(
                         ConfigurableType.category == ct_category,
                         ConfigurableType.name == tpl_cat,
-                    )
+                    ).limit(1)
                 )
                 if exists.scalar_one_or_none() is None:
                     next_order = (await db.execute(
@@ -474,15 +488,20 @@ async def seed_finding_templates() -> int:
         if not admin_id:
             return 0  # admin seed must run first
         added = 0
+        from utils.seed_ledger import SeedLedger
+        ledger = await SeedLedger.open(db, "finding_templates", FindingTemplate)
         for t in finding_templates:
-            exists = await db.execute(
-                select(FindingTemplate.id).where(FindingTemplate.title == t["title"]).limit(1)
-            )
-            if exists.scalar_one_or_none() is None:
-                # Published: the ORM default (DRAFT) would make the library
-                # visible only to the bootstrap admin.
-                db.add(FindingTemplate(**t, created_by=admin_id, status=TemplateStatus.PUBLISHED, published_at=datetime.utcnow()))
-                added += 1
+            if ledger.should_create(t["title"]):
+                exists = await db.execute(
+                    select(FindingTemplate.id).where(FindingTemplate.title == t["title"]).limit(1)
+                )
+                if exists.scalar_one_or_none() is None:
+                    # Published: the ORM default (DRAFT) would make the library
+                    # visible only to the bootstrap admin.
+                    db.add(FindingTemplate(**t, created_by=admin_id, status=TemplateStatus.PUBLISHED, published_at=datetime.utcnow()))
+                    added += 1
+            ledger.mark(t["title"])
+        await ledger.save()
         await db.commit()
         return added
 
@@ -498,13 +517,18 @@ async def seed_testcase_templates() -> int:
         if not admin_id:
             return 0
         added = 0
+        from utils.seed_ledger import SeedLedger
+        ledger = await SeedLedger.open(db, "testcase_templates", TestCaseTemplate)
         for t in testcase_templates:
-            exists = await db.execute(
-                select(TestCaseTemplate.id).where(TestCaseTemplate.title == t["title"]).limit(1)
-            )
-            if exists.scalar_one_or_none() is None:
-                db.add(TestCaseTemplate(**t, created_by=admin_id, status=TemplateStatus.PUBLISHED, published_at=datetime.utcnow()))
-                added += 1
+            if ledger.should_create(t["title"]):
+                exists = await db.execute(
+                    select(TestCaseTemplate.id).where(TestCaseTemplate.title == t["title"]).limit(1)
+                )
+                if exists.scalar_one_or_none() is None:
+                    db.add(TestCaseTemplate(**t, created_by=admin_id, status=TemplateStatus.PUBLISHED, published_at=datetime.utcnow()))
+                    added += 1
+            ledger.mark(t["title"])
+        await ledger.save()
         await db.commit()
         return added
 
@@ -512,33 +536,25 @@ async def seed_testcase_templates() -> int:
 # ── Orchestrator ────────────────────────────────────────────────────
 
 async def seed_all_defaults():
-    """Run every seeder in dependency order. Each is idempotent."""
-    tag_n = await seed_tags()
-    if tag_n:
-        print(f"[seed] tags: +{tag_n}")
+    """Run every seeder in dependency order. Each is idempotent, and each
+    runs on its own: one failing (e.g. on unexpected data) used to abort
+    every seeder after it."""
+    async def _run(name, fn, report):
+        try:
+            result = await fn()
+        except Exception as e:  # noqa: BLE001
+            print(f"[seed] WARN: {name} failed: {e}")
+            return
+        msg = report(result)
+        if msg:
+            print(f"[seed] {name}: {msg}")
 
-    ct_n = await seed_configurable_types()
-    if ct_n:
-        print(f"[seed] configurable_types: +{ct_n}")
-
-    syn_n = await sync_template_categories_to_configurable_types()
-    if syn_n:
-        print(f"[seed] template-category sync: +{syn_n}")
-
-    cats, skills = await seed_skill_taxonomy()
-    if cats:
-        print(f"[seed] skill taxonomy: +{cats} categories, +{skills} skills")
-
-    if await seed_default_report_theme():
-        print("[seed] report theme: +1 (RedWire Default)")
-
-    if await seed_default_report_layout():
-        print(f"[seed] report layout: +1 ({_DEFAULT_LAYOUT_NAME})")
-
-    fn = await seed_finding_templates()
-    if fn:
-        print(f"[seed] finding templates: +{fn}")
-
-    tn = await seed_testcase_templates()
-    if tn:
-        print(f"[seed] testcase templates: +{tn}")
+    await _run("tags", seed_tags, lambda n: n and f"+{n}")
+    await _run("configurable_types", seed_configurable_types, lambda n: n and f"+{n}")
+    await _run("template-category sync", sync_template_categories_to_configurable_types, lambda n: n and f"+{n}")
+    await _run("skill taxonomy", seed_skill_taxonomy,
+               lambda r: r[0] and f"+{r[0]} categories, +{r[1]} skills")
+    await _run("report theme", seed_default_report_theme, lambda ok: ok and "+1 (RedWire Default)")
+    await _run("report layout", seed_default_report_layout, lambda ok: ok and f"+1 ({_DEFAULT_LAYOUT_NAME})")
+    await _run("finding templates", seed_finding_templates, lambda n: n and f"+{n}")
+    await _run("testcase templates", seed_testcase_templates, lambda n: n and f"+{n}")

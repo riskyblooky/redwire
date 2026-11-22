@@ -100,6 +100,7 @@ section becomes one release entry.
 - On an attack graph with a pinned layout, every node added after pinning was drawn in the same top-left spot, on top of each other. New nodes are now placed beside the nodes they connect to.
 - "Remediate all assets" on a finding could un-remediate an asset a colleague had just marked remediated, and so could ticking a checkbox on a page that wasn't up to date. Both now set the state you chose instead of flipping it.
 - Deleting a test case left its evidence behind as unattached engagement evidence. It's now deleted with the test case, as a finding's evidence is; evidence that's also on a finding stays with the finding.
+- Built-in defaults an admin deleted (tags, types, templates, groups, engagement roles) came back after every server restart. Each default is now created only once, and a problem in one kind of default no longer stops the others from being set up.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

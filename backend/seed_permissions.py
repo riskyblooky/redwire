@@ -238,13 +238,23 @@ async def seed_default_groups_and_roles():
         ]
         
         # ============ Seed Groups ============
+        # Non-system defaults are created at most once (see utils/seed_ledger):
+        # one an admin deleted used to come back on the next restart. System
+        # groups (e.g. "Default") are always ensured.
+        from utils.seed_ledger import SeedLedger
+        group_ledger = await SeedLedger.open(db, "groups", Group)
+        role_ledger = await SeedLedger.open(db, "engagement_roles", EngagementRole)
         for group_data in default_groups:
             # Check if group exists
             result = await db.execute(
                 select(Group).where(Group.name == group_data["name"])
             )
-            existing_group = result.scalar_one_or_none()
-            
+            existing_group = result.scalars().first()
+            wanted = group_data.get("is_system", False) or group_ledger.should_create(group_data["name"])
+            group_ledger.mark(group_data["name"])
+
+            if not existing_group and not wanted:
+                continue
             if not existing_group:
                 # Create group
                 # A renamed default group isn't found by name above; don't
@@ -306,8 +316,12 @@ async def seed_default_groups_and_roles():
             result = await db.execute(
                 select(EngagementRole).where(EngagementRole.name == role_data["name"])
             )
-            existing_role = result.scalar_one_or_none()
-            
+            existing_role = result.scalars().first()
+            wanted = role_ledger.should_create(role_data["name"])
+            role_ledger.mark(role_data["name"])
+
+            if not existing_role and not wanted:
+                continue
             if not existing_role:
                 # Create role
                 new_role = EngagementRole(
@@ -345,6 +359,8 @@ async def seed_default_groups_and_roles():
                     db.add(role_perms)
                     print(f"🔄 Created missing permissions for role: {role_data['name']}")
         
+        await group_ledger.save()
+        await role_ledger.save()
         await apply_seed_revisions(db)
 
         await db.commit()

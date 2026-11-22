@@ -25,6 +25,15 @@ async def test_seeders_publish_what_they_add(db_session, make_user, monkeypatch)
     async def _session():
         yield db_session
     monkeypatch.setattr(seed_defaults, "AsyncSessionLocal", _session)
+    # As if these defaults were new in this release: none seeded yet.
+    from models.auth_settings import AuthSetting
+    for kind in ("finding_templates", "testcase_templates"):
+        row = await db_session.get(AuthSetting, f"seeded_defaults:{kind}")
+        if row is None:
+            db_session.add(AuthSetting(key=f"seeded_defaults:{kind}", value="[]", is_encrypted=False))
+        else:
+            row.value = "[]"
+    await db_session.flush()
 
     assert await seed_defaults.seed_finding_templates() == len(finding_templates)
     assert await seed_defaults.seed_testcase_templates() == len(testcase_templates)
