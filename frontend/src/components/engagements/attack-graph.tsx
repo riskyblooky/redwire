@@ -118,6 +118,39 @@ function getLayoutedElements(
     return { nodes: layoutedNodes, edges };
 }
 
+/**
+ * Positions for nodes a pinned layout doesn't cover (added after it was
+ * pinned). They used to fall back to (0, 0) and stack on top of each other
+ * over whatever pinned node sat there. Each goes one rank to the right of
+ * an already-placed neighbour (or right of the whole pinned layout when it
+ * has none), moved down until it overlaps nothing.
+ */
+export function placeUnpinnedNodes(
+    nodes: Node[],
+    edges: { source: string; target: string }[],
+    placed: Record<string, { x: number; y: number }>,
+): Node[] {
+    const W = 240, H = 80, GAP_X = 120, GAP_Y = 60;
+    const pos: Record<string, { x: number; y: number }> = {};
+    nodes.forEach(n => { if (placed[n.id]) pos[n.id] = placed[n.id]; });
+    const taken = Object.values(pos);
+    const overlaps = (p: { x: number; y: number }) =>
+        taken.some(q => Math.abs(q.x - p.x) < W + GAP_X / 2 && Math.abs(q.y - p.y) < H + GAP_Y / 2);
+    const maxX = taken.length ? Math.max(...taken.map(p => p.x)) : 0;
+    const minY = taken.length ? Math.min(...taken.map(p => p.y)) : 0;
+    const neighbours = (id: string) => edges.flatMap(e =>
+        e.source === id ? [e.target] : e.target === id ? [e.source] : []);
+    for (const n of nodes) {
+        if (pos[n.id]) continue;
+        const nb = neighbours(n.id).map(id => pos[id]).find(Boolean);
+        const p = nb ? { x: nb.x + W + GAP_X, y: nb.y } : { x: maxX + W + GAP_X, y: minY };
+        while (overlaps(p)) p.y += H + GAP_Y;
+        pos[n.id] = p;
+        taken.push(p);
+    }
+    return nodes.map(n => ({ ...n, position: pos[n.id] }));
+}
+
 // ── Colors / Styles ──
 
 const typeConfig: Record<string, { bg: string; border: string; text: string; icon: React.ElementType; accent: string }> = {
@@ -706,7 +739,14 @@ function AttackGraphInner({ graphData, engagementId, focusEntity, canEdit = true
         // Compute full layout (or use pinned/existing positions)
         let positionedAllNodes: Node[];
         if (pinnedPos && Object.keys(pinnedPos).length > 0) {
-            positionedAllNodes = allRfNodes;
+            // Pinned positions win; a node placed earlier this session keeps
+            // its spot; anything else is placed beside its neighbours.
+            const known: Record<string, { x: number; y: number }> = {};
+            allRfNodes.forEach(n => {
+                const p = pinnedPos[n.id] ?? allPositionsRef.current[n.id];
+                if (p) known[n.id] = p;
+            });
+            positionedAllNodes = placeUnpinnedNodes(allRfNodes, allRfEdges, known);
         } else {
             // Check if there are any NEW nodes that don't have positions yet
             const hasNewNodes = allRfNodes.some(n => !allPositionsRef.current[n.id]);
