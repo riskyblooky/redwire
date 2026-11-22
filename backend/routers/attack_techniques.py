@@ -4,6 +4,7 @@ and ATT&CK Navigator JSON export.
 """
 
 import json
+from datetime import datetime
 from utils.uploads import content_disposition_attachment
 import logging
 import re
@@ -14,7 +15,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from database import get_db
 from models.user import User, UserRole
@@ -37,6 +38,12 @@ class SuggestRequest(BaseModel):
     testcase_ids: list[str] = []
     source: str = "finding"          # 'finding' | 'testcase'
     include_mapped: bool = False     # re-suggest even for items that already have techniques
+    # Batching: process entities[offset:offset+limit] (stable order) and
+    # report the total, so a client can walk a large engagement in short
+    # requests. Every item in one request (limit omitted) could outlive the
+    # proxy's read timeout with a slow model, losing all the results.
+    offset: int = Field(0, ge=0)
+    limit: Optional[int] = Field(None, ge=1, le=50)
 
 
 # ── Coverage ──────────────────────────────────────────────────────────
@@ -503,10 +510,16 @@ async def suggest_techniques(
 
     # By default only unmapped items; include_mapped re-suggests for all.
     entities = rows if request.include_mapped else [e for e in rows if not e.attack_techniques]
-    print(f"[ATT&CK Suggest] {len(rows)} {noun}; processing {len(entities)} (include_mapped={request.include_mapped})")
+    entities = sorted(entities, key=lambda e: (e.created_at or datetime.min, e.id))
+    total = len(entities)
 
     if not entities:
-        return {"suggestions": [], "message": f"No {noun} to map (all already have techniques mapped)."}
+        return {"suggestions": [], "total": 0, "message": f"No {noun} to map (all already have techniques mapped)."}
+
+    end = total if request.limit is None else request.offset + request.limit
+    entities = entities[request.offset:end]
+    print(f"[ATT&CK Suggest] {len(rows)} {noun}; processing {len(entities)} of {total} from {request.offset} "
+          f"(include_mapped={request.include_mapped})")
 
     # Process concurrently with bounded concurrency. Honor the admin's TLS-verify
     # toggle so a self-hosted AI endpoint with a self-signed cert works.
@@ -536,6 +549,8 @@ async def suggest_techniques(
         "succeeded": succeeded,
         "failed": failed,
         "first_error": first_error,
+        "total": total,
+        "next_offset": end if end < total else None,
     }
 
 

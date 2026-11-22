@@ -140,6 +140,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
     const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [aiElapsed, setAiElapsed] = useState(0);
+    const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null);
     const [appliedFindingIds, setAppliedFindingIds] = useState<Set<string>>(new Set());
     const [includeMapped, setIncludeMapped] = useState(false);
     const [mappedOnly, setMappedOnly] = useState(true);
@@ -196,7 +197,11 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
         // Fresh run — clear any "Applied" markers from a previous batch
         setAppliedFindingIds(new Set());
         try {
-            const result = await aiSuggest.mutateAsync({ source, includeMapped });
+            setAiProgress(null);
+            const result = await aiSuggest.mutateAsync({
+                source, includeMapped,
+                onProgress: (done, total) => setAiProgress({ done, total }),
+            });
             if (result.message) {
                 toast.info(result.message);
                 return;
@@ -436,7 +441,7 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                         >
                             {aiSuggest.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
                             {aiSuggest.isPending
-                                ? `AI Analyzing… ${Math.floor(aiElapsed / 60)}:${String(aiElapsed % 60).padStart(2, '0')}`
+                                ? `AI Analyzing${aiProgress ? ` ${aiProgress.done}/${aiProgress.total}` : ''}… ${Math.floor(aiElapsed / 60)}:${String(aiElapsed % 60).padStart(2, '0')}`
                                 : 'AI Auto-Suggest'}
                         </Button>
                     </>

@@ -93,6 +93,7 @@ section becomes one release entry.
 - Long AI-assistant chats re-summarized the whole earlier conversation on every new message once they reached the context limit, so each message cost more as the chat went on. Compaction now builds on the previous summary, and a failed summary is retried instead of being reused for an hour.
 - Exporting an engagement silently left out any evidence or vault file that couldn't be read from storage, and importing silently dropped rows whose file was missing from the archive. Both now warn, and the export manifest lists the missing files.
 - "Strip EXIF" on evidence lowered JPEG quality, made phone photos display sideways, reduced animated images to their first frame, and removed the capture date it was documented to keep. It now removes only identifying metadata (GPS, camera, etc.) and leaves the image itself as it was.
+- AI ATT&CK auto-suggest on a large engagement could run past the server's timeout and lose every suggestion it had made. It now works through items one request at a time and shows its progress.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

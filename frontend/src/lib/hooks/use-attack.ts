@@ -56,6 +56,8 @@ export interface SuggestResponse {
     succeeded?: number;
     failed?: number;
     first_error?: string | null;
+    total?: number;
+    next_offset?: number | null;
 }
 
 
@@ -85,18 +87,38 @@ export function useAiSuggestTechniques(engagementId: string) {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (opts?: { source?: 'finding' | 'testcase'; findingIds?: string[]; testcaseIds?: string[]; includeMapped?: boolean }) => {
-            const { data } = await api.post<SuggestResponse>(
-                `/attack/engagement/${engagementId}/suggest`,
-                {
-                    source: opts?.source ?? 'finding',
-                    finding_ids: opts?.findingIds || [],
-                    testcase_ids: opts?.testcaseIds || [],
-                    include_mapped: opts?.includeMapped ?? false,
-                },
-                { timeout: 600_000 } // 10 minutes — local LLM inference can be slow
-            );
-            return data;
+        mutationFn: async (opts?: {
+            source?: 'finding' | 'testcase'; findingIds?: string[]; testcaseIds?: string[]; includeMapped?: boolean;
+            onProgress?: (done: number, total: number) => void;
+        }) => {
+            // One item per request: each stays within a single LLM call's
+            // timeout, where a whole engagement in one request could outlive
+            // the proxy's read timeout and lose every result.
+            const merged: SuggestResponse = { suggestions: [], succeeded: 0, failed: 0, first_error: null };
+            let offset: number | null = 0;
+            while (offset !== null) {
+                const { data }: { data: SuggestResponse } = await api.post<SuggestResponse>(
+                    `/attack/engagement/${engagementId}/suggest`,
+                    {
+                        source: opts?.source ?? 'finding',
+                        finding_ids: opts?.findingIds || [],
+                        testcase_ids: opts?.testcaseIds || [],
+                        include_mapped: opts?.includeMapped ?? false,
+                        offset,
+                        limit: 1,
+                    },
+                    { timeout: 600_000 } // 10 minutes — local LLM inference can be slow
+                );
+                if (data.message && !data.suggestions.length) return data;
+                merged.suggestions.push(...data.suggestions);
+                merged.succeeded! += data.succeeded ?? 0;
+                merged.failed! += data.failed ?? 0;
+                merged.first_error = merged.first_error ?? data.first_error ?? null;
+                merged.total = data.total;
+                opts?.onProgress?.(merged.suggestions.length, data.total ?? merged.suggestions.length);
+                offset = data.next_offset ?? null;
+            }
+            return merged;
         },
         onSuccess: () => {
             // Invalidate coverage so the heatmap refreshes after applying suggestions
