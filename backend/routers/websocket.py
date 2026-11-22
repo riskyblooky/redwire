@@ -740,5 +740,7 @@ async def _yjs_peer_count(note_id: str, room) -> int:
     """Other clients editing this note on any worker (self already counted)."""
     from utils.ws_bus import bus
     members = await bus.presence_list("yjs", note_id)
-    total = len(members) if members is not None else len(room.clients)
+    # This worker's own clients are certain; the registry can briefly lag
+    # them (e.g. until the next heartbeat re-asserts a failed add).
+    total = max(len(members), len(room.clients)) if members is not None else len(room.clients)
     return max(0, total - 1)

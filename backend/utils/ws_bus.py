@@ -54,6 +54,12 @@ class WsBus:
         self._on_activate: List[Callable[[], Awaitable[None]]] = []
         self._warned = False
         self._connect_warned = False
+        # This worker's own presence entries ({hash key: {field: json}}),
+        # re-asserted on every heartbeat. A failed HSET, an entry pruned while
+        # this worker's heartbeat lapsed, or the hash's TTL running out used to
+        # leave a live socket missing from the registry for good — so a note
+        # joiner saw "no peers" and seeded the DB copy over a live document.
+        self._local_presence: Dict[str, Dict[str, str]] = {}
 
     # ── lifecycle ──────────────────────────────────────────────────────────
     @property
@@ -192,6 +198,18 @@ class WsBus:
     # ── worker liveness ────────────────────────────────────────────────────
     async def _heartbeat_once(self) -> None:
         await self._redis.set(_WORKER_PREFIX + WORKER_ID, "1", ex=_WORKER_TTL)
+        await self._reassert_presence()
+
+    async def _reassert_presence(self) -> None:
+        for key, fields in list(self._local_presence.items()):
+            if not fields:
+                continue
+            try:
+                await self._redis.hset(key, mapping=dict(fields))
+                await self._redis.expire(key, _PRESENCE_TTL)
+            except Exception as e:
+                logger.debug("ws_bus: presence re-assert failed: %s", e)
+                return
 
     async def _heartbeat(self) -> None:
         while True:
@@ -209,20 +227,28 @@ class WsBus:
         return f"{_PRESENCE_PREFIX}{resource_type}:{resource_id}"
 
     async def presence_add(self, resource_type: str, resource_id: str, conn_id: str, user_info: dict) -> None:
+        key = self._presence_key(resource_type, resource_id)
+        value = json.dumps(user_info)
+        self._local_presence.setdefault(key, {})[f"{WORKER_ID}:{conn_id}"] = value
         if self._redis is None:
             return
-        key = self._presence_key(resource_type, resource_id)
         try:
-            await self._redis.hset(key, f"{WORKER_ID}:{conn_id}", json.dumps(user_info))
+            await self._redis.hset(key, f"{WORKER_ID}:{conn_id}", value)
             await self._redis.expire(key, _PRESENCE_TTL)
         except Exception as e:
             logger.debug("ws_bus: presence_add failed: %s", e)
 
     async def presence_remove(self, resource_type: str, resource_id: str, conn_id: str) -> None:
+        key = self._presence_key(resource_type, resource_id)
+        mine = self._local_presence.get(key)
+        if mine is not None:
+            mine.pop(f"{WORKER_ID}:{conn_id}", None)
+            if not mine:
+                del self._local_presence[key]
         if self._redis is None:
             return
         try:
-            await self._redis.hdel(self._presence_key(resource_type, resource_id), f"{WORKER_ID}:{conn_id}")
+            await self._redis.hdel(key, f"{WORKER_ID}:{conn_id}")
         except Exception as e:
             logger.debug("ws_bus: presence_remove failed: %s", e)
 
