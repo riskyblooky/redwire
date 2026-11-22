@@ -139,6 +139,7 @@ section becomes one release entry.
 - Several screens (counts, stats, the attack graph, linked items, user pickers) showed stale data after an edit until the page was reloaded. They now refresh.
 - In shared editing, collaborators who weren't typing kept disappearing from and reappearing in the presence list. They now stay listed while connected.
 - The weak-password warning for infrastructure credentials checked every keystroke and kept each partial password in browser memory. It now checks once you stop typing and keeps nothing.
+- Signing in as a different user in one browser tab left other open tabs showing the first user while acting as the second. Those tabs now reload as the new user.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

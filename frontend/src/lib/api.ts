@@ -203,9 +203,22 @@ if (typeof window !== 'undefined') {
         startProactiveRefresh();
     }
 
+    // Whose session this tab is showing. The token is shared by all tabs, so a
+    // sign-in as someone else in another tab silently made this tab act as
+    // them while it still showed the first user's data and state.
+    let tabSub = token ? jwtSub(token) : null;
+
     // Listen for login/logout to start/stop proactive refresh
     window.addEventListener('storage', (e) => {
         if (e.key === 'access_token') {
+            const prev = (e.oldValue ? jwtSub(e.oldValue) : null) ?? tabSub;
+            const next = e.newValue ? jwtSub(e.newValue) : null;
+            if (prev && next && prev !== next) {
+                // Another account: start over as that user (or the login page).
+                window.location.reload();
+                return;
+            }
+            if (next) tabSub = next;
             if (e.newValue) {
                 startProactiveRefresh();
             } else {
@@ -213,6 +226,16 @@ if (typeof window !== 'undefined') {
             }
         }
     });
+}
+
+/** `sub` (user id) of a JWT, or null if it can't be read. */
+function jwtSub(token: string): string | null {
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return typeof payload.sub === 'string' ? payload.sub : null;
+    } catch {
+        return null;
+    }
 }
 
 /** `exp` (seconds) of a JWT, or null if it can't be read. */
