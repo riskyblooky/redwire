@@ -143,17 +143,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // Then ask the backend to blacklist the access token and the
         // refresh-cookie (read server-side), and clear the cookie.
         // withCredentials lets the cookie travel cross-origin in dev.
-        if (token) {
-            api.post('/auth/logout', {}, {
+        const revoked = token
+            ? api.post('/auth/logout', {}, {
                 headers: { Authorization: `Bearer ${token}` },
                 withCredentials: true,
-            }).catch(() => {
+            }).then(() => undefined, () => {
                 // Best-effort: if this fails, the token will still expire naturally
-            });
-        }
+            })
+            : Promise.resolve();
 
-        // Hard redirect to login to ensure clean state reset
-        window.location.href = '/login';
+        // Hard redirect to login to ensure clean state reset, once the logout
+        // has reached the server: navigating away right away could cancel the
+        // request, leaving the token and refresh cookie valid. Capped so a
+        // dead backend doesn't hold the user on the page.
+        const cap = new Promise<void>(resolve => setTimeout(resolve, 3000));
+        void Promise.race([revoked, cap]).then(() => { window.location.href = '/login'; });
     },
 
     checkAuth: async () => {
