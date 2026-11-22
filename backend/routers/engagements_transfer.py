@@ -1047,26 +1047,41 @@ async def export_engagement(
             data, indent=2, default=str, sort_keys=True
         ).encode("utf-8")
 
+        # Files that couldn't be read from storage. Recorded in the manifest
+        # and reported to the exporter (header + activity log) — they used
+        # to be skipped silently, so an archive could quietly lack evidence.
+        missing_files: list[dict] = []
+
+        def _missing(kind: str, oid, name, err=None) -> None:
+            logger.warning("engagement-export: %s %s file missing from storage: %s", kind, oid, err)
+            missing_files.append({"kind": kind, "id": oid, "name": name})
+
         # attachments — evidence files
         for ev in evidence_list:
             if ev.file_path:
                 try:
                     file_bytes = await storage_service.download_file(ev.file_path)
-                    if file_bytes is None:
-                        continue
-                    members[f"attachments/{ev.file_path}"] = file_bytes
-                except Exception:
-                    pass  # skip missing files
+                except Exception as e:
+                    file_bytes, err = None, e
+                else:
+                    err = None
+                if file_bytes is None:
+                    _missing("evidence", ev.id, ev.original_filename or ev.filename, err)
+                    continue
+                members[f"attachments/{ev.file_path}"] = file_bytes
 
         # attachments — markdown images
         for m in md_images:
             try:
                 file_bytes = await storage_service.download_file(m.storage_key)
-            except Exception:
-                logger.warning("engagement-export: markdown image %s missing from storage", m.id)
+            except Exception as e:
+                file_bytes, err = None, e
+            else:
+                err = None
+            if file_bytes is None:
+                _missing("markdown_image", m.id, m.original_filename, err)
                 continue
-            if file_bytes is not None:
-                members[f"attachments/{m.storage_key}"] = file_bytes
+            members[f"attachments/{m.storage_key}"] = file_bytes
 
         # attachments — vault files
         # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: MinIO blob may be
@@ -1084,11 +1099,12 @@ async def export_engagement(
                 try:
                     file_bytes = await storage_service.download_file(vi.file_path)
                     if file_bytes is None:
+                        _missing("vault_item", vi.id, vi.name, None)
                         continue
                     file_bytes = _decrypt_vault_bytes(file_bytes)
                     members[f"attachments/{vi.file_path}"] = file_bytes
-                except Exception:
-                    pass
+                except Exception as e:
+                    _missing("vault_item", vi.id, vi.name, e)
 
         # Digests + manifest. Sort names so the map is
         # ordering-independent (JSON serialisation preserves insertion
@@ -1105,6 +1121,7 @@ async def export_engagement(
             "contains_plaintext_secrets": _has_vault_secrets,
             "digests": digests,
             "root_digest": root_digest,
+            "missing_files": missing_files,
         }
         zf.writestr(
             "manifest.json",
@@ -1131,6 +1148,8 @@ async def export_engagement(
         if _has_vault_secrets
         else f"Exported engagement archive{_enc_note}: {filename}"
     )
+    if missing_files:
+        _details += f" — {len(missing_files)} file(s) could not be read from storage and are not in the archive"
     await create_activity_log(
         db=db,
         engagement_id=engagement_id,
@@ -1151,6 +1170,7 @@ async def export_engagement(
             # to the export UI so the operator can send it out-of-band
             # to whoever will import the archive.
             "X-Archive-Root-Digest": root_digest,
+            "X-Export-Missing-Files": str(len(missing_files)),
         },
     )
 
@@ -1484,6 +1504,9 @@ async def import_engagement(
             pending = [it for it in pending if it.get("id") not in done]
 
     uploaded_keys: list[str] = []
+    # Archive rows imported without their file (or skipped for lack of it),
+    # returned to the importer — previously only logged.
+    skipped_files: list[dict] = []
 
     try:
         # ── 0. Markdown images: new ids, references rewritten ────────
@@ -1496,7 +1519,10 @@ async def import_engagement(
         for m in rows("markdown_images"):
             key, ctype = m.get("storage_key"), (m.get("content_type") or "").lower()
             member = f"attachments/{key}" if isinstance(key, str) else None
-            if not m.get("id") or ctype not in _MD_TYPES or member not in zf.namelist():
+            if not m.get("id") or ctype not in _MD_TYPES:
+                continue
+            if member not in zf.namelist():
+                skipped_files.append({"kind": "markdown_image", "name": m.get("original_filename")})
                 continue
             body = _read_member_safely(zf, member)
             if 0 < len(body) <= _MD_MAX:
@@ -1561,6 +1587,7 @@ async def import_engagement(
                 await storage_service.upload_file(body, storage_key, ctype)
             except Exception:
                 logger.warning("engagement-import: could not store markdown image %s", old_id)
+                skipped_files.append({"kind": "markdown_image", "name": m.get("original_filename")})
                 continue
             uploaded_keys.append(storage_key)
             db.add(MarkdownImage(
@@ -1719,6 +1746,7 @@ async def import_engagement(
             # A row without its file in the archive would point at nothing.
             if not old_path or zip_path not in zf.namelist():
                 logger.warning("engagement-import: evidence %r has no file in the archive; skipped", ev.get("id"))
+                skipped_files.append({"kind": "evidence", "name": ev.get("original_filename")})
                 continue
             ext = os.path.splitext(old_path)[1]
             new_storage_name = f"{uuid.uuid4()}{ext}"
@@ -1733,6 +1761,7 @@ async def import_engagement(
                 # GHSA-rcjp-27mp-v69m: never fall back to the bundle-supplied
                 # path — that would persist an attacker-controlled storage
                 # key pointing at another engagement's object. Skip the row.
+                skipped_files.append({"kind": "evidence", "name": ev.get("original_filename")})
                 continue
             uploaded_keys.append(new_storage_name)
 
@@ -1784,6 +1813,8 @@ async def import_engagement(
                         new_vault_path = None
                 else:
                     new_vault_path = None
+                if new_vault_path is None:
+                    skipped_files.append({"kind": "vault_item", "name": vi.get("name")})
 
             # GHSA-3r7j-7h5r-gxgx: the EncryptedText columns encrypt the
             # archive's plaintext under this instance's key on bind.
@@ -2095,6 +2126,7 @@ async def import_engagement(
             "id": eng_new_id,
             "name": new_eng.name,
             "message": "Engagement imported successfully",
+            "skipped_files": skipped_files,
         }
 
     except Exception as e:

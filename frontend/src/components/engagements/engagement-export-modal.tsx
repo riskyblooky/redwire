@@ -85,6 +85,13 @@ export function EngagementExportModal({
             a.remove();
             URL.revokeObjectURL(url);
             toast.success(showPwSection && passphrase ? 'Encrypted export downloaded' : 'Engagement exported successfully');
+            const missing = Number(resp.headers['x-export-missing-files'] || 0);
+            if (missing > 0) {
+                toast.warning(`${missing} file${missing === 1 ? '' : 's'} could not be read from storage and ${missing === 1 ? 'is' : 'are'} not in the archive`, {
+                    description: 'The archive manifest lists them under missing_files.',
+                    duration: 15000,
+                });
+            }
             if (digest) {
                 // Keep the modal open so the operator can copy the fingerprint
                 // before dismissing (they'll want to share it out-of-band with

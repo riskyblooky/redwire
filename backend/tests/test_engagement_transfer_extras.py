@@ -185,3 +185,32 @@ async def test_export_flags_spray_secrets(client, db_session, make_user, authent
     authenticate_as(await make_user(role="admin"))
     r = await client.get(f"/engagements/{eng_id}/export/preview")
     assert r.json()["contains_plaintext_secrets"] is True
+
+
+async def test_missing_files_are_reported_on_export_and_import(client, db_session, make_user, authenticate_as):
+    """A file that can't be read from storage is listed in the manifest and
+    counted in a header (it used to be skipped silently), and the import
+    tells the importer which rows came without their file."""
+    import io
+    import zipfile
+    from models.evidence import Evidence
+    admin = await make_user(role="admin")
+    eng = await _seed(db_session, (await make_user(), await make_user()))
+    ev_id = str(uuid.uuid4())
+    db_session.add(Evidence(id=ev_id, engagement_id=eng.id, filename="gone.png",
+                            original_filename="gone.png", file_path=f"missing/{uuid.uuid4()}.png", file_size=10))
+    await db_session.flush()
+    eng_id = eng.id
+    db_session.expunge_all()
+    authenticate_as(admin)
+
+    exp = await client.get(f"/engagements/{eng_id}/export")
+    assert exp.status_code == 200, exp.text
+    assert int(exp.headers["x-export-missing-files"]) >= 1
+    manifest = json.loads(zipfile.ZipFile(io.BytesIO(exp.content)).read("manifest.json"))
+    assert {"kind": "evidence", "id": ev_id, "name": "gone.png"} in manifest["missing_files"]
+
+    imp = await client.post("/engagements/import", data={"user_mapping": "{}"},
+                            files={"file": ("e.zip", exp.content, "application/zip")})
+    assert imp.status_code == 201, imp.text
+    assert {"kind": "evidence", "name": "gone.png"} in imp.json()["skipped_files"]

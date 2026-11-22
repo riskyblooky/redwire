@@ -506,6 +506,14 @@ export default function EngagementsPage() {
             if (passphrase) headers['X-Import-Passphrase'] = passphrase;
             const resp = await api.post('/engagements/import', formData, { headers });
             toast.success(`Imported: ${resp.data.name}`);
+            const skipped: { kind: string; name?: string | null }[] = resp.data.skipped_files || [];
+            if (skipped.length > 0) {
+                const names = skipped.map(f => f.name || f.kind).slice(0, 5).join(', ');
+                toast.warning(`${skipped.length} file${skipped.length === 1 ? ' was' : 's were'} missing from the archive`, {
+                    description: `${names}${skipped.length > 5 ? ', …' : ''}. Evidence without its file was not imported; vault items were imported without the attachment.`,
+                    duration: 15000,
+                });
+            }
             setShowUserMapping(false);
             setUserMappingData(null);
             setImportFile(null);

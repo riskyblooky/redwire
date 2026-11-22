@@ -91,6 +91,7 @@ section becomes one release entry.
 - A collaborator joining a note that others were already editing could, after a brief Redis hiccup or on a room left open for over a day, load a second copy of the note's text into it. Each server worker now re-publishes its open connections every 10 seconds.
 - One collaborator with a stalled connection (e.g. a sleeping laptop) could delay live updates for everyone on the same engagement, and slow down the save that triggered them. Updates now go out to everyone at once, and a connection that doesn't accept one within 5 seconds is dropped so it reconnects.
 - Long AI-assistant chats re-summarized the whole earlier conversation on every new message once they reached the context limit, so each message cost more as the chat went on. Compaction now builds on the previous summary, and a failed summary is retried instead of being reused for an hour.
+- Exporting an engagement silently left out any evidence or vault file that couldn't be read from storage, and importing silently dropped rows whose file was missing from the archive. Both now warn, and the export manifest lists the missing files.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
