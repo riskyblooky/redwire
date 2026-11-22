@@ -653,6 +653,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                             so plugins don't need to know about the tab shell. */}
                         <PluginSlot
                             slot="engagement.tabs"
+                            engagementId={id}
                             renderWrapper={(entry: PluginExtension) => (
                                 <TabsTrigger
                                     key={`plugin-tab-${entry.plugin_slug}-${entry.component}`}
@@ -786,6 +787,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         engagementId as a prop plus its own manifest entry. */}
                     <PluginSlot
                         slot="engagement.tabs"
+                        engagementId={id}
                         props={{ engagementId: id }}
                         renderWrapper={(entry: PluginExtension, node) => (
                             <TabsContent

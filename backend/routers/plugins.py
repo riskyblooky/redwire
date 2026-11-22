@@ -10,7 +10,7 @@ GET    /plugins/nav-items     — Get all nav items from active plugins
 GET    /plugins/widgets       — Get all widget defs from active plugins
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from pydantic import BaseModel, Field
@@ -80,6 +80,7 @@ async def get_plugin_widgets(current_user: User = Depends(get_current_user)):
 @router.get("/extensions/{slot}")
 async def get_plugin_extensions(
     slot: str,
+    engagement_id: Optional[str] = Query(None, max_length=64, description="Engagement the slot renders in; permissions held on it count"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -95,7 +96,7 @@ async def get_plugin_extensions(
     can register into any slot they want — the render site decides which
     slot to ask for.
     """
-    return await plugin_registry.get_extensions(slot, current_user, db)
+    return await plugin_registry.get_extensions(slot, current_user, db, engagement_id=engagement_id)
 
 
 # ── Plugin details ───────────────────────────────────────────────────

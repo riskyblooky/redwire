@@ -98,7 +98,10 @@ At sync time, `sync-plugin-frontends.mjs` writes
 `frontend/src/app/plugins/_extensions.generated.tsx` mapping
 `"<slug>:<component>"` → the component's default export. `<PluginSlot>`
 fetches its list from `GET /plugins/extensions/{slot}` (backend gates
-by the caller's global permissions AND the plugin's `enabled` state)
+by the caller's permissions AND the plugin's `enabled` state; for
+`engagement.*` slots the page passes the engagement id, so an entry's
+`required_permissions` may be engagement-scoped, e.g. `engagement_view`,
+and are satisfied by a grant on that engagement)
 and looks each entry up in that generated registry. If the manifest
 advertises a component but no file matches, the console warns and
 that entry is skipped — nothing crashes.

@@ -8,7 +8,8 @@
  *
  *   1. Backend ``GET /plugins/extensions/{slot}`` returns metadata for
  *      every plugin entry registered against the slot, filtered by the
- *      caller's global permissions (see PluginRegistry.get_extensions).
+ *      caller's permissions (global, plus those on ``engagementId`` when
+ *      given; see PluginRegistry.get_extensions).
  *      Payload shape per entry:
  *        { component, label?, plugin_slug, plugin_id, slot, ... }
  *
@@ -52,6 +53,10 @@ interface PluginSlotProps<TProps extends Record<string, any> = Record<string, an
     renderWrapper?: (entry: PluginExtension, node: ReactNode) => ReactNode;
     /** Fallback when the API errors or returns nothing. Default: null. */
     fallback?: ReactNode;
+    /** The engagement the slot renders in. Sent to the backend so entries
+     *  gated on engagement-scoped permissions (engagement_view, asset_view,
+     *  ...) are checked against it, not only against global grants. */
+    engagementId?: string;
 }
 
 export function PluginSlot<TProps extends Record<string, any>>({
@@ -59,14 +64,16 @@ export function PluginSlot<TProps extends Record<string, any>>({
     props,
     renderWrapper,
     fallback = null,
+    engagementId,
 }: PluginSlotProps<TProps>) {
     const { data: entries, isError } = useQuery({
-        // Slot in the key so different slots are cached independently;
+        // Slot (and engagement) in the key so each is cached independently;
         // the same slot re-uses the fetch across many render sites.
-        queryKey: ['plugin-extensions', slot],
+        queryKey: ['plugin-extensions', slot, engagementId ?? null],
         queryFn: async () => {
             const { data } = await api.get<PluginExtension[]>(
                 `/plugins/extensions/${encodeURIComponent(slot)}`,
+                { params: engagementId ? { engagement_id: engagementId } : undefined },
             );
             return data;
         },

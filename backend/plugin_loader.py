@@ -413,9 +413,15 @@ class PluginRegistry:
                 })
         return items
 
-    async def get_extensions(self, slot: str, user=None, db=None) -> list[dict]:
+    async def get_extensions(self, slot: str, user=None, db=None, engagement_id: str | None = None) -> list[dict]:
         """Return every plugin extension registered against ``slot``,
-        filtered by the caller's global permissions.
+        filtered by the caller's permissions.
+
+        Without ``engagement_id`` the entry's required permissions must be
+        held globally. Slots rendered inside an engagement (``engagement.*``)
+        pass its id, and then a permission held on that engagement counts
+        too: an entry gated on ``engagement_view`` was otherwise visible to
+        admins only, since that permission is granted per engagement.
 
         The frontend passes a slot name (e.g. ``engagement.tabs``) and
         gets back a list of ``{plugin_id, plugin_slug, component, label,
@@ -443,9 +449,14 @@ class PluginRegistry:
                         except ValueError:
                             ok = False
                             break
-                        if not await _has_perm(user, perm, db):
-                            ok = False
-                            break
+                        if await _has_perm(user, perm, db):
+                            continue
+                        if engagement_id:
+                            from auth.rbac import check_engagement_permission
+                            if await check_engagement_permission(user.id, engagement_id, perm.value, db):
+                                continue
+                        ok = False
+                        break
                     if not ok:
                         continue
                 items.append({
