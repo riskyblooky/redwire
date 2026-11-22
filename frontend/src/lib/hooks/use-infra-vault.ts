@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 
 // ── Types ───────────────────────────────────────────────────────
@@ -204,16 +205,29 @@ export function useRevokeInfraVaultAccess() {
 
 // ── Password Strength Check (Bloom Filter) ──────────────────────
 
+/**
+ * Whether ``password`` is in the wordlist, checked once typing pauses.
+ *
+ * Not a TanStack query on purpose: the key would hold the plaintext, so every
+ * typed prefix sat in the query cache (and devtools) for minutes, and with no
+ * debounce each keystroke was a request. Results live only in this component.
+ */
 export function useCheckPassword(password: string, debounceMs = 500) {
-    return useQuery({
-        queryKey: ['check-password', password],
-        queryFn: async () => {
-            const { data } = await api.post<{ found: boolean }>('/wordlist/check-password', { password });
-            return data;
-        },
-        enabled: !!password && password.length >= 3,
-        staleTime: 60_000,
-        gcTime: 5 * 60_000,
-    });
+    const [data, setData] = useState<{ found: boolean } | undefined>(undefined);
+    useEffect(() => {
+        setData(undefined);
+        if (!password || password.length < 3) return;
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                const { data } = await api.post<{ found: boolean }>('/wordlist/check-password', { password });
+                if (!cancelled) setData(data);
+            } catch {
+                // Advisory only: no warning if the check fails.
+            }
+        }, debounceMs);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [password, debounceMs]);
+    return { data };
 }
 
