@@ -25,6 +25,10 @@ config.set_main_option(
     os.getenv("DATABASE_URL", "postgresql+asyncpg://redwire:changeme@localhost:5432/redwire").replace(
         "+asyncpg", ""
     )  # Use psycopg2 for alembic
+    # set_main_option goes through ConfigParser interpolation: a "%" in the
+    # URL (a DB password with "%", or a URL-encoded character) raised
+    # "invalid interpolation syntax" and every migration failed.
+    .replace("%", "%%")
 )
 
 # ── Plugin migrations discovery ───────────────────────────────────────
