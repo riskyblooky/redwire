@@ -75,6 +75,22 @@ server {
     # body to 64k bounds the per-request worker cost to a few ms.
     # Route match uses `^~` prefix so this block wins over the shorter
     # /api/ location for any /api/auth/* URI without a regex scan.
+    # SAML ACS: the IdP POSTs a signed, base64 SAMLResponse (form-urlencoded,
+    # not multipart). With many attributes / group claims it can pass 64k,
+    # and the cap above refused the login with a 413. Longest ^~ prefix wins.
+    location ^~ /api/auth/saml/acs {
+        client_max_body_size 1m;
+
+        set $backend_url http://backend:8000;
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $backend_url;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location ^~ /api/auth/ {
         client_max_body_size 64k;
 
