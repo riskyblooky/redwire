@@ -5,10 +5,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePathname } from 'next/navigation';
 import api, { authedFetch } from '@/lib/api';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-    MessageCircle, Send, Loader2,
+    MessageCircle, Send,
     Sparkles, Trash2, Minus, Square, ChevronDown, ChevronRight, Brain, Plug,
     Check, X, Wrench, Clock, ShieldCheck,
 } from 'lucide-react';
@@ -40,6 +41,9 @@ interface ChatMessage {
     content: string;
     thinking?: string;
     isMcp?: boolean;
+    // Shown under the message, never sent back to the model (it used to be
+    // written into ``content`` and became part of the next request's history).
+    error?: string;
     toolCalls?: ToolCall[];
     // GHSA-f4j9-gvm9-frjw follow-up: backend emits context_compacted
     // events when the conversation prefix gets summarized. Display
@@ -390,6 +394,11 @@ export function AiChatbot() {
 
     const shouldShow = isAuthenticated && !isPublicRoute && aiStatus?.chatbot_enabled;
 
+    // The in-flight chat stream, so Stop / Clear / unmount can end it (it
+    // used to run on, and keep writing into the cleared transcript).
+    const abortRef = useRef<AbortController | null>(null);
+    useEffect(() => () => abortRef.current?.abort(), []);
+
     // ── Send message (streaming) ────────────────────────────────────────
     const handleSend = async () => {
         if (!input.trim() || streaming) return;
@@ -399,6 +408,18 @@ export function AiChatbot() {
         setInput('');
         setStreaming(true);
         setIsThinking(false);
+        const controller = new AbortController();
+        abortRef.current = controller;
+        let placeholderAdded = false;
+        // An error lands on the in-flight assistant message if there is one,
+        // otherwise as its own (error-only) message.
+        const showError = (error: string) => setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (placeholderAdded && last?.role === 'assistant') {
+                return [...prev.slice(0, -1), { ...last, error }];
+            }
+            return [...prev, { role: 'assistant', content: '', error }];
+        });
 
         try {
             // authedFetch: a stream needs fetch, but not a stale token (raw
@@ -406,8 +427,10 @@ export function AiChatbot() {
             const resp = await authedFetch('/ai/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
                 body: JSON.stringify({
-                    messages: newMessages.filter(m => !m.isMcp).map(m => ({
+                    // Error-only / empty assistant turns aren't conversation.
+                    messages: newMessages.filter(m => !m.isMcp && !(m.role === 'assistant' && !m.content)).map(m => ({
                         role: m.role,
                         content: m.content,
                     })),
@@ -418,11 +441,7 @@ export function AiChatbot() {
 
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({}));
-                setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content: `Error: ${err.detail || resp.statusText}`,
-                }]);
-                setStreaming(false);
+                showError(typeof err.detail === 'string' ? err.detail : (resp.statusText || `HTTP ${resp.status}`));
                 return;
             }
 
@@ -431,6 +450,7 @@ export function AiChatbot() {
             let rawContent = '';
             let toolCalls: ToolCall[] = [];
             setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '', toolCalls: [] }]);
+            placeholderAdded = true;
 
             // Helper: push the updated tool-call list into the last
             // assistant message in-place. Used by every tool_call_*
@@ -476,7 +496,8 @@ export function AiChatbot() {
                             // OpenAI-compat streaming delta (or our own
                             // {"error":...} envelope on upstream failure).
                             if (parsed.error) {
-                                rawContent += `\nError: ${parsed.error}`;
+                                showError(String(parsed.error));
+                                continue;
                             } else {
                                 const delta = parsed.choices?.[0]?.delta?.content || '';
                                 rawContent += delta;
@@ -511,7 +532,7 @@ export function AiChatbot() {
                             // backend's BLPOP wakes up immediately.
                             if (newCall.requiresApproval && toolAllowlistRef.current.has(newCall.name)) {
                                 api.post(`/ai/chat/tool-approval/${newCall.callId}`, { decision: 'approve' })
-                                    .catch(() => { /* will surface as denied via timeout */ });
+                                    .catch(() => toast.error(`Couldn't auto-approve ${newCall.name}; approve it below or it will time out`));
                             }
                         } else if (currentEvent === 'tool_call_result') {
                             toolCalls = toolCalls.map(c =>
@@ -555,15 +576,19 @@ export function AiChatbot() {
                     }
                 }
             }
-        } catch (err: any) {
-            setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: `Error: ${err.message}`,
-            }]);
+        } catch (err: unknown) {
+            // Stopped by the user (Stop / Clear / closing): keep what arrived.
+            if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                showError(err instanceof Error ? err.message : 'The request failed');
+            }
+        } finally {
+            if (abortRef.current === controller) abortRef.current = null;
+            setStreaming(false);
+            setIsThinking(false);
         }
-        setStreaming(false);
-        setIsThinking(false);
     };
+
+    const handleStop = () => { abortRef.current?.abort(); };
 
 
 
@@ -616,7 +641,7 @@ export function AiChatbot() {
                         <div className="flex items-center gap-1">
                             {messages.length > 0 && (
                                 <button
-                                    onClick={() => setMessages([])}
+                                    onClick={() => { abortRef.current?.abort(); setMessages([]); }}
                                     className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
                                     title="Clear chat"
                                 >
@@ -714,9 +739,9 @@ export function AiChatbot() {
                                                     onDecision={async (decision) => {
                                                         try {
                                                             await api.post(`/ai/chat/tool-approval/${tc.callId}`, { decision });
-                                                        } catch (e) {
-                                                            // Surface via toast-style inline message
-                                                            console.error('Failed to record tool approval', e);
+                                                        } catch {
+                                                            // The card stays pending, so say why.
+                                                            toast.error(`Couldn't send your ${decision === 'approve' ? 'approval' : 'denial'}. The request may have expired; try again.`);
                                                         }
                                                     }}
                                                 />
@@ -738,6 +763,9 @@ export function AiChatbot() {
                                                 </span>
                                             ) : null
                                         )}
+                                        {msg.error && (
+                                            <p className="mt-1 text-[12px] text-red-400">{msg.error}</p>
+                                        )}
                                     </div>
                                 </div>
                             );
@@ -757,13 +785,23 @@ export function AiChatbot() {
                                 disabled={streaming}
                                 className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50"
                             />
-                            <button
-                                onClick={handleSend}
-                                disabled={streaming || !input.trim()}
-                                className="p-2 rounded-xl bg-primary hover:bg-primary/90 text-white disabled:opacity-30 disabled:hover:bg-primary transition-colors shrink-0"
-                            >
-                                {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                            </button>
+                            {streaming ? (
+                                <button
+                                    onClick={handleStop}
+                                    title="Stop"
+                                    className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white transition-colors shrink-0"
+                                >
+                                    <Square className="h-4 w-4 fill-current" />
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handleSend}
+                                    disabled={!input.trim()}
+                                    className="p-2 rounded-xl bg-primary hover:bg-primary/90 text-white disabled:opacity-30 disabled:hover:bg-primary transition-colors shrink-0"
+                                >
+                                    <Send className="h-4 w-4" />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
