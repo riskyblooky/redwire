@@ -25,6 +25,20 @@ logger = logging.getLogger(__name__)
 _DEFAULT_LOGIN_TIMEOUT_S = 15
 
 
+def _entry_value(entry, attr: str) -> str:
+    """First value of ``attr`` on an ldap3 entry, or "" when it has none.
+    str() of an attribute the entry lacks is "[]" (an empty value list),
+    which became users' email; a multi-valued one stringifies as a list."""
+    try:
+        a = getattr(entry, attr)
+    except Exception:  # ldap3 raises its own cursor error for unknown attrs
+        return ""
+    values = getattr(a, "values", None)
+    if values is None:
+        return str(a).strip()
+    return str(values[0]).strip() if values else ""
+
+
 def _login_timeout_s() -> int:
     """Read the operator-tunable login timeout, clamped to a sane range."""
     raw = os.environ.get("LDAP_LOGIN_TIMEOUT_S", "").strip()
@@ -331,9 +345,9 @@ def authenticate_ldap(
         user_conn.unbind()
 
         user_info = {
-            "username": str(getattr(user_entry, username_attr, username)),
-            "email": str(getattr(user_entry, email_attr, "")),
-            "full_name": str(getattr(user_entry, fullname_attr, "")),
+            "username": _entry_value(user_entry, username_attr) or username,
+            "email": _entry_value(user_entry, email_attr),
+            "full_name": _entry_value(user_entry, fullname_attr),
         }
 
         logger.info(f"LDAP authentication successful for: {username}")

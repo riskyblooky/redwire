@@ -325,9 +325,12 @@ async def login(request: Request, credentials: UserLogin, response: Response, db
                 new_user = User(
                     id=str(uuid.uuid4()),
                     username=jit_username,
-                    email=ldap_info.get("email", f"{credentials.username}@ldap.local"),
+                    # `or`, not a get() default: the directory may have no mail
+                    # attribute (""), and email is unique, so "" would also
+                    # collide with the next such user.
+                    email=ldap_info.get("email") or f"{jit_username}@ldap.local",
                     hashed_password=await get_password_hash_async(str(uuid.uuid4())),  # random, can't login locally
-                    full_name=ldap_info.get("full_name", ""),
+                    full_name=ldap_info.get("full_name") or "",
                     role=UserRole.OPERATOR,
                     auth_provider="ldap",
                     is_active=True,
