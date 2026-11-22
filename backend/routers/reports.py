@@ -431,6 +431,33 @@ async def _do_generate_report(
         )
         standalone_evidence = list(standalone_evidence_result.scalars().all())
 
+        # Classification of each exported item, resolved exactly as the
+        # rendered formats do (explicit → engagement default, clamped to the
+        # ceiling; evidence inherits its finding), plus the banner rolled up
+        # from everything included. None everywhere when no profile applies.
+        from utils.marking import MarkingEngine
+        mark_engine = (MarkingEngine(marking_profile, engagement)
+                       if marking_profile and (marking_profile.levels or []) else None)
+        exported_levels = []
+
+        def _cls(entity, parent=None):
+            if not mark_engine:
+                return None
+            if getattr(entity, "classification_level", None):
+                level, suffix = mark_engine.resolve(entity.classification_level,
+                                                    getattr(entity, "classification_suffix", None))
+            elif parent:
+                level, suffix = parent["level"], parent["suffix"]
+            else:
+                level, suffix = mark_engine.resolve(None, None)
+            if not level:
+                return None
+            exported_levels.append(level)
+            return {"level": level, "suffix": suffix,
+                    "portion_mark": mark_engine.portion_mark(level, suffix) or None}
+
+        finding_cls = {f.id: _cls(f) for f in findings}
+
         # Build structured export data
         export_data = {
             "exported_at": datetime.utcnow().isoformat() + "Z",
@@ -455,6 +482,7 @@ async def _do_generate_report(
                     "severity": f.severity.value if f.severity else None,
                     "status": f.status.value if f.status else None,
                     "category": f.category,
+                    "classification": finding_cls[f.id],
                     "custom_fields": f.custom_fields or {},
                     "description": f.description,
                     "impact": f.impact,
@@ -480,6 +508,7 @@ async def _do_generate_report(
                             "file_size": e.file_size,
                             "description": e.description,
                             "include_in_report": e.include_in_report,
+                            "classification": _cls(e, finding_cls[f.id]),
                             "attachment_path": f"attachments/findings/{f.id}/{_evidence_arcname(e)}" if e.include_in_report else None,
                         }
                         for e in (f.evidence or [])
@@ -493,6 +522,7 @@ async def _do_generate_report(
                     "parent_id": tc.parent_id,
                     "title": tc.title,
                     "category": tc.category,
+                    "classification": _cls(tc),
                     "description": tc.description,
                     "steps": tc.steps,
                     "expected_result": tc.expected_result,
@@ -514,6 +544,7 @@ async def _do_generate_report(
                     "id": ca.id,
                     "title": ca.title,
                     "artifact_type": ca.artifact_type,
+                    "classification": _cls(ca),
                     "status": ca.status.value if ca.status else None,
                     "location": ca.location,
                     "description": ca.description,
@@ -532,6 +563,7 @@ async def _do_generate_report(
                     "file_size": e.file_size,
                     "description": e.description,
                     "include_in_report": e.include_in_report,
+                    "classification": _cls(e),
                     "attachment_path": f"attachments/engagement/{_evidence_arcname(e)}" if e.include_in_report else None,
                 }
                 for e in standalone_evidence
@@ -555,9 +587,21 @@ async def _do_generate_report(
                         "title": s.title,
                         "sort_order": s.sort_order,
                         "content": s.content if s.section_type == SectionType.TEXT else None,
+                        "classification": _cls(s),
                     }
                     for s in sections
                 ],
+            }
+
+        if mark_engine:
+            top = mark_engine.highest(exported_levels)
+            banner = mark_engine.banner(top) if top else None
+            export_data["marking"] = {
+                "profile": marking_profile.name,
+                "scheme": mark_engine.scheme,
+                "banner": banner[0] if banner else None,
+                "banner_level": top,
+                "distribution_statement": mark_engine.distribution_statement,
             }
 
         # Build the archive into a spooled tempfile so memory usage stays

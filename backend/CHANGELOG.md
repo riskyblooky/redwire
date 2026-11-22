@@ -79,6 +79,7 @@ section becomes one release entry.
 - PDF reports italicised text between underscores inside identifiers and paths (`xp_cmdshell via sp_configure`, `2 * 3 * 4`, `~/.ssh … ~/.bashrc`) and showed the editor's escaped underscores as backslashes. Emphasis now only applies where markdown would put it.
 - A test case or cleanup item with a field longer than a page (long steps, a big code block) made PDF generation fail outright, and those fields were cut at 3,000 characters. They now continue onto the next page, untruncated.
 - A report item marked with a classification level the report's marking profile doesn't define (e.g. marked under IC/DoD, report run under TLP) was left out of the banner roll-up, so the banner could understate the document or be missing, and BLOCK enforcement didn't catch it. Such levels now always raise the banner, and BLOCK/WARN flag them.
+- JSON/ZIP exports of a marked engagement had no classification on any item and no banner. Each exported item now has its effective classification and portion mark, and the export carries the document banner and distribution statement.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
