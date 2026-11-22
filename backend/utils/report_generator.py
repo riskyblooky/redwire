@@ -2483,7 +2483,7 @@ class PDFReportGenerator:
                 det_rows.append([_label(label), Paragraph(_escape_xml(str(val)[:800]), ParagraphStyle(
                     name=f'TCV_{t.id}_{label}', parent=self.styles['BodyText2'], fontSize=9))])
 
-            def _add_md(label, val, max_chars=3000):
+            def _add_md(label, val, max_chars=50000):
                 if not val:
                     return
                 cs = ParagraphStyle(name=f'TCM_{t.id}_{label}', parent=self.styles['BodyText2'],
@@ -2527,7 +2527,9 @@ class PDFReportGenerator:
             tc_above, tc_below = self._table_mark_flowables([item.mark])
             block = [header]
             if det_rows:
-                body_t = Table(det_rows, colWidths=[1.3 * inch, 5.2 * inch])
+                # splitInRow: a field taller than a page splits inside its row
+                # (a row that can't split aborted the whole PDF with LayoutError).
+                body_t = Table(det_rows, colWidths=[1.3 * inch, 5.2 * inch], splitInRow=1)
                 body_t.setStyle(TableStyle([
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('TOPPADDING', (0, 0), (-1, -1), 6),
@@ -2639,7 +2641,7 @@ class PDFReportGenerator:
                     )),
                 ])
 
-            def _add_md(label, val, max_chars=3000):
+            def _add_md(label, val, max_chars=50000):
                 """Markdown row — renders block-level markdown into the cell."""
                 if not val:
                     return
@@ -2679,7 +2681,9 @@ class PDFReportGenerator:
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
                     ('LINEBEFORE', (0, 0), (0, 0), 4, colors.HexColor(_t(self.theme, 'primary_color'))),
                 ]))
-                body_t = Table(det_rows, colWidths=[1.3 * inch, 5.2 * inch])
+                # splitInRow: a field taller than a page splits inside its row
+                # (a row that can't split aborted the whole PDF with LayoutError).
+                body_t = Table(det_rows, colWidths=[1.3 * inch, 5.2 * inch], splitInRow=1)
                 body_t.setStyle(TableStyle([
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('TOPPADDING', (0, 0), (-1, -1), 6),

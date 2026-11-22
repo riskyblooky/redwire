@@ -77,6 +77,7 @@ section becomes one release entry.
 - **Security:** a role manager whose only access was "view all engagements" could add vault access to engagement roles, though view-all itself never grants the vault; and couldn't add note or cleanup viewing, which it does grant. The limit now matches what view-all grants.
 - HTML reports showed code with `&lt;` in place of `<` and dropped blockquotes, and markdown exports deleted any text written in angle brackets (`<username>`, `List<String>`, code like `cat <file>`). Both now keep the text as written, and raw HTML in a finding still can't run in either.
 - PDF reports italicised text between underscores inside identifiers and paths (`xp_cmdshell via sp_configure`, `2 * 3 * 4`, `~/.ssh … ~/.bashrc`) and showed the editor's escaped underscores as backslashes. Emphasis now only applies where markdown would put it.
+- A test case or cleanup item with a field longer than a page (long steps, a big code block) made PDF generation fail outright, and those fields were cut at 3,000 characters. They now continue onto the next page, untruncated.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
