@@ -15,6 +15,25 @@ from typing import Any
 
 _CACHE_TTL_S = 24 * 3600
 _CACHE_MAX = 1000
+_DEFAULT_PER_MINUTE = 10
+
+
+class RateLimited(Exception):
+    """MAX_ENRICHMENTS_PER_MINUTE reached (manual lookups don't wait)."""
+
+
+_shared = None
+
+
+def shared(db_factory) -> "ShodanEnricher":
+    """The one enricher for this process. The event listener and the manual
+    routes each built their own, so the routes never hit the listener's
+    cache and spent quota on IPs it had just looked up."""
+    global _shared
+    if _shared is None:
+        _shared = ShodanEnricher(db_factory)
+    _shared.db_factory = db_factory  # same factory in production; tests swap it
+    return _shared
 
 
 class ShodanEnricher:
@@ -27,6 +46,37 @@ class ShodanEnricher:
         # every IP it ever saw.
         self._cache: dict[str, tuple[float, dict]] = {}
         self._lock = asyncio.Lock()
+        self._calls: list[float] = []  # monotonic times of recent API calls
+
+    async def _per_minute(self) -> int:
+        """MAX_ENRICHMENTS_PER_MINUTE (the setting existed but was never read)."""
+        from sqlalchemy import select
+        from models.plugin import PluginSetting
+        async with self.db_factory() as db:
+            row = (await db.execute(select(PluginSetting).where(
+                PluginSetting.plugin_id == "shodan_enricher",
+                PluginSetting.key == "MAX_ENRICHMENTS_PER_MINUTE",
+            ))).scalar_one_or_none()
+        try:
+            return max(1, int(row.value)) if row and row.value else _DEFAULT_PER_MINUTE
+        except (TypeError, ValueError):
+            return _DEFAULT_PER_MINUTE
+
+    async def _take_slot(self, wait: bool) -> None:
+        """Count one API call against the per-minute limit (per process).
+        ``wait``: sleep until a slot frees (auto-enrich) instead of raising."""
+        limit = await self._per_minute()
+        while True:
+            async with self._lock:
+                now = time.monotonic()
+                self._calls = [t for t in self._calls if now - t < 60]
+                if len(self._calls) < limit:
+                    self._calls.append(now)
+                    return
+                retry_in = 60 - (now - self._calls[0])
+            if not wait:
+                raise RateLimited(f"Shodan lookup limit ({limit}/minute) reached; retry in {int(retry_in) + 1}s")
+            await asyncio.sleep(max(retry_in, 0.05))
 
     async def _get_api_key(self) -> str | None:
         """Fetch the Shodan API key from plugin settings."""
@@ -84,7 +134,7 @@ class ShodanEnricher:
             return
 
         try:
-            data = await self.lookup(resource_name, api_key)
+            data = await self.lookup(resource_name, api_key, wait=True)
             if data:
                 await self._store_enrichment(resource_id, resource_name, data)
                 print(f"[Shodan] Enriched asset {resource_name}: "
@@ -108,12 +158,14 @@ class ShodanEnricher:
                 return candidate.strip()
         return None
 
-    async def lookup(self, ip: str, api_key: str) -> dict | None:
-        """Query Shodan API for host information."""
+    async def lookup(self, ip: str, api_key: str, *, wait: bool = False) -> dict | None:
+        """Query Shodan API for host information. Raises RateLimited when the
+        per-minute limit is reached and ``wait`` is false."""
         # Check cache first
         hit = self._cache.get(ip)
         if hit and time.monotonic() - hit[0] < _CACHE_TTL_S:
             return hit[1]
+        await self._take_slot(wait)
 
         try:
             import httpx

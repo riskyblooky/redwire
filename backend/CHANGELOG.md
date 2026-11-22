@@ -104,6 +104,7 @@ section becomes one release entry.
 - With an LDAP CA certificate configured, every LDAP login left a certificate file behind in the server's temp directory. The certificate is now passed in memory.
 - Logging out with an API token, or with a malformed token, returned a server error. It now succeeds (an API token isn't revoked by logout).
 - Threat-intel feed entries without a link were added again on every refresh, and feeds published as a plain JSON list never loaded. Both are fixed, and the intel list loads faster.
+- The Shodan plugin's "Rate limit (per minute)" setting had no effect. It's now enforced, and manual lookups reuse recently fetched results instead of spending API quota again.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

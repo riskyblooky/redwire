@@ -78,7 +78,7 @@ async def test_shodan_enriches_by_identifier(db_session, make_user, shared_facto
     enr = ShodanEnricher(db_factory=shared_factory)
     calls = []
 
-    async def fake_lookup(ip, key):
+    async def fake_lookup(ip, key, **kw):
         calls.append(ip)
         return {"ip": ip, "ports": [443], "vulns": []}
     monkeypatch.setattr(enr, "lookup", fake_lookup)
@@ -97,7 +97,7 @@ async def test_shodan_manual_enrich_route(db_session, make_user, shared_factory,
     await db_session.flush()
     monkeypatch.setattr(shodan_router, "AsyncSessionLocal", shared_factory)
 
-    async def fake_lookup(self, ip, key):
+    async def fake_lookup(self, ip, key, **kw):
         return {"ip": ip, "ports": [], "vulns": []}
     monkeypatch.setattr(enr_mod.ShodanEnricher, "lookup", fake_lookup)
 
@@ -135,3 +135,34 @@ async def test_servicenow_query_cannot_add_conditions(monkeypatch):
 
 async def _const(v):
     return v
+
+
+async def test_shodan_per_minute_limit_and_shared_cache(db_session, shared_factory, monkeypatch):
+    """MAX_ENRICHMENTS_PER_MINUTE is enforced on real API calls, and the
+    routes share the listener's enricher (and so its cache)."""
+    import asyncio
+    from models.plugin import PluginSetting
+    from plugins.shodan_enricher import enricher as enr_mod
+    db_session.add(PluginSetting(plugin_id="shodan_enricher", key="MAX_ENRICHMENTS_PER_MINUTE", value="2"))
+    await db_session.flush()
+    monkeypatch.setattr(enr_mod, "_shared", None)
+    enr = enr_mod.shared(shared_factory)
+    assert enr_mod.shared(shared_factory) is enr
+    hits = []
+
+    def handler(request):
+        hits.append(request.url.path)
+        return httpx.Response(200, json={"ports": [22]})
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: real(transport=httpx.MockTransport(handler)))
+
+    assert (await enr.lookup("198.51.100.1", "k"))["ports"] == [22]
+    assert (await enr.lookup("198.51.100.1", "k"))["ports"] == [22]      # cached: no call, no slot
+    await enr.lookup("198.51.100.2", "k")
+    with pytest.raises(enr_mod.RateLimited):
+        await enr.lookup("198.51.100.3", "k")                            # third call this minute
+    assert len(hits) == 2
+
+    enr._calls = [t - 59.9 for t in enr._calls]                          # window almost over
+    await asyncio.wait_for(enr.lookup("198.51.100.4", "k", wait=True), 5)  # waits for a slot
+    assert len(hits) == 3

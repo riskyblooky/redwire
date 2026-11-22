@@ -7,7 +7,7 @@ for host data (open ports, services, vulnerabilities, geolocation)
 and stores the results as enrichment metadata.
 """
 
-from .enricher import ShodanEnricher
+from .enricher import shared
 
 _enricher = None
 
@@ -15,7 +15,7 @@ _enricher = None
 def setup(app, event_bus, db_factory, manifest):
     """Called by the plugin loader on startup."""
     global _enricher
-    _enricher = ShodanEnricher(db_factory=db_factory)
+    _enricher = shared(db_factory)
 
     # Register event listener for asset creation
     async def on_asset_created(event):

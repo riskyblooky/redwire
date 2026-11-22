@@ -15,8 +15,9 @@ from rate_limit import limiter
 
 router = APIRouter()
 
-# Each call spends Shodan API quota (the plugin's MAX_ENRICHMENTS_PER_MINUTE
-# setting governs the auto-enricher; this caps the manual routes).
+# Each call spends Shodan API quota. MAX_ENRICHMENTS_PER_MINUTE (enforced in
+# the shared enricher) caps actual API calls from every path; this caps how
+# fast one client can hit the routes at all.
 _SHODAN_RATE = "10/minute"
 
 
@@ -56,9 +57,12 @@ async def shodan_lookup(
         if not setting or not setting.value:
             raise HTTPException(400, "Shodan API key not configured. Set it in Admin → Plugins.")
 
-    from .enricher import ShodanEnricher
-    enricher = ShodanEnricher(db_factory=AsyncSessionLocal)
-    data = await enricher.lookup(ip, setting.value)
+    from .enricher import RateLimited, shared
+    enricher = shared(AsyncSessionLocal)
+    try:
+        data = await enricher.lookup(ip, setting.value)
+    except RateLimited as e:
+        raise HTTPException(429, str(e))
 
     if data is None:
         raise HTTPException(502, f"Failed to query Shodan for {ip}")
@@ -71,8 +75,8 @@ async def enrichment_stats(
     current_user: User = Depends(get_current_user),
 ):
     """Get Shodan enrichment statistics."""
-    from .enricher import ShodanEnricher
-    enricher = ShodanEnricher(db_factory=AsyncSessionLocal)
+    from .enricher import RateLimited, shared
+    enricher = shared(AsyncSessionLocal)
     return await enricher.get_stats()
 
 
@@ -112,13 +116,16 @@ async def manual_enrich(
         ):
             raise HTTPException(404, "Asset not found")
 
-    from .enricher import ShodanEnricher
-    enricher = ShodanEnricher(db_factory=AsyncSessionLocal)
+    from .enricher import RateLimited, shared
+    enricher = shared(AsyncSessionLocal)
 
     ip = await enricher.asset_ip(asset_id)
     if not ip:
         raise HTTPException(400, "Asset has no IPv4 identifier to look up")
-    data = await enricher.lookup(ip, key_setting.value)
+    try:
+        data = await enricher.lookup(ip, key_setting.value)
+    except RateLimited as e:
+        raise HTTPException(429, str(e))
     if data:
         await enricher._store_enrichment(asset_id, ip, data)
         return {"status": "enriched", "ip": ip, "data": data}
