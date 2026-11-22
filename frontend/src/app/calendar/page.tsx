@@ -182,12 +182,15 @@ export default function CalendarPage() {
             return isAfter(end, now) && isBefore(end, soon);
         });
 
-        // Team utilization from availability data
-        const totalMembers = teamAvailability.length;
-        const busyMembers = teamAvailability.filter(m => m.engagement_count > 0).length;
-        const oooMembers = teamAvailability.filter(m => (m.ooo_events?.length || 0) > 0).length;
-        const freeMembers = totalMembers - busyMembers - oooMembers + teamAvailability.filter(m => m.engagement_count > 0 && (m.ooo_events?.length || 0) > 0).length;
-        const unavailable = new Set([...teamAvailability.filter(m => m.engagement_count > 0).map(m => m.user.id), ...teamAvailability.filter(m => (m.ooo_events?.length || 0) > 0).map(m => m.user.id)]);
+        // Team utilization from availability data. Read-only accounts can't
+        // be staffed on work, so they aren't capacity (they used to pull the
+        // percentage down as permanently "available" members).
+        const staffable = teamAvailability.filter(m => m.user.role !== 'read_only' && m.user.role !== 'read_only_admin');
+        const totalMembers = staffable.length;
+        const busyMembers = staffable.filter(m => m.engagement_count > 0).length;
+        const oooMembers = staffable.filter(m => (m.ooo_events?.length || 0) > 0).length;
+        const freeMembers = totalMembers - busyMembers - oooMembers + staffable.filter(m => m.engagement_count > 0 && (m.ooo_events?.length || 0) > 0).length;
+        const unavailable = new Set([...staffable.filter(m => m.engagement_count > 0).map(m => m.user.id), ...staffable.filter(m => (m.ooo_events?.length || 0) > 0).map(m => m.user.id)]);
         const availableCount = totalMembers - unavailable.size;
         const utilization = totalMembers > 0 ? Math.round((unavailable.size / totalMembers) * 100) : 0;
 

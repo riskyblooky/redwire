@@ -32,6 +32,18 @@ def _parse_date_range(start_date: str = None, end_date: str = None, days: int = 
     return None, None
 
 
+def _numeric_cvss():
+    """Finding.cvss_score for findings scored on a numeric scale, else NULL
+    (which AVG skips). A categorical model (USAF RAC...) stores a nominal
+    sort key in cvss_score, not a CVSS score; averaging those in skewed
+    every "avg CVSS"."""
+    from scoring.registry import scoring_registry
+    categorical = [m.id for m in scoring_registry.list() if m.score_kind == "categorical"]
+    if not categorical:
+        return Finding.cvss_score
+    return case((Finding.score_model.is_(None) | Finding.score_model.notin_(categorical), Finding.cvss_score))
+
+
 @router.get("/overview")
 async def get_overview_stats(
     engagement_id: str = None,
@@ -49,15 +61,21 @@ async def get_overview_stats(
     active_engagements_query = select(func.count(Engagement.id)).where(
         Engagement.status.in_([EngagementStatus.PLANNING, EngagementStatus.IN_PROGRESS])
     )
-    evidence_query = select(func.count(Evidence.id)).join(
-        Finding, Evidence.finding_id == Finding.id
+    # Evidence on a test case or the engagement itself counts too (the inner
+    # join through Finding counted finding evidence only); its engagement is
+    # its own engagement_id, else its finding's / test case's.
+    evidence_query = (
+        select(func.count(Evidence.id))
+        .outerjoin(Finding, Evidence.finding_id == Finding.id)
+        .outerjoin(TestCase, Evidence.testcase_id == TestCase.id)
     )
+    evidence_engagement = func.coalesce(Evidence.engagement_id, Finding.engagement_id, TestCase.engagement_id)
     critical_high_query = select(func.count(Finding.id)).where(
         Finding.severity.in_([Severity.CRITICAL, Severity.HIGH])
     )
 
     # Avg CVSS
-    avg_cvss_query = select(func.avg(Finding.cvss_score)).where(Finding.cvss_score.isnot(None))
+    avg_cvss_query = select(func.avg(_numeric_cvss())).where(Finding.cvss_score.isnot(None))
 
     # Active users (users who created findings/engagements in last 30 days)
     thirty_days_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
@@ -72,7 +90,7 @@ async def get_overview_stats(
     findings_query = scope_to_assignments(findings_query, Finding.engagement_id, engagement_id, is_admin, allowed)
     engagements_query = scope_to_assignments(engagements_query, Engagement.id, engagement_id, is_admin, allowed)
     active_engagements_query = scope_to_assignments(active_engagements_query, Engagement.id, engagement_id, is_admin, allowed)
-    evidence_query = scope_to_assignments(evidence_query, Finding.engagement_id, engagement_id, is_admin, allowed)
+    evidence_query = scope_to_assignments(evidence_query, evidence_engagement, engagement_id, is_admin, allowed)
     critical_high_query = scope_to_assignments(critical_high_query, Finding.engagement_id, engagement_id, is_admin, allowed)
     avg_cvss_query = scope_to_assignments(avg_cvss_query, Finding.engagement_id, engagement_id, is_admin, allowed)
     user_activity_query = scope_to_assignments(user_activity_query, Finding.engagement_id, engagement_id, is_admin, allowed)
@@ -395,7 +413,7 @@ async def get_engagement_metrics(
         Engagement.name.label('engagement'),
         Engagement.client_name.label('client'),
         func.count(Finding.id).label('findings_count'),
-        func.avg(Finding.cvss_score).label('avg_cvss')
+        func.avg(_numeric_cvss()).label('avg_cvss')
     ).outerjoin(Finding, Finding.engagement_id == Engagement.id).group_by(
         Engagement.id, Engagement.name, Engagement.client_name
     ).order_by(func.count(Finding.id).desc()).limit(20)
@@ -468,18 +486,21 @@ async def get_operator_performance(
         User.last_active,
         func.count(Finding.id).label('total_findings'),
         *severity_cases.values(),
-    ).outerjoin(Finding, Finding.created_by == User.id).where(User.is_active == True)
-
+    )
+    # Range and scope go in the join condition: in the WHERE, an operator
+    # whose findings were all outside the range (or outside the caller's
+    # engagements) had every joined row filtered out and vanished from the
+    # list instead of showing zero.
+    join_on = Finding.created_by == User.id
     if start and end:
-        findings_query = findings_query.where(
-            (Finding.created_at >= start) | (Finding.created_at.is_(None)),
-            (Finding.created_at <= end) | (Finding.created_at.is_(None)),
-        )
+        join_on = join_on & (Finding.created_at >= start) & (Finding.created_at <= end)
+    if not is_admin:
+        join_on = join_on & Finding.engagement_id.in_(allowed)
+    findings_query = findings_query.outerjoin(Finding, join_on).where(User.is_active == True)
 
     findings_query = findings_query.group_by(
         User.id, User.username, User.full_name, User.profile_photo, User.role, User.last_active
     )
-    findings_query = scope_to_assignments(findings_query, Finding.engagement_id, None, is_admin, allowed)
     findings_result = await db.execute(findings_query)
     user_findings = {r.user_id: r for r in findings_result.all()}
 
@@ -684,7 +705,7 @@ async def get_client_stats(
     findings_query = select(
         Engagement.client_name.label('client'),
         func.count(Finding.id).label('total_findings'),
-        func.avg(Finding.cvss_score).label('avg_cvss'),
+        func.avg(_numeric_cvss()).label('avg_cvss'),
         *severity_cases.values(),
     ).join(Finding, Finding.engagement_id == Engagement.id).where(
         Engagement.client_name.isnot(None)
