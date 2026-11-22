@@ -60,6 +60,11 @@ class LoadedPlugin:
     module: Any = None          # The imported Python module
     router: Any = None          # FastAPI router (if provides.routes)
     error: str | None = None    # Load error message
+    # Its code ran (setup(), router) in this process. A plugin disabled at
+    # boot is never loaded, so enabling it later needs a restart: until
+    # then it has no routes or event handlers, and its nav items / tabs /
+    # widgets must not be offered.
+    loaded: bool = False
 
     @property
     def id(self) -> str:
@@ -68,6 +73,14 @@ class LoadedPlugin:
     @property
     def slug(self) -> str:
         return self.manifest.id.replace("_", "-")
+
+    @property
+    def is_active(self) -> bool:
+        return self.manifest.enabled and not self.error and self.loaded
+
+    @property
+    def requires_restart(self) -> bool:
+        return self.manifest.enabled and not self.error and not self.loaded
 
     @property
     def has_routes(self) -> bool:
@@ -102,6 +115,8 @@ class LoadedPlugin:
             "nav_items": self.manifest.nav_items,
             "settings_schema": self.manifest.settings,
             "error": self.error,
+            "loaded": self.loaded,
+            "requires_restart": self.requires_restart,
         }
 
 
@@ -295,6 +310,7 @@ class PluginRegistry:
 
             try:
                 self._load_plugin(plugin, app, event_bus, db_factory)
+                plugin.loaded = True
                 print(f"  ✅ Loaded plugin: {plugin.manifest.name}")
             except Exception as e:
                 plugin.error = str(e)
@@ -352,7 +368,7 @@ class PluginRegistry:
         """Collect widget definitions from all active plugins."""
         widgets = []
         for plugin in self.plugins.values():
-            if plugin.manifest.enabled and not plugin.error and plugin.has_widgets:
+            if plugin.is_active and plugin.has_widgets:
                 for w in plugin.manifest.widgets:
                     widgets.append({
                         **w,
@@ -381,7 +397,7 @@ class PluginRegistry:
             from auth.permissions import has_global_permission as _has_perm
 
         for plugin in self.plugins.values():
-            if not (plugin.manifest.enabled and not plugin.error and plugin.has_nav_items):
+            if not (plugin.is_active and plugin.has_nav_items):
                 continue
             plugin_perms = list(plugin.manifest.required_permissions or [])
             for nav in plugin.manifest.nav_items:
@@ -434,7 +450,7 @@ class PluginRegistry:
             from auth.permissions import has_global_permission as _has_perm
 
         for plugin in self.plugins.values():
-            if not (plugin.manifest.enabled and not plugin.error):
+            if not plugin.is_active:
                 continue
             plugin_perms = list(plugin.manifest.required_permissions or [])
             for entry in (plugin.manifest.extensions.get(slot) or []):

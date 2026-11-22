@@ -108,6 +108,9 @@ interface Plugin {
     nav_items: any[];
     settings_schema: PluginSettingSchema[];
     error: string | null;
+    /** Enabled, but its code wasn't loaded at startup (it was disabled
+     *  then): routes and event handlers arrive with the next restart. */
+    requires_restart?: boolean;
 }
 
 interface PluginSettingSchema {
@@ -169,7 +172,7 @@ export function PluginManagement() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-white">
-                            {plugins.filter(p => p.enabled && !p.error).length}
+                            {plugins.filter(p => p.enabled && !p.error && !p.requires_restart).length}
                         </div>
                     </CardContent>
                 </Card>
@@ -232,8 +235,14 @@ function PluginCard({ plugin, isExpanded, onToggleExpand }: {
 
     const handleToggle = async (enabled: boolean) => {
         try {
-            await toggle.mutateAsync({ pluginId: plugin.id, enabled });
-            toast.success(`${plugin.name} ${enabled ? 'enabled' : 'disabled'}`);
+            const res = await toggle.mutateAsync({ pluginId: plugin.id, enabled });
+            if (res?.requires_restart) {
+                toast.warning(`${plugin.name} enabled — restart the backend to load it`, {
+                    description: 'It was disabled when the backend started, so its pages and handlers are not loaded yet.',
+                });
+            } else {
+                toast.success(`${plugin.name} ${enabled ? 'enabled' : 'disabled'}`);
+            }
         } catch {
             toast.error('Failed to toggle plugin');
         }
@@ -256,6 +265,10 @@ function PluginCard({ plugin, isExpanded, onToggleExpand }: {
                                 {plugin.error ? (
                                     <Badge className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px]">
                                         Error
+                                    </Badge>
+                                ) : plugin.requires_restart ? (
+                                    <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-[10px]">
+                                        Restart required
                                     </Badge>
                                 ) : plugin.enabled ? (
                                     <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px]">

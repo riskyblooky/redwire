@@ -153,7 +153,10 @@ async def toggle_plugin(
     from utils.ws_bus import bus
     await bus.publish("plugin_toggle", {"id": plugin_id, "enabled": body.enabled})
 
-    return {"plugin_id": plugin_id, "enabled": body.enabled}
+    # Enabling a plugin that was disabled at boot only takes effect after a
+    # restart (its code was never loaded); say so instead of showing a
+    # plugin as on while its routes 404.
+    return {"plugin_id": plugin_id, "enabled": body.enabled, "requires_restart": plugin.requires_restart}
 
 
 # ── Plugin settings ──────────────────────────────────────────────────

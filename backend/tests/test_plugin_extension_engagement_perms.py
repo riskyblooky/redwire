@@ -18,7 +18,7 @@ def fake_plugin(monkeypatch):
         extensions={"engagement.tabs": [{"component": "cmdb-tab", "label": "CMDB",
                                          "required_permissions": ["engagement_view"]}]},
     )
-    plugin = SimpleNamespace(id="fake-plugin", slug="fake_plugin", manifest=manifest, error=None)
+    plugin = SimpleNamespace(id="fake-plugin", slug="fake_plugin", manifest=manifest, error=None, is_active=True)
     monkeypatch.setattr(plugin_registry, "plugins", {"fake-plugin": plugin})
 
 
