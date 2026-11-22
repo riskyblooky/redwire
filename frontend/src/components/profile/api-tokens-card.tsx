@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import api, { apiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 
 interface ApiToken {
@@ -43,19 +44,18 @@ export function ApiTokensCard() {
     const [showToken, setShowToken] = useState(false);
     const [showRevoked, setShowRevoked] = useState(false);
 
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const getToken = () => localStorage.getItem('access_token') || '';
-
+    // Through the shared axios instance: raw fetch skipped the 401 refresh
+    // and the base-URL config.
     const fetchTokens = useCallback(async () => {
         try {
-            const res = await fetch(`${API}/api-tokens`, {
-                headers: { Authorization: `Bearer ${getToken()}` },
-            });
-            if (res.ok) setTokens(await res.json());
-        } catch { /* ignore */ } finally {
+            const { data } = await api.get<ApiToken[]>('/api-tokens');
+            setTokens(data);
+        } catch (err) {
+            toast.error(apiErrorMessage(err, 'Failed to load tokens'));
+        } finally {
             setLoading(false);
         }
-    }, [API]);
+    }, []);
 
     useEffect(() => { fetchTokens(); }, [fetchTokens]);
 
@@ -68,19 +68,8 @@ export function ApiTokensCard() {
             if (newExpiry) body.expires_at = new Date(newExpiry).toISOString();
             if (isLocal) body.password = newPassword;
             if (isLocal && totpEnabled && newTotpCode) body.totp_code = newTotpCode;
-            const res = await fetch(`${API}/api-tokens`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify(body),
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err?.detail || 'Failed to create token');
-            }
-            const data = await res.json();
+            // A 401 here is a wrong step-up password / code, not an expired session.
+            const { data } = await api.post('/api-tokens', body, { skipAuthRefresh: true });
             setRawToken(data.raw_token);
             setShowCreate(false);
             setNewName('');
@@ -90,9 +79,8 @@ export function ApiTokensCard() {
             setNewTotpCode('');
             fetchTokens();
             toast.success('API token created');
-        } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Failed to create token';
-            toast.error(msg);
+        } catch (err) {
+            toast.error(apiErrorMessage(err, 'Failed to create token'));
         } finally {
             setCreating(false);
         }
@@ -100,14 +88,13 @@ export function ApiTokensCard() {
 
     const handleRevoke = async (id: string) => {
         try {
-            await fetch(`${API}/api-tokens/${id}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${getToken()}` },
-            });
+            // axios rejects on a non-2xx status; fetch didn't, so a refused
+            // revoke used to report "Token revoked".
+            await api.delete(`/api-tokens/${id}`);
             fetchTokens();
             toast.success('Token revoked');
-        } catch {
-            toast.error('Failed to revoke token');
+        } catch (err) {
+            toast.error(apiErrorMessage(err, 'Failed to revoke token'));
         }
     };
 

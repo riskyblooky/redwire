@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles, Send, X, ClipboardPaste, Loader2, Database, TextSelect, ListChecks } from 'lucide-react';
-import api from '@/lib/api';
+import api, { authedFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { EditorFieldContext } from '@/lib/types';
 import { ChatMarkdown, ChatMarkdownStyles } from './chat-markdown';
@@ -126,10 +126,11 @@ export function AiAssistantPanel({ editor, fieldContext, maxHeight }: AiAssistan
         setAiStreaming(true);
         setAiToolActivity(null);
         try {
-            const token = localStorage.getItem('access_token');
-            const resp = await fetch(`${api.defaults.baseURL}/ai/chat`, {
+            // authedFetch: a stream needs fetch, but not a stale token (raw
+            // fetch skipped the 401 refresh, so an expired token failed chat).
+            const resp = await authedFetch('/ai/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
             if (!resp.ok) {

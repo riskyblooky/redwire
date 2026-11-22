@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePathname } from 'next/navigation';
-import api from '@/lib/api';
+import api, { authedFetch } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -401,13 +401,11 @@ export function AiChatbot() {
         setIsThinking(false);
 
         try {
-            const token = localStorage.getItem('access_token');
-            const resp = await fetch(`${api.defaults.baseURL}/ai/chat`, {
+            // authedFetch: a stream needs fetch, but not a stale token (raw
+            // fetch skipped the 401 refresh, so an expired token failed chat).
+            const resp = await authedFetch('/ai/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: newMessages.filter(m => !m.isMcp).map(m => ({
                         role: m.role,

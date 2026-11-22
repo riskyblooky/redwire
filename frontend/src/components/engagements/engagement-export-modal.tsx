@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Download, ShieldAlert, KeyRound, ChevronDown, ChevronRight, Fingerprint, Copy, Check } from 'lucide-react';
 import api, { apiErrorMessage } from '@/lib/api';
+import { isAxiosError } from 'axios';
 import { toast } from 'sonner';
 
 const MIN_PW_LEN = 16;
@@ -56,23 +57,27 @@ export function EngagementExportModal({
     const handleExport = async () => {
         setBusy(true);
         try {
-            const token = localStorage.getItem('access_token') || '';
-            const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+            // Through the shared axios instance (raw fetch skipped the 401
+            // refresh, so an expired access token failed the export).
+            const headers: Record<string, string> = {};
             if (showPwSection && passphrase) headers['X-Export-Passphrase'] = passphrase;
-
-            const resp = await fetch(`${api.defaults.baseURL}/engagements/${engagementId}/export`, { headers });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                toast.error(err.detail || 'Export failed');
+            let resp;
+            try {
+                resp = await api.get(`/engagements/${engagementId}/export`, { headers, responseType: 'blob' });
+            } catch (err) {
+                // responseType 'blob' → the error body is a Blob too.
+                let parsed: unknown = isAxiosError(err) ? err.response?.data : undefined;
+                if (parsed instanceof Blob) parsed = await parsed.text().then(t => JSON.parse(t)).catch(() => ({}));
+                toast.error(apiErrorMessage({ response: { data: parsed } }, 'Export failed'));
                 setBusy(false);
                 return;
             }
-            const digest = resp.headers.get('x-archive-root-digest');
-            const blob = await resp.blob();
+            const digest = resp.headers['x-archive-root-digest'] as string | undefined;
+            const blob = resp.data as Blob;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            const disposition = resp.headers.get('content-disposition');
+            const disposition = resp.headers['content-disposition'] as string | undefined;
             const match = disposition?.match(/filename="(.+)"/);
             a.download = match?.[1] || `${engagementName.replace(/\s+/g, '_')}_export.zip`;
             document.body.appendChild(a);

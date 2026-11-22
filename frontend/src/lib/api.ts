@@ -1,6 +1,13 @@
 import axios from 'axios';
 import { loginUrlForCurrentPage } from './login-redirect';
 
+declare module 'axios' {
+    interface AxiosRequestConfig {
+        /** Don't treat this request's 401 as an expired session (see the 401 handler). */
+        skipAuthRefresh?: boolean;
+    }
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
@@ -103,7 +110,10 @@ api.interceptors.response.use(
         // Skip refresh logic for auth endpoints — their 401s are expected business errors
         const url = originalRequest?.url || '';
         const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/verify-2fa');
-        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+        // skipAuthRefresh: the request's 401 is a credential check of its own
+        // (step-up password / TOTP), not an expired session — don't refresh
+        // the session and resend the password.
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && !originalRequest.skipAuthRefresh) {
             originalRequest._retry = true;
 
             // Sent with a token that has since been replaced (a refresh
@@ -218,6 +228,25 @@ export async function getFreshAccessToken(): Promise<string | null> {
         return await refreshAccessToken();
     } catch {
         return localStorage.getItem('access_token');
+    }
+}
+
+/**
+ * fetch() for responses axios can't hand over incrementally (SSE streams),
+ * with the same auth handling as the axios instance: a fresh token up front
+ * and, on a 401, one refresh and retry. `path` is relative to the API base.
+ */
+export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    const send = (token: string | null) => fetch(`${API_URL}${path}`, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string> | undefined), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    const resp = await send(await getFreshAccessToken());
+    if (resp.status !== 401) return resp;
+    try {
+        return await send(await refreshAccessToken());
+    } catch {
+        return resp;
     }
 }
 

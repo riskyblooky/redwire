@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import api, { apiErrorMessage } from '@/lib/api';
 
 type TlsMode = 'none' | 'ldaps' | 'starttls';
 
@@ -97,76 +98,44 @@ export function AuthSettingsManagement() {
     const [splash, setSplash] = useState({ enabled: false, title: '', message: '' });
     const [savingSplash, setSavingSplash] = useState(false);
 
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const getToken = () => localStorage.getItem('access_token') || '';
+    // Shown in the SAML setup hints (ACS / metadata URLs).
+    const API = api.defaults.baseURL || '';
 
+    // All calls go through the shared axios instance: raw fetch skipped the
+    // 401 refresh (an expired access token made every call here fail).
     const fetchSettings = useCallback(async () => {
         setLoading(true);
         setLoadError(null);
         try {
-            const [authRes, splashRes] = await Promise.all([
-                fetch(`${API}/admin/auth-settings`, {
-                    headers: { Authorization: `Bearer ${getToken()}` },
-                }),
-                fetch(`${API}/admin/auth-settings/splash`, {
-                    headers: { Authorization: `Bearer ${getToken()}` },
-                }),
+            const [{ data }, { data: splashData }] = await Promise.all([
+                api.get<AuthSettings>('/admin/auth-settings'),
+                api.get('/admin/auth-settings/splash'),
             ]);
-            if (!authRes.ok || !splashRes.ok) {
-                const bad = !authRes.ok ? authRes : splashRes;
-                setLoadError(`The server answered HTTP ${bad.status}.`);
-                return;
-            }
-            const data: AuthSettings = await authRes.json();
-            const splashData = await splashRes.json();
             setLdap(data.ldap);
             setSaml(data.saml);
             setSplash(splashData);
         } catch (e) {
             console.error('Failed to load settings', e);
-            setLoadError(e instanceof Error ? e.message : String(e));
+            setLoadError(apiErrorMessage(e, e instanceof Error ? e.message : String(e)));
         } finally {
             setLoading(false);
         }
-    }, [API]);
+    }, []);
 
     useEffect(() => {
         fetchSettings();
     }, [fetchSettings]);
 
-    // Surface a non-2xx response as a toast. Tries to pull FastAPI's
-    // {detail: "..."} message; falls back to status text or HTTP code.
-    const reportFetchError = async (res: Response, fallback: string) => {
-        let detail = `${fallback} (HTTP ${res.status})`;
-        try {
-            const body = await res.json();
-            if (body?.detail) detail = String(body.detail);
-        } catch { /* response wasn't JSON */ }
-        toast.error(detail);
-    };
-
     const saveLdap = async () => {
         setSaving(true);
         setSuccessMessage('');
         try {
-            const res = await fetch(`${API}/admin/auth-settings/ldap`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify(ldap),
-            });
-            if (res.ok) {
-                const data: AuthSettings = await res.json();
-                setLdap(data.ldap);
-                setSuccessMessage('LDAP settings saved successfully');
-                setTimeout(() => setSuccessMessage(''), 3000);
-            } else {
-                await reportFetchError(res, 'Failed to save LDAP settings');
-            }
+            const { data } = await api.put<AuthSettings>('/admin/auth-settings/ldap', ldap);
+            setLdap(data.ldap);
+            setSuccessMessage('LDAP settings saved successfully');
+            setTimeout(() => setSuccessMessage(''), 3000);
         } catch (e) {
-            toast.error(`Failed to save LDAP settings: ${e instanceof Error ? e.message : String(e)}`);
+            toast.error(apiErrorMessage(e, 'Failed to save LDAP settings'));
         } finally {
             setSaving(false);
         }
@@ -176,24 +145,12 @@ export function AuthSettingsManagement() {
         setSaving(true);
         setSuccessMessage('');
         try {
-            const res = await fetch(`${API}/admin/auth-settings/saml`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify(saml),
-            });
-            if (res.ok) {
-                const data: AuthSettings = await res.json();
-                setSaml(data.saml);
-                setSuccessMessage('SAML settings saved successfully');
-                setTimeout(() => setSuccessMessage(''), 3000);
-            } else {
-                await reportFetchError(res, 'Failed to save SAML settings');
-            }
+            const { data } = await api.put<AuthSettings>('/admin/auth-settings/saml', saml);
+            setSaml(data.saml);
+            setSuccessMessage('SAML settings saved successfully');
+            setTimeout(() => setSuccessMessage(''), 3000);
         } catch (e) {
-            toast.error(`Failed to save SAML settings: ${e instanceof Error ? e.message : String(e)}`);
+            toast.error(apiErrorMessage(e, 'Failed to save SAML settings'));
         } finally {
             setSaving(false);
         }
@@ -204,18 +161,13 @@ export function AuthSettingsManagement() {
         setTestLoginRunning(true);
         setTestLoginResult(null);
         try {
-            const res = await fetch(`${API}/admin/auth-settings/ldap/test-login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify({ username: testLoginUsername, password: testLoginPassword }),
-            });
-            const data = await res.json();
+            const { data } = await api.post('/admin/auth-settings/ldap/test-login',
+                { username: testLoginUsername, password: testLoginPassword });
             setTestLoginResult(data);
         } catch (e) {
-            setTestLoginResult({ success: false, message: String(e) });
+            // A refused request (403, 422, 5xx) used to be shown as the
+            // test's result body, with no message.
+            setTestLoginResult({ success: false, message: apiErrorMessage(e, String(e)) });
         } finally {
             setTestLoginRunning(false);
         }
@@ -232,18 +184,10 @@ export function AuthSettingsManagement() {
         setTestingLdap(true);
         setTestResult(null);
         try {
-            const res = await fetch(`${API}/admin/auth-settings/ldap/test`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify({ username: 'test', password: 'test' }),
-            });
-            const data = await res.json();
+            const { data } = await api.post('/admin/auth-settings/ldap/test', { username: 'test', password: 'test' });
             setTestResult(data);
         } catch (e) {
-            setTestResult({ success: false, message: String(e) });
+            setTestResult({ success: false, message: apiErrorMessage(e, String(e)) });
         } finally {
             setTestingLdap(false);
         }
@@ -253,24 +197,12 @@ export function AuthSettingsManagement() {
         setSavingSplash(true);
         setSuccessMessage('');
         try {
-            const res = await fetch(`${API}/admin/auth-settings/splash`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify(splash),
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setSplash(data);
-                setSuccessMessage('Login banner settings saved successfully');
-                setTimeout(() => setSuccessMessage(''), 3000);
-            } else {
-                await reportFetchError(res, 'Failed to save login banner');
-            }
+            const { data } = await api.put('/admin/auth-settings/splash', splash);
+            setSplash(data);
+            setSuccessMessage('Login banner settings saved successfully');
+            setTimeout(() => setSuccessMessage(''), 3000);
         } catch (e) {
-            toast.error(`Failed to save login banner: ${e instanceof Error ? e.message : String(e)}`);
+            toast.error(apiErrorMessage(e, 'Failed to save login banner'));
         } finally {
             setSavingSplash(false);
         }

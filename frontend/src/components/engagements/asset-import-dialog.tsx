@@ -120,8 +120,6 @@ export function AssetImportDialog({ open, onOpenChange, engagementId }: AssetImp
         }
     };
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-
     return (
         <Dialog open={open} onOpenChange={handleClose}>
             <DialogContent className="sm:max-w-lg bg-slate-900 border-slate-800 text-white">

@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
 
 interface ApiToken {
     id: string;
@@ -50,19 +50,18 @@ export function ApiTokenManagement() {
     const [showToken, setShowToken] = useState(false);
     const [showRevoked, setShowRevoked] = useState(false);
 
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const getToken = () => localStorage.getItem('access_token') || '';
-
+    // Through the shared axios instance: raw fetch skipped the 401 refresh
+    // and the base-URL config.
     const fetchTokens = useCallback(async () => {
         try {
-            const res = await fetch(`${API}/admin/api-tokens`, {
-                headers: { Authorization: `Bearer ${getToken()}` },
-            });
-            if (res.ok) setTokens(await res.json());
-        } catch { /* ignore */ } finally {
+            const { data } = await api.get<ApiToken[]>('/admin/api-tokens');
+            setTokens(data);
+        } catch (err) {
+            toast.error(apiErrorMessage(err, 'Failed to load tokens'));
+        } finally {
             setLoading(false);
         }
-    }, [API]);
+    }, []);
 
     const fetchUsers = useCallback(async () => {
         try {
@@ -83,16 +82,7 @@ export function ApiTokenManagement() {
                 user_id: selectedUser,
             };
             if (newExpiry) body.expires_at = new Date(newExpiry).toISOString();
-            const res = await fetch(`${API}/admin/api-tokens`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify(body),
-            });
-            if (!res.ok) throw new Error('Failed to create token');
-            const data = await res.json();
+            const { data } = await api.post('/admin/api-tokens', body);
             setRawToken(data.raw_token);
             setShowCreate(false);
             setNewName('');
@@ -101,8 +91,8 @@ export function ApiTokenManagement() {
             setSelectedUser('');
             fetchTokens();
             toast.success('Service token created');
-        } catch {
-            toast.error('Failed to create token');
+        } catch (err) {
+            toast.error(apiErrorMessage(err, 'Failed to create token'));
         } finally {
             setCreating(false);
         }
@@ -110,14 +100,13 @@ export function ApiTokenManagement() {
 
     const handleRevoke = async (id: string) => {
         try {
-            await fetch(`${API}/admin/api-tokens/${id}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${getToken()}` },
-            });
+            // axios rejects on a non-2xx status; fetch didn't, so a refused
+            // revoke used to report "Token revoked".
+            await api.delete(`/admin/api-tokens/${id}`);
             fetchTokens();
             toast.success('Token revoked');
-        } catch {
-            toast.error('Failed to revoke token');
+        } catch (err) {
+            toast.error(apiErrorMessage(err, 'Failed to revoke token'));
         }
     };
 
