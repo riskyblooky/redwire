@@ -183,8 +183,8 @@ export default function RemediationPage() {
 
     // Toggle asset remediation
     const toggleRemediation = useMutation({
-        mutationFn: async ({ findingId, assetId }: { findingId: string; assetId: string }) => {
-            const { data } = await api.patch(`/findings/${findingId}/assets/${assetId}/remediate`);
+        mutationFn: async ({ findingId, assetId, remediated }: { findingId: string; assetId: string; remediated: boolean }) => {
+            const { data } = await api.patch(`/findings/${findingId}/assets/${assetId}/remediate`, null, { params: { remediated } });
             return data;
         },
         onSuccess: (data, variables) => {
@@ -710,7 +710,7 @@ export default function RemediationPage() {
                                                                         >
                                                                             <Checkbox
                                                                                 checked={asset.remediated}
-                                                                                onCheckedChange={() => toggleRemediation.mutate({ findingId: finding.id, assetId: asset.id })}
+                                                                                onCheckedChange={(checked) => toggleRemediation.mutate({ findingId: finding.id, assetId: asset.id, remediated: checked === true })}
                                                                                 className={cn(asset.remediated && "data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500")}
                                                                             />
                                                                             <div className="flex-1 min-w-0">

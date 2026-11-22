@@ -196,8 +196,8 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
 
     // Toggle asset remediation with optimistic updates.
     const toggleRemediation = useMutation({
-        mutationFn: async ({ assetId }: { assetId: string }) => {
-            const { data } = await api.patch(`/findings/${fid}/assets/${assetId}/remediate`);
+        mutationFn: async ({ assetId, remediated }: { assetId: string; remediated: boolean }) => {
+            const { data } = await api.patch(`/findings/${fid}/assets/${assetId}/remediate`, null, { params: { remediated } });
             return data;
         },
         onMutate: async ({ assetId }) => {
@@ -242,7 +242,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
         mutationFn: async () => {
             const unremediated = (finding?.assets || []).filter((a: any) => !a.remediated);
             for (const asset of unremediated) {
-                await api.patch(`/findings/${fid}/assets/${asset.id}/remediate`);
+                await api.patch(`/findings/${fid}/assets/${asset.id}/remediate`, null, { params: { remediated: true } });
             }
             await updateFinding.mutateAsync({ id: fid, status: 'REMEDIATED' });
         },
@@ -694,7 +694,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                                         )}>
                                                             <Checkbox
                                                                 checked={asset.remediated}
-                                                                onCheckedChange={() => toggleRemediation.mutate({ assetId: asset.id })}
+                                                                onCheckedChange={(checked) => toggleRemediation.mutate({ assetId: asset.id, remediated: checked === true })}
                                                                 className={cn('shrink-0', asset.remediated && 'data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500')}
                                                                 disabled={!canEdit}
                                                             />

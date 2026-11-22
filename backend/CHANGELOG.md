@@ -98,6 +98,7 @@ section becomes one release entry.
 - Some Burp Suite XML exports were sent to the Nmap parser on import and imported nothing. The format is now detected from the file's real root element, and an XML file of an unsupported format gets a clear error.
 - Opening and saving a dashboard widget grouped by two columns (such as the Severity × Status heatmap) in the widget editor dropped the second column and broke the widget. The editor now keeps it.
 - On an attack graph with a pinned layout, every node added after pinning was drawn in the same top-left spot, on top of each other. New nodes are now placed beside the nodes they connect to.
+- "Remediate all assets" on a finding could un-remediate an asset a colleague had just marked remediated, and so could ticking a checkbox on a page that wasn't up to date. Both now set the state you chose instead of flipping it.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

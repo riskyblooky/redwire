@@ -199,8 +199,8 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
 
     // Toggle asset remediation with optimistic updates
     const toggleRemediation = useMutation({
-        mutationFn: async ({ findingId, assetId }: { findingId: string; assetId: string }) => {
-            const { data } = await api.patch(`/findings/${findingId}/assets/${assetId}/remediate`);
+        mutationFn: async ({ findingId, assetId, remediated }: { findingId: string; assetId: string; remediated: boolean }) => {
+            const { data } = await api.patch(`/findings/${findingId}/assets/${assetId}/remediate`, null, { params: { remediated } });
             return data;
         },
         onMutate: async ({ assetId }) => {
@@ -264,7 +264,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
         mutationFn: async () => {
             const unremediated = (finding?.assets || []).filter((a: any) => !a.remediated);
             for (const asset of unremediated) {
-                await api.patch(`/findings/${id}/assets/${asset.id}/remediate`);
+                await api.patch(`/findings/${id}/assets/${asset.id}/remediate`, null, { params: { remediated: true } });
             }
             await updateFinding.mutateAsync({ id, status: 'REMEDIATED' });
         },
@@ -861,7 +861,7 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
                                                             )}>
                                                                 <Checkbox
                                                                     checked={asset.remediated}
-                                                                    onCheckedChange={() => toggleRemediation.mutate({ findingId: id, assetId: asset.id })}
+                                                                    onCheckedChange={(checked) => toggleRemediation.mutate({ findingId: id, assetId: asset.id, remediated: checked === true })}
                                                                     className={cn("shrink-0", asset.remediated && "data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500")}
                                                                     disabled={!canEdit}
                                                                 />

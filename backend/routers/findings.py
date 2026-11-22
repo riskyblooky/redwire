@@ -788,10 +788,17 @@ async def update_finding(
 async def toggle_asset_remediation(
     finding_id: str,
     asset_id: str,
+    remediated: Optional[bool] = Query(None, description="Set this state instead of toggling"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Toggle remediation status for a specific asset on a finding."""
+    """Set (``?remediated=true|false``) or, without it, toggle an asset's
+    remediation status on a finding.
+
+    A toggle applied from a stale page flips whatever the state is now:
+    "Remediate all assets" (which toggled every asset it *thought* was
+    open) un-remediated any a colleague had just remediated. Callers that
+    know the state they want pass it; setting the current state is a no-op."""
     from datetime import datetime
     result = await db.execute(
         select(FindingAsset).where(
@@ -819,13 +826,14 @@ async def toggle_asset_remediation(
             required_perm = Permission.FINDING_EDIT.value if is_owner else Permission.FINDING_EDIT_ANY.value
             raise HTTPException(status_code=403, detail=f"Insufficient permissions. You need the '{required_perm}' permission to modify this finding.")
 
-    # Toggle
-    new_val = not (fa.remediated or False)
-    fa.remediated = new_val
-    fa.remediated_at = datetime.utcnow() if new_val else None
-    fa.remediated_by = current_user.id if new_val else None
-
-    await db.commit()
+    current = bool(fa.remediated)
+    new_val = (not current) if remediated is None else remediated
+    changed = new_val != current
+    if changed:
+        fa.remediated = new_val
+        fa.remediated_at = datetime.utcnow() if new_val else None
+        fa.remediated_by = current_user.id if new_val else None
+        await db.commit()
 
     # Build the response before any fire-and-forget work
     response = {
@@ -837,8 +845,8 @@ async def toggle_asset_remediation(
     }
 
     # Log activity (non-fatal, will not crash the request)
-    finding = await db.execute(select(Finding).where(Finding.id == finding_id))
-    finding_obj = finding.scalar_one_or_none()
+    finding = await db.execute(select(Finding).where(Finding.id == finding_id)) if changed else None
+    finding_obj = finding.scalar_one_or_none() if finding is not None else None
     if finding_obj:
         from models.asset import Asset as AssetModel
         asset_result = await db.execute(select(AssetModel).where(AssetModel.id == asset_id))
