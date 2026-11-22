@@ -102,10 +102,23 @@ class YjsRoom:
                 await client.send_text(msg)
             except Exception:
                 dead.append(client)
+        await self._drop_dead(dead)
+
+    async def _drop_dead(self, dead) -> None:
+        """Remove sockets a send failed on. Only ``clients`` /
+        ``client_user_ids`` used to be cleared: the Y.js id stayed mapped,
+        ``last_editor`` could stay a dead socket (so the save request went
+        nowhere), and the peers kept its cursor. Now it's removed like a
+        normal disconnect, its peers are told, and the socket is closed so
+        its handler exits and drops its presence entry."""
         for d in dead:
-            self.clients.discard(d)
-            self.client_user_ids.pop(d, None)
-            self.client_yjs_ids.pop(d, None)
+            yjs_id = self.remove_client(d)
+            try:
+                await d.close(code=1011)
+            except Exception:
+                pass
+            if yjs_id is not None:
+                await self.notify_peer_disconnected(yjs_id)
 
     async def relay_binary(self, sender: WebSocket, data: bytes, carries_update: bool = True):
         """
@@ -138,9 +151,7 @@ class YjsRoom:
             except Exception:
                 dead.append(client)
 
-        for d in dead:
-            self.clients.discard(d)
-            self.client_user_ids.pop(d, None)
+        await self._drop_dead(dead)
 
     def _schedule_save(self):
         """Schedule a debounced save to the database."""

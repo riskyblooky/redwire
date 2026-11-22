@@ -122,6 +122,7 @@ section becomes one release entry.
 - Clearing a discussion thread's title through the API returned a server error. It's now rejected with a clear message.
 - Discussions: an edited comment now updates for everyone viewing the thread, and plugins subscribed to thread and comment events now receive them.
 - Restoring an earlier version was blocked when someone was only viewing the record, yet allowed while the same user had it open for editing in another tab (which would then save the old text back). Viewers no longer block it, and the other tab does.
+- Live co-editing: when a collaborator's connection dropped abruptly, their cursor could stay on screen and the next auto-save could be lost. A dropped connection is now cleaned up like a normal disconnect.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
