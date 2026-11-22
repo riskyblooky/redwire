@@ -313,6 +313,10 @@ async def update_thread(
                 )
 
     update_data = thread_data.model_dump(exclude_unset=True)
+    # Explicit nulls: title and is_resolved can't be cleared (was a 500).
+    for _req in ("title", "is_resolved"):
+        if _req in update_data and (update_data[_req] is None or update_data[_req] == ""):
+            raise HTTPException(status_code=422, detail=f"'{_req}' can't be empty.")
     anchor = update_data.pop("anchor", None)
     # An anchor-only update is the client's silent auto-refresh on save (§7.4):
     # don't spam the activity log or broadcast for it.
