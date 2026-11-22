@@ -376,14 +376,23 @@ def _md_inline_to_rl(text: str) -> str:
     # (bold before italic, etc.). Legitimate content has no raw angle brackets at
     # this point — Step 2 escaped them to &lt;/&gt; — so this only stops
     # span-hopping across emitted markup, never truncates real text.
-    s = re.sub(r'\*\*([^*<>]+?)\*\*', r'<b>\1</b>', s)
-    s = re.sub(r'__([^_<>]+?)__', r'<b>\1</b>', s)
+    #
+    # Backslash escapes (the editor saves a literal "_" or "*" as "\_" /
+    # "\*") become literal characters, stashed so no emphasis pass sees them.
+    s = re.sub(r'\\([!-/:-@\[-`{-~])', lambda m: _stash(m.group(1)), s)
+    # Emphasis follows CommonMark flanking rules: the opening marker must be
+    # followed, and the closing one preceded, by non-space, and "_" never
+    # opens or closes inside a word, so identifiers (xp_cmdshell,
+    # sp_configure) and arithmetic ("2 * 3 * 4") stay plain text.
+    s = re.sub(r'\*\*(?![\s*])([^*<>]+?)(?<![\s*])\*\*', r'<b>\1</b>', s)
+    s = re.sub(r'(?<![\w_])__(?![\s_])([^_<>]+?)(?<![\s_])__(?![\w_])', r'<b>\1</b>', s)
     # Italic (single * or _) — avoid eating bold markers we already replaced
-    s = re.sub(r'(?<!\*)\*([^*\n<>]+?)\*(?!\*)', r'<i>\1</i>', s)
-    s = re.sub(r'(?<!_)_([^_\n<>]+?)_(?!_)', r'<i>\1</i>', s)
-    # Subscript ~text~ / superscript ^text^ (markdown shorthands)
-    s = re.sub(r'~([^~\n<>]+?)~', r'<sub>\1</sub>', s)
-    s = re.sub(r'\^([^\^\n<>]+?)\^', r'<sup>\1</sup>', s)
+    s = re.sub(r'(?<!\*)\*(?![\s*])([^*\n<>]+?)(?<![\s*])\*(?!\*)', r'<i>\1</i>', s)
+    s = re.sub(r'(?<![\w_])_(?![\s_])([^_\n<>]+?)(?<![\s_])_(?![\w_])', r'<i>\1</i>', s)
+    # Subscript ~text~ / superscript ^text^ (markdown shorthands; as in
+    # pandoc, no whitespace inside, so "~/.ssh … ~/.bashrc" isn't one).
+    s = re.sub(r'~([^~\s<>]+?)~', r'<sub>\1</sub>', s)
+    s = re.sub(r'\^([^\^\s<>]+?)\^', r'<sup>\1</sup>', s)
     # Links [text](url)
     s = re.sub(
         r'\[([^\]]+)\]\((https?://[^)\s]+)\)',
