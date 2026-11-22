@@ -2977,11 +2977,16 @@ class HTMLReportGenerator:
         for f in doc.findings:
             ev = []
             for e in f.evidence:
-                if e.is_image:
-                    uri = self._data_uri(e.storage_key, e.mime)
-                    if uri:
-                        ev.append({'img': uri, 'cap': _escape_xml(e.description or e.filename),
-                                   'mark': e.mark.token})
+                # 'cap' is raw text: the template escapes it (escaping here as
+                # well showed "&amp;" in captions).
+                item = {'cap': e.description or e.filename, 'mark': e.mark.token}
+                uri = self._data_uri(e.storage_key, e.mime) if e.is_image else None
+                if uri:
+                    ev.append({**item, 'img': uri})
+                else:
+                    # Non-image evidence (or an image that couldn't be read)
+                    # is listed by name rather than silently dropped.
+                    ev.append({**item, 'file': e.filename, 'mime': e.mime})
             src, si = f.src, f.score
             findings.append({
                 'id': f.ref, 'sev': f.severity.lower(), 'status': f.status_group,
@@ -3090,8 +3095,20 @@ class HTMLReportGenerator:
             self.chain_edges, tid, fid, self.chain_vault_items)
         chain = [{'s': e['s'], 't': e['t'], 'note': e.get('note') or ''} for e in c_edges]
 
+        # Scope & Method page: the engagement's scope and objectives plus the
+        # layout's TEXT sections, in layout order, each with its mark.
+        narrative = {
+            'scope_html': self._md(getattr(eng, 'scope', None)),
+            'objectives_html': self._md(getattr(eng, 'objectives', None)),
+            'sections': [
+                {'title': s.title, 'mark': s.heading_mark.token, 'html': self._md(s.content)}
+                for s in doc.sections if s.kind == 'TEXT' and (s.content or '').strip()
+            ],
+        }
+
         data = {'meta': meta, 'risk': risk, 'marking': marking, 'findings': findings,
-                'testcases': testcases, 'assets': assets, 'cleanup': cleanup, 'chain': chain}
+                'testcases': testcases, 'assets': assets, 'cleanup': cleanup, 'chain': chain,
+                'narrative': narrative}
         if cv_nodes:
             data['chainVault'] = [
                 {'id': v['id'], 'label': v['label'], 'itype': v['itype']} for v in cv_nodes
