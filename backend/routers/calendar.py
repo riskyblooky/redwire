@@ -98,24 +98,27 @@ async def update_calendar_event(
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     
-    # Check global calendar_edit permission
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
+
+    # GHSA-fpj5-2p59-xq8r: OOO events are creator-only (mirrors DELETE), and
+    # event_type is frozen at create time so a caller can't flip another
+    # user's OOO to a non-OOO type to bypass the OOO guard on the DELETE path.
+    # Like create and delete, an OOO is self-service: its creator edits it
+    # without calendar_edit (which used to be required, so anyone without it
+    # could add their own OOO but never change it).
+    if event.event_type == "OOO":
+        if not is_admin and event.created_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only edit your own Out of Office events.",
+            )
+    elif not is_admin:
         has_perm = await has_global_permission(current_user, Permission.CALENDAR_EDIT, db)
         if not has_perm:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions. You need the 'calendar_edit' permission to modify calendar events."
             )
-
-    # GHSA-fpj5-2p59-xq8r: OOO events are creator-only (mirrors DELETE), and
-    # event_type is frozen at create time so a caller can't flip another
-    # user's OOO to a non-OOO type to bypass the OOO guard on the DELETE path.
-    if event.event_type == "OOO" and not is_admin and event.created_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only edit your own Out of Office events.",
-        )
     update_data = event_data.model_dump(exclude_unset=True, exclude={"event_type"})
     for field, value in update_data.items():
         setattr(event, field, value)
