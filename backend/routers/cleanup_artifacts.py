@@ -150,6 +150,9 @@ async def create_cleanup_artifact(
         **data.model_dump(),
         created_by=current_user.id,
     )
+    if db_item.status == CleanupArtifactStatus.CLEANED:  # created already cleaned
+        db_item.cleaned_at = datetime.utcnow()
+        db_item.cleaned_by = current_user.id
     db.add(db_item)
     await db.commit()
     db_item = await load(db, CleanupArtifact, db_item.id)  # with the response's links
@@ -204,6 +207,11 @@ async def update_cleanup_artifact(
         if artifact.status != CleanupArtifactStatus.CLEANED:
             update_data["cleaned_at"] = datetime.utcnow()
             update_data["cleaned_by"] = current_user.id
+    elif "status" in update_data and artifact.status == CleanupArtifactStatus.CLEANED:
+        # Leaving CLEANED: it isn't cleaned any more, so don't keep showing
+        # who cleaned it and when.
+        update_data["cleaned_at"] = None
+        update_data["cleaned_by"] = None
 
     change_details = build_change_summary(artifact, update_data, label=f"Updated cleanup artifact '{artifact.title}'")
     # Structured changes for automation matching (GHSA-88hm follow-up).
