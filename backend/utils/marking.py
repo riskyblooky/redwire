@@ -37,11 +37,20 @@ class MarkingEngine:
                 self._ordered.append(lvl)
 
     # ── ranking / roll-up ────────────────────────────────────────────
+    def is_known(self, abbr: Optional[str]) -> bool:
+        return bool(abbr) and abbr in self.levels_by_abbr
+
     def _rank(self, abbr: Optional[str]) -> int:
         if not abbr:
             return -1
         lvl = self.levels_by_abbr.get(abbr)
-        return lvl.get("rank", -1) if lvl else -1
+        if lvl:
+            return lvl.get("rank", -1)
+        # A level this profile doesn't define (marked under another profile,
+        # or removed from this one) can't be placed on the ladder, so it
+        # ranks above every level it does define: the banner roll-up must
+        # never come out *lower* than a portion in the document.
+        return max((l.get("rank", 0) for l in self._ordered), default=0) + 1
 
     def highest(self, abbrs) -> Optional[str]:
         best, best_rank = None, -1
@@ -140,9 +149,8 @@ class MarkingEngine:
         """(text, bg_color, text_color) for the page/document banner, or None."""
         if not level:
             return None
-        lvl = self.levels_by_abbr.get(level)
-        if not lvl:
-            return None
+        lvl = self.levels_by_abbr.get(level) or {}
+        # Unknown levels (see _rank) still get a banner, under their own name.
         text = lvl.get("full_name") or (f"TLP:{level}" if self.is_tlp else level)
         return text, lvl.get("banner_color") or "#1E293B", lvl.get("text_color") or "#FFFFFF"
 
@@ -174,7 +182,8 @@ def lint_marking(engine, sections, findings, testcases, cleanup_artifacts):
 
     Returns (blocking, warnings):
       - blocking: portions whose *effective* level is None (no explicit mark and
-        no engagement default) — these would render unmarked.
+        no engagement default) — these would render unmarked — or is a level
+        the profile doesn't define, which no banner on its ladder covers.
       - warnings: portions with no *explicit* mark that resolve to a level via
         inheritance (riding the inherited default) — a review aid.
 
@@ -197,6 +206,8 @@ def lint_marking(engine, sections, findings, testcases, cleanup_artifacts):
             eff, _ = engine.resolve(None, None)  # → engagement default (or None)
         if not eff:
             blocking.append(label)
+        elif not engine.is_known(eff):
+            blocking.append(f"{label} (level {eff!r} is not in this profile)")
         elif not explicit:
             warnings.append(label)
         return eff

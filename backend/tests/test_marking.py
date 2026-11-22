@@ -98,18 +98,21 @@ class TestRankingRollup:
     def test_highest_of_empty_is_none(self):
         assert make_engine().highest([]) is None
 
-    def test_highest_of_only_unknown_is_none(self):
-        # Unknown abbrs rank -1, which never beats the -1 starting best_rank.
-        assert make_engine().highest(["ZZ", "QQ"]) is None
+    def test_highest_of_only_unknown_is_the_first_unknown(self):
+        assert make_engine().highest(["ZZ", "QQ"]) == "ZZ"
 
-    def test_highest_known_beats_unknown(self):
-        assert make_engine().highest(["ZZ", "U"]) == "U"
+    def test_unknown_outranks_every_known_level(self):
+        # A level the profile doesn't define must never lower the banner
+        # below a portion in the document (it used to be ignored).
+        assert make_engine().highest(["ZZ", "U"]) == "ZZ"
+        assert make_engine().highest(["TS", "ZZ"]) == "ZZ"
 
     def test_rank_lookup(self):
         eng = make_engine()
         assert eng._rank("TS") == 3
         assert eng._rank("U") == 0
-        assert eng._rank("nope") == -1
+        assert eng._rank("nope") == 4   # above TS
+        assert eng._rank(None) == -1
         assert eng._rank(None) == -1
 
     def test_lowest_level(self):
@@ -263,8 +266,8 @@ class TestBanner:
     def test_none_level(self):
         assert make_engine().banner(None) is None
 
-    def test_unknown_level(self):
-        assert make_engine().banner("ZZ") is None
+    def test_unknown_level_banners_under_its_own_name(self):
+        assert make_engine().banner("ZZ") == ("ZZ", "#1E293B", "#FFFFFF")
 
     def test_ic_uses_full_name_and_colors(self):
         eng = make_engine(make_profile(scheme="IC_DOD"))
@@ -319,6 +322,17 @@ class TestLintMarking:
             eng, [portion(title="Intro")], [], [], [])
         assert blocking == ["Section: Intro"]
         assert warnings == []
+
+    def test_blocking_when_level_not_in_profile(self):
+        # e.g. items marked under an IC profile, report run under TLP.
+        eng = make_engine(make_profile(scheme="TLP_2_0", levels=TLP_LEVELS))
+        blocking, warnings = lint_marking(
+            eng, [portion("TS", title="Intro")], [portion("AMBER", title="Ok")], [], [])
+        assert blocking == ["Section: Intro (level 'TS' is not in this profile)"]
+        assert warnings == []
+
+    def test_unknown_level_raises_the_banner_and_is_clamped_by_ceiling(self):
+        assert make_engine(engagement=make_engagement(ceiling="S")).resolve("ZZ", None) == ("S", None)
 
     def test_warning_when_inherited_from_default(self):
         eng = make_engine(engagement=make_engagement(default="U"))

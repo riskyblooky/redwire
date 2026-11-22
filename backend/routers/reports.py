@@ -338,8 +338,9 @@ async def _do_generate_report(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
                         f"Marking enforcement is set to BLOCK and {len(blocking)} portion(s) have no "
-                        f"classification (no explicit mark and no engagement default). Set an engagement "
-                        f"default classification or mark these items: " + "; ".join(blocking[:15])
+                        f"classification (no explicit mark and no engagement default) or one this marking "
+                        f"profile doesn't define. Set an engagement default classification or mark these "
+                        f"items with a level from the profile: " + "; ".join(blocking[:15])
                         + ("…" if len(blocking) > 15 else "")
                     ),
                 )
