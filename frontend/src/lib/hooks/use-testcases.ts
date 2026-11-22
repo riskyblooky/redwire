@@ -183,6 +183,11 @@ export function useUpdateTestCase() {
             queryClient.invalidateQueries({ queryKey: ['testcases', data.id] });
             queryClient.invalidateQueries({ queryKey: ['testcases', 'engagement', data.engagement_id] });
             queryClient.invalidateQueries({ queryKey: ['versions', 'testcase', data.id] });
+            // Status / result feed the engagement counts, stats and the attack graph.
+            queryClient.invalidateQueries({ queryKey: ['engagements', data.engagement_id] });
+            queryClient.invalidateQueries({ queryKey: ['stats'] });
+            queryClient.invalidateQueries({ queryKey: ['analytics'] });
+            queryClient.invalidateQueries({ queryKey: ['attack-graph', data.engagement_id] });
         },
     });
 }

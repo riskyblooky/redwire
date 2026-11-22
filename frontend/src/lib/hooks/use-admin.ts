@@ -39,6 +39,7 @@ export function useUpdateUser() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+            queryClient.invalidateQueries({ queryKey: ['users'] }); // assignee / member pickers
         },
     });
 }
@@ -52,6 +53,7 @@ export function useDeleteUser() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+            queryClient.invalidateQueries({ queryKey: ['users'] }); // assignee / member pickers
         },
     });
 }
@@ -71,6 +73,7 @@ export function useCreateUser() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+            queryClient.invalidateQueries({ queryKey: ['users'] }); // assignee / member pickers
         },
     });
 }

@@ -205,8 +205,11 @@ export function useApplyRunbook() {
             const { data } = await api.post(`/runbooks/${runbookId}/apply/${engagementId}`, null, { params });
             return data;
         },
-        onSuccess: () => {
+        onSuccess: (_data, vars) => {
             queryClient.invalidateQueries({ queryKey: ['testcases'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements', vars.engagementId] });
+            queryClient.invalidateQueries({ queryKey: ['stats'] });
+            queryClient.invalidateQueries({ queryKey: ['attack-graph', vars.engagementId] });
         },
     });
 }

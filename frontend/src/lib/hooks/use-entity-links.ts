@@ -17,6 +17,10 @@ function createLinkHook(entityPath: string, resourcePath: string) {
                 queryClient.invalidateQueries({ queryKey: ['findings'] });
                 queryClient.invalidateQueries({ queryKey: ['testcases'] });
                 queryClient.invalidateQueries({ queryKey: ['assets'] });
+                // Vault / cleanup lists and counts live under ['engagements', id, ...];
+                // finding-test case-asset links draw the attack graph.
+                queryClient.invalidateQueries({ queryKey: ['engagements'] });
+                queryClient.invalidateQueries({ queryKey: ['attack-graph'] });
             },
         });
     };
@@ -34,6 +38,10 @@ function createUnlinkHook(entityPath: string, resourcePath: string) {
                 queryClient.invalidateQueries({ queryKey: ['findings'] });
                 queryClient.invalidateQueries({ queryKey: ['testcases'] });
                 queryClient.invalidateQueries({ queryKey: ['assets'] });
+                // Vault / cleanup lists and counts live under ['engagements', id, ...];
+                // finding-test case-asset links draw the attack graph.
+                queryClient.invalidateQueries({ queryKey: ['engagements'] });
+                queryClient.invalidateQueries({ queryKey: ['attack-graph'] });
             },
         });
     };

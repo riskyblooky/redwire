@@ -136,6 +136,7 @@ section becomes one release entry.
 - Docs: the MCP server isn't reachable from outside on a default production install. The Admin Guide now says so and explains how to opt in.
 - Test pipeline: a storage service that fails to start now fails the run immediately, with its logs.
 - A brief backend outage (for example during an update) logged everyone out. The app now waits and reconnects, and signs you out only if the session is actually rejected.
+- Several screens (counts, stats, the attack graph, linked items, user pickers) showed stale data after an edit until the page was reloaded. They now refresh.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

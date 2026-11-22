@@ -94,12 +94,10 @@ export function useUpdateEvidence() {
         },
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['evidence', data.id] });
-            if (data.finding_id) {
-                queryClient.invalidateQueries({ queryKey: ['findings', data.finding_id] });
-            }
-            if ((data as any).testcase_id) {
-                queryClient.invalidateQueries({ queryKey: ['testcases', (data as any).testcase_id] });
-            }
+            // A re-link moves the evidence off its previous finding / test
+            // case too, which the response doesn't name: refresh them all.
+            queryClient.invalidateQueries({ queryKey: ['findings'] });
+            queryClient.invalidateQueries({ queryKey: ['testcases'] });
             if (data.engagement_id) {
                 queryClient.invalidateQueries({ queryKey: ['engagements', data.engagement_id, 'evidence'] });
             }

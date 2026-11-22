@@ -151,6 +151,9 @@ export function useCommitImport() {
             queryClient.invalidateQueries({ queryKey: ['findings'] });
             queryClient.invalidateQueries({ queryKey: ['analytics'] });
             queryClient.invalidateQueries({ queryKey: ['scan-imports', vars.engagementId] });
+            queryClient.invalidateQueries({ queryKey: ['engagements', vars.engagementId] });
+            queryClient.invalidateQueries({ queryKey: ['stats'] });
+            queryClient.invalidateQueries({ queryKey: ['attack-graph', vars.engagementId] });
         },
     });
 }

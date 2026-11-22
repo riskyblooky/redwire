@@ -137,6 +137,9 @@ export function useCommitSpray() {
         },
         onSuccess: (_data, variables) => {
             queryClient.invalidateQueries({ queryKey: ['spray', 'campaigns', variables.engagement_id] });
+            // Commit can create assets and vault credentials for valid hits.
+            queryClient.invalidateQueries({ queryKey: ['assets'] });
+            queryClient.invalidateQueries({ queryKey: ['engagements', variables.engagement_id] });
         },
     });
 }
