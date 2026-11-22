@@ -125,7 +125,8 @@ export default function AdminPage() {
     const requestedTab = searchParams?.get('tab') || 'users';
     const visibleTabs = ADMIN_TAB_ORDER.filter(show);
     const defaultTab = visibleTabs.includes(requestedTab) ? requestedTab : (visibleTabs[0] || 'users');
-    const { data: users, isLoading: usersLoading } = useAdminUsers();
+    const canSeeUsers = show('users');
+    const { data: users, isLoading: usersLoading } = useAdminUsers(canSeeUsers);
     const { data: groups, isLoading: groupsLoading } = useGroups();
     const { data: adminConfig } = useAdminConfig();
     const sessionTimeoutMinutes = (adminConfig?.session_timeout_hours ?? 24) * 60;
@@ -276,7 +277,8 @@ export default function AdminPage() {
 
 
 
-    if (usersLoading) {
+    // Only the Users tab needs the list; other tabs don't wait on it.
+    if (usersLoading && canSeeUsers) {
         return (
             <DashboardLayout>
                 <div className="flex h-full items-center justify-center p-8">

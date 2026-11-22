@@ -13,9 +13,15 @@ export function useAdminConfig() {
     });
 }
 
-export function useAdminUsers() {
+/** ``enabled``: false for a user who can't see the Users tab (a delegated
+ *  admin-surface permission holder) — the list needs VIEW_ALL_USERS, and
+ *  fetching it anyway retried and then polled 403s every 30s. */
+export function useAdminUsers(enabled = true) {
     return useQuery<User[]>({
         queryKey: ['admin', 'users'],
+        enabled,
+        retry: (count, err: unknown) =>
+            (err as { response?: { status?: number } })?.response?.status !== 403 && count < 3,
         queryFn: async () => {
             const response = await api.get('/admin/users');
             return response.data;
