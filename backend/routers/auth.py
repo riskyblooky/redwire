@@ -1266,7 +1266,7 @@ async def saml_login(request: Request, db: AsyncSession = Depends(get_db)):
     )
 
     if not redirect_url:
-        raise HTTPException(status_code=500, detail="Failed to generate SAML login request")
+        raise HTTPException(status_code=503, detail="SAML sign-in is not configured correctly. Ask an administrator to check the SAML settings.")
 
     response = RedirectResponse(url=redirect_url)
     secure = request.url.scheme == "https"
@@ -1536,7 +1536,7 @@ async def saml_metadata(db: AsyncSession = Depends(get_db)):
 
     metadata = generate_sp_metadata(saml_cfg)
     if not metadata:
-        raise HTTPException(status_code=500, detail="Failed to generate SP metadata")
+        raise HTTPException(status_code=503, detail="SAML is not configured correctly; SP metadata could not be generated.")
 
     return Response(content=metadata, media_type="application/xml")
 

@@ -3,7 +3,7 @@ SAML 2.0 SSO authentication module.
 Uses python3-saml (OneLogin) to generate AuthnRequests, validate responses,
 and extract user attributes from SAML assertions.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import logging
 import os
 
@@ -17,7 +17,9 @@ def get_saml_settings(db_settings: Dict[str, str]) -> Dict[str, Any]:
     """
     Build a python3-saml settings dict from database configuration.
     """
-    sp_entity_id = db_settings.get("sp_entity_id", f"{BASE_URL}/auth/saml/metadata")
+    # `or`: the routes pass "" for an unset value, which used to give an
+    # empty SP entityId and invalid metadata.
+    sp_entity_id = db_settings.get("sp_entity_id") or f"{BASE_URL}/auth/saml/metadata"
     acs_url = f"{BASE_URL}/auth/saml/acs"
     sls_url = f"{BASE_URL}/auth/saml/sls"
 
@@ -62,16 +64,16 @@ def get_saml_settings(db_settings: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
-def build_saml_request_url(db_settings: Dict[str, str], return_to: str = "/") -> Optional[str]:
+def build_saml_request_url(db_settings: Dict[str, str], return_to: str = "/") -> Tuple[Optional[str], Optional[str]]:
     """
     Generate a SAML AuthnRequest URL to redirect the user to the IdP.
-    Returns the redirect URL or None on error.
+    Returns (redirect URL, request id), or (None, None) on error.
     """
     try:
         from onelogin.saml2.auth import OneLogin_Saml2_Auth
     except ImportError:
         logger.error("python3-saml not installed")
-        return None
+        return None, None  # a bare None failed the caller's unpacking (500)
 
     saml_settings = get_saml_settings(db_settings)
 
