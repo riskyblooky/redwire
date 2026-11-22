@@ -430,8 +430,11 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         connect();
 
         // Aggressive stale-awareness cleanup: y-protocols' default timeout is
-        // 30s, too slow for cursor removal. Evict peers silent for 10s.
-        const STALE_THRESHOLD = 10_000;
+        // 30s, too slow for cursor removal. An idle peer renews its state every
+        // 15-18s (outdatedTimeout / 2, checked every 3s), so the threshold must
+        // clear that or idle collaborators flicker out and back in. Evict peers
+        // silent for 25s.
+        const STALE_THRESHOLD = 25_000;
         const peerLastSeen = new Map<number, number>();
         const trackPeerActivity = ({ added, updated, removed }: any) => {
             const now = Date.now();
@@ -440,7 +443,9 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
             }
             for (const id of (removed || [])) peerLastSeen.delete(id);
         };
-        awareness.on('change', trackPeerActivity);
+        // 'update', not 'change': a renewal with unchanged state is only an
+        // 'update', and it's the proof of life an idle peer sends.
+        awareness.on('update', trackPeerActivity);
         const staleCleanupInterval = setInterval(() => {
             const now = Date.now();
             const states = awareness.getStates();
@@ -476,7 +481,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
             clearTimeout(readyFallbackTimer);
             reconnect.dispose();
             clearInterval(staleCleanupInterval);
-            awareness.off('change', trackPeerActivity);
+            awareness.off('update', trackPeerActivity);
             // 1. Remove our awareness state FIRST — while the update handler
             //    is still attached so it can broadcast the removal to peers.
             awarenessProtocol.removeAwarenessStates(awareness, [ydoc.clientID], 'local');
