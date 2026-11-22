@@ -96,6 +96,7 @@ section becomes one release entry.
 - AI ATT&CK auto-suggest on a large engagement could run past the server's timeout and lose every suggestion it had made. It now works through items one request at a time and shows its progress.
 - The ATT&CK Navigator export left out techniques mapped only on test cases. They're now included, shown in green as "Tested, no finding".
 - Some Burp Suite XML exports were sent to the Nmap parser on import and imported nothing. The format is now detected from the file's real root element, and an XML file of an unsupported format gets a clear error.
+- Opening and saving a dashboard widget grouped by two columns (such as the Severity × Status heatmap) in the widget editor dropped the second column and broke the widget. The editor now keeps it.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

@@ -30,7 +30,8 @@ export interface LayoutItem {
 
 export interface QueryDefinition {
     table: string;
-    group_by: string;
+    /** One column, or several for a multi-dimensional query (2D heatmap). */
+    group_by: string | string[];
     aggregation: string;
     value_column: string;
     filters?: Array<{ column: string; operator: string; value: string }>;

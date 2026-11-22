@@ -170,6 +170,10 @@ interface FilterDef {
 interface QueryDef {
     table: string;
     group_by: string;
+    /** Further group_by columns of a stored multi-column query (e.g. a 2D
+     *  heatmap). The wizard edits only the first column; these are kept and
+     *  sent back on save instead of being dropped. */
+    group_by_extra?: string[];
     aggregation: string;
     value_column: string;
     limit: number;
@@ -288,11 +292,11 @@ export function WidgetManagement() {
         const asDef = (raw: any): QueryDef => ({
             ...EMPTY_QUERY,
             ...raw,
-            // group_by can be a string or list on the wire; the wizard
-            // only edits single-column groups today, so collapse a list
-            // back to the first entry. Multi-col group-by editing is
-            // still supported by editing config.query directly.
+            // group_by can be a string or list on the wire. The wizard edits
+            // the first column; the rest ride along in group_by_extra so a
+            // save doesn't collapse a multi-column query to one column.
             group_by: Array.isArray(raw?.group_by) ? raw.group_by[0] : (raw?.group_by ?? EMPTY_QUERY.group_by),
+            group_by_extra: Array.isArray(raw?.group_by) ? raw.group_by.slice(1) : [],
             filters: raw?.filters ?? [],
         });
         if (Array.isArray(config?.queries) && config.queries.length > 0) {
@@ -349,9 +353,10 @@ export function WidgetManagement() {
      *  what the backend expects (e.g. no ``date_range`` when
      *  ``date_column`` isn't set). */
     const queryDefForWire = (q: QueryDef): QueryDefinition => {
+        const extra = (q.group_by_extra || []).filter(c => c && c !== q.group_by);
         const wire: QueryDefinition = {
             table: q.table,
-            group_by: q.group_by,
+            group_by: extra.length ? [q.group_by, ...extra] : q.group_by,
             aggregation: q.aggregation,
             value_column: q.value_column,
             limit: q.limit,
@@ -456,6 +461,7 @@ export function WidgetManagement() {
         updateActiveQuery({
             table,
             group_by: tSchema?.group_by[0] || '',
+            group_by_extra: [],  // the old table's columns don't apply
             value_column: tSchema?.aggregate[0] || 'id',
             date_column: '',
             time_bucket: '',
@@ -811,6 +817,11 @@ export function WidgetManagement() {
                                                     ))}
                                                 </SelectContent>
                                             </Select>
+                                            {(activeQuery.group_by_extra || []).length > 0 && (
+                                                <p className="text-[10px] text-muted-foreground">
+                                                    then by {(activeQuery.group_by_extra || []).map(colLabel).join(', ')}
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="space-y-1">
                                             <Label className="text-slate-400 text-[10px]">Aggregation</Label>
