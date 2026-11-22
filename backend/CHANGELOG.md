@@ -129,6 +129,7 @@ section becomes one release entry.
 - Text longer than a field allows now gets a clear "too long" error instead of a server error, and an evidence upload with an over-long description no longer leaves the uploaded file behind.
 - Security: passwords set through a password reset, by an administrator creating a user, or at a forced password change are now held to the same 72-byte limit as other passwords (beyond it, the extra characters didn't count).
 - Database migrations failed when the database password contained a "%" character. They now run.
+- Report layout templates silently discarded classification and page-break settings sent for their sections. They're now refused, since templates don't store them.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

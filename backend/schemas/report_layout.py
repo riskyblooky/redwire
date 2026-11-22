@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
@@ -81,15 +81,25 @@ class ReportLayoutResponse(BaseModel):
 
 # ── Report Layout Template schemas (global) ──
 
-class ReportLayoutTemplateSectionCreate(ReportSectionBase):
+class ReportLayoutTemplateSectionBase(BaseModel):
+    """A template section has no classification / page-break columns (those
+    are set per engagement layout). They used to be accepted here and
+    silently dropped; an unknown field is now a 422."""
+    model_config = ConfigDict(extra="forbid")
+
+    section_type: SectionType = SectionType.TEXT
+    title: str = Field(..., max_length=TITLE)
+    content: Optional[str] = Field("", max_length=LONG_TEXT)
+    sort_order: int = 0
+
+
+class ReportLayoutTemplateSectionCreate(ReportLayoutTemplateSectionBase):
     pass
 
 
-class ReportLayoutTemplateSectionResponse(ReportSectionBase):
+class ReportLayoutTemplateSectionResponse(ReportLayoutTemplateSectionBase):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
     id: str
-
-    class Config:
-        from_attributes = True
 
 
 class ReportLayoutTemplateCreate(BaseModel):
