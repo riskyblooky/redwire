@@ -74,6 +74,7 @@ section becomes one release entry.
 - LDAP users whose directory entry has no email address were created with the email "[]", and after the first one, further such users couldn't sign in. They now get a `<username>@ldap.local` address.
 - Plugin tabs on the engagement page that require an engagement permission (such as the ServiceNow CMDB tab) were only shown to admins. Members with that permission on the engagement now see them.
 - Enabling a plugin that was disabled when the backend started showed it as active, but its pages returned "not found" until a restart. The admin page now says a restart is required, and the plugin's menu items and tabs stay hidden until then.
+- **Security:** a role manager whose only access was "view all engagements" could add vault access to engagement roles, though view-all itself never grants the vault; and couldn't add note or cleanup viewing, which it does grant. The limit now matches what view-all grants.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

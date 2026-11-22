@@ -95,13 +95,6 @@ async def global_permission_set(user: User, db: AsyncSession) -> set:
     return held & {p.value for p in GLOBAL_PERMISSIONS}
 
 
-_VIEW_ALL_GRANTS = (
-    Permission.ENGAGEMENT_VIEW, Permission.FINDING_VIEW, Permission.ASSET_VIEW,
-    Permission.TESTCASE_VIEW, Permission.EVIDENCE_VIEW, Permission.VAULT_VIEW,
-    Permission.DISCUSSION_VIEW, Permission.REPORT_VIEW,
-)
-
-
 async def engagement_permission_ceiling(user: User, db: AsyncSession) -> set:
     """The engagement permissions a user may put on (or take off) an
     engagement role: everything for ADMIN and TEAM_LEAD (both bypass
@@ -117,7 +110,12 @@ async def engagement_permission_ceiling(user: User, db: AsyncSession) -> set:
     if user.role == UserRole.READ_ONLY_ADMIN:
         held = {p.value for p in ENGAGEMENT_PERMISSIONS if _is_read_permission(p)}
     if Permission.VIEW_ALL_ENGAGEMENTS.value in await global_permission_set(user, db):
-        held.update(p.value for p in _VIEW_ALL_GRANTS)
+        # The one definition of what view-all holds (no vault_view: stored
+        # credentials still need an engagement role). A local copy here
+        # had vault_view, so a role manager with only view-all could put
+        # it on a role.
+        from models.permission import VIEW_ALL_ENGAGEMENT_GRANTS
+        held.update(VIEW_ALL_ENGAGEMENT_GRANTS)
     result = await db.execute(
         select(EngagementRolePermissions.permissions)
         .join(EngagementAssignment, EngagementRolePermissions.role_id == EngagementAssignment.role_id)
