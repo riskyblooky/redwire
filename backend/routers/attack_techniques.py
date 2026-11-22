@@ -556,6 +556,10 @@ async def suggest_techniques(
 
 # ── Navigator Export ──────────────────────────────────────────────────
 
+# Navigator colour for a technique exercised by test cases with no finding.
+_NAV_TESTED_COLOR = "#22c55e"
+
+
 @router.get("/engagement/{engagement_id}/navigator")
 async def export_navigator_json(
     engagement_id: str,
@@ -609,9 +613,23 @@ async def export_navigator_json(
             technique_counts[tid] = technique_counts.get(tid, 0) + 1
             technique_severities.setdefault(tid, []).append(sev)
 
+    # Test cases map techniques too (what was exercised, finding or not);
+    # the layer used to show only findings, so tested-but-clean techniques
+    # were missing from the export while the in-app heatmap showed them.
+    testcases = (await db.execute(
+        select(TestCase).where(TestCase.engagement_id == engagement_id)
+        .options(selectinload(TestCase.attack_techniques))
+    )).scalars().all()
+    testcase_counts: dict[str, int] = {}
+    for tc in testcases:
+        for at in (tc.attack_techniques or []):
+            testcase_counts[at.technique_id] = testcase_counts.get(at.technique_id, 0) + 1
+
     # Build Navigator techniques array
     nav_techniques = []
-    for tid, count in technique_counts.items():
+    for tid in sorted(set(technique_counts) | set(testcase_counts)):
+        count = technique_counts.get(tid, 0)
+        tc_count = testcase_counts.get(tid, 0)
         sevs = technique_severities.get(tid, [])
         max_sev = max((severity_score.get(s, 0) for s in sevs), default=0)
         # Color gradient based on max severity
@@ -622,7 +640,7 @@ async def export_navigator_json(
             2: "#3b82f6",  # Low    - blue
             1: "#94a3b8",  # Info   - slate
         }
-        color = color_map.get(max_sev, "#94a3b8")
+        color = color_map.get(max_sev, "#94a3b8") if count else _NAV_TESTED_COLOR
 
         # Handle sub-techniques: technique_id like T1059.001
         base_tid = tid
@@ -634,7 +652,11 @@ async def export_navigator_json(
             "techniqueID": tid,
             "score": max_sev,
             "color": color,
-            "comment": f"{count} finding{'s' if count != 1 else ''}: max severity {sevs[0] if len(set(sevs)) == 1 else 'mixed'}",
+            "comment": "; ".join(part for part in (
+                f"{count} finding{'s' if count != 1 else ''}: max severity {sevs[0] if len(set(sevs)) == 1 else 'mixed'}"
+                if count else "",
+                f"{tc_count} test case{'s' if tc_count != 1 else ''}" if tc_count else "",
+            ) if part),
             "enabled": True,
             "showSubtechniques": False,
         })
@@ -678,6 +700,7 @@ async def export_navigator_json(
             {"label": "Medium", "color": "#ffaa00"},
             {"label": "Low", "color": "#3b82f6"},
             {"label": "Info", "color": "#94a3b8"},
+            {"label": "Tested, no finding", "color": _NAV_TESTED_COLOR},
         ],
         "showTacticRowBackground": True,
         "tacticRowBackground": "#1e293b",
