@@ -561,8 +561,11 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
             return sorted.map(node => ({ ...node, children: sortNodes(node.children) }));
         }
         const sortedTree = sortNodes(filteredTestCaseTree);
-        return flattenTree(sortedTree, search ? new Set(testcases.map(tc => tc.id)) : tcExpandedIds);
-    }, [filteredTestCaseTree, tcExpandedIds, search, testcases, sortField, sortOrder]);
+        // While searching or filtering, show every match: the filtered tree keeps
+        // a match's ancestors, but a collapsed ancestor used to hide it (only
+        // search expanded everything).
+        return flattenTree(sortedTree, (search || hasActiveFilters) ? new Set(testcases.map(tc => tc.id)) : tcExpandedIds);
+    }, [filteredTestCaseTree, tcExpandedIds, search, hasActiveFilters, testcases, sortField, sortOrder]);
 
     const toggleTcExpand = (id: string) => { setTcExpandedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
     const expandAllTc = () => { setTcExpandedIds(new Set(testcases.filter(tc => testcases.some(child => child.parent_id === tc.id)).map(tc => tc.id))); };
