@@ -261,6 +261,18 @@ def _get_sync_database_url() -> str:
     return url.replace("postgresql+asyncpg://", "postgresql://").replace("asyncpg://", "postgresql://")
 
 
+def _deleted_meanwhile(session, meta_id: str) -> bool:
+    """The wordlist was deleted while this import ran: the delete removed
+    the entries committed so far, but later batches kept landing under a
+    source with no wordlist. Remove what this import inserted and stop."""
+    if session.query(WordlistMeta.id).filter(WordlistMeta.id == meta_id).first():
+        return False
+    session.query(WordlistEntry).filter(WordlistEntry.source == meta_id).delete(synchronize_session=False)
+    session.commit()
+    logger.info(f"Wordlist {meta_id} was deleted during import; import stopped and its entries removed")
+    return True
+
+
 def _process_wordlist_sync(file_path: str, meta_id: str):
     """Background thread: parse wordlist, compute hashes, bulk insert, update Bloom filter."""
     from sqlalchemy import create_engine
@@ -298,15 +310,19 @@ def _process_wordlist_sync(file_path: str, meta_id: str):
                     if len(batch) >= batch_size:
                         session.add_all(batch)
                         session.commit()
+                        batch = []
+                        if _deleted_meanwhile(session, meta_id):
+                            return
                         bloom_service.add_many(batch_pw)
                         batch_pw = []
                         logger.info(f"Wordlist {meta_id}: inserted {total_count} entries...")
-                        batch = []
 
             # Insert remaining batch
             if batch:
                 session.add_all(batch)
                 session.commit()
+                if _deleted_meanwhile(session, meta_id):
+                    return
                 bloom_service.add_many(batch_pw)
 
             # Update metadata
