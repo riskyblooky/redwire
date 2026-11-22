@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { User } from '@/lib/types';
-import api, { startProactiveRefresh, stopProactiveRefresh } from '@/lib/api';
+import api, { isTransientAuthFailure, startProactiveRefresh, stopProactiveRefresh } from '@/lib/api';
 import { useEngagementContext } from '@/stores/engagement-store';
 
 interface AuthState {
@@ -22,6 +22,9 @@ interface AuthState {
     setUser: (user: User) => void;
     clearMustChangePassword: () => void;
 }
+
+// Backoff for checkAuth while the backend is unreachable (0 = not retrying).
+let checkAuthRetryMs = 0;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
     user: null,
@@ -164,6 +167,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         try {
             const response = await api.get('/auth/me');
+            checkAuthRetryMs = 0;
             // Refresh session cookie on successful auth check
             document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
             set({
@@ -174,6 +178,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 mustChangePassword: !!response.data.must_change_password,
             });
         } catch (error) {
+            // The backend unreachable or erroring (a deploy, a restart) isn't
+            // a logout: keep the token and the loading state, and try again
+            // with backoff. Only an auth rejection signs the user out (the
+            // api interceptor has already tried a refresh by then).
+            if (isTransientAuthFailure(error)) {
+                checkAuthRetryMs = Math.min(checkAuthRetryMs * 2 || 2000, 30000);
+                setTimeout(() => { void get().checkAuth(); }, checkAuthRetryMs);
+                return;
+            }
+            checkAuthRetryMs = 0;
             // Clear session cookie on failed auth check
             document.cookie = 'has_session=; path=/; max-age=0; SameSite=Lax';
             set({ user: null, isAuthenticated: false, isLoading: false, needsRedirect: false });

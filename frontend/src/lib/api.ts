@@ -50,6 +50,13 @@ api.interceptors.request.use(
 // left requests queued behind a proactive or failed refresh hanging forever.)
 let refreshInFlight: Promise<string> | null = null;
 
+/** A failure that says nothing about the session: no response at all, a
+ *  server error, or rate limiting. */
+export function isTransientAuthFailure(err: unknown): boolean {
+    const status = (err as { response?: { status?: number } } | null)?.response?.status;
+    return !status || status >= 500 || status === 429;
+}
+
 function refreshAccessToken(): Promise<string> {
     if (!refreshInFlight) {
         refreshInFlight = (async () => {
@@ -131,6 +138,14 @@ api.interceptors.response.use(
                 originalRequest.headers.Authorization = `Bearer ${access_token}`;
                 return api(originalRequest);
             } catch (refreshError) {
+                // Only a refresh the server refused (401/403...) ends the
+                // session. No response (network down, backend restarting
+                // during a deploy), a 5xx or a 429 is transient: keep the
+                // session and fail just this request, instead of logging
+                // the user out of every tab.
+                if (isTransientAuthFailure(refreshError)) {
+                    return Promise.reject(_redactAuthOnError(error));
+                }
                 // Refresh failed, clear access token and redirect to login.
                 // The refresh cookie is cleared by /auth/logout, or by the
                 // server when it issues a 401 on an expired/missing cookie.
