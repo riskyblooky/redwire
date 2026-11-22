@@ -298,7 +298,19 @@ async def _execute_notify_users(
     if not link:
         link = _build_resource_link(context)
 
+    # A rule can name a user deleted since it was written. Their
+    # notification row would fail the foreign key at the caller's commit
+    # and roll back every notification for the event, so recipients are
+    # resolved up front and unknown / deactivated ones skipped.
+    from models.user import User
+    ids = [u for u in user_ids if isinstance(u, str)]
+    live = set((await db.execute(
+        select(User.id).where(User.id.in_(ids), User.is_active == True)  # noqa: E712
+    )).scalars().all()) if ids else set()
     for uid in user_ids:
+        if uid not in live:
+            logger.info("Automation %r: skipping unknown or inactive recipient %r", rule_name, uid)
+            continue
         if not await _recipient_can_see_engagement(db, uid, event_engagement_id):
             continue
         # Bypass the default "don't ping the actor about their own
