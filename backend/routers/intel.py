@@ -80,24 +80,22 @@ async def list_intel_items(
     result = await db.execute(query)
     items = result.scalars().all()
 
-    # Compute linked counts
+    # Linked counts: one grouped query per link table for the whole page
+    # (was three COUNT queries per item).
+    ids = [item.id for item in items]
+    linked: dict[str, int] = {}
+    if ids:
+        for model in (IntelItemFinding, IntelItemTestCase, IntelItemNote):
+            rows = await db.execute(
+                select(model.intel_item_id, func.count()).where(model.intel_item_id.in_(ids))
+                .group_by(model.intel_item_id)
+            )
+            for item_id, n in rows.all():
+                linked[item_id] = linked.get(item_id, 0) + n
     responses = []
     for item in items:
-        count_result = await db.execute(
-            select(func.count()).select_from(IntelItemFinding).where(IntelItemFinding.intel_item_id == item.id)
-        )
-        finding_count = count_result.scalar() or 0
-        count_result = await db.execute(
-            select(func.count()).select_from(IntelItemTestCase).where(IntelItemTestCase.intel_item_id == item.id)
-        )
-        tc_count = count_result.scalar() or 0
-        count_result = await db.execute(
-            select(func.count()).select_from(IntelItemNote).where(IntelItemNote.intel_item_id == item.id)
-        )
-        note_count = count_result.scalar() or 0
-
         resp = IntelItemResponse.model_validate(item)
-        resp.linked_count = finding_count + tc_count + note_count
+        resp.linked_count = linked.get(item.id, 0)
         responses.append(resp)
 
     return {"items": responses, "total": total, "limit": limit, "offset": offset}

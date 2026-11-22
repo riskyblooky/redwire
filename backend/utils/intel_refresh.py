@@ -63,17 +63,30 @@ def _parse_rss_date(date_str):
         return _parse_date(date_str)
 
 
+def _synthetic_key(*parts) -> str:
+    import hashlib
+    digest = hashlib.sha256("\x1f".join(str(p or "") for p in parts).encode()).hexdigest()[:32]
+    return f"urn:redwire:intel:{digest}"
+
+
 def parse_entries(feed_type: str, resp: httpx.Response) -> list[dict]:
     """Turn a feed response into item dicts. Raises on unparseable XML/JSON."""
     entries = []
     if feed_type == "JSON":
         data = resp.json()
-        vulns = data.get("vulnerabilities", data if isinstance(data, list) else [])
+        # A top-level list (not the CISA KEV {"vulnerabilities": [...]} shape)
+        # used to fail every refresh: .get on a list.
+        vulns = data if isinstance(data, list) else (data.get("vulnerabilities") or [] if isinstance(data, dict) else [])
         for v in vulns[:MAX_ENTRIES_PER_FEED]:
+            if not isinstance(v, dict):
+                continue
+            cve = v.get("cveID")
             entries.append({
-                "title": v.get("vulnerabilityName") or v.get("cveID", "Unknown"),
+                "title": v.get("vulnerabilityName") or cve or "Unknown",
                 "content": v.get("shortDescription", ""),
-                "source_url": f"https://nvd.nist.gov/vuln/detail/{v.get('cveID', '')}",
+                # No CVE id: no shared ".../detail/" URL that would collapse
+                # every such entry into one item; keyed by content instead.
+                "source_url": f"https://nvd.nist.gov/vuln/detail/{cve}" if cve else _synthetic_key(v.get("vulnerabilityName"), v.get("dateAdded")),
                 "cve_id": v.get("cveID"),
                 "item_type": "CVE",
                 "severity": "HIGH" if v.get("knownRansomwareCampaignUse") == "Known" else None,
@@ -92,6 +105,12 @@ def parse_entries(feed_type: str, resp: httpx.Response) -> list[dict]:
                 link = link_el.get("href", "")
         desc = _get_text(el, "description") or _get_text(el, f"{_ATOM}summary") or ""
         pub_date = _get_text(el, "pubDate") or _get_text(el, f"{_ATOM}updated") or ""
+        if not link:
+            # No link: dedupe on the entry's guid / id, else a stable hash.
+            # A linkless entry had no conflict key and was re-inserted on
+            # every refresh.
+            link = (_get_text(el, "guid") or _get_text(el, f"{_ATOM}id")
+                    or _synthetic_key(title, pub_date))
         m = _CVE_RE.search(title)
         cve_id = m.group(0) if m else None
         item_type = "CVE" if cve_id else "ARTICLE"

@@ -158,8 +158,9 @@ export function IntelDetailDialog({ itemId, onClose }: IntelDetailDialogProps) {
                         </div>
                     )}
 
-                    {/* Source URL */}
-                    {item.source_url && (
+                    {/* Source URL (an entry without a link is keyed by its guid
+                        or a urn:redwire:intel: hash — not something to open) */}
+                    {item.source_url && /^https?:\/\//i.test(item.source_url) && (
                         <a
                             href={item.source_url}
                             target="_blank"

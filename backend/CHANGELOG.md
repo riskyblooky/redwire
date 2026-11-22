@@ -103,6 +103,7 @@ section becomes one release entry.
 - Built-in defaults an admin deleted (tags, types, templates, groups, engagement roles) came back after every server restart. Each default is now created only once, and a problem in one kind of default no longer stops the others from being set up.
 - With an LDAP CA certificate configured, every LDAP login left a certificate file behind in the server's temp directory. The certificate is now passed in memory.
 - Logging out with an API token, or with a malformed token, returned a server error. It now succeeds (an API token isn't revoked by logout).
+- Threat-intel feed entries without a link were added again on every refresh, and feeds published as a plain JSON list never loaded. Both are fixed, and the intel list loads faster.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
