@@ -146,6 +146,7 @@ section becomes one release entry.
 - The evidence page showed edit and delete buttons to users who weren't allowed to use them. It now shows only the actions you can take.
 - Users with limited admin access waited on a loading screen in the admin console and it kept making failed requests in the background. It now loads straight away.
 - Signing in with SSO and two-factor authentication didn't accept recovery codes. It now does, like the regular sign-in.
+- The engagement status control in the page header now appears for everyone allowed to change the status, shows proposed engagements correctly, and explains failures.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

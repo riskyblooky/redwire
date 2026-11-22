@@ -90,6 +90,8 @@ import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
 
 const statusColors: Record<string, string> = {
+    PROPOSED: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    SCOPING: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
     PLANNING: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
     IN_PROGRESS: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
     REPORTING: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
@@ -328,6 +330,18 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     const canDeleteEngagement = useCanDelete(id, 'engagement' as any, engagement?.created_by);
 
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+    // Who may change the status is what the backend accepts: engagement_edit,
+    // except that a COMPLETED engagement is locked to admins / team leads
+    // (GHSA-2gmw-jf4c-8q5g). The control used to be shown by role only.
+    const canChangeStatus = canEditEngagement && (
+        engagement?.status !== 'COMPLETED'
+        || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.TEAM_LEAD
+    );
+    // A PROPOSED engagement must show its own status (the Select rendered
+    // blank for a value not in its list); it's only offered while current.
+    const statusOptions = engagement?.status === 'PROPOSED'
+        ? [{ value: 'PROPOSED', label: 'Proposed' }, ...engagementStatuses]
+        : engagementStatuses;
 
     const handleStatusChange = async (newStatus: string) => {
         setIsUpdatingStatus(true);
@@ -337,8 +351,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                 status: newStatus
             });
         } catch (error) {
-            console.error('Failed to update status:', error);
-            alert('Failed to update engagement status');
+            toast.error(getErrorMessage(error, 'Failed to update engagement status'));
         } finally {
             setIsUpdatingStatus(false);
         }
@@ -428,7 +441,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         <div>
                             <h1 className="text-3xl font-bold text-white tracking-tight">{engagement.name}</h1>
                             <div className="flex items-center gap-2 mt-1">
-                                {(currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.TEAM_LEAD) ? (
+                                {canChangeStatus ? (
                                     <Select
                                         value={engagement.status}
                                         onValueChange={handleStatusChange}
@@ -445,7 +458,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                                             )}
                                         </SelectTrigger>
                                         <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                            {engagementStatuses.map((s) => (
+                                            {statusOptions.map((s) => (
                                                 <SelectItem
                                                     key={s.value}
                                                     value={s.value}
