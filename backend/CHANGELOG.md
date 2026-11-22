@@ -125,6 +125,7 @@ section becomes one release entry.
 - Live co-editing: when a collaborator's connection dropped abruptly, their cursor could stay on screen and the next auto-save could be lost. A dropped connection is now cleaned up like a normal disconnect.
 - Email: leaving the SMTP port blank broke sending and the SMTP settings page, and port 465 with TLS turned off hung until it timed out. A blank port now means 587, and port 465 always uses TLS.
 - Statistics: operators with no findings in the chosen date range disappeared from the operator table, evidence not attached to a finding wasn't counted, average CVSS included non-CVSS risk ratings, and calendar team utilisation counted read-only accounts. All fixed.
+- MCP server: the AI chat tool failed on some model responses and returned an empty answer when the AI provider reported an error; it now returns the answer or the error. Sessions whose token was revoked now say so.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

@@ -265,6 +265,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         raw_body = e.response.text or ""
         body = raw_body[:200] + ("…" if len(raw_body) > 200 else "")
         text = f"API Error {e.response.status_code}: {body}"
+        if e.response.status_code == 401:
+            # The bearer is checked at connect, and the backend re-checks it
+            # on every call; once it's revoked or expired every tool fails.
+            text = ("API Error 401: this MCP session's token is no longer valid "
+                    "(revoked or expired). Reconnect with a fresh token.")
         return [TextContent(type="text", text=_wrap_untrusted(text))]
     except Exception as e:
         logger.exception(f"Tool {name} failed")
@@ -373,18 +378,45 @@ async def _ai_chat(args: dict[str, Any]) -> Any:
     async with httpx.AsyncClient(base_url=REDWIRE_API_URL, timeout=120) as client:
         resp = await client.post("/ai/chat", headers=_headers(), json=payload)
         resp.raise_for_status()
-        full_text = ""
-        for line in resp.text.split("\n"):
-            if line.startswith("data: "):
-                chunk = line[6:]
-                if chunk == "[DONE]":
-                    break
-                try:
-                    data = json.loads(chunk)
-                    full_text += data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                except json.JSONDecodeError:
-                    continue
-        return {"response": full_text}
+        return _collect_chat_stream(resp.text)
+
+
+def _collect_chat_stream(body: str) -> dict:
+    """Join the backend's /ai/chat SSE chunks into one answer.
+
+    A delta whose content is null (role-only or tool-call deltas) is
+    skipped — it used to raise on ``str + None``. ``{"error": ...}`` chunks
+    (upstream API errors, an empty completion) were ignored, so a failed
+    chat came back as an empty "response"; they're returned, and with no
+    text at all the call fails with them."""
+    full_text, errors, event = "", [], None
+    for line in body.split("\n"):
+        if line.startswith("event: "):
+            event = line[7:].strip()
+            continue
+        if not line.startswith("data: "):
+            continue
+        chunk = line[6:]
+        if chunk == "[DONE]" or event == "done":
+            break
+        try:
+            data = json.loads(chunk)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("error"):
+            errors.append(str(data["error"]))
+            continue
+        choices = data.get("choices") or [{}]
+        delta = (choices[0] or {}).get("delta") or {}
+        full_text += delta.get("content") or ""
+    if errors and not full_text:
+        raise RuntimeError("; ".join(errors))
+    out = {"response": full_text}
+    if errors:
+        out["errors"] = errors
+    return out
 
 
 # Named special cases a registry entry can point at with ``handler``.
@@ -467,6 +499,10 @@ async def handle_sse(request: Request):
         await mcp.run(
             streams[0], streams[1], mcp.create_initialization_options()
         )
+    # The response was already streamed by connect_sse; Starlette still
+    # calls the endpoint's return value, and None raised a TypeError when
+    # every session ended.
+    return Response()
 
 
 async def handle_health(request: Request):
