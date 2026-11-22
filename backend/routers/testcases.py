@@ -517,6 +517,7 @@ async def delete_testcase(
     
     # Cascade: collect all descendant IDs and delete them too
     cascade_count = 0
+    object_keys: list[str] = []
     if cascade:
         # GHSA-3mpw-xmrg-5rx5: the BFS below must enforce the same own-vs-_ANY
         # gate per descendant that the direct-delete path enforces. Hoist the
@@ -552,6 +553,10 @@ async def delete_testcase(
                 visited.add(child.id)
                 descendants.append(child)
                 queue.append(child.id)
+        # Evidence first: the descendants' flush below would otherwise null
+        # their evidence's testcase_id before it can be told apart.
+        from utils.storage_cleanup import drop_testcase_evidence
+        object_keys = await drop_testcase_evidence(db, [testcase_id] + [d.id for d in descendants])
         # Delete descendants in reverse (leaves first), flushed before the
         # parent: in one flush a parent_id cycle is a CircularDependencyError.
         # Same transaction, so it all still commits (or fails) together.
@@ -588,6 +593,9 @@ async def delete_testcase(
     await sweep_threads(db, "testcase", swept_ids)
     from utils.versioning import sweep_versions
     await sweep_versions(db, "testcase", swept_ids)
+    if not cascade:
+        from utils.storage_cleanup import drop_testcase_evidence
+        object_keys = await drop_testcase_evidence(db, [db_testcase.id])
 
     await db.delete(db_testcase)
     await db.commit()
@@ -605,6 +613,8 @@ async def delete_testcase(
         resource_name=db_testcase.title,
         details=details
     )
+    from utils.storage_cleanup import delete_objects
+    await delete_objects(object_keys)
 
     return None
 
