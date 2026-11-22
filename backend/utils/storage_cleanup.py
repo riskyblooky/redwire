@@ -18,17 +18,27 @@ logger = logging.getLogger(__name__)
 
 
 async def engagement_object_keys(db: AsyncSession, engagement_id: str) -> list[str]:
+    from sqlalchemy import or_
     from models.evidence import Evidence
+    from models.finding import Finding
     from models.markdown_image import MarkdownImage
+    from models.testcase import TestCase
     from models.vault import VaultItem
     keys: list[str] = []
+    # Legacy evidence rows may have no engagement_id, only a finding or test
+    # case; matching on engagement_id alone left their objects behind.
+    evidence_in_engagement = or_(
+        Evidence.engagement_id == engagement_id,
+        Evidence.finding_id.in_(select(Finding.id).where(Finding.engagement_id == engagement_id)),
+        Evidence.testcase_id.in_(select(TestCase.id).where(TestCase.engagement_id == engagement_id)),
+    )
     for col, where in (
-        (Evidence.file_path, Evidence.engagement_id == engagement_id),
+        (Evidence.file_path, evidence_in_engagement),
         (VaultItem.file_path, VaultItem.engagement_id == engagement_id),
         (MarkdownImage.storage_key, MarkdownImage.engagement_id == engagement_id),
     ):
         keys += [k for k in (await db.execute(select(col).where(where))).scalars().all() if k]
-    return keys
+    return list(dict.fromkeys(keys))
 
 
 async def finding_object_keys(db: AsyncSession, finding_id: str) -> list[str]:
