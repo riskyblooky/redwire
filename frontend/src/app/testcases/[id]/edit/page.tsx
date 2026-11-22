@@ -203,7 +203,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
             });
             setIsDirty(false);
             await Promise.all(Object.values(surfaceRefs.current).map((h) => h?.refreshAnchors()));
-            router.push(`/testcases/${id}`);
+            // Keep the engagement return context the detail page handed us, so
+            // its Back button still goes to the engagement tab.
+            const query = returnEngagementId
+                ? `?engagementId=${encodeURIComponent(returnEngagementId)}&tab=${encodeURIComponent(returnTab)}`
+                : '';
+            router.push(`/testcases/${id}${query}`);
         } catch (error: any) {
             console.error('Failed to update test case:', error);
             toast.error(apiErrorMessage(error, 'Failed to update test case'));
