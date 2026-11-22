@@ -2,6 +2,7 @@
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
+from schemas.user import _validate_password_bcrypt_safe
 
 from schemas._field_limits import (
     EMAIL,
@@ -120,4 +121,7 @@ class ResetPasswordRequest(BaseModel):
     # GHSA-8r3m-6x57-pg97.
     token: str = Field(..., max_length=4096)
     new_password: str = Field(..., max_length=256)
+    # bcrypt reads only the first 72 bytes (see schemas/user.py); the
+    # reset path set passwords without the guard.
+    _v_new_password_bcrypt = field_validator("new_password")(_validate_password_bcrypt_safe)
 

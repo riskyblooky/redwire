@@ -778,12 +778,14 @@ async def logout(
 
 # ─── Force Password Change ────────────────────────────────────────────────────
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from schemas.user import _validate_password_bcrypt_safe
 
 class ForceChangePasswordRequest(BaseModel):
     # max_length caps body allocation before the route runs. GHSA-8r3m-6x57-pg97 follow-up.
     current_password: str = Field(..., max_length=256)
     new_password: str = Field(..., min_length=8, max_length=256)
+    _v_new_password_bcrypt = field_validator("new_password")(_validate_password_bcrypt_safe)  # 72-byte bcrypt limit
 
 @router.post(
     "/force-change-password",

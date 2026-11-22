@@ -127,6 +127,7 @@ section becomes one release entry.
 - Statistics: operators with no findings in the chosen date range disappeared from the operator table, evidence not attached to a finding wasn't counted, average CVSS included non-CVSS risk ratings, and calendar team utilisation counted read-only accounts. All fixed.
 - MCP server: the AI chat tool failed on some model responses and returned an empty answer when the AI provider reported an error; it now returns the answer or the error. Sessions whose token was revoked now say so.
 - Text longer than a field allows now gets a clear "too long" error instead of a server error, and an evidence upload with an over-long description no longer leaves the uploaded file behind.
+- Security: passwords set through a password reset, by an administrator creating a user, or at a forced password change are now held to the same 72-byte limit as other passwords (beyond it, the extra characters didn't count).
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

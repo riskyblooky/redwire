@@ -103,6 +103,7 @@ async def _guard_user_admin_action(
 
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from schemas.user import _validate_password_bcrypt_safe
 from typing import Annotated, Optional
 
 from schemas.user import normalize_username
@@ -121,6 +122,8 @@ class AdminUserCreate(BaseModel):
     email: EmailStr = Field(..., max_length=254)
     password: str = Field(..., min_length=8, max_length=256)
     full_name: Optional[str] = Field("", max_length=255)
+    # Same 72-byte bcrypt guard as self-registration (schemas/user.py).
+    _v_password_bcrypt = field_validator("password")(_validate_password_bcrypt_safe)
     role: UserRole = UserRole.OPERATOR
 
     @field_validator("username")
