@@ -18,6 +18,7 @@ import { useState, useEffect } from 'react';
 import { UserName } from '@/components/ui/user-name';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
+import { useCanDelete, useCanEdit } from '@/lib/hooks/use-permissions';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import {
     Card,
@@ -98,6 +99,10 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
     const deleteEvidence = useDeleteEvidence();
     const updateEvidence = useUpdateEvidence();
     const replaceFile = useReplaceEvidenceFile();
+    // Same owner / _any model the backend enforces (evidence_edit[_any],
+    // evidence_delete[_any]); a viewer used to get every control and a 403.
+    const canEdit = useCanEdit(id, 'evidence', evidence?.created_by);
+    const canDelete = useCanDelete(id, 'evidence', evidence?.created_by);
     const stripExif = useStripExif();
     const { data: users } = useUsers();
     const queryClient = useQueryClient();
@@ -294,7 +299,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                         {activeUsers.length > 0 && <PresenceIndicator users={activeUsers} />}
                         <div className="h-8 w-[1px] bg-slate-800" />
                         <div className="flex items-center gap-2">
-                            {isImage && (
+                            {isImage && canEdit && (
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -305,7 +310,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                     Edit Image
                                 </Button>
                             )}
-                            {isText && !isTextEditing && (
+                            {isText && canEdit && !isTextEditing && (
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -316,7 +321,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                     Edit Text
                                 </Button>
                             )}
-                            {isCsvFile && !isCsvEditing && (
+                            {isCsvFile && canEdit && !isCsvEditing && (
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -336,6 +341,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                 <Download className="h-4 w-4 mr-2" />
                                 Download
                             </Button>
+                            {canDelete && (
                             <Button
                                 variant="ghost"
                                 size="icon"
@@ -344,6 +350,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                             >
                                 <Trash2 className="h-4 w-4" />
                             </Button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -499,6 +506,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                             evidence.include_in_report ? "text-green-400 bg-green-400/5 hover:bg-green-400/10" : "text-slate-400 hover:text-white"
                                         )}
                                         onClick={handleToggleReport}
+                                        disabled={!canEdit}
                                     >
                                         {evidence.include_in_report ? <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> : <XCircle className="h-3.5 w-3.5 mr-1.5" />}
                                         {evidence.include_in_report ? 'In Report' : 'Excluded'}
@@ -509,7 +517,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
                                         <Label className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Description</Label>
-                                        {!isEditingDescription ? (
+                                        {!canEdit ? null : !isEditingDescription ? (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -646,7 +654,7 @@ export default function EvidenceDetailPage({ params }: { params: Promise<{ id: s
                                                 <ChevronRight className={cn('h-3 w-3 transition-transform', exifOpen && 'rotate-90')} />
                                                 EXIF Data
                                             </button>
-                                            {exifData?.has_exif && (
+                                            {exifData?.has_exif && canEdit && (
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
