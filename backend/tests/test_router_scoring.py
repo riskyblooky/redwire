@@ -167,3 +167,18 @@ async def test_engagement_policy_limited_to_site_models(client, db_session, make
     again = await client.put(f"/engagements/{eng.id}", json={
         "allowed_score_models": ["usaf-rac"], "default_score_model": "usaf-rac"})
     assert again.status_code == 200, again.text
+
+
+async def test_manual_score_edit_drops_stale_inputs(client, db_session, make_user, authenticate_as):
+    """Changing severity/CVSS by hand on a calculator-scored finding left the
+    old inputs stored, describing a score the finding no longer has."""
+    await _admin(make_user, authenticate_as)
+    eng = await _make_engagement(db_session)
+    fid = (await client.post("/findings", json=_payload(eng.id, score_model="usaf-rac", score_inputs=USAF_TOP))).json()["id"]
+
+    same = await client.put(f"/findings/{fid}", json={"title": "Renamed", "severity": "CRITICAL"})
+    assert same.json()["score_inputs"] == USAF_TOP          # unchanged severity: still calculator-scored
+
+    manual = await client.put(f"/findings/{fid}", json={"severity": "LOW"})
+    assert manual.status_code == 200, manual.text
+    assert manual.json()["severity"] == "LOW" and manual.json()["score_inputs"] is None

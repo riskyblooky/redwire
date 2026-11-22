@@ -640,6 +640,15 @@ async def update_finding(
     # policy has since dropped stays editable (the UI flags it for rescoring).
     if update_data.get("score_model") and update_data["score_model"] != finding.score_model:
         await assert_model_allowed(db, finding.engagement_id, update_data["score_model"])
+    # A calculator-scored finding edited by hand (severity / CVSS / vector /
+    # model changed without new inputs) is now manually scored: drop the
+    # stored inputs, which no longer describe the score and would show (and
+    # re-score to) the old values in the calculator.
+    if finding.score_inputs and not update_data.get("score_inputs") and any(
+        k in update_data and update_data[k] != getattr(finding, k)
+        for k in ("severity", "cvss_score", "cvss_vector", "score_model")
+    ):
+        update_data["score_inputs"] = None
     _apply_scoring(update_data, existing=finding)
 
     # Only an actual transition is gated: the edit form resends the current
