@@ -117,8 +117,12 @@ def parse(content: bytes) -> ParsedImportData:
                     state_val = state_elem.get("state", "open").upper()
                     if state_val in ("OPEN", "CLOSED", "FILTERED"):
                         state = state_val
-                    elif "OPEN" in state_val:
-                        state = "OPEN"
+                    elif state_val == "OPEN|FILTERED":
+                        state = "OPEN"      # UDP's usual "no reply" (unchanged)
+                    else:
+                        # closed|filtered, unfiltered: not known to be open
+                        # (closed|filtered used to fall through to OPEN).
+                        state = "FILTERED" if "FILTERED" in state_val else "CLOSED"
 
                 service_elem = port_elem.find("service")
                 service_name = None

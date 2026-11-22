@@ -42,6 +42,14 @@ def _extract_host(host_str: str) -> tuple[str, str, Optional[int]]:
         except Exception:
             pass
 
+    # [IPv6]:port, or a bare IPv6 address (its colons aren't a port)
+    if host_str.startswith("["):
+        addr, _, rest = host_str[1:].partition("]")
+        port = int(rest[1:]) if rest.startswith(":") and rest[1:].isdigit() else None
+        return (addr, "IP Address", port)
+    if host_str.count(":") > 1:
+        return (host_str, "IP Address", None)
+
     # Might be IP:port
     if ":" in host_str:
         parts = host_str.rsplit(":", 1)
@@ -114,27 +122,19 @@ def parse(content: bytes) -> ParsedImportData:
                 identifier=identifier,
                 description=f"Imported from Nuclei scan",
             )
-            if port:
-                svc = None
-                if port == 80:
-                    svc = "http"
-                elif port == 443:
-                    svc = "https"
-                elif port == 22:
-                    svc = "ssh"
-                elif port == 21:
-                    svc = "ftp"
-                asset.ports.append(ParsedPort(
-                    port_number=port,
-                    protocol="TCP",
-                    service_name=svc,
-                    state="OPEN",
-                ))
-
             asset_index[identifier] = len(result.assets)
             result.assets.append(asset)
 
         asset_idx = asset_index[identifier]
+        # Every port seen for the host (only the first item's port was kept).
+        asset = result.assets[asset_idx]
+        if port and all(p.port_number != port for p in asset.ports):
+            asset.ports.append(ParsedPort(
+                port_number=port,
+                protocol="TCP",
+                service_name={80: "http", 443: "https", 22: "ssh", 21: "ftp"}.get(port),
+                state="OPEN",
+            ))
 
         # Extract finding info
         info = item.get("info", {}) or {}
@@ -170,7 +170,9 @@ def parse(content: bytes) -> ParsedImportData:
         # CVSS
         classification = info.get("classification", {}) or {}
         cvss_score = None
-        cvss_metrics = classification.get("cvss-metrics") or classification.get("cvss-score")
+        # The vector is cvss-metrics only (falling back to cvss-score stored
+        # "9.8" as the vector).
+        cvss_metrics = classification.get("cvss-metrics")
         cvss_score_val = classification.get("cvss-score")
         if cvss_score_val:
             try:

@@ -95,7 +95,11 @@ def parse(content: bytes) -> ParsedImportData:
         host = parsed_url.hostname or _first(item, "input", "host")
         if not host:
             continue
-        port = parsed_url.port or _int(_first(item, "port")) or (443 if scheme == "https" else 80)
+        try:
+            url_port = parsed_url.port
+        except ValueError:      # out-of-range port: urlparse raises lazily, here
+            url_port = None
+        port = url_port or _int(_first(item, "port")) or (443 if scheme == "https" else 80)
         probed += 1
 
         if host not in asset_index:

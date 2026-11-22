@@ -180,7 +180,14 @@ def _parse_ports(ports_str: str) -> list:
 
 def _parse_csv_rows(content: bytes) -> list:
     """Parse CSV content into list of row dicts."""
-    text = content.decode("utf-8-sig")  # handle BOM
+    try:
+        text = content.decode("utf-8-sig")  # handle BOM
+    except UnicodeDecodeError:
+        # Excel's plain "CSV" export is Windows-1252, not UTF-8 (was a 500).
+        try:
+            text = content.decode("cp1252")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="CSV must be UTF-8 (or Windows-1252) text.")
     reader = csv.DictReader(
         (line for line in text.splitlines() if not line.strip().startswith("#")),
         fieldnames=None,
