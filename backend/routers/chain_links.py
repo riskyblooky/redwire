@@ -40,6 +40,14 @@ async def _require_edit(current_user: User, engagement_id: str, db: AsyncSession
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
+def _tc_status(is_executed, is_successful) -> str:
+    """Same labels as the attack graph. An executed test case with no result
+    recorded yet (is_successful NULL) is "Executed", not "Fail"."""
+    if not is_executed:
+        return "Not Executed"
+    return "Pass" if is_successful is True else "Fail" if is_successful is False else "Executed"
+
+
 async def _load_node_maps(engagement_id: str, db: AsyncSession):
     """Build {id: ChainNodeRef} lookups for every chain-eligible entity in the
     engagement, so edges can be resolved to labels in one pass."""
@@ -50,8 +58,8 @@ async def _load_node_maps(engagement_id: str, db: AsyncSession):
         .where(TestCase.engagement_id == engagement_id)
     )).all()
     for r in tcs:
-        st = "Not Executed" if not r.is_executed else ("Pass" if r.is_successful else "Fail")
-        maps["testcase"][r.id] = ChainNodeRef(type="testcase", id=r.id, label=r.title, sub=r.category, status=st)
+        maps["testcase"][r.id] = ChainNodeRef(type="testcase", id=r.id, label=r.title, sub=r.category,
+                                              status=_tc_status(r.is_executed, r.is_successful))
 
     fs = (await db.execute(
         select(Finding.id, Finding.title, Finding.category, Finding.severity, Finding.status)
@@ -93,8 +101,8 @@ def _ref_from_entity(type_: str, entity) -> ChainNodeRef:
             status=entity.status.value if entity.status else None,
         )
     if type_ == "testcase":
-        st = "Not Executed" if not entity.is_executed else ("Pass" if entity.is_successful else "Fail")
-        return ChainNodeRef(type="testcase", id=entity.id, label=entity.title, sub=entity.category, status=st)
+        return ChainNodeRef(type="testcase", id=entity.id, label=entity.title, sub=entity.category,
+                            status=_tc_status(entity.is_executed, entity.is_successful))
     return ChainNodeRef(type="vault_item", id=entity.id, label=entity.name, sub=entity.item_type)
 
 
