@@ -50,6 +50,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from typing import Awaitable, Callable, Optional
 
 import httpx
@@ -69,6 +70,15 @@ _DEFAULT_PER_TOOL_RESULT_BUDGET = 2000
 _SUMMARY_CACHE_TTL_SECONDS = 60 * 60  # 1 hour
 
 _SUMMARY_CACHE_PREFIX = "ai_chat:summary:"
+
+# How many earlier turn boundaries compaction checks for a cached summary
+# to build on (one cache GET each, only on a miss).
+_PREFIX_LOOKBACK = 50
+
+# Used when Redis is unavailable, so a single process still reuses summaries
+# (without it every tool round in one turn re-summarized). Small and bounded.
+_LOCAL_CACHE: dict[str, tuple[float, str]] = {}
+_LOCAL_CACHE_MAX = 256
 
 
 # ── Token counting ───────────────────────────────────────────────────
@@ -160,7 +170,10 @@ def _summary_cache_key(messages: list[dict]) -> str:
 def _cache_get(key: str) -> Optional[str]:
     r = _get_redis()
     if r is None:
-        return None
+        hit = _LOCAL_CACHE.get(key)
+        if hit is None or hit[0] < time.monotonic():
+            return None
+        return hit[1]
     try:
         val = r.get(key)
         if val is None:
@@ -174,6 +187,9 @@ def _cache_get(key: str) -> Optional[str]:
 def _cache_set(key: str, value: str) -> None:
     r = _get_redis()
     if r is None:
+        if len(_LOCAL_CACHE) >= _LOCAL_CACHE_MAX:
+            _LOCAL_CACHE.pop(next(iter(_LOCAL_CACHE)))
+        _LOCAL_CACHE[key] = (time.monotonic() + _SUMMARY_CACHE_TTL_SECONDS, value)
         return
     try:
         r.set(key, value, ex=_SUMMARY_CACHE_TTL_SECONDS)
@@ -206,6 +222,9 @@ def split_for_compaction(
     survive compaction unchanged — the system prompt is what tells
     the model how to behave, dropping it would break the assistant.
     """
+    # 0 used to cut at the *first* user message — nothing to summarize, so
+    # compaction silently never fired. The current turn is always kept.
+    keep_recent_turns = max(1, keep_recent_turns)
     system_msgs: list[dict] = [m for m in messages if m.get("role") == "system"]
     rest: list[dict] = [m for m in messages if m.get("role") != "system"]
 
@@ -298,6 +317,13 @@ async def _summarize_via_llm(
         return _summary_fallback(messages)
 
 
+_FALLBACK_MARKER = "the summarizer was unavailable"
+
+
+def _is_fallback(summary: str) -> bool:
+    return _FALLBACK_MARKER in summary and summary.startswith("[Earlier in this conversation:")
+
+
 def _summary_fallback(messages: list[dict]) -> str:
     """Last-resort summary when the LLM call itself fails. Counts
     messages by role so the model at least knows the shape of what
@@ -308,7 +334,7 @@ def _summary_fallback(messages: list[dict]) -> str:
     shape = ", ".join(f"{n} {role}" for role, n in by_role.items())
     return (
         f"[Earlier in this conversation: {len(messages)} messages "
-        f"({shape}) were compacted but the summarizer was unavailable. "
+        f"({shape}) were compacted but {_FALLBACK_MARKER}. "
         f"Ask the user to recap if you need specifics.]"
     )
 
@@ -364,12 +390,28 @@ async def compact_if_needed(
     cache_key = _summary_cache_key(to_summarize)
     summary_text = _cache_get(cache_key)
     if summary_text is None:
+        # Each new turn moves the cut forward, so the prefix (and its key)
+        # changes every turn. Re-summarizing the whole prefix each time cost
+        # a growing LLM call per turn, and the prefix itself could outgrow
+        # the context window. Instead, fold only the new messages into the
+        # summary of the longest earlier prefix that's cached (normally the
+        # previous turn's).
+        source = to_summarize
+        boundaries = [i for i, m in enumerate(to_summarize) if i > 0 and m.get("role") == "user"]
+        for b in reversed(boundaries[-_PREFIX_LOOKBACK:]):
+            earlier = _cache_get(_summary_cache_key(to_summarize[:b]))
+            if earlier is not None:
+                source = [{"role": "assistant", "content": earlier}, *to_summarize[b:]]
+                break
         summary_text = await _summarize_via_llm(
-            to_summarize, api_url, api_key, model,
+            source, api_url, api_key, model,
             tls_verify=tls_verify, extra_headers=extra_headers,
             extra_query=extra_query, request_timeout=request_timeout,
         )
-        _cache_set(cache_key, summary_text)
+        # A fallback isn't cached: caching it pinned the useless template
+        # for an hour after one failed summarizer call.
+        if not _is_fallback(summary_text):
+            _cache_set(cache_key, summary_text)
 
     summary_msg = {"role": "assistant", "content": summary_text}
     new_messages = [*system_msgs, summary_msg, *recent_tail]
