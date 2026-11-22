@@ -144,6 +144,20 @@ async def test_comment_and_execution_triggers_fire(db_session, rule_triggers):
     assert rule_triggers.count("executed_testcase") == 1
 
 
+async def test_evidence_upload_fires_uploaded_evidence(db_session, rule_triggers):
+    """Finding and engagement uploads log "uploaded" on an evidence resource;
+    only test case uploads used the catalog's "uploaded_evidence"."""
+    from utils.collaboration import create_activity_log
+    eng = await _make_engagement(db_session)
+    for rid in ("e1", "e2"):
+        await create_activity_log(db_session, engagement_id=eng.id, user_id=None, action="uploaded",
+                                  resource_type="evidence", resource_id=rid, resource_name="shot.png")
+    # Same verb on something else is not an evidence upload.
+    await create_activity_log(db_session, engagement_id=eng.id, user_id=None, action="uploaded",
+                              resource_type="vault_item", resource_id="v1", resource_name="x")
+    assert rule_triggers.count("uploaded_evidence") == 2
+
+
 async def test_team_changes_fire_assigned_and_removed_user(client, db_session, make_user, authenticate_as, rule_triggers):
     eng = await _make_engagement(db_session)
     member = await make_user(role="operator")

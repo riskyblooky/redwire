@@ -85,6 +85,7 @@ section becomes one release entry.
 - Generating a report while the layout builder had unsaved changes produced a report without them. Generate now offers to save the changes first.
 - Editing a note's title and switching to another note (or leaving the page) within a second or two lost the edit, and another user's update could overwrite a title you were typing. Both are fixed.
 - API tokens (admin and profile), authentication settings, engagement export and AI chat failed once your session's access token expired instead of refreshing it, and revoking an API token could report success when the server refused. They now refresh like the rest of the app and show real errors.
+- Automation rules on "Evidence Uploaded" only fired for test case uploads, not for evidence added to findings or engagements. They now fire for all three.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.

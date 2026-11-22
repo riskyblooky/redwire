@@ -462,10 +462,15 @@ async def _evaluate_automations(db, action, resource_type, context, extra_contex
 
         # Catalog triggers that aren't an action name of their own. They
         # were offered in the rule editor but never fired: comments are
-        # logged as "commented", and execution is just a test case update.
+        # logged as "commented", execution is just a test case update, and
+        # evidence uploads are "uploaded".
         derived = []
         if action == "commented":
             derived.append("created_comment")
+        # Finding and engagement uploads are logged as "uploaded" on an
+        # evidence resource (test case uploads already use the catalog name).
+        if action == "uploaded" and resource_type == "evidence":
+            derived.append("uploaded_evidence")
         executed = changes.get("is_executed")
         if (resource_type == "testcase" and isinstance(executed, dict)
                 and executed.get("new") is True and not executed.get("old")):
