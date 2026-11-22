@@ -36,6 +36,7 @@ import { common, createLowlight } from 'lowlight';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import MentionList, { MentionListRef, MentionSuggestionItem } from './mention-list';
 import api, { apiErrorMessage } from '@/lib/api';
+import { trackPosition } from '@/lib/editor-position';
 import { useAuthStore } from '@/stores/auth-store';
 import { useQuery } from '@tanstack/react-query';
 
@@ -835,8 +836,10 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
  */
 type ImageTarget = { engagementId: string } | { scope: 'library' };
 
-async function uploadAndInsertImage(view: any, file: File, pos: number, target: ImageTarget) {
+async function uploadAndInsertImage(view: any, editor: Parameters<typeof trackPosition>[0], file: File, pos: number, target: ImageTarget) {
+    const tracked = trackPosition(editor, pos);
     const { toast } = await import('sonner');
+    let uploadedUrl: string;
     try {
         const fd = new FormData();
         fd.append('file', file);
@@ -845,14 +848,21 @@ async function uploadAndInsertImage(view: any, file: File, pos: number, target: 
         const { data } = await api.post('/markdown-images', fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
-        const node = view.state.schema.nodes.image.create({
-            src: data.url,
-            alt: file.name,
-        });
-        view.dispatch(view.state.tr.insert(pos, node));
+        uploadedUrl = data.url;
     } catch (err: any) {
-        const detail = apiErrorMessage(err, 'Failed to upload image');
-        toast.error(detail);
+        tracked.current();
+        toast.error(apiErrorMessage(err, 'Failed to upload image'));
+        return;
+    }
+    // Uploaded: insert where the drop / paste happened, as that spot is now.
+    // An insert failure isn't an upload failure (it used to be reported as one).
+    const at = Math.min(tracked.current(), view.state.doc.content.size);
+    if (view.isDestroyed) return;
+    try {
+        const node = view.state.schema.nodes.image.create({ src: uploadedUrl, alt: file.name });
+        view.dispatch(view.state.tr.insert(at, node));
+    } catch {
+        toast.error('The image was uploaded but could not be inserted here; try again');
     }
 }
 
@@ -1105,7 +1115,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                 event.preventDefault();
                 const coords = view.posAtCoords({ left: (event as DragEvent).clientX, top: (event as DragEvent).clientY });
                 const insertPos = coords?.pos ?? view.state.selection.from;
-                images.forEach(f => uploadAndInsertImage(view, f, insertPos, imageTarget));
+                images.forEach(f => uploadAndInsertImage(view, editorRef.current, f, insertPos, imageTarget));
                 return true;
             },
             // Paste handler (Cmd/Ctrl+V from screenshot tools, etc.)
@@ -1142,7 +1152,7 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                 }
                 event.preventDefault();
                 const insertPos = view.state.selection.from;
-                images.forEach(f => uploadAndInsertImage(view, f, insertPos, imageTarget));
+                images.forEach(f => uploadAndInsertImage(view, editorRef.current, f, insertPos, imageTarget));
                 return true;
             },
         },

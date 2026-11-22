@@ -24,6 +24,7 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import api, { apiErrorMessage } from '@/lib/api';
+import { trackPosition } from '@/lib/editor-position';
 import Collaboration from '@tiptap/extension-collaboration';
 import { common, createLowlight } from 'lowlight';
 import { useState, useEffect, useRef } from 'react';
@@ -88,8 +89,10 @@ interface CollaborativeEditorProps {
  * Upload a pasted/dropped image to /markdown-images and insert an image
  * node at the given position. Mirrors the same helper in tiptap-editor.
  */
-async function uploadAndInsertImage(view: any, file: File, pos: number, engagementId: string) {
+async function uploadAndInsertImage(view: any, editor: Parameters<typeof trackPosition>[0], file: File, pos: number, engagementId: string) {
+    const tracked = trackPosition(editor, pos);
     const { toast } = await import('sonner');
+    let uploadedUrl: string;
     try {
         const fd = new FormData();
         fd.append('file', file);
@@ -97,13 +100,21 @@ async function uploadAndInsertImage(view: any, file: File, pos: number, engageme
         const { data } = await api.post('/markdown-images', fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
-        const node = view.state.schema.nodes.image.create({
-            src: data.url,
-            alt: file.name,
-        });
-        view.dispatch(view.state.tr.insert(pos, node));
+        uploadedUrl = data.url;
     } catch (err: any) {
+        tracked.current();
         toast.error(apiErrorMessage(err, 'Failed to upload image'));
+        return;
+    }
+    // Uploaded: insert where the drop / paste happened, as that spot is now.
+    // An insert failure isn't an upload failure (it used to be reported as one).
+    const at = Math.min(tracked.current(), view.state.doc.content.size);
+    if (view.isDestroyed) return;
+    try {
+        const node = view.state.schema.nodes.image.create({ src: uploadedUrl, alt: file.name });
+        view.dispatch(view.state.tr.insert(at, node));
+    } catch {
+        toast.error('The image was uploaded but could not be inserted here; try again');
     }
 }
 
@@ -610,7 +621,7 @@ export default function CollaborativeEditor({
                 event.preventDefault();
                 const coords = view.posAtCoords({ left: (event as DragEvent).clientX, top: (event as DragEvent).clientY });
                 const insertPos = coords?.pos ?? view.state.selection.from;
-                images.forEach(f => uploadAndInsertImage(view, f, insertPos, engagementId));
+                images.forEach(f => uploadAndInsertImage(view, editorRef.current, f, insertPos, engagementId));
                 return true;
             },
             handlePaste: (view, event, _slice) => {
@@ -634,7 +645,7 @@ export default function CollaborativeEditor({
                 }
                 event.preventDefault();
                 const insertPos = view.state.selection.from;
-                images.forEach(f => uploadAndInsertImage(view, f, insertPos, engagementId));
+                images.forEach(f => uploadAndInsertImage(view, editorRef.current, f, insertPos, engagementId));
                 return true;
             },
         },
