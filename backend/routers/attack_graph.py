@@ -378,18 +378,31 @@ async def get_attack_graph(
             },
         })
 
-    # Attacker Edges
-    for an in attacker_nodes:
+    # Attacker Edges (one query for all of them). The graph holds every
+    # asset / test case / finding / cleanup item of the engagement, so an
+    # edge whose target isn't a node points at something deleted (or never
+    # in this engagement): it isn't emitted — the client drew it to nothing —
+    # and the stale row is removed.
+    if attacker_nodes:
+        node_ids = {n["id"] for n in nodes}
         result = await db.execute(
-            select(AttackerNodeEdge).where(AttackerNodeEdge.attacker_node_id == an.id)
+            select(AttackerNodeEdge).where(
+                AttackerNodeEdge.attacker_node_id.in_([an.id for an in attacker_nodes]))
         )
+        stale = []
         for edge_row in result.scalars().all():
+            if edge_row.target_node_id not in node_ids:
+                stale.append(edge_row.id)
+                continue
             edges.append({
                 "id": edge_row.id,
-                "source": f"attacker-{an.id}",
+                "source": f"attacker-{edge_row.attacker_node_id}",
                 "target": edge_row.target_node_id,
                 "label": "attacks",
             })
+        if stale:
+            await db.execute(sa_delete(AttackerNodeEdge).where(AttackerNodeEdge.id.in_(stale)))
+            await db.commit()
 
     # ── Check for active pinned layout ──
     layout_row = await db.execute(
