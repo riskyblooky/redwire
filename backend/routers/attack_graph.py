@@ -450,9 +450,11 @@ async def list_attack_graph_layouts(
 
     result = await db.execute(
         select(AttackGraphLayout, User.username)
-        .join(User, AttackGraphLayout.pinned_by == User.id)
+        # Outer: pinned_by is SET NULL when the user is deleted, and an
+        # inner join hid that user's layouts from the list.
+        .outerjoin(User, AttackGraphLayout.pinned_by == User.id)
         .where(AttackGraphLayout.engagement_id == engagement_id)
-        .order_by(AttackGraphLayout.pinned_at.desc())
+        .order_by(AttackGraphLayout.pinned_at.desc(), AttackGraphLayout.id)
     )
     rows = result.all()
     return [
@@ -728,6 +730,13 @@ async def save_attack_graph_layout(
     positions = body.get("positions")
     if not positions or not isinstance(positions, dict):
         raise HTTPException(status_code=400, detail="positions is required and must be a dict")
+    # Same cap as the named-layout routes (this legacy path missed it).
+    from schemas._field_limits import MAX_GRAPH_NODES
+    if len(positions) > MAX_GRAPH_NODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"positions dict exceeds the {MAX_GRAPH_NODES}-node cap.",
+        )
 
     # Deactivate all others
     from sqlalchemy import update as sa_update

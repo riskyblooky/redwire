@@ -115,6 +115,7 @@ section becomes one release entry.
 - Deleting a password wordlist while it was still importing left part of the list behind. The import now stops and removes what it added.
 - Scan imports: Nuclei no longer stores the CVSS score as the vector, keeps every port seen for a host, and handles IPv6 hosts; Nmap ports reported as closed|filtered no longer import as open; an httpx line with an invalid port no longer fails the import; and asset CSVs saved by Excel (Windows-1252) import instead of failing.
 - The attack-chain panel showed executed test cases that had no result yet as "Fail". They now show as "Executed".
+- Attack graph: saved layouts pinned by a since-deleted user disappeared from the layout list. They're listed again.
 
 ### Removed
 - One-off scripts in `backend/` that were never part of the app and could damage a live install if run: `seed_rbac.py` (`create_all` outside Alembic), `seed_skills.py` (wiped user skills), `seed_test_data.py`, `manual_migrate.py`, `run_migrations.py`, `check_models.py`, `check_tables.py`, `db_diag.py`, `inspect_schema.py`. Default data is seeded at startup; use `migrate.py` for migrations.
