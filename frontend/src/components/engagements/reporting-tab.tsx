@@ -717,10 +717,11 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
         </>
     );
 
-    const handleSave = async () => {
+    /** Saves the layout; resolves true only when it was saved. */
+    const handleSave = async (): Promise<boolean> => {
         if (!layoutName.trim()) {
             toast.error('Please enter a layout name');
-            return;
+            return false;
         }
         const sectionPayload = sections.map((s, i) => ({
             id: s.id,
@@ -759,6 +760,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             setSections(prev => prev.map((s, i) => ({ ...s, id: savedIds[i] ?? s.id })));
             await Promise.all([...surfaceRefs.current.values()].map(h => h.refreshAnchors().catch(() => undefined)));
             setIsDirty(false);
+            return true;
         } catch (err) {
             if (isAxiosError(err) && err.response?.status === 409 && selectedLayoutId) {
                 const reload = await confirm({
@@ -772,9 +774,10 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                     const latest = data?.find(l => l.id === selectedLayoutId);
                     if (latest) applyLayout(latest);
                 }
-                return;
+                return false;
             }
             toast.error(getErrorMessage(err, 'Failed to save layout'));
+            return false;
         }
     };
 
@@ -873,6 +876,16 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
         if (!selectedLayoutId) {
             toast.error('Please select a report layout first');
             return;
+        }
+        // The server builds the report from the *saved* layout, so unsaved
+        // edits in the builder would silently be left out of it.
+        if (isDirty) {
+            const save = await confirm({
+                title: 'Save layout changes first?',
+                description: 'Reports are built from the saved layout, so your unsaved changes to this layout would not be in it. Save them and generate?',
+                confirmLabel: 'Save & generate',
+            });
+            if (!save || !(await handleSave())) return;
         }
         setIsGenerating(true);
         try {
