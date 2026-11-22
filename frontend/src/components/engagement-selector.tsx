@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEngagementContext } from '@/stores/engagement-store';
-import { useEngagements } from '@/lib/hooks/use-engagements';
+import { useEngagement, useEngagements } from '@/lib/hooks/use-engagements';
 import {
     Popover,
     PopoverContent,
@@ -26,8 +26,10 @@ export default function EngagementSelector() {
     const pathname = usePathname();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { selectedEngagementId, setSelectedEngagement } = useEngagementContext();
+    const { selectedEngagementId, setSelectedEngagement, clearSelectedEngagement } = useEngagementContext();
     const { data: engagements, isLoading } = useEngagements();
+    const hasSelection = !!selectedEngagementId && selectedEngagementId !== 'global';
+    const { error: selectedError } = useEngagement(hasSelection ? selectedEngagementId : '');
     const [open, setOpen] = useState(false);
 
     // Only show on dashboard, engagements, findings, assets, testcases and stats pages
@@ -54,6 +56,17 @@ export default function EngagementSelector() {
             }
         }
     }, [pathname, selectedEngagementId, setSelectedEngagement]);
+
+    // The selection is persisted in localStorage: an engagement since deleted
+    // or no longer accessible stayed selected, and the dashboard / stats kept
+    // querying it. Drop it when the backend says it's gone (404) or not ours
+    // (403). Engagement detail routes set the id from the URL and show their
+    // own error for a missing one.
+    useEffect(() => {
+        if (pathname?.startsWith('/engagements/')) return;
+        const status = (selectedError as { response?: { status?: number } } | null)?.response?.status;
+        if (status === 404 || status === 403) clearSelectedEngagement();
+    }, [selectedError, pathname, clearSelectedEngagement]);
 
     // PLANNING, IN_PROGRESS, REPORTING — the three "still in flight" states
     // where the operator might want quick context-switching. COMPLETED /
