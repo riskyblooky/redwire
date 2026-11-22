@@ -21,7 +21,7 @@
  */
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useParams } from '@/lib/hooks/use-params';
 import DashboardLayout from '@/components/layout/dashboard-layout';
@@ -56,7 +56,6 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useEngagement, useDeleteEngagement, useUpdateEngagement, useEngagementCounts } from '@/lib/hooks/use-engagements';
 import { useDebounce } from '@/lib/hooks/use-debounce';
-import { useTestCases } from '@/lib/hooks/use-testcases';
 import { useLinkVaultToFinding, useLinkVaultToTestCase, useLinkVaultToAsset } from '@/lib/hooks/use-vault';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/hooks/use-auth';
@@ -82,7 +81,6 @@ import { AssetImportDialog } from '@/components/engagements/asset-import-dialog'
 import { AssetDetailSheet } from '@/components/engagements/asset-detail-sheet';
 import { useCreateCleanupArtifact, useLinkCleanupToFinding, useLinkCleanupToTestCase, useLinkCleanupToAsset, CleanupArtifact } from '@/lib/hooks/use-cleanup-artifacts';
 import { useClients, useClientTypes } from '@/lib/hooks/use-clients';
-import { useEngagementTypes } from '@/lib/hooks/use-engagement-types';
 import { ClientDetailModal } from '@/components/clients/client-detail-modal';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -158,11 +156,6 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
     const [viewClientDetail, setViewClientDetail] = useState(false);
 
-    // Dynamic engagement type labels
-    const { data: engagementTypes = [] } = useEngagementTypes();
-    const typeLabels: Record<string, string> = {};
-    engagementTypes.forEach(t => { typeLabels[t.name] = t.description || t.name; });
-
     // Save preferences to localStorage when they change
     useEffect(() => {
         localStorage.setItem('redwire_sort_engagement_findings_field', sortFieldFindings);
@@ -233,11 +226,6 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
         setCurrentPageAssets(1);
     }, [debouncedAssetsSearch, sortFieldAssets, sortOrderAssets]);
 
-    // Findings and test cases are only consumed by the link dialogs, which are
-    // reachable from the Findings / Test Cases tabs — load them lazily so the
-    // default (Overview) landing doesn't pull both full lists up front.
-    const needsFindingTestcaseLists = activeTab === 'findings' || activeTab === 'testcases';
-    const { data: testcases = [] } = useTestCases(id, needsFindingTestcaseLists);
     // ATT&CK coverage is heavy (loads all findings/test cases + their technique
     // maps) — only fetch it when the ATT&CK tab is open. The always-visible tab
     // badge uses the cheap counts.attack_techniques instead.
@@ -356,37 +344,6 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
         }
     };
 
-    const tcStorageKey = `redwire_tc_expanded_${id}`;
-    const [tcExpandedIds, setTcExpandedIds] = useState<Set<string>>(new Set());
-    const tcInitialized = useRef(false);
-
-    // Load saved state from localStorage on mount, or auto-expand if no saved state
-    useEffect(() => {
-        if (tcInitialized.current || testcases.length === 0) return;
-        tcInitialized.current = true;
-
-        const saved = localStorage.getItem(tcStorageKey);
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed)) {
-                    setTcExpandedIds(new Set(parsed));
-                    return;
-                }
-            } catch { /* ignore */ }
-        }
-        // No saved state — auto-expand all parents
-        const parentIds = new Set(
-            testcases.filter(tc => testcases.some(child => child.parent_id === tc.id)).map(tc => tc.id)
-        );
-        setTcExpandedIds(parentIds);
-    }, [testcases, tcStorageKey]);
-
-    // Persist expanded state (only after initialization)
-    useEffect(() => {
-        if (!tcInitialized.current) return;
-        localStorage.setItem(tcStorageKey, JSON.stringify([...tcExpandedIds]));
-    }, [tcExpandedIds, tcStorageKey]);
 
 
     const handleEdit = () => {
