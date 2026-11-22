@@ -45,8 +45,14 @@ async def import_spray_log(
     # Permission check
     await require_engagement_perm(current_user, engagement_id, Permission.VAULT_CREATE, db)
 
-    # Read and parse
-    content = await file.read()
+    # Read and parse — capped like scanner imports (was read whole).
+    from routers.imports import _scanner_import_max_bytes
+    from utils.uploads import read_upload_capped
+    max_bytes = _scanner_import_max_bytes()
+    content = await read_upload_capped(
+        file, max_bytes,
+        detail=f"Spray log too large. Maximum {max_bytes} bytes (override with SCANNER_IMPORT_MAX_BYTES).",
+    )
     try:
         text = content.decode("utf-8", errors="replace")
     except Exception:
@@ -78,16 +84,30 @@ async def import_spray_log(
     # engagement vault (Fernet-encrypted at rest) rather than as a plain
     # attachment. Best-effort; the preview is returned regardless. Saved at
     # import time because the log isn't re-uploaded at the JSON commit step.
+    # Previewing the same log again (re-opening the dialog, retrying) used
+    # to add another vault copy every time; the copy is tagged with the
+    # log's SHA-256 and saved once per engagement.
+    import hashlib
+    from models.vault import VaultItem
     from utils.attachments import save_bytes_as_vault_file
-    await save_bytes_as_vault_file(
-        db,
-        engagement_id=engagement_id,
-        content=content,
-        name=f"Spray log — {file.filename or 'netexec'}",
-        original_filename=file.filename or "spray.log",
-        user_id=current_user.id,
-        description="NetExec/CrackMapExec spray log (auto-saved on import)",
-    )
+    tag = f"sha256:{hashlib.sha256(content).hexdigest()}"
+    already = (await db.execute(
+        select(VaultItem.id).where(
+            VaultItem.engagement_id == engagement_id,
+            VaultItem.item_type == "FILE",
+            VaultItem.description.like(f"%{tag}%"),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if not already:
+        await save_bytes_as_vault_file(
+            db,
+            engagement_id=engagement_id,
+            content=content,
+            name=f"Spray log — {file.filename or 'netexec'}",
+            original_filename=file.filename or "spray.log",
+            user_id=current_user.id,
+            description=f"NetExec/CrackMapExec spray log (auto-saved on import) · {tag}",
+        )
 
     return SprayImportPreview(
         protocol=parsed.protocol,
