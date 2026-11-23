@@ -80,6 +80,7 @@ server {
     # and the cap above refused the login with a 413. Longest ^~ prefix wins.
     location ^~ /api/auth/saml/acs {
         client_max_body_size 1m;
+        gzip off;  # token-bearing responses: no compression (BREACH)
 
         set $backend_url http://backend:8000;
         rewrite ^/api/(.*)$ /$1 break;
@@ -93,6 +94,7 @@ server {
 
     location ^~ /api/auth/ {
         client_max_body_size 64k;
+        gzip off;  # token-bearing responses: no compression (BREACH)
 
         set $backend_url http://backend:8000;
         rewrite ^/api/(.*)$ /$1 break;

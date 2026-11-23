@@ -212,13 +212,13 @@ services:
       dockerfile: frontend/Dockerfile
       target: production
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     image: redwire-frontend:latest
     mem_limit: 512m
     container_name: redwire-frontend
     logging: *default-logging
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
       NODE_ENV: production
 
     depends_on:
