@@ -50,7 +50,7 @@ class SprayResult(Base):
     __tablename__ = "spray_results"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    campaign_id = Column(String, ForeignKey("spray_campaigns.id", ondelete="CASCADE"), nullable=False)
+    campaign_id = Column(String, ForeignKey("spray_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Encrypted at rest — same Fernet-at-rest treatment as the
     # campaign password. Ciphertext can exceed 255 chars so the

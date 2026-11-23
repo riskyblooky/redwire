@@ -19,7 +19,7 @@ class EngagementAssignment(Base):
     
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), primary_key=True, index=True)
-    role_id = Column(String, ForeignKey("engagement_roles.id", ondelete="SET NULL"), nullable=True)
+    role_id = Column(String, ForeignKey("engagement_roles.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationships
     role = relationship("EngagementRole")
@@ -148,13 +148,13 @@ class NoteVaultItem(Base):
     __tablename__ = "note_vault_items"
 
     note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True)
-    vault_item_id = Column(String, ForeignKey("vault_items.id", ondelete="CASCADE"), primary_key=True)
+    vault_item_id = Column(String, ForeignKey("vault_items.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class NoteCleanupArtifact(Base):
     __tablename__ = "note_cleanup_artifacts"
 
     note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True)
-    cleanup_artifact_id = Column(String, ForeignKey("cleanup_artifacts.id", ondelete="CASCADE"), primary_key=True)
+    cleanup_artifact_id = Column(String, ForeignKey("cleanup_artifacts.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class IntelItemFinding(Base):
     __tablename__ = "intel_item_findings"
@@ -172,7 +172,7 @@ class IntelItemNote(Base):
     __tablename__ = "intel_item_notes"
 
     intel_item_id = Column(String, ForeignKey("intel_items.id", ondelete="CASCADE"), primary_key=True)
-    note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True)
+    note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 class InfraItemFinding(Base):
     __tablename__ = "infra_item_findings"
@@ -190,7 +190,7 @@ class InfraItemNote(Base):
     __tablename__ = "infra_item_notes"
 
     infra_item_id = Column(String, ForeignKey("infra_items.id", ondelete="CASCADE"), primary_key=True)
-    note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True)
+    note_id = Column(String, ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True, index=True)
 
 
 class InfraVaultAccess(Base):

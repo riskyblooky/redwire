@@ -41,7 +41,7 @@ class RunbookItem(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     runbook_id = Column(String, ForeignKey("runbooks.id", ondelete="CASCADE"), nullable=False, index=True)
-    template_id = Column(String, ForeignKey("testcase_templates.id", ondelete="CASCADE"), nullable=False)
+    template_id = Column(String, ForeignKey("testcase_templates.id", ondelete="CASCADE"), nullable=False, index=True)
     parent_id = Column(String, ForeignKey("runbook_items.id", ondelete="SET NULL"), nullable=True, index=True)
     sort_order = Column(Integer, default=0, nullable=False)
 

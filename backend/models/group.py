@@ -7,7 +7,7 @@ user_groups = Table(
     "user_groups",
     Base.metadata,
     Column("user_id", String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column("group_id", String, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
+    Column("group_id", String, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True, index=True)
 )
 
 class Group(Base):
