@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
@@ -168,6 +169,31 @@ async def get_wordlist_status(
     )
 
 
+# Matches nginx client_max_body_size (200M).
+MAX_WORDLIST_BYTES = int(os.getenv("WORDLIST_MAX_BYTES", str(200 * 1024 * 1024)))
+
+
+def _copy_capped(src, dest_path: str, max_bytes: int, chunk: int = 1024 * 1024) -> None:
+    """Stream ``src`` to ``dest_path``; ValueError (file removed) past ``max_bytes``."""
+    total = 0
+    try:
+        with open(dest_path, "wb") as out:
+            while True:
+                block = src.read(chunk)
+                if not block:
+                    return
+                total += len(block)
+                if total > max_bytes:
+                    raise ValueError("too large")
+                out.write(block)
+    except BaseException:
+        try:
+            os.remove(dest_path)
+        except OSError:
+            pass
+        raise
+
+
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_wordlist(
     file: UploadFile = File(...),
@@ -188,9 +214,14 @@ async def upload_wordlist(
     raw_name = file.filename or "wordlist.txt"
     safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", raw_name).lstrip(".") or "wordlist.txt"
     file_path = os.path.join(UPLOAD_DIR, f"{os.urandom(8).hex()}_{safe_name}")
-    content = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(content)
+    # Copy to disk in a worker thread, in chunks: reading the whole upload
+    # into memory and writing it from the event loop stalled every other
+    # request on this worker for the length of a large wordlist.
+    try:
+        await asyncio.to_thread(_copy_capped, file.file, file_path, MAX_WORDLIST_BYTES)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail=f"Wordlist exceeds the {MAX_WORDLIST_BYTES // (1024 * 1024)} MB limit.")
 
     # Create metadata record
     meta = WordlistMeta(
