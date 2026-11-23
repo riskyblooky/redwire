@@ -14,6 +14,7 @@ section becomes one release entry.
 - **Saving with a reference that no longer exists explains what's wrong.** Picking a client type, marking profile or similar that had been deleted meanwhile gave a server error; it now names the field. Listing the same ATT&CK technique twice on a finding or test case no longer fails the save.
 - **Renaming a permission group no longer shows an error.** The rename was saved, but the page reported a failure. Group responses also show the actual member count instead of 0.
 - **Deleting a user no longer deletes their automation rules and reviews.** Organisation rules they wrote and peer reviews they left are kept, without an author. Their personal rules are still removed.
+- **Linking reports failures.** If some links in the link dialog couldn't be saved, it showed a success message and closed. It now shows an error with the reason and stays open.
 
 ## [1.9.2] — 2026-11-22
 

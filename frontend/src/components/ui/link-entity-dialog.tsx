@@ -24,6 +24,7 @@ import { useCleanupArtifacts } from '@/lib/hooks/use-cleanup-artifacts';
 import { useIntelItems, useLinkIntel, useUnlinkIntel, useIntelByEntity } from '@/lib/hooks/use-intel';
 import { useInfraItems, useLinkInfra, useUnlinkInfra, useInfraByEntity } from '@/lib/hooks/use-infra';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 export type EntityType = 'finding' | 'testcase' | 'asset' | 'vault' | 'cleanup';
 export type LinkResourceType = 'findings' | 'testcases' | 'assets' | 'vault' | 'cleanup' | 'intel' | 'infra';
@@ -234,6 +235,7 @@ export function LinkEntityDialog({
     const handleApply = async () => {
         setIsApplying(true);
         let linked = 0, unlinked = 0, errors = 0;
+        let firstError: unknown = null;
 
         // Standard types
         const standardTypes: LinkResourceType[] = ['findings', 'testcases', 'assets', 'vault', 'cleanup'];
@@ -244,10 +246,10 @@ export function LinkEntityDialog({
             const toLink = [...selected].filter(id => !currentlyLinked.has(id));
             const toUnlink = [...currentlyLinked].filter(id => !selected.has(id));
             for (const resourceId of toLink) {
-                try { await onLink(type, resourceId); linked++; } catch { errors++; }
+                try { await onLink(type, resourceId); linked++; } catch (e) { errors++; firstError ??= e; }
             }
             for (const resourceId of toUnlink) {
-                try { await onUnlink(type, resourceId); unlinked++; } catch { errors++; }
+                try { await onUnlink(type, resourceId); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }
 
@@ -257,10 +259,10 @@ export function LinkEntityDialog({
             const currentLinkedIntel = new Set(linkedIntelItems.map(i => i.id));
             const selectedIntel = selectionMap.intel;
             for (const itemId of [...selectedIntel].filter(id => !currentLinkedIntel.has(id))) {
-                try { await linkIntel.mutateAsync({ itemId, entityType, entityId }); linked++; } catch { errors++; }
+                try { await linkIntel.mutateAsync({ itemId, entityType, entityId }); linked++; } catch (e) { errors++; firstError ??= e; }
             }
             for (const itemId of [...currentLinkedIntel].filter(id => !selectedIntel.has(id))) {
-                try { await unlinkIntel.mutateAsync({ itemId, entityType, entityId }); unlinked++; } catch { errors++; }
+                try { await unlinkIntel.mutateAsync({ itemId, entityType, entityId }); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }
 
@@ -270,24 +272,28 @@ export function LinkEntityDialog({
             const currentLinkedInfra = new Set(linkedInfraItems.map(i => i.id));
             const selectedInfra = selectionMap.infra;
             for (const itemId of [...selectedInfra].filter(id => !currentLinkedInfra.has(id))) {
-                try { await linkInfra.mutateAsync({ itemId, entityType, entityId }); linked++; } catch { errors++; }
+                try { await linkInfra.mutateAsync({ itemId, entityType, entityId }); linked++; } catch (e) { errors++; firstError ??= e; }
             }
             for (const itemId of [...currentLinkedInfra].filter(id => !selectedInfra.has(id))) {
-                try { await unlinkInfra.mutateAsync({ itemId, entityType, entityId }); unlinked++; } catch { errors++; }
+                try { await unlinkInfra.mutateAsync({ itemId, entityType, entityId }); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }
 
-        if (linked > 0 || unlinked > 0 || errors > 0) {
-            const parts: string[] = [];
-            if (linked > 0) parts.push(`${linked} linked`);
-            if (unlinked > 0) parts.push(`${unlinked} unlinked`);
-            if (errors > 0) parts.push(`${errors} failed`);
-            toast.success(`Links: ${parts.join(', ')}`);
-        } else {
-            toast.info('No changes to apply');
-        }
-
+        const parts: string[] = [];
+        if (linked > 0) parts.push(`${linked} linked`);
+        if (unlinked > 0) parts.push(`${unlinked} unlinked`);
         setIsApplying(false);
+        if (errors > 0) {
+            // Partial failure isn't success: say so, with the server's reason,
+            // and keep the dialog open (what did apply is already saved).
+            parts.push(`${errors} failed`);
+            toast.error(`Links: ${parts.join(', ')}`, {
+                description: firstError ? apiErrorMessage(firstError, 'A link could not be saved.') : undefined,
+            });
+            return;
+        }
+        if (parts.length > 0) toast.success(`Links: ${parts.join(', ')}`);
+        else toast.info('No changes to apply');
         onOpenChange(false);
     };
 

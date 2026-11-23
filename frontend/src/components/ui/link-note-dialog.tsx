@@ -25,6 +25,7 @@ import { useIntelItems, useLinkIntel, useUnlinkIntel, useIntelByEntity } from '@
 import { useInfraItems, useLinkInfra, useUnlinkInfra, useInfraByEntity } from '@/lib/hooks/use-infra';
 import type { Note } from '@/lib/hooks/use-notes';
 import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api';
 
 type ResourceType = 'findings' | 'testcases' | 'assets' | 'vault' | 'cleanup' | 'intel' | 'infra';
 
@@ -179,6 +180,7 @@ export function LinkNoteDialog({
     const handleApply = async () => {
         setIsApplying(true);
         let linked = 0, unlinked = 0, errors = 0;
+        let firstError: unknown = null;
 
         // Process standard types (findings, testcases, assets, vault, cleanup)
         for (const type of ['findings', 'testcases', 'assets', 'vault', 'cleanup'] as ResourceType[]) {
@@ -187,10 +189,10 @@ export function LinkNoteDialog({
             const toLink = [...selected].filter(id => !currentlyLinked.has(id));
             const toUnlink = [...currentlyLinked].filter(id => !selected.has(id));
             for (const resourceId of toLink) {
-                try { await onLink(type, resourceId); linked++; } catch { errors++; }
+                try { await onLink(type, resourceId); linked++; } catch (e) { errors++; firstError ??= e; }
             }
             for (const resourceId of toUnlink) {
-                try { await onUnlink(type, resourceId); unlinked++; } catch { errors++; }
+                try { await onUnlink(type, resourceId); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }
 
@@ -201,10 +203,10 @@ export function LinkNoteDialog({
             const toLink = [...selected].filter(id => !currentlyLinked.has(id));
             const toUnlink = [...currentlyLinked].filter(id => !selected.has(id));
             for (const itemId of toLink) {
-                try { await linkIntel.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); linked++; } catch { errors++; }
+                try { await linkIntel.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); linked++; } catch (e) { errors++; firstError ??= e; }
             }
             for (const itemId of toUnlink) {
-                try { await unlinkIntel.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); unlinked++; } catch { errors++; }
+                try { await unlinkIntel.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }
 
@@ -215,24 +217,28 @@ export function LinkNoteDialog({
             const toLink = [...selected].filter(id => !currentlyLinked.has(id));
             const toUnlink = [...currentlyLinked].filter(id => !selected.has(id));
             for (const itemId of toLink) {
-                try { await linkInfra.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); linked++; } catch { errors++; }
+                try { await linkInfra.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); linked++; } catch (e) { errors++; firstError ??= e; }
             }
             for (const itemId of toUnlink) {
-                try { await unlinkInfra.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); unlinked++; } catch { errors++; }
+                try { await unlinkInfra.mutateAsync({ itemId, entityType: 'note', entityId: note.id }); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }
 
-        if (linked > 0 || unlinked > 0 || errors > 0) {
-            const parts: string[] = [];
-            if (linked > 0) parts.push(`${linked} linked`);
-            if (unlinked > 0) parts.push(`${unlinked} unlinked`);
-            if (errors > 0) parts.push(`${errors} failed`);
-            toast.success(`Links: ${parts.join(', ')}`);
-        } else {
-            toast.info('No changes to apply');
-        }
-
+        const parts: string[] = [];
+        if (linked > 0) parts.push(`${linked} linked`);
+        if (unlinked > 0) parts.push(`${unlinked} unlinked`);
         setIsApplying(false);
+        if (errors > 0) {
+            // Partial failure isn't success: say so, with the server's reason,
+            // and keep the dialog open (what did apply is already saved).
+            parts.push(`${errors} failed`);
+            toast.error(`Links: ${parts.join(', ')}`, {
+                description: firstError ? apiErrorMessage(firstError, 'A link could not be saved.') : undefined,
+            });
+            return;
+        }
+        if (parts.length > 0) toast.success(`Links: ${parts.join(', ')}`);
+        else toast.info('No changes to apply');
         onOpenChange(false);
     };
 
