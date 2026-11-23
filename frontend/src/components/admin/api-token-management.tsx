@@ -1,7 +1,6 @@
 'use client';
 
-import { fetchAllPages } from '@/lib/fetch-all';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { parseUTCDate } from '@/lib/utils';
 import { displayName } from '@/lib/display-name';
@@ -12,85 +11,48 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import api, { apiErrorMessage } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api';
+import { useAdminApiTokens, useCreateAdminApiToken, useRevokeAdminApiToken } from '@/lib/hooks/use-api-tokens';
+import { useUsers } from '@/lib/hooks/use-users';
 import { copyText } from '@/lib/clipboard';
 
-interface ApiToken {
-    id: string;
-    name: string;
-    token_prefix: string;
-    permission: string;
-    user_id: string;
-    username?: string;
-    user_full_name?: string;
-    created_at: string;
-    last_used_at: string | null;
-    expires_at: string | null;
-    is_active: boolean;
-    created_by: string | null;
-}
-
-interface UserOption {
-    id: string;
-    username: string;
-    full_name: string;
-}
-
 export function ApiTokenManagement() {
-    const [tokens, setTokens] = useState<ApiToken[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data: tokens = [], isLoading: loading, isError } = useAdminApiTokens();
+    const { data: allUsers = [] } = useUsers();
+    const users = allUsers.map(u => ({ id: u.id, username: u.username, full_name: u.full_name ?? '' }));
+    const createToken = useCreateAdminApiToken();
+    const revokeToken = useRevokeAdminApiToken();
     const [showCreate, setShowCreate] = useState(false);
     const [newName, setNewName] = useState('');
     const [newPerm, setNewPerm] = useState<'ro' | 'rw'>('ro');
     const [newExpiry, setNewExpiry] = useState('');
     const [selectedUser, setSelectedUser] = useState('');
-    const [users, setUsers] = useState<UserOption[]>([]);
     const [creating, setCreating] = useState(false);
     const [rawToken, setRawToken] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [showToken, setShowToken] = useState(false);
     const [showRevoked, setShowRevoked] = useState(false);
 
-    // Through the shared axios instance: raw fetch skipped the 401 refresh
-    // and the base-URL config.
-    const fetchTokens = useCallback(async () => {
-        try {
-            const { data } = await api.get<ApiToken[]>('/admin/api-tokens');
-            setTokens(data);
-        } catch (err) {
-            toast.error(apiErrorMessage(err, 'Failed to load tokens'));
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    const fetchUsers = useCallback(async () => {
-        try {
-            const all = await fetchAllPages<UserOption>('/users');  // every page, not the first 100
-            setUsers(all.map((u: UserOption) => ({ id: u.id, username: u.username, full_name: u.full_name })));
-        } catch { /* ignore */ }
-    }, []);
-
-    useEffect(() => { fetchTokens(); fetchUsers(); }, [fetchTokens, fetchUsers]);
+    useEffect(() => {
+        if (isError) toast.error('Failed to load tokens');
+    }, [isError]);
 
     const handleCreate = async () => {
         if (!newName.trim() || !selectedUser) return;
         setCreating(true);
         try {
-            const body: Record<string, unknown> = {
+            const data = await createToken.mutateAsync({
                 name: newName,
                 permission: newPerm,
                 user_id: selectedUser,
-            };
-            if (newExpiry) body.expires_at = new Date(newExpiry).toISOString();
-            const { data } = await api.post('/admin/api-tokens', body);
+                ...(newExpiry ? { expires_at: new Date(newExpiry).toISOString() } : {}),
+            });
             setRawToken(data.raw_token);
             setShowCreate(false);
             setNewName('');
             setNewPerm('ro');
             setNewExpiry('');
             setSelectedUser('');
-            fetchTokens();
             toast.success('Service token created');
         } catch (err) {
             toast.error(apiErrorMessage(err, 'Failed to create token'));
@@ -101,10 +63,7 @@ export function ApiTokenManagement() {
 
     const handleRevoke = async (id: string) => {
         try {
-            // axios rejects on a non-2xx status; fetch didn't, so a refused
-            // revoke used to report "Token revoked".
-            await api.delete(`/admin/api-tokens/${id}`);
-            fetchTokens();
+            await revokeToken.mutateAsync(id);
             toast.success('Token revoked');
         } catch (err) {
             toast.error(apiErrorMessage(err, 'Failed to revoke token'));

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { parseUTCDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -9,28 +9,19 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import api, { apiErrorMessage } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api';
+import { useMyApiTokens, useCreateMyApiToken, useRevokeMyApiToken } from '@/lib/hooks/use-api-tokens';
 import { useAuthStore } from '@/stores/auth-store';
 import { copyText } from '@/lib/clipboard';
-
-interface ApiToken {
-    id: string;
-    name: string;
-    token_prefix: string;
-    permission: string;
-    created_at: string;
-    last_used_at: string | null;
-    expires_at: string | null;
-    is_active: boolean;
-}
 
 export function ApiTokensCard() {
     const { user } = useAuthStore();
     const isLocal = user?.auth_provider === undefined || user.auth_provider === 'local';
     const totpEnabled = !!user?.totp_enabled;
 
-    const [tokens, setTokens] = useState<ApiToken[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data: tokens = [], isLoading: loading, isError } = useMyApiTokens();
+    const createToken = useCreateMyApiToken();
+    const revokeToken = useRevokeMyApiToken();
     const [showCreate, setShowCreate] = useState(false);
     const [newName, setNewName] = useState('');
     const [newPerm, setNewPerm] = useState<'ro' | 'rw'>('ro');
@@ -45,32 +36,22 @@ export function ApiTokensCard() {
     const [showToken, setShowToken] = useState(false);
     const [showRevoked, setShowRevoked] = useState(false);
 
-    // Through the shared axios instance: raw fetch skipped the 401 refresh
-    // and the base-URL config.
-    const fetchTokens = useCallback(async () => {
-        try {
-            const { data } = await api.get<ApiToken[]>('/api-tokens');
-            setTokens(data);
-        } catch (err) {
-            toast.error(apiErrorMessage(err, 'Failed to load tokens'));
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { fetchTokens(); }, [fetchTokens]);
+    useEffect(() => {
+        if (isError) toast.error('Failed to load tokens');
+    }, [isError]);
 
     const handleCreate = async () => {
         if (!newName.trim()) return;
         if (isLocal && !newPassword) return;
         setCreating(true);
         try {
-            const body: Record<string, unknown> = { name: newName, permission: newPerm };
-            if (newExpiry) body.expires_at = new Date(newExpiry).toISOString();
-            if (isLocal) body.password = newPassword;
-            if (isLocal && totpEnabled && newTotpCode) body.totp_code = newTotpCode;
-            // A 401 here is a wrong step-up password / code, not an expired session.
-            const { data } = await api.post('/api-tokens', body, { skipAuthRefresh: true });
+            const data = await createToken.mutateAsync({
+                name: newName,
+                permission: newPerm,
+                ...(newExpiry ? { expires_at: new Date(newExpiry).toISOString() } : {}),
+                ...(isLocal ? { password: newPassword } : {}),
+                ...(isLocal && totpEnabled && newTotpCode ? { totp_code: newTotpCode } : {}),
+            });
             setRawToken(data.raw_token);
             setShowCreate(false);
             setNewName('');
@@ -78,7 +59,6 @@ export function ApiTokensCard() {
             setNewExpiry('');
             setNewPassword('');
             setNewTotpCode('');
-            fetchTokens();
             toast.success('API token created');
         } catch (err) {
             toast.error(apiErrorMessage(err, 'Failed to create token'));
@@ -89,10 +69,7 @@ export function ApiTokensCard() {
 
     const handleRevoke = async (id: string) => {
         try {
-            // axios rejects on a non-2xx status; fetch didn't, so a refused
-            // revoke used to report "Token revoked".
-            await api.delete(`/api-tokens/${id}`);
-            fetchTokens();
+            await revokeToken.mutateAsync(id);
             toast.success('Token revoked');
         } catch (err) {
             toast.error(apiErrorMessage(err, 'Failed to revoke token'));
