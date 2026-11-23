@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useVaultItems, VaultItem, VaultItemReveal, useLinkVaultToFinding, useUnlinkVaultFromFinding, useLinkVaultToTestCase, useUnlinkVaultFromTestCase, useLinkVaultToAsset, useUnlinkVaultFromAsset } from '@/lib/hooks/use-vault';
+import { useVaultItems, useCreateVaultItem, useUpdateVaultItem, useDeleteVaultItem, revealVaultItem, downloadVaultFile, VaultItem, VaultItemReveal, useLinkVaultToFinding, useUnlinkVaultFromFinding, useLinkVaultToTestCase, useUnlinkVaultFromTestCase, useLinkVaultToAsset, useUnlinkVaultFromAsset } from '@/lib/hooks/use-vault';
 import { ResultCount } from '@/components/ui/result-count';
 import { useCheckPassword, useLookupHash } from '@/lib/hooks/use-wordlist';
 import { useFindings } from '@/lib/hooks/use-findings';
@@ -38,7 +38,7 @@ import {
     MoreVertical, Loader2, Download, Search, Check, CheckCircle, AlertCircle, User as UserIcon, FileKey, Bug, CheckSquare, Link as LinkIcon, X, XCircle, StickyNote, Zap, AlertTriangle, Hash,
     LayoutGrid, List, ArrowUpDown, Server, Target,
 } from 'lucide-react';
-import api, { apiErrorMessage } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api';
 import { cn, parseUTCDate } from '@/lib/utils';
 import { LinkTooltip } from '@/components/ui/link-tooltip';
 import {
@@ -628,7 +628,10 @@ const VaultItemRow = ({
 };
 
 export function VaultTab({ engagementId }: VaultTabProps) {
-    const { data: items = [], isLoading, refetch } = useVaultItems(engagementId);
+    const { data: items = [], isLoading } = useVaultItems(engagementId);
+    const createItem = useCreateVaultItem(engagementId);
+    const updateItem = useUpdateVaultItem(engagementId);
+    const deleteItem = useDeleteVaultItem(engagementId);
     const { data: findings = [] } = useFindings({ engagement_id: engagementId });
     const { data: testcases = [] } = useTestCases(engagementId);
     const { data: assets = [] } = useAssets(engagementId);
@@ -784,14 +787,13 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         if (!editingItem) return;
         setIsSubmitting(true);
         try {
-            await api.patch(`/vault/${editingItem.id}`, editForm);
+            await updateItem.mutateAsync({ id: editingItem.id, ...editForm });
             // The cached plaintext is now stale: without this, reveal, copy
             // and the next edit would keep using the old secret.
             forgetRevealed(editingItem.id);
             toast.success('Vault item updated');
             setIsEditDialogOpen(false);
             setEditingItem(null);
-            refetch();
         } catch (error: any) {
             const detail = apiErrorMessage(error) || error.message;
             console.error('Failed to update vault item:', detail, error);
@@ -826,20 +828,7 @@ export function VaultTab({ engagementId }: VaultTabProps) {
 
         setIsSubmitting(true);
         try {
-            if (newItem.item_type === 'FILE' && selectedFile) {
-                const formData = new FormData();
-                formData.append('engagement_id', engagementId);
-                formData.append('name', newItem.name);
-                if (newItem.description.trim()) {
-                    formData.append('description', newItem.description);
-                }
-                formData.append('file', selectedFile);
-                await api.post('/vault/upload', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' },
-                });
-            } else {
-                await api.post('/vault', { ...newItem, engagement_id: engagementId });
-            }
+            await createItem.mutateAsync({ item: newItem, file: selectedFile });
             toast.success('Vault item created');
             setNewItem({
                 name: '',
@@ -851,7 +840,6 @@ export function VaultTab({ engagementId }: VaultTabProps) {
             });
             setSelectedFile(null);
             setIsAddDialogOpen(false);
-            refetch();
         } catch (error: any) {
             console.error('Failed to add vault item:', error);
             const detail = apiErrorMessage(error);
@@ -872,8 +860,7 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         if (!confirmed) return;
 
         try {
-            await api.delete(`/vault/${id}`);
-            refetch();
+            await deleteItem.mutateAsync(id);
         } catch (error: any) {
             console.error('Failed to delete vault item:', error);
             toast.error(getErrorMessage(error, 'Failed to delete vault item'));
@@ -886,7 +873,7 @@ export function VaultTab({ engagementId }: VaultTabProps) {
     const revealAndGet = async (id: string): Promise<VaultItemReveal | null> => {
         if (revealedItems[id]) return revealedItems[id]!;
         try {
-            const { data } = await api.get<VaultItemReveal>(`/vault/${id}/reveal`);
+            const data = await revealVaultItem(id);
             setRevealedItems(prev => ({ ...prev, [id]: data }));
             return data;
         } catch (e) {
@@ -913,14 +900,12 @@ export function VaultTab({ engagementId }: VaultTabProps) {
 
     const handleSecureDownload = async (itemId: string, filename: string) => {
         try {
-            const response = await api.get(`/vault/download/${itemId}`, {
-                responseType: 'blob'
-            });
+            const blob = await downloadVaultFile(itemId);
             // Save only — never render. An octet-stream blob can't be sniffed
             // into HTML/SVG on the app's origin (the old extra window.open of
             // this URL could run a stored file's script), and the URL is
             // revoked once the click has started the download.
-            const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/octet-stream' }));
+            const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
             const link = document.createElement('a');
             link.href = url;
             link.setAttribute('download', filename);

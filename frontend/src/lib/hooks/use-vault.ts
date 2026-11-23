@@ -131,3 +131,83 @@ export function useUnlinkVaultFromAsset() {
     });
 }
 
+
+export interface VaultItemCreate {
+    name: string;
+    item_type: 'CREDENTIAL' | 'KEY' | 'FILE' | 'NOTE';
+    username?: string;
+    password?: string;
+    note?: string;
+    description?: string;
+}
+
+export interface VaultItemUpdate {
+    name?: string;
+    username?: string;
+    password?: string;
+    note?: string;
+    description?: string;
+}
+
+function useInvalidateVault(engagementId: string) {
+    const queryClient = useQueryClient();
+    return () => {
+        queryClient.invalidateQueries({ queryKey: ['engagements', engagementId, 'vault'] });
+        queryClient.invalidateQueries({ queryKey: ['engagements', engagementId, 'counts'] });
+    };
+}
+
+/** Create a vault item; a FILE item goes up as multipart with `file`. */
+export function useCreateVaultItem(engagementId: string) {
+    const invalidate = useInvalidateVault(engagementId);
+    return useMutation({
+        mutationFn: async ({ item, file }: { item: VaultItemCreate; file?: File | null }) => {
+            if (item.item_type === 'FILE' && file) {
+                const form = new FormData();
+                form.append('engagement_id', engagementId);
+                form.append('name', item.name);
+                if (item.description?.trim()) form.append('description', item.description);
+                form.append('file', file);
+                const { data } = await api.post<VaultItem>('/vault/upload', form, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+                return data;
+            }
+            const { data } = await api.post<VaultItem>('/vault', { ...item, engagement_id: engagementId });
+            return data;
+        },
+        onSuccess: invalidate,
+    });
+}
+
+export function useUpdateVaultItem(engagementId: string) {
+    const invalidate = useInvalidateVault(engagementId);
+    return useMutation({
+        mutationFn: async ({ id, ...patch }: VaultItemUpdate & { id: string }) => {
+            const { data } = await api.patch<VaultItem>(`/vault/${id}`, patch);
+            return data;
+        },
+        onSuccess: invalidate,
+    });
+}
+
+export function useDeleteVaultItem(engagementId: string) {
+    const invalidate = useInvalidateVault(engagementId);
+    return useMutation({
+        mutationFn: async (id: string) => { await api.delete(`/vault/${id}`); },
+        onSuccess: invalidate,
+    });
+}
+
+/** Decrypted fields for one item. Deliberately not a cached query: every
+ *  reveal is an audited read (`accessed_vault_secret`), made on demand. */
+export async function revealVaultItem(id: string): Promise<VaultItemReveal> {
+    const { data } = await api.get<VaultItemReveal>(`/vault/${id}/reveal`);
+    return data;
+}
+
+/** A FILE item's bytes, for a save-only download. */
+export async function downloadVaultFile(id: string): Promise<Blob> {
+    const { data } = await api.get<Blob>(`/vault/download/${id}`, { responseType: 'blob' });
+    return data;
+}
