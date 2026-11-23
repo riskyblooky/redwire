@@ -24,6 +24,7 @@ section becomes one release entry.
 - **One asset per host in an engagement.** Adding an asset whose identifier (IP, hostname, URL) already exists in the engagement, in any letter case, now says so instead of creating a duplicate, and password-spray imports match existing assets regardless of case. Existing duplicates are merged into the oldest one when you upgrade.
 Leaving a new finding, asset or test case, the runbook builder, or the report layout / theme editors with unsaved changes now asks first, like the edit pages.
 Engagement status menus (list filter, new engagement, status control) list Scoping before Planning, matching the lifecycle.
+Engagement members without the note_view permission no longer see linked notes' titles in the findings / test case / asset / vault / cleanup tables.
 
 ## [1.9.2] — 2026-11-22
 

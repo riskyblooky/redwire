@@ -38,3 +38,33 @@ async def test_unlisted_unique_violation_is_409():
     exc = IntegrityError("INSERT ...", {}, Orig('duplicate key value violates unique constraint "note_findings_pkey"'))
     r = await main._integrity_conflict(None, exc)
     assert r.status_code == 409
+
+
+async def test_note_link_map_needs_note_view(client, db_session, make_user, authenticate_as):
+    """The linked-notes map carries note titles, so it follows the notes
+    list's note_view rule; a member without it gets empty maps (their
+    tables still load, just without note tooltips)."""
+    from models.associations import NoteFinding
+    from models.note import Note
+    eng = await _make_engagement(db_session)
+    finding = await _make_finding(db_session, eng)
+    note = Note(id=str(uuid.uuid4()), engagement_id=eng.id, title="ZZsecret note title", content="c")
+    db_session.add(note)
+    await db_session.flush()
+    db_session.add(NoteFinding(note_id=note.id, finding_id=finding.id))
+    await db_session.flush()
+
+    reader, blind = await make_user(), await make_user()
+    await _assign(db_session, reader, eng, await _make_engagement_role(db_session, ["engagement_view", "note_view"]))
+    await _assign(db_session, blind, eng, await _make_engagement_role(db_session, ["engagement_view", "finding_view"]))
+
+    authenticate_as(reader)
+    r = await client.get(f"/engagements/{eng.id}/note-links")
+    assert r.status_code == 200
+    assert r.json()["finding"][finding.id] == [{"id": note.id, "title": "ZZsecret note title"}]
+
+    authenticate_as(blind)
+    r = await client.get(f"/engagements/{eng.id}/note-links")
+    assert r.status_code == 200
+    assert "ZZsecret" not in r.text
+    assert all(v == {} for v in r.json().values())

@@ -14,7 +14,7 @@ from schemas.engagement import (
     EngagementPhaseResponse, EngagementPhaseUpdate,
 )
 from auth.dependencies import get_current_user
-from auth.rbac import can_modify_resource, require_engagement_perm
+from auth.rbac import can_modify_resource, has_engagement_perm, require_engagement_perm
 
 from sqlalchemy.orm import selectinload
 from models.associations import EngagementAssignment
@@ -491,6 +491,11 @@ async def get_engagement_note_links(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found")
 
     await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_VIEW, db, action="view this engagement")
+
+    # Note titles follow the notes list's note_view rule. Without it the
+    # maps are empty rather than a 403, so the tables still load.
+    if not await has_engagement_perm(current_user, engagement_id, Permission.NOTE_VIEW, db):
+        return {"finding": {}, "testcase": {}, "asset": {}, "vault": {}, "cleanup": {}}
 
     async def _links(resource_col, assoc_model) -> dict:
         rows = await db.execute(
