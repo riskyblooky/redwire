@@ -45,7 +45,21 @@ function needsAuthFetch(src?: string | null): boolean {
 // break every other avatar still pointing at the same URL.
 const blobCache = new Map<string, string>();          // cleanPath -> blob: URL
 const inflight = new Map<string, Promise<string>>();  // cleanPath -> pending fetch
-const failed = new Set<string>();                     // cleanPath -> 404/err (don't retry)
+// cleanPath -> time before which we don't retry. It used to be a Set, so one
+// failure (a network blip, a 401 racing a token refresh) hid that image for
+// the rest of the session. Missing/forbidden images back off for minutes,
+// anything else for seconds.
+const failedUntil = new Map<string, number>();
+const MISSING_BACKOFF_MS = 5 * 60_000;
+const TRANSIENT_BACKOFF_MS = 15_000;
+
+function recentlyFailed(cleanPath: string): boolean {
+    const until = failedUntil.get(cleanPath);
+    if (until === undefined) return false;
+    if (Date.now() < until) return true;
+    failedUntil.delete(cleanPath);
+    return false;
+}
 
 function fetchAuthedBlob(cleanPath: string): Promise<string> {
     const cached = blobCache.get(cleanPath);
@@ -62,7 +76,9 @@ function fetchAuthedBlob(cleanPath: string): Promise<string> {
         })
         .catch(err => {
             inflight.delete(cleanPath);
-            failed.add(cleanPath);
+            const status = err?.response?.status;
+            const missing = status === 404 || status === 403 || status === 410;
+            failedUntil.set(cleanPath, Date.now() + (missing ? MISSING_BACKOFF_MS : TRANSIENT_BACKOFF_MS));
             throw err;
         });
     inflight.set(cleanPath, p);
@@ -94,7 +110,7 @@ export function useAuthedImageUrl(src?: string | null): string | null {
 
         const cached = blobCache.get(cleanPath);
         if (cached) { setUrl(cached); return; }
-        if (failed.has(cleanPath)) { setUrl(null); return; }
+        if (recentlyFailed(cleanPath)) { setUrl(null); return; }
 
         let cancelled = false;
         fetchAuthedBlob(cleanPath)
