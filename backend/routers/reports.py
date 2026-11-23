@@ -370,32 +370,32 @@ async def _do_generate_report(
         for row in md_img_result.scalars().all()
     }
 
-    # Lifecycle hook — plugins can subscribe to react to a completed
-    # report (push to a document store, notify a Slack channel, etc.).
-    # Fired BEFORE the rendered bytes leave the process so any exception
-    # in a subscriber becomes visible before we commit to the response.
-    # Payload deliberately omits the rendered bytes themselves — those
-    # can be gigabytes; give subscribers the metadata to fetch or
-    # re-render as needed.
-    try:
-        from utils.event_bus import event_bus
-        await event_bus.emit("report.generated", {
-            "engagement_id": engagement.id,
-            "engagement_name": engagement.name,
-            "user_id": current_user.id,
-            "layout_id": layout.id,
-            "layout_name": getattr(layout, "name", None),
-            "theme_id": theme.id if theme else None,
-            "marking_profile_id": chosen_profile_id,
-            "format": config.report_format.value,
-            "finding_count": len(findings),
-        })
-    except Exception as _e:
-        print(f"[reports] report.generated event emit error (non-fatal): {_e}")
+    # Lifecycle hook — plugins react to a completed report (push it to a
+    # document store, notify a channel...). Fired after the report has
+    # rendered, just before it's returned; it used to fire before rendering,
+    # so a report that then failed (or was refused as too large) was still
+    # announced as generated. The payload omits the bytes, which can be huge.
+    async def _announce_generated():
+        try:
+            from utils.event_bus import event_bus
+            await event_bus.emit("report.generated", {
+                "engagement_id": engagement.id,
+                "engagement_name": engagement.name,
+                "user_id": current_user.id,
+                "layout_id": layout.id,
+                "layout_name": getattr(layout, "name", None),
+                "theme_id": theme.id if theme else None,
+                "marking_profile_id": chosen_profile_id,
+                "format": config.report_format.value,
+                "finding_count": len(findings),
+            })
+        except Exception as _e:
+            logger.warning("report.generated event emit error (non-fatal): %s", _e)
 
     if config.report_format == ReportFormat.PDF:
         generator = PDFReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields, chain_edges=chain_edges, chain_vault_items=chain_vault_items)
         pdf_content = await _render(generator)
+        await _announce_generated()
         filename = f"Report_{safe_name}.pdf"
         return Response(
             content=pdf_content,
@@ -406,6 +406,7 @@ async def _do_generate_report(
     elif config.report_format == ReportFormat.MARKDOWN:
         generator = MarkdownReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, finding_custom_fields=finding_custom_fields, marking_profile=marking_profile)
         md_content = await _render(generator)
+        await _announce_generated()
         filename = f"Report_{safe_name}.md"
         return Response(
             content=md_content,
@@ -416,6 +417,7 @@ async def _do_generate_report(
     elif config.report_format == ReportFormat.HTML:
         generator = HTMLReportGenerator(engagement, sections, findings, testcases, cleanup_artifacts, theme, storage=storage_service, markdown_image_map=markdown_image_map, marking_profile=marking_profile, finding_custom_fields=finding_custom_fields, chain_edges=chain_edges, chain_vault_items=chain_vault_items)
         html_content = await _render(generator)
+        await _announce_generated()
         filename = f"Report_{safe_name}.html"
         return Response(
             content=html_content,
@@ -709,6 +711,7 @@ async def _do_generate_report(
             raise
 
         spooled.seek(0)
+        await _announce_generated()
         filename = f"Export_{safe_name}.zip"
         return StreamingResponse(
             _stream_spooled_zip(spooled),

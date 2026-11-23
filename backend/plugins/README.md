@@ -190,7 +190,7 @@ Additional lifecycle hooks are emitted by core:
 - `auth.login.success` / `auth.login.failed`
 - `user.created`
 - `finding.status_changed` (payload includes old_status + new_status)
-- `report.generated`
+- `report.generated` (after the report has rendered, before it is returned)
 
 Wildcards work: `event_bus.register("finding.*", handler)` sees every
 finding event. Always pass `plugin_id=manifest.id` when registering —
