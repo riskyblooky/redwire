@@ -10,7 +10,7 @@ from auth.jwt import decode_token, is_token_blacklisted
 from typing import Optional
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,9 @@ security = HTTPBearer()
 def _is_api_token(raw: str) -> bool:
     """Check if a bearer value looks like an API token (ro_ or rw_ prefix)."""
     return raw.startswith("ro_") or raw.startswith("rw_")
+
+
+_LAST_USED_RESOLUTION = timedelta(seconds=60)
 
 
 async def _resolve_api_token(raw: str, db: AsyncSession) -> tuple[User, str]:
@@ -63,12 +66,16 @@ async def _resolve_api_token(raw: str, db: AsyncSession) -> tuple[User, str]:
             detail="API token has expired",
         )
 
-    # Update last_used_at (fire-and-forget; don't fail the request)
-    try:
-        api_token.last_used_at = datetime.utcnow()
-        await db.commit()
-    except Exception:
-        await db.rollback()
+    # Record use at most once a minute per token: a write + commit on every
+    # API request made scripted clients pay a row lock and a WAL flush per
+    # call for a value shown to the minute. Never fails the request.
+    now = datetime.utcnow()
+    if api_token.last_used_at is None or now - api_token.last_used_at >= _LAST_USED_RESOLUTION:
+        try:
+            api_token.last_used_at = now
+            await db.commit()
+        except Exception:
+            await db.rollback()
 
     # Load the owning user
     user_result = await db.execute(
