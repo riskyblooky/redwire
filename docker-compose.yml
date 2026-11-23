@@ -8,7 +8,12 @@ x-logging: &default-logging
 
 services:
   postgres:
-    image: postgres:15-alpine
+    # Images are pinned to exact versions so a deploy never upgrades one
+    # unannounced. mem_limit on every service: ceilings (not reservations)
+    # sized from prod use (~0.9 GB total on the 4 GB VPS) so one runaway
+    # container is OOM-killed and restarted instead of taking the host down.
+    image: postgres:15.15-alpine
+    mem_limit: 768m
     container_name: redwire-db
     logging: *default-logging
     environment:
@@ -29,7 +34,8 @@ services:
     restart: always
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.7-alpine
+    mem_limit: 256m
     container_name: redwire-redis
     logging: *default-logging
     command: redis-server --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
@@ -47,6 +53,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    mem_limit: 512m
     container_name: redwire-minio
     logging: *default-logging
     command: server /data --console-address ":9001"
@@ -77,6 +84,7 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-}
         BUILD_TIME: ${BUILD_TIME:-}
     image: redwire-backend:latest
+    mem_limit: 1536m
     container_name: redwire-backend
     logging: *default-logging
     # Everything in .env reaches the backend, so optional settings the code
@@ -206,6 +214,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     image: redwire-frontend:latest
+    mem_limit: 512m
     container_name: redwire-frontend
     logging: *default-logging
     environment:
@@ -226,7 +235,8 @@ services:
     restart: always
 
   nginx:
-    image: nginx:1.25-alpine
+    image: nginx:1.25.5-alpine
+    mem_limit: 128m
     container_name: redwire-nginx
     logging: *default-logging
     ports:
@@ -254,7 +264,8 @@ services:
     restart: always
 
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:v5.2.2
+    mem_limit: 128m
     container_name: redwire-certbot
     logging: *default-logging
     volumes:
@@ -271,6 +282,7 @@ services:
       context: ./mcp-server
       dockerfile: Dockerfile
     image: redwire-mcp-server:latest
+    mem_limit: 256m
     container_name: redwire-mcp
     logging: *default-logging
     environment:
