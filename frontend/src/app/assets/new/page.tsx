@@ -31,6 +31,8 @@ import { useEngagements } from '@/lib/hooks/use-engagements';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
+import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 
 export default function NewAssetPage() {
@@ -42,7 +44,7 @@ export default function NewAssetPage() {
     const { data: engagements = [], isLoading: isLoadingEngagements } = useEngagements();
     const { data: assetTypes = [] } = useConfigurableTypes('asset');
 
-    const [formData, setFormData] = useState({
+    const [formData, setFormDataRaw] = useState({
         name: '',
         engagement_id: engagementIdParam || '',
         asset_type: 'Domain',
@@ -51,6 +53,15 @@ export default function NewAssetPage() {
         notes: '',
         custom_fields: {} as Record<string, unknown>,
     });
+    // Every setFormData call on this page is a user edit (no effect writes
+    // the form), so it also marks the form dirty for the leave-page guard.
+    const [isDirty, setIsDirty] = useState(false);
+    const setFormData: typeof setFormDataRaw = (update) => {
+        setIsDirty(true);
+        setFormDataRaw(update);
+    };
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);
 
     const handleChange = (field: string, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -75,6 +86,7 @@ export default function NewAssetPage() {
 
     return (
         <DashboardLayout>
+            <ConfirmDialog />
             <div className="p-6 space-y-6 w-full">
                 {/* Page Header */}
                 <div className="flex items-center gap-4">
@@ -85,7 +97,7 @@ export default function NewAssetPage() {
                             const backPath = engagementIdParam
                                 ? `/engagements/${engagementIdParam}?tab=assets`
                                 : '/assets';
-                            router.push(backPath);
+                            navigateWithGuard(backPath);
                         }}
                         className="text-slate-400 hover:text-white hover:bg-slate-800"
                     >
@@ -241,7 +253,7 @@ export default function NewAssetPage() {
                                         const backPath = engagementIdParam
                                             ? `/engagements/${engagementIdParam}?tab=assets`
                                             : '/assets';
-                                        router.push(backPath);
+                                        navigateWithGuard(backPath);
                                     }}
                                     className="border-slate-700 text-slate-300 hover:bg-slate-800"
                                     disabled={createAsset.isPending}

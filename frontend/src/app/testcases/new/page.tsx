@@ -46,6 +46,8 @@ import { cn } from '@/lib/utils';
 import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { apiErrorMessage } from '@/lib/api';
+import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 
 export default function NewTestCasePage() {
@@ -64,7 +66,7 @@ export default function NewTestCasePage() {
     // Find parent test case name for display
     const parentTestCase = parentIdParam ? allTestCases.find(tc => tc.id === parentIdParam) : null;
 
-    const [formData, setFormData] = useState({
+    const [formData, setFormDataRaw] = useState({
         title: '',
         engagement_id: engagementIdParam || '',
         parent_id: parentIdParam || '',
@@ -77,6 +79,15 @@ export default function NewTestCasePage() {
         attack_technique_ids: [] as string[],
         custom_fields: {} as Record<string, unknown>,
     });
+    // Every setFormData call on this page is a user edit (no effect writes
+    // the form), so it also marks the form dirty for the leave-page guard.
+    const [isDirty, setIsDirty] = useState(false);
+    const setFormData: typeof setFormDataRaw = (update) => {
+        setIsDirty(true);
+        setFormDataRaw(update);
+    };
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);
 
     const handleChange = (field: string, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -136,13 +147,14 @@ export default function NewTestCasePage() {
 
     return (
         <DashboardLayout>
+            <ConfirmDialog />
             <div className="p-6 space-y-6 w-full">
                 <div className="flex items-center gap-4">
                     <Button variant="ghost" size="icon" onClick={() => {
                         const backPath = engagementIdParam
                             ? `/engagements/${engagementIdParam}?tab=testcases`
                             : '/testcases';
-                        router.push(backPath);
+                        navigateWithGuard(backPath);
                     }} className="text-slate-400 hover:text-white">
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
@@ -273,7 +285,7 @@ export default function NewTestCasePage() {
                                         const backPath = engagementIdParam
                                             ? `/engagements/${engagementIdParam}?tab=testcases`
                                             : '/testcases';
-                                        router.push(backPath);
+                                        navigateWithGuard(backPath);
                                     }} className="border-slate-700 text-slate-300">
                                         Cancel
                                     </Button>

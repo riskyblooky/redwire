@@ -67,6 +67,9 @@ import { SectionType } from '@/lib/types';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/components/ui/confirm-dialog';
 import dynamic from 'next/dynamic';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { useSnapshotDirty } from '@/lib/hooks/use-snapshot-dirty';
 
 const TiptapEditor = dynamic(() => import('@/components/ui/tiptap-editor'), { ssr: false });
 
@@ -235,17 +238,22 @@ export default function ReportLayoutTemplateEditPage() {
         setSections(prev => prev.map((s, i) => i === idx ? { ...s, content } : s));
     };
 
+    // What Save sends; also the leave-page guard's dirty snapshot.
+    const sectionPayload = sections.map((s, i) => ({
+        section_type: s.section_type as 'text' | 'findings' | 'testcases' | 'cleanup_artifacts',
+        title: s.title,
+        content: s.content,
+        sort_order: i,
+    }));
+    const isDirty = useSnapshotDirty({ name, description, sections: sectionPayload }, isNew || loaded);
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);
+
     const handleSave = async () => {
         if (!name.trim()) {
             toast.error('Please enter a template name');
             return;
         }
-        const sectionPayload = sections.map((s, i) => ({
-            section_type: s.section_type as 'text' | 'findings' | 'testcases' | 'cleanup_artifacts',
-            title: s.title,
-            content: s.content,
-            sort_order: i,
-        }));
         try {
             if (isNew) {
                 await createTemplate.mutateAsync({
@@ -284,6 +292,7 @@ export default function ReportLayoutTemplateEditPage() {
 
     return (
         <DashboardLayout>
+            <ConfirmDialog />
             <div className="p-6 max-w-7xl mx-auto space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -292,7 +301,7 @@ export default function ReportLayoutTemplateEditPage() {
                             variant="ghost"
                             size="icon"
                             className="text-slate-400 hover:text-white"
-                            onClick={() => router.push('/templates?tab=report-layouts')}
+                            onClick={() => navigateWithGuard('/templates?tab=report-layouts')}
                         >
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
@@ -308,7 +317,7 @@ export default function ReportLayoutTemplateEditPage() {
                         <Button
                             variant="outline"
                             className="border-slate-700 text-slate-300"
-                            onClick={() => router.push('/templates?tab=report-layouts')}
+                            onClick={() => navigateWithGuard('/templates?tab=report-layouts')}
                         >
                             Cancel
                         </Button>

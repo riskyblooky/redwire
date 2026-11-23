@@ -22,6 +22,7 @@ section becomes one release entry.
 - **Engagements without a start date no longer show 12/31/1969** or crowd the top of the engagements list; they show a dash and sort last.
 - **Email and 2FA changes always end API tokens.** If session revocation failed partway, an email change or 2FA enable/disable could leave the account's API tokens working. They're now ended together with the change.
 - **One asset per host in an engagement.** Adding an asset whose identifier (IP, hostname, URL) already exists in the engagement, in any letter case, now says so instead of creating a duplicate, and password-spray imports match existing assets regardless of case. Existing duplicates are merged into the oldest one when you upgrade.
+Leaving a new finding, asset or test case, the runbook builder, or the report layout / theme editors with unsaved changes now asks first, like the edit pages.
 
 ## [1.9.2] — 2026-11-22
 

@@ -45,6 +45,9 @@ import {
     useUpdateReportTheme,
     ReportThemeCreate,
 } from '@/lib/hooks/use-report-themes';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { useSnapshotDirty } from '@/lib/hooks/use-snapshot-dirty';
 
 // Professional coordinated palettes for the theme editor preset dropdown.
 // Each sets: primary/accent, secondary (dark bars), heading text, body text,
@@ -158,6 +161,7 @@ export default function ReportThemeEditPage() {
     const [coverSubtitle, setCoverSubtitle] = useState('');
     const [reportReference, setReportReference] = useState('');
     const [reportVersion, setReportVersion] = useState('');
+    const [seeded, setSeeded] = useState(false);
 
     // Load existing theme once per theme: a refetch mustn't replace edits.
     useFormFromQuery(existing, (existing) => {
@@ -204,6 +208,7 @@ export default function ReportThemeEditPage() {
         setCoverSubtitle(existing.cover_subtitle || '');
         setReportReference(existing.report_reference || '');
         setReportVersion(existing.report_version || '');
+        setSeeded(true);
     }, { key: themeId });
 
     const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -232,59 +237,64 @@ export default function ReportThemeEditPage() {
 
     const saving = createMutation.isPending || updateMutation.isPending;
 
+    // What Save sends; also the leave-page guard's dirty snapshot.
+    const payload: ReportThemeCreate = {
+        name: name.trim(),
+        description: description.trim() || null,  // null clears on update
+        primary_color: primaryColor,
+        secondary_color: secondaryColor,
+        header_text_color: headerTextColor,
+        body_text_color: bodyTextColor,
+        table_header_bg: tableHeaderBg,
+        table_header_text: tableHeaderText,
+        font_family: fontFamily,
+        font_size_body: fontSizeBody,
+        font_size_heading: fontSizeHeading,
+        // Clearable text/image fields send their raw value (incl. '' / null)
+        // so emptying a field actually clears it on update — `|| undefined`
+        // would drop the key and leave the old value in place.
+        logo_base64: logoBase64,
+        logo_scale: logoScale,
+        show_page_numbers: showPageNumbers,
+        show_page_x_of_y: showPageXOfY,
+        show_cover_page: showCoverPage,
+        cover_title: coverTitle,
+        header_text: headerText,
+        footer_text: footerText,
+        page_size: pageSize,
+        is_default: isDefault,
+        severity_critical_color: sevCritical,
+        severity_high_color: sevHigh,
+        severity_medium_color: sevMedium,
+        severity_low_color: sevLow,
+        severity_info_color: sevInfo,
+        table_zebra_enabled: tableZebra,
+        table_alt_row_bg: tableAltRowBg,
+        table_grid_color: tableGridColor,
+        header_left: headerLeft,
+        header_center: headerCenter,
+        header_right: headerRight,
+        footer_left: footerLeft,
+        footer_center: footerCenter,
+        footer_right: footerRight,
+        show_evidence_filenames: showEvidenceFilenames,
+        show_finding_severity_bar: showFindingSeverityBar,
+        show_section_title_background: showSectionTitleBackground,
+        cover_template: coverTemplate,
+        cover_background_base64: coverBackground,
+        cover_subtitle: coverSubtitle,
+        report_reference: reportReference,
+        report_version: reportVersion,
+    };
+    const isDirty = useSnapshotDirty(payload, isNew || seeded);
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);
+
     const handleSave = async () => {
         if (!name.trim()) {
             toast.error('Theme name is required');
             return;
         }
-        const payload: ReportThemeCreate = {
-            name: name.trim(),
-            description: description.trim() || null,  // null clears on update
-            primary_color: primaryColor,
-            secondary_color: secondaryColor,
-            header_text_color: headerTextColor,
-            body_text_color: bodyTextColor,
-            table_header_bg: tableHeaderBg,
-            table_header_text: tableHeaderText,
-            font_family: fontFamily,
-            font_size_body: fontSizeBody,
-            font_size_heading: fontSizeHeading,
-            // Clearable text/image fields send their raw value (incl. '' / null)
-            // so emptying a field actually clears it on update — `|| undefined`
-            // would drop the key and leave the old value in place.
-            logo_base64: logoBase64,
-            logo_scale: logoScale,
-            show_page_numbers: showPageNumbers,
-            show_page_x_of_y: showPageXOfY,
-            show_cover_page: showCoverPage,
-            cover_title: coverTitle,
-            header_text: headerText,
-            footer_text: footerText,
-            page_size: pageSize,
-            is_default: isDefault,
-            severity_critical_color: sevCritical,
-            severity_high_color: sevHigh,
-            severity_medium_color: sevMedium,
-            severity_low_color: sevLow,
-            severity_info_color: sevInfo,
-            table_zebra_enabled: tableZebra,
-            table_alt_row_bg: tableAltRowBg,
-            table_grid_color: tableGridColor,
-            header_left: headerLeft,
-            header_center: headerCenter,
-            header_right: headerRight,
-            footer_left: footerLeft,
-            footer_center: footerCenter,
-            footer_right: footerRight,
-            show_evidence_filenames: showEvidenceFilenames,
-            show_finding_severity_bar: showFindingSeverityBar,
-            show_section_title_background: showSectionTitleBackground,
-            cover_template: coverTemplate,
-            cover_background_base64: coverBackground,
-            cover_subtitle: coverSubtitle,
-            report_reference: reportReference,
-            report_version: reportVersion,
-        };
 
         try {
             if (isNew) {
@@ -312,11 +322,12 @@ export default function ReportThemeEditPage() {
 
     return (
         <DashboardLayout>
+            <ConfirmDialog />
             <div className="p-6 max-w-5xl mx-auto space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <Button variant="ghost" size="icon" onClick={() => router.push('/templates?tab=report-themes')}>
+                        <Button variant="ghost" size="icon" onClick={() => navigateWithGuard('/templates?tab=report-themes')}>
                             <ArrowLeft className="h-5 w-5 text-slate-400" />
                         </Button>
                         <div className="flex items-center gap-2">

@@ -56,6 +56,8 @@ import { TechniquePicker } from '@/components/ui/technique-picker';
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { useCustomFieldDefs } from '@/lib/hooks/use-custom-fields';
 import { apiErrorMessage } from '@/lib/api';
+import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const severities = [
     { value: 'CRITICAL', label: 'Critical', color: 'text-red-500 bg-red-500/10 border-red-500/20' },
@@ -77,7 +79,7 @@ export default function NewFindingPage() {
     const { data: findingCategories = [] } = useConfigurableTypes('finding');
     const { data: assetTypes = [] } = useConfigurableTypes('asset');
 
-    const [formData, setFormData] = useState({
+    const [formData, setFormDataRaw] = useState({
         title: '',
         engagement_id: engagementIdParam || '',
         category: '',
@@ -97,6 +99,15 @@ export default function NewFindingPage() {
         attack_technique_ids: [] as string[],
         custom_fields: {} as Record<string, unknown>,
     });
+    // Every setFormData call on this page is a user edit (no effect writes
+    // the form), so it also marks the form dirty for the leave-page guard.
+    const [isDirty, setIsDirty] = useState(false);
+    const setFormData: typeof setFormDataRaw = (update) => {
+        setIsDirty(true);
+        setFormDataRaw(update);
+    };
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);
 
     const { data: assets = [], isLoading: isLoadingAssets } = useAssets(formData.engagement_id);
     const [templateOpen, setTemplateOpen] = useState(false);
@@ -274,6 +285,7 @@ export default function NewFindingPage() {
 
     return (
         <DashboardLayout>
+            <ConfirmDialog />
             <div className="p-6 space-y-6 w-full">
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -282,7 +294,7 @@ export default function NewFindingPage() {
                             const backPath = engagementIdParam
                                 ? `/engagements/${engagementIdParam}?tab=findings`
                                 : '/findings';
-                            router.push(backPath);
+                            navigateWithGuard(backPath);
                         }} className="text-slate-400 hover:text-white">
                             <ArrowLeft className="h-5 w-5" />
                         </Button>

@@ -54,6 +54,9 @@ import {
     ArrowLeftIcon,
     CheckCircle2,
 } from 'lucide-react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
+import { useSnapshotDirty } from '@/lib/hooks/use-snapshot-dirty';
 
 // ─── Types ────────────────────────────────────────────────────────
 interface TreeNode {
@@ -235,10 +238,12 @@ export default function RunbookEditorPage() {
 
     // ── Initialize from existing ──
     const hasInitialized = useRef(false);
+    const [seeded, setSeeded] = useState(false);
     useEffect(() => {
         if (hasInitialized.current) return;
         if (existingRunbook && !isNew) {
             hasInitialized.current = true;
+            setSeeded(true);
             setName(existingRunbook.name);
             setDescription(existingRunbook.description || '');
             setRunbookType(existingRunbook.runbook_type || '');
@@ -430,6 +435,12 @@ export default function RunbookEditorPage() {
         }));
     };
 
+    // What Save sends; also the leave-page guard's dirty snapshot.
+    const saveItems = useMemo(() => flattenTree(renumberTree(tree)), [tree]);
+    const isDirty = useSnapshotDirty({ name, description, runbookType, items: saveItems }, isNew || seeded);
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { navigateWithGuard } = useNavigationGuard(isDirty, confirm);
+
     // ── Save ──
     const handleSave = async () => {
         if (!name.trim()) {
@@ -438,8 +449,7 @@ export default function RunbookEditorPage() {
         }
         setSaving(true);
         try {
-            const numberedTree = renumberTree(tree);
-            const items = flattenTree(numberedTree);
+            const items = saveItems;
 
             if (isNew) {
                 await createRunbook.mutateAsync({ name, description, runbook_type: runbookType || undefined, items });
@@ -485,11 +495,12 @@ export default function RunbookEditorPage() {
 
     return (
         <DashboardLayout>
+            <ConfirmDialog />
             <div className="p-6 max-w-7xl mx-auto space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="icon" onClick={() => router.push('/templates?tab=runbooks')} className="text-slate-400 hover:text-white">
+                        <Button variant="ghost" size="icon" onClick={() => navigateWithGuard('/templates?tab=runbooks')} className="text-slate-400 hover:text-white">
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                         <div>
