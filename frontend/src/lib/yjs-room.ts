@@ -142,6 +142,13 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
     const ydoc = useMemo(() => new Y.Doc(), []);
     const awareness = useMemo(() => new awarenessProtocol.Awareness(ydoc), [ydoc]);
     const userColor = useMemo(() => getCursorColor(currentUser?.id || 'anon'), [currentUser?.id]);
+    // The room effect depends on these primitives, not the user object: the
+    // auth store hands out a new object on every profile refetch, and each
+    // one used to tear the socket down and rejoin the room.
+    const userId = currentUser?.id;
+    const displayName = currentUser?.full_name || currentUser?.username || 'Anonymous';
+    const displayNameRef = useRef(displayName);
+    displayNameRef.current = displayName;
     const wsUrl = useMemo(() => (path ? yjsSocketUrl(path) : ''), [path]);
 
     // Latest callbacks without re-running the connection effect.
@@ -206,7 +213,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
     }, [contentSource, autosaveRef, flushSave]);
 
     useEffect(() => {
-        if (typeof window === 'undefined' || !wsUrl || !currentUser) return;
+        if (typeof window === 'undefined' || !wsUrl || !userId) return;
         const token = localStorage.getItem('access_token');
         if (!token) return;
 
@@ -246,7 +253,7 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
         // setLocalStateField silently does nothing when state is null.
         awareness.setLocalState({
             user: {
-                name: currentUser.full_name || currentUser.username || 'Anonymous',
+                name: displayNameRef.current,
                 color: userColor,
             },
         });
@@ -494,7 +501,15 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
             current = null;
             setSocket(null);
         };
-    }, [wsUrl, currentUser, ydoc, awareness, userColor, editorRef, seedRef, onRequestSaveRef, flushSaveRef]);
+    }, [wsUrl, userId, ydoc, awareness, userColor, editorRef, seedRef, onRequestSaveRef, flushSaveRef]);
+
+    // A renamed user updates their cursor label in place, without rejoining.
+    useEffect(() => {
+        const state = awareness.getLocalState() as { user?: { name?: string } } | null;
+        if (state?.user && state.user.name !== displayName) {
+            awareness.setLocalStateField('user', { ...state.user, name: displayName });
+        }
+    }, [awareness, displayName]);
 
     // Y.Doc + awareness live as long as the component.
     useEffect(() => () => {
