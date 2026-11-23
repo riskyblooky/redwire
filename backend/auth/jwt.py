@@ -62,6 +62,22 @@ def _get_redis() -> Optional[redis.Redis]:
         return None
 
 
+def _now_ms() -> int:
+    return time.time_ns() // 1_000_000
+
+
+def _issued_ms(payload: dict) -> Optional[int]:
+    """When a token was issued, in epoch milliseconds. ``iat`` is whole
+    seconds, so a sign-out-everywhere cutoff in the same second couldn't
+    tell earlier tokens from the fresh pair handed out right after it;
+    ``iat_ms`` can. Tokens minted before iat_ms existed fall back to iat."""
+    ms = payload.get("iat_ms")
+    if isinstance(ms, (int, float)) and not isinstance(ms, bool):
+        return int(ms)
+    iat = payload.get("iat")
+    return int(float(iat) * 1000) if iat else None
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
@@ -79,6 +95,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({
         "exp": expire,
         "iat": datetime.utcnow(),
+        "iat_ms": _now_ms(),
         "type": token_type,
         "jti": str(uuid.uuid4()),
     })
@@ -93,6 +110,7 @@ def create_refresh_token(data: dict) -> str:
     to_encode.update({
         "exp": expire,
         "iat": datetime.utcnow(),
+        "iat_ms": _now_ms(),
         "type": "refresh",
         "jti": str(uuid.uuid4()),
     })
@@ -174,7 +192,10 @@ def blacklist_token(token: str) -> bool:
         exp = payload.get("exp")
         if exp:
             # TTL = time until token expires (no point keeping it longer)
-            ttl = max(int(exp - datetime.utcnow().timestamp()), 1)
+            # time.time(), not naive utcnow().timestamp(): the latter reads
+            # the naive value as local time, so off-UTC hosts got TTLs that
+            # were hours too short (revocation lapsed) or too long.
+            ttl = max(int(exp - time.time()), 1)
         else:
             # Fallback: blacklist for 24 hours
             ttl = 86400
@@ -199,11 +220,11 @@ def revoke_all_user_tokens(user_id: str) -> bool:
     try:
         # TTL matches our max refresh token lifetime (hours -> seconds)
         ttl = REFRESH_TOKEN_EXPIRE_HOURS * 3600
-        # Whole-second epoch: JWT iat is whole seconds (python-jose truncates),
-        # so a fractional cutoff made tokens issued later in the same second
-        # — e.g. the fresh pair force-change-password hands out right after
-        # revoking — compare as older than the cutoff and get rejected.
-        r.setex(f"token_revocation:{user_id}", ttl, str(int(time.time())))
+        # Millisecond cutoff, compared against iat_ms: tokens issued earlier
+        # in the same second are revoked, and the fresh pair a credential
+        # change hands out right after this call is not. (A whole-second
+        # cutoff had to let the whole second through to spare that pair.)
+        r.setex(f"token_revocation:{user_id}", ttl, str(_now_ms()))
         return True
     except Exception as e:
         logger.error(f"Failed to revoke user tokens: {e}")
@@ -249,9 +270,12 @@ def is_token_blacklisted(token: str) -> bool:
         if user_id:
             revocation_ts = r.get(f"token_revocation:{user_id}")
             if revocation_ts:
-                iat = payload.get("iat")
-                # If token has no iat, or was issued before the revocation timestamp, reject it
-                if not iat or float(iat) < float(revocation_ts):
+                cutoff = int(float(revocation_ts))
+                if cutoff < 10**11:  # a whole-second cutoff written before the ms change
+                    cutoff *= 1000
+                issued = _issued_ms(payload)
+                # No issue time, or issued before the cutoff: reject.
+                if issued is None or issued < cutoff:
                     return True
 
         return False

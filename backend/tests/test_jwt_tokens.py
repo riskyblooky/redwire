@@ -250,3 +250,52 @@ def test_validate_secret_refuses_weak_keys(monkeypatch, secret):
 def test_validate_secret_accepts_strong_key(monkeypatch):
     monkeypatch.setattr(authjwt, "SECRET_KEY", "a" * 64)
     authjwt.validate_secret()
+
+
+def test_revoke_kills_tokens_from_the_same_second():
+    """iat is whole seconds; a whole-second cutoff let a token issued earlier
+    in the revoking second survive. iat_ms closes that, while the fresh
+    pair issued right after the revoke still works."""
+    user_id = str(uuid.uuid4())
+    old = authjwt.create_access_token({"sub": user_id})
+    old_refresh = authjwt.create_refresh_token({"sub": user_id})
+    time.sleep(0.002)
+    assert authjwt.revoke_all_user_tokens(user_id) is True
+    fresh = authjwt.create_access_token({"sub": user_id})
+    fresh_refresh = authjwt.create_refresh_token({"sub": user_id})
+    assert authjwt.is_token_blacklisted(old) is True
+    assert authjwt.is_token_blacklisted(old_refresh) is True
+    assert authjwt.is_token_blacklisted(fresh) is False
+    assert authjwt.is_token_blacklisted(fresh_refresh) is False
+
+
+def test_legacy_second_cutoff_still_honoured():
+    """A cutoff written in whole seconds before the change keeps its meaning."""
+    user_id = str(uuid.uuid4())
+    now = int(time.time())
+    authjwt._get_redis().setex(f"token_revocation:{user_id}", 60, str(now))
+    before = _raw({"sub": user_id, "type": "access", "jti": str(uuid.uuid4()), "iat": now - 5, "exp": now + 60})
+    after = authjwt.create_access_token({"sub": user_id})
+    assert authjwt.is_token_blacklisted(before) is True
+    assert authjwt.is_token_blacklisted(after) is False
+
+
+def test_blacklist_ttl_is_independent_of_the_host_timezone(monkeypatch):
+    import os
+    seen = {}
+
+    class R:
+        def setex(self, key, ttl, value):
+            seen["ttl"] = ttl
+
+    monkeypatch.setattr(authjwt, "_get_redis", lambda: R())
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    try:
+        tok = authjwt.create_access_token({"sub": "u"}, expires_delta=__import__("datetime").timedelta(minutes=10))
+        assert authjwt.blacklist_token(tok) is True
+        assert 590 <= seen["ttl"] <= 600
+    finally:
+        monkeypatch.delenv("TZ", raising=False)
+        time.tzset()
+        os.environ.pop("TZ", None)

@@ -9,6 +9,7 @@ section becomes one release entry.
 ### Fixed
 - **Security Center account actions respect the user-management ceiling.** A delegated security manager could disable or sign out team leads, read-only admins and accounts holding permissions they don't; only admin accounts were protected. It now follows the same rule as admin user management.
 - **The engagement activity log hides what you can't open.** Members without a resource's view permission (for example the vault) no longer see its entries' names and change details in the activity log; the activity feed already worked this way. Users with view-all access now see the non-vault entries too.
+- **Sign out everywhere also ends sessions started the same second.** Tokens issued earlier in the second a password change, 2FA change or forced sign-out happened could keep working until they expired. Revoked tokens also stay revoked on servers not set to UTC.
 
 ## [1.9.2] — 2026-11-22
 
