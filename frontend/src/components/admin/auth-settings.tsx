@@ -1,57 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiErrorMessage } from '@/lib/api';
-
-type TlsMode = 'none' | 'ldaps' | 'starttls';
-
-interface LdapSettings {
-    enabled: boolean;
-    server_url: string;
-    bind_dn: string;
-    bind_password: string | null;
-    search_base: string;
-    search_filter: string;
-    username_attribute: string;
-    email_attribute: string;
-    fullname_attribute: string;
-    tls_mode: TlsMode;
-    tls_verify: boolean;
-    debug_enabled: boolean;
-}
-
-interface LdapTraceStep {
-    step: string;
-    ok: boolean;
-    message: string;
-    elapsed_ms?: number;
-}
-
-interface LdapTestResult {
-    success: boolean;
-    message: string;
-    trace?: LdapTraceStep[];
-}
-
-interface LdapLoginTestResult extends LdapTestResult {
-    user?: { username: string; email: string; full_name: string } | null;
-}
-
-interface SamlSettings {
-    enabled: boolean;
-    idp_entity_id: string;
-    idp_sso_url: string;
-    idp_slo_url: string;
-    idp_x509_cert: string | null;
-    sp_entity_id: string;
-    want_messages_signed: boolean;
-}
-
-interface AuthSettings {
-    ldap: LdapSettings;
-    saml: SamlSettings;
-}
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
+import {
+    useAuthSettings, useSaveLdapSettings, useSaveSamlSettings, useSaveLoginSplash,
+    useTestLdapConnection, useTestLdapLogin,
+    type LdapSettings, type SamlSettings, type LdapTestResult, type LdapLoginTestResult, type LoginSplash, type TlsMode,
+} from '@/lib/hooks/use-auth-settings';
 
 const DEFAULT_LDAP: LdapSettings = {
     enabled: false,
@@ -81,95 +38,74 @@ const DEFAULT_SAML: SamlSettings = {
 export function AuthSettingsManagement() {
     const [ldap, setLdap] = useState<LdapSettings>(DEFAULT_LDAP);
     const [saml, setSaml] = useState<SamlSettings>(DEFAULT_SAML);
-    const [loading, setLoading] = useState(true);
-    // Set when the current settings couldn't be loaded. The form is not
-    // rendered then: its defaults are blank, and saving them would replace
-    // the real LDAP / SAML / splash configuration.
-    const [loadError, setLoadError] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
+    const settings = useAuthSettings();
+    // While loading, or when the current settings couldn't be loaded, the
+    // form is not rendered: its defaults are blank, and saving them would
+    // replace the real LDAP / SAML / splash configuration.
+    const loading = settings.isPending || (settings.isError && settings.isFetching);
+    const loadError = settings.isError
+        ? apiErrorMessage(settings.error, settings.error instanceof Error ? settings.error.message : String(settings.error))
+        : null;
+    const saveLdapSettings = useSaveLdapSettings();
+    const saveSamlSettings = useSaveSamlSettings();
+    const saveLoginSplash = useSaveLoginSplash();
+    const testConnection = useTestLdapConnection();
+    const testLogin = useTestLdapLogin();
+    const saving = saveLdapSettings.isPending || saveSamlSettings.isPending;
     const [testResult, setTestResult] = useState<LdapTestResult | null>(null);
     const [testLoginOpen, setTestLoginOpen] = useState(false);
     const [testLoginUsername, setTestLoginUsername] = useState('');
     const [testLoginPassword, setTestLoginPassword] = useState('');
     const [testLoginResult, setTestLoginResult] = useState<LdapLoginTestResult | null>(null);
-    const [testLoginRunning, setTestLoginRunning] = useState(false);
-    const [testingLdap, setTestingLdap] = useState(false);
+    const testLoginRunning = testLogin.isPending;
+    const testingLdap = testConnection.isPending;
     const [successMessage, setSuccessMessage] = useState('');
-    const [splash, setSplash] = useState({ enabled: false, title: '', message: '' });
-    const [savingSplash, setSavingSplash] = useState(false);
+    const [splash, setSplash] = useState<LoginSplash>({ enabled: false, title: '', message: '' });
+    const savingSplash = saveLoginSplash.isPending;
 
     // Shown in the SAML setup hints (ACS / metadata URLs).
     const API = api.defaults.baseURL || '';
 
-    // All calls go through the shared axios instance: raw fetch skipped the
-    // 401 refresh (an expired access token made every call here fail).
-    const fetchSettings = useCallback(async () => {
-        setLoading(true);
-        setLoadError(null);
-        try {
-            const [{ data }, { data: splashData }] = await Promise.all([
-                api.get<AuthSettings>('/admin/auth-settings'),
-                api.get('/admin/auth-settings/splash'),
-            ]);
-            setLdap(data.ldap);
-            setSaml(data.saml);
-            setSplash(splashData);
-        } catch (e) {
-            console.error('Failed to load settings', e);
-            setLoadError(apiErrorMessage(e, e instanceof Error ? e.message : String(e)));
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchSettings();
-    }, [fetchSettings]);
+    // Seed the form once from the loaded settings; saves keep it current.
+    useFormFromQuery(settings.data, (d) => {
+        setLdap(d.ldap);
+        setSaml(d.saml);
+        setSplash(d.splash);
+    });
 
     const saveLdap = async () => {
-        setSaving(true);
         setSuccessMessage('');
         try {
-            const { data } = await api.put<AuthSettings>('/admin/auth-settings/ldap', ldap);
+            const data = await saveLdapSettings.mutateAsync(ldap);
             setLdap(data.ldap);
             setSuccessMessage('LDAP settings saved successfully');
             setTimeout(() => setSuccessMessage(''), 3000);
         } catch (e) {
             toast.error(apiErrorMessage(e, 'Failed to save LDAP settings'));
-        } finally {
-            setSaving(false);
         }
     };
 
     const saveSaml = async () => {
-        setSaving(true);
         setSuccessMessage('');
         try {
-            const { data } = await api.put<AuthSettings>('/admin/auth-settings/saml', saml);
+            const data = await saveSamlSettings.mutateAsync(saml);
             setSaml(data.saml);
             setSuccessMessage('SAML settings saved successfully');
             setTimeout(() => setSuccessMessage(''), 3000);
         } catch (e) {
             toast.error(apiErrorMessage(e, 'Failed to save SAML settings'));
-        } finally {
-            setSaving(false);
         }
     };
 
     const runTestLogin = async () => {
         if (!testLoginUsername || !testLoginPassword) return;
-        setTestLoginRunning(true);
         setTestLoginResult(null);
         try {
-            const { data } = await api.post('/admin/auth-settings/ldap/test-login',
-                { username: testLoginUsername, password: testLoginPassword });
-            setTestLoginResult(data);
+            setTestLoginResult(await testLogin.mutateAsync({ username: testLoginUsername, password: testLoginPassword }));
         } catch (e) {
             // A refused request (403, 422, 5xx) used to be shown as the
             // test's result body, with no message.
             setTestLoginResult({ success: false, message: apiErrorMessage(e, String(e)) });
-        } finally {
-            setTestLoginRunning(false);
         }
     };
 
@@ -181,30 +117,23 @@ export function AuthSettingsManagement() {
     };
 
     const testLdapConnection = async () => {
-        setTestingLdap(true);
         setTestResult(null);
         try {
-            const { data } = await api.post('/admin/auth-settings/ldap/test', { username: 'test', password: 'test' });
-            setTestResult(data);
+            setTestResult(await testConnection.mutateAsync());
         } catch (e) {
             setTestResult({ success: false, message: apiErrorMessage(e, String(e)) });
-        } finally {
-            setTestingLdap(false);
         }
     };
 
     const saveSplash = async () => {
-        setSavingSplash(true);
         setSuccessMessage('');
         try {
-            const { data } = await api.put('/admin/auth-settings/splash', splash);
+            const data = await saveLoginSplash.mutateAsync(splash);
             setSplash(data);
             setSuccessMessage('Login banner settings saved successfully');
             setTimeout(() => setSuccessMessage(''), 3000);
         } catch (e) {
             toast.error(apiErrorMessage(e, 'Failed to save login banner'));
-        } finally {
-            setSavingSplash(false);
         }
     };
 
@@ -225,7 +154,7 @@ export function AuthSettingsManagement() {
                 </p>
                 <button
                     type="button"
-                    onClick={fetchSettings}
+                    onClick={() => settings.refetch()}
                     className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
                 >
                     Retry
