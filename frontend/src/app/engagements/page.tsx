@@ -291,23 +291,27 @@ export default function EngagementsPage() {
     // Server-side pagination. Search/status/type filters below still run
     // against the current page only — see the page footer note. Page size is
     // persisted so power users can bump it up when they want to search.
-    const [page, setPage] = useState<number>(1);
     // Page size defaults to 25 on every load. Mid-session changes still
     // apply until the next refresh — persistence was intentionally dropped
     // so every fresh visit starts at 25 regardless of prior sessions.
     const [pageSize, setPageSize] = useState<number>(25);
-    // Any filter/sort/search change resets to page 1 so the user isn't
-    // stranded on an empty tail page (e.g. was on page 8/10, applies a
-    // filter that leaves 2 pages of results).
     // All-access users (admins / team leads) can narrow the list to just the
     // engagements they're assigned to.
     const [showMine, setShowMine] = useState<boolean>(false);
     // Debounce the search so typing fires one request after a pause, not one
     // per keystroke. The input stays bound to searchTerm for instant feedback.
     const debouncedSearch = useDebounce(searchTerm, 300);
-    useEffect(() => {
-        setPage(1);
-    }, [showProposed, showMine, pageSize, debouncedSearch, statusFilter, typeFilter, dateFrom, dateTo, tagFilter, sortField, sortOrder]);
+    // Any filter/sort/search change resets to page 1 so the user isn't
+    // stranded on an empty tail page (e.g. was on page 8/10, applies a
+    // filter that leaves 2 pages of results). The page is stored with the
+    // filters it was picked under, so the reset happens in the same render;
+    // an effect calling setPage(1) first fetched the old page number with
+    // the new filters, then page 1.
+    const filterKey = JSON.stringify([showProposed, showMine, pageSize, debouncedSearch, statusFilter, typeFilter, dateFrom, dateTo, tagFilter, sortField, sortOrder]);
+    const [pageState, setPageState] = useState<{ key: string; page: number }>({ key: filterKey, page: 1 });
+    const page = pageState.key === filterKey ? pageState.page : 1;
+    const setPage = (next: number | ((p: number) => number)) =>
+        setPageState({ key: filterKey, page: typeof next === 'function' ? next(page) : next });
 
     const engagementsQuery = useEngagementsPage({
         includeProposed: canSeeProposed && showProposed,
