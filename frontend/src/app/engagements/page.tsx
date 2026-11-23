@@ -148,7 +148,7 @@ const EngagementRow = ({ engagement, handleView, handleEdit, handleDelete, handl
                 <MarkingProfilePill profile={markingProfile} defaultLevel={engagement.default_classification_level} />
             </TableCell>
             <TableCell className="text-slate-300 text-sm">
-                {new Date(engagement.start_date).toLocaleDateString()}
+                {engagement.start_date ? new Date(engagement.start_date).toLocaleDateString() : <span className="text-slate-500">—</span>}
             </TableCell>
             <TableCell className="text-slate-300 text-sm">
                 {engagement.end_date ? new Date(engagement.end_date).toLocaleDateString() : <span className="text-slate-500">—</span>}

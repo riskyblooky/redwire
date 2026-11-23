@@ -342,7 +342,7 @@ export default function PlanningPage() {
             .sort((a, b) => {
                 if (a.status === 'PROPOSED' && b.status !== 'PROPOSED') return -1;
                 if (a.status !== 'PROPOSED' && b.status === 'PROPOSED') return 1;
-                return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
+                return new Date(a.start_date!).getTime() - new Date(b.start_date!).getTime();  // undated rows filtered above
             });
     }, [allEngagements, viewStart, viewEnd]);
 

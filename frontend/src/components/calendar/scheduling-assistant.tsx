@@ -130,7 +130,7 @@ export function SchedulingAssistant({
         }
         if (dateMode === 'engagement' && selectedEngagementId) {
             const eng = allEngagements.find(e => e.id === selectedEngagementId);
-            if (eng) {
+            if (eng?.start_date) {
                 return {
                     rangeStart: new Date(eng.start_date),
                     rangeEnd: eng.end_date ? new Date(eng.end_date) : defaultEnd,

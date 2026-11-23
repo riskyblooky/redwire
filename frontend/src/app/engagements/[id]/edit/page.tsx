@@ -685,7 +685,7 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
                                                 <div className="relative h-8 rounded-lg bg-slate-800/50 border border-slate-700/50 overflow-hidden">
                                                     {engagement.phases.map((phase: EngagementPhase) => {
                                                         if (!phase.planned_start || !phase.planned_end) return null;
-                                                        const engStart  = parseISO(engagement.start_date);
+                                                        const engStart  = parseISO(engagement.start_date!);
                                                         const engEnd    = parseISO(engagement.end_date!);
                                                         const totalDays = Math.max(differenceInDays(engEnd, engStart), 1);
                                                         const pStart    = parseISO(phase.planned_start);

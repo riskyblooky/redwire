@@ -318,7 +318,10 @@ async def get_engagements(
         query = query.where(f)
 
     sort_col = _SORTABLE[sort_by]
-    primary = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+    # Rows without a value (legacy/imported engagements with no dates) sort
+    # last either way; Postgres puts NULLs first under DESC, so the default
+    # start_date-desc list opened on undated rows.
+    primary = (sort_col.asc() if sort_order == "asc" else sort_col.desc()).nulls_last()
 
     if q:
         # Mirror getSearchRelevance from the frontend: 0=exact, 1=starts-with,

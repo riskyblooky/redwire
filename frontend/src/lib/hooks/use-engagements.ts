@@ -44,7 +44,7 @@ export interface Engagement {
     description: string | null;
     scope: string | null;
     objectives: string | null;
-    start_date: string;
+    start_date: string | null;  // null on legacy and imported engagements
     end_date: string | null;
     created_by: string;
     created_at: string;
