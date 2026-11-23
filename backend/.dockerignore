@@ -9,6 +9,12 @@ evidence/
 .env
 .env.*
 
+# Dev-only data generators: the demo engagement (drives the REST API from
+# outside) and the stress-test bulk seed. seed_defaults / seed_templates /
+# seed_testcase_templates / seed_permissions are startup code and stay.
+seed_demo.py
+seed_bulk.py
+
 # Tests and their output
 tests/
 .pytest_cache/
