@@ -16,6 +16,7 @@ section becomes one release entry.
 - **Deleting a user no longer deletes their automation rules and reviews.** Organisation rules they wrote and peer reviews they left are kept, without an author. Their personal rules are still removed.
 - **Linking reports failures.** If some links in the link dialog couldn't be saved, it showed a success message and closed. It now shows an error with the reason and stays open.
 - **Sessions stay signed in with short token lifetimes.** If `ACCESS_TOKEN_EXPIRE_MINUTES` was set below 28 minutes, the background refresh came too late and requests briefly failed and were retried. It now refreshes shortly before the actual expiry.
+- The sign-in and registration pages show the installed version instead of a fixed "v2.0".
 
 ## [1.9.2] — 2026-11-22
 

@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { api,  apiErrorMessage } from '@/lib/api';
 import { Ticket, Zap } from 'lucide-react';
 import { toast } from 'sonner';
+import { AuthFooter } from '@/components/auth/auth-footer';
 
 /* ── animated grid background ── */
 function GridBackground() {
@@ -371,9 +372,7 @@ export default function RegisterPage() {
                     <StatusLine text={statusText} />
                 </div>
 
-                <p className="text-center text-[9px] font-mono text-white/10 mt-4 tracking-widest uppercase">
-                    RedWire Security Platform — v2.0
-                </p>
+                <AuthFooter />
             </div>
 
             <style jsx global>{`

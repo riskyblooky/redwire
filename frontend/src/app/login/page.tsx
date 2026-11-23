@@ -20,6 +20,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { Shield, ArrowLeft, LogIn, Zap, AlertTriangle } from 'lucide-react';
 import { apiErrorMessage } from '@/lib/api';
 import { afterLoginPath, stashNextForSso } from '@/lib/login-redirect';
+import { AuthFooter } from '@/components/auth/auth-footer';
 
 interface AuthProviders {
     local: boolean;
@@ -531,10 +532,7 @@ export default function LoginPage() {
                     <StatusLine text={statusText} variant={error ? 'error' : isLoading ? 'active' : 'idle'} />
                 </div>
 
-                {/* Branding below window */}
-                <p className="text-center text-[9px] font-mono text-white/10 mt-4 tracking-widest uppercase">
-                    RedWire Security Platform — v2.0
-                </p>
+                <AuthFooter />
             </div>
 
             {/* Shimmer animation keyframe */}
