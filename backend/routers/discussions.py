@@ -822,13 +822,14 @@ async def get_activity_log(
             )
         )
     
-    # Restrict to assigned engagements for non-admins
+    # Same visibility as the feed: only the resource types the caller may
+    # view on this engagement (it was membership-only, so a member without
+    # e.g. vault_view still saw vault item names and change details here).
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        from models.engagement import Engagement
-        from models.user import User
-        base_query = base_query.join(Engagement).where(
-            Engagement.assigned_users.any(User.id == current_user.id)
-        )
+        visible = await _feed_visibility_clause(db, current_user, engagement_id)
+        if visible is None:
+            return {"items": [], "total": 0}
+        base_query = base_query.where(visible)
     
     # Get total count before pagination
     count_query = select(func.count()).select_from(base_query.subquery())
@@ -894,20 +895,16 @@ _FEED_TYPE_VIEW_PERM = {
 }
 
 
-async def _feed_visibility_clause(db: AsyncSession, user_id: str, engagement_id: str):
+async def _feed_visibility_clause(db: AsyncSession, user: User, engagement_id: str):
     """WHERE clause limiting an engagement's activity rows to the resource
-    types the caller's engagement role may view, or None when they hold no
-    role there (not a member). The feed attaches each row's content, so
+    types the caller may view there (auth.rbac.engagement_permissions: role
+    bypasses, engagement role, view-all tier), or None when they may view
+    nothing. Activity rows carry each item's name and change details, so
     membership alone isn't enough."""
-    from models.permission import EngagementRolePermissions
-    perms = (await db.execute(
-        select(EngagementRolePermissions.permissions)
-        .join(EngagementAssignment, EngagementAssignment.role_id == EngagementRolePermissions.role_id)
-        .where(EngagementAssignment.user_id == user_id, EngagementAssignment.engagement_id == engagement_id)
-    )).scalar_one_or_none()
-    if perms is None:
+    from auth.rbac import engagement_permissions
+    held = await engagement_permissions(user, engagement_id, db)
+    if not held:
         return None
-    held = set(perms or [])
     allowed = [t for t, p in _FEED_TYPE_VIEW_PERM.items() if p.value in held]
     clauses = [ActivityLog.resource_type.in_(allowed)] if allowed else []
     if Permission.ENGAGEMENT_VIEW.value in held:
@@ -1274,7 +1271,7 @@ async def get_activity_feed(
         base_query = base_query.where(ActivityLog.created_at <= date_to)
 
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        visible = await _feed_visibility_clause(db, current_user.id, engagement_id)
+        visible = await _feed_visibility_clause(db, current_user, engagement_id)
         if visible is None:
             return {"items": [], "total": 0}
         base_query = base_query.where(visible)

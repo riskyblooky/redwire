@@ -120,6 +120,24 @@ async def test_activity_feed_drops_types_without_view(client, db_session, member
     authenticate_as(user)
     feed = (await client.get("/discussions/activity/feed", params={"engagement_id": eng.id})).json()
     assert [i["resource_type"] for i in feed["items"]] == ["note"] and feed["total"] == 1
+    # The plain activity log applies the same filter (it was membership-only).
+    log = (await client.get("/discussions/activity", params={"engagement_id": eng.id})).json()
+    assert [i["resource_type"] for i in log["items"]] == ["note"] and log["total"] == 1
+
+
+async def test_activity_log_view_all_and_non_member(client, db_session, make_user, authenticate_as):
+    from models.discussion import ActivityLog
+    from tests.test_view_all_engagements import _view_all_user
+    eng = await _make_engagement(db_session)
+    for rtype in ("finding", "vault"):
+        db_session.add(ActivityLog(engagement_id=eng.id, action=f"created_{rtype}", resource_type=rtype,
+                                   resource_id=str(uuid.uuid4()), resource_name=rtype))
+    await db_session.flush()
+    authenticate_as(await _view_all_user(db_session, make_user))  # reads everything but the vault
+    log = (await client.get("/discussions/activity", params={"engagement_id": eng.id})).json()
+    assert [i["resource_type"] for i in log["items"]] == ["finding"]
+    authenticate_as(await make_user())
+    assert (await client.get("/discussions/activity", params={"engagement_id": eng.id})).json()["items"] == []
 
 
 async def test_engagement_evidence_list_needs_evidence_view(client, db_session, member_without_finding_view,
