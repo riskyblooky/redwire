@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useImportAssets, ImportResult } from '@/lib/hooks/use-assets';
 import { toast } from 'sonner';
-import { apiErrorMessage } from '@/lib/api';
+import { API_URL, apiErrorMessage } from '@/lib/api';
 
 interface AssetImportDialogProps {
     open: boolean;
@@ -33,7 +33,6 @@ interface AssetImportDialogProps {
     engagementId: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 type DetectedFormat = 'csv' | 'xlsx' | 'nmap' | null;
 

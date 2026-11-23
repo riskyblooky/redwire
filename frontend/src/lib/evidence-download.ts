@@ -1,4 +1,4 @@
-import api from './api';
+import api, { API_URL } from './api';
 
 /**
  * Build an authenticated evidence-download URL by first minting a
@@ -9,7 +9,6 @@ import api from './api';
  */
 export async function getEvidenceDownloadUrl(evidenceId: string, cacheBust = false): Promise<string> {
     const { data } = await api.post(`/evidence/${evidenceId}/download-token`);
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
     const bust = cacheBust ? `&t=${Date.now()}` : '';
-    return `${apiUrl}/evidence/${evidenceId}/download?token=${data.token}${bust}`;
+    return `${API_URL}/evidence/${evidenceId}/download?token=${data.token}${bust}`;
 }

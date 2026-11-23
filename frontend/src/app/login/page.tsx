@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth-store';
 import { Shield, ArrowLeft, LogIn, Zap, AlertTriangle } from 'lucide-react';
-import { apiErrorMessage } from '@/lib/api';
+import { API_URL, apiErrorMessage } from '@/lib/api';
 import { afterLoginPath, stashNextForSso } from '@/lib/login-redirect';
 import { AuthFooter } from '@/components/auth/auth-footer';
 
@@ -259,7 +259,7 @@ export default function LoginPage() {
         return false;
     });
 
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const API = API_URL;
 
     useEffect(() => {
         fetch(`${API}/auth/providers`)

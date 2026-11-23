@@ -8,7 +8,10 @@ declare module 'axios' {
     }
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// The one API base URL: '/api' behind nginx (dev and prod .env), or an absolute
+// URL. Everything that builds an API link imports this rather than re-reading
+// the env with its own fallback.
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
     baseURL: API_URL,
