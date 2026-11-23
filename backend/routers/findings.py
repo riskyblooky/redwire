@@ -8,8 +8,6 @@ from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
-import uuid
-import os
 import json
 import logging
 from database import get_db
@@ -19,7 +17,6 @@ from models.finding import Finding, Severity, FindingStatus, Tag
 from scoring.registry import scoring_registry
 from scoring.engine import evaluate as evaluate_score, ScoringError
 from scoring.display import outcome_label
-from utils import storage_tx
 from utils.scoring_policy import assert_model_allowed
 from models.evidence import Evidence
 from schemas.finding import FindingCreate, FindingUpdate, FindingResponse, TagResponse
@@ -29,12 +26,6 @@ from auth.rbac import can_modify_resource, check_engagement_permission, is_engag
 from models.user import UserRole
 from models.permission import Permission
 from utils.storage import storage_service
-from utils.uploads import (
-    MAX_EVIDENCE_BYTES,
-    read_upload_capped,
-    safe_content_type,
-    sanitize_original_filename,
-)
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.custom_fields import validate_custom_fields
 from utils.versioning import create_version_snapshot
@@ -1126,51 +1117,11 @@ async def upload_evidence(
             detail="Finding is VERIFIED: move it back to another status to add evidence.",
         )
 
-    content = await read_upload_capped(
-        file, MAX_EVIDENCE_BYTES,
-        detail=f"Evidence upload exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    from utils.evidence_upload import store_evidence
+    new_evidence = await store_evidence(
+        db, file, engagement_id=finding.engagement_id, uploader=current_user,
+        description=description, include_in_report=include_in_report, finding_id=finding_id,
     )
-    file_size = len(content)
-
-    # Generate unique filename for storage
-    ext = os.path.splitext(file.filename)[1] if file.filename else ""
-    storage_filename = f"{uuid.uuid4()}{ext}"
-
-    # GHSA-h77m-pjqc-5cm3 follow-up: don't trust the client's Content-Type
-    # header for storage metadata or for the stored Evidence.mime_type that
-    # the frontend reads to decide whether to inline-preview the file.
-    safe_mime = safe_content_type(file.filename)
-
-    # Upload to MinIO
-    try:
-        await storage_tx.upload(db,
-            content,
-            storage_filename,
-            content_type=safe_mime,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file to storage: {str(e)}"
-        )
-
-    # Create evidence record in database
-    new_evidence = Evidence(
-        finding_id=finding_id,
-        engagement_id=finding.engagement_id,
-        filename=storage_filename,
-        original_filename=sanitize_original_filename(file.filename, fallback="unknown"),
-        file_path=storage_filename,
-        file_size=file_size,
-        mime_type=safe_mime,
-        description=description,
-        include_in_report=include_in_report,
-        created_by=current_user.id
-    )
-
-    db.add(new_evidence)
-    await db.commit()
-    await db.refresh(new_evidence)
 
     # Log activity
     await create_activity_log(

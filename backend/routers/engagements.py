@@ -34,16 +34,7 @@ from models.infra_item import InfraItem
 from models.discussion import Thread
 from schemas.evidence import EvidenceResponse
 from fastapi import UploadFile, File, Form
-import os
-import uuid
-from utils import storage_tx
 from utils.storage import storage_service
-from utils.uploads import (
-    MAX_EVIDENCE_BYTES,
-    read_upload_capped,
-    safe_content_type,
-    sanitize_original_filename,
-)
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict, manager
 from utils.custom_fields import validate_custom_fields
 from utils.scoring_policy import assert_engagement_policy_allowed
@@ -1123,43 +1114,11 @@ async def upload_engagement_evidence(
     # Check if engagement exists and user has permission
     await require_engagement_perm(current_user, engagement_id, Permission.EVIDENCE_CREATE, db, action="upload to this engagement")
 
-    content = await read_upload_capped(
-        file, MAX_EVIDENCE_BYTES,
-        detail=f"Attachment exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    from utils.evidence_upload import store_evidence
+    new_evidence = await store_evidence(
+        db, file, engagement_id=engagement_id, uploader=current_user,
+        description=description, include_in_report=include_in_report,
     )
-    file_size = len(content)
-
-    # Generate unique filename
-    ext = os.path.splitext(file.filename)[1] if file.filename else ""
-    storage_filename = f"{uuid.uuid4()}{ext}"
-
-    # GHSA-h77m-pjqc-5cm3 follow-up: server-derived MIME, not the client's
-    # Content-Type header. Same string is stored on MinIO and on the
-    # Evidence row that the frontend reads for inline-preview decisions.
-    safe_mime = safe_content_type(file.filename)
-
-    # Upload to MinIO
-    try:
-        await storage_tx.upload(db, content, storage_filename, content_type=safe_mime)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Storage failure: {str(e)}")
-
-    # Create record
-    new_evidence = Evidence(
-        engagement_id=engagement_id,
-        filename=storage_filename,
-        original_filename=sanitize_original_filename(file.filename, fallback="unknown"),
-        file_path=storage_filename,
-        file_size=file_size,
-        mime_type=safe_mime,
-        description=description,
-        include_in_report=include_in_report,
-        created_by=current_user.id
-    )
-
-    db.add(new_evidence)
-    await db.commit()
-    await db.refresh(new_evidence)
 
     # Log activity
     await create_activity_log(

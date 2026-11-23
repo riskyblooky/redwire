@@ -15,7 +15,7 @@ from auth.rbac import check_engagement_permission, has_engagement_perm, is_engag
 from models.user import UserRole
 from models.permission import Permission
 import uuid
-from utils import storage_tx
+from schemas.evidence import EvidenceResponse
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.custom_fields import validate_custom_fields
 from utils.versioning import create_version_snapshot
@@ -814,7 +814,7 @@ async def unlink_asset_from_testcase(
 
     return {"message": "Asset unlinked from test case"}
 
-@router.post("/{testcase_id}/evidence")
+@router.post("/{testcase_id}/evidence", response_model=EvidenceResponse)
 async def upload_testcase_evidence(
     testcase_id: str,
     file: UploadFile = File(...),
@@ -824,16 +824,7 @@ async def upload_testcase_evidence(
     current_user: User = Depends(get_current_user)
 ):
     """Upload an evidence file for a test case."""
-    from models.evidence import Evidence
-    from schemas.evidence import EvidenceResponse
-    from utils.storage import storage_service
-    from utils.uploads import (
-        MAX_EVIDENCE_BYTES,
-        read_upload_capped,
-        safe_content_type,
-        sanitize_original_filename,
-    )
-    import os
+    from utils.evidence_upload import store_evidence
 
     result = await db.execute(select(TestCase).where(TestCase.id == testcase_id))
     testcase = result.scalar_one_or_none()
@@ -867,51 +858,10 @@ async def upload_testcase_evidence(
                     detail="Insufficient permissions. You need the 'evidence_create' permission to add evidence to this test case."
                 )
 
-    content = await read_upload_capped(
-        file, MAX_EVIDENCE_BYTES,
-        detail=f"Evidence upload exceeds the {MAX_EVIDENCE_BYTES}-byte size limit.",
+    new_evidence = await store_evidence(
+        db, file, engagement_id=testcase.engagement_id, uploader=current_user,
+        description=description, include_in_report=include_in_report, testcase_id=testcase_id,
     )
-    file_size = len(content)
-
-    # Generate unique filename
-    ext = os.path.splitext(file.filename)[1] if file.filename else ""
-    storage_filename = f"{uuid.uuid4()}{ext}"
-
-    # GHSA-h77m-pjqc-5cm3 follow-up: server-derived MIME, not the client's
-    # Content-Type header. Same string is stored on MinIO and on the
-    # Evidence row that the frontend reads for inline-preview decisions.
-    safe_mime = safe_content_type(file.filename)
-
-    # Upload to storage
-    try:
-        await storage_tx.upload(db,
-            content,
-            storage_filename,
-            content_type=safe_mime,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file to storage: {str(e)}"
-        )
-
-    # Create evidence record
-    new_evidence = Evidence(
-        testcase_id=testcase_id,
-        engagement_id=testcase.engagement_id,
-        filename=storage_filename,
-        original_filename=sanitize_original_filename(file.filename, fallback="unknown"),
-        file_path=storage_filename,
-        file_size=file_size,
-        mime_type=safe_mime,
-        description=description,
-        include_in_report=include_in_report,
-        created_by=current_user.id
-    )
-
-    db.add(new_evidence)
-    await db.commit()
-    await db.refresh(new_evidence)
 
     # Log activity
     await create_activity_log(
@@ -925,8 +875,6 @@ async def upload_testcase_evidence(
         details=f"Uploaded evidence '{file.filename}' to test case '{testcase.title}'"
     )
 
-    new_evidence.created_by_username = current_user.username
-    new_evidence.created_by_full_name = current_user.full_name
     return new_evidence
 
 
