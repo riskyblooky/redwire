@@ -433,8 +433,9 @@ export function WidgetManagement() {
                 toast.success('Widget created');
             }
             setDialogOpen(false);
-        } catch {
-            toast.error('Failed to save widget');
+        } catch (err: any) {
+            // The server names what's wrong with the query config (422).
+            toast.error(apiErrorMessage(err, 'Failed to save widget'));
         }
     };
 

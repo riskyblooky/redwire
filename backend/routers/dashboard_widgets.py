@@ -8,7 +8,7 @@ import logging
 from typing import Optional, List
 import enum
 from datetime import datetime, timedelta
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ValidationError, Field
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from schemas._field_limits import MAX_LIST_LIMIT
@@ -695,6 +695,37 @@ async def list_widgets(
     return [_widget_to_dict(w) for w in widgets]
 
 
+async def _validate_widget_config(data_source: str, config: Optional[dict], db: AsyncSession) -> None:
+    """Reject a custom_query widget whose stored query couldn't run: the
+    same parse and allowlist checks the data endpoint applies, at save time.
+    Bad configs used to save fine and then fail on every dashboard load."""
+    if data_source != "custom_query":
+        return
+    cfg = config or {}
+    queries = cfg.get("queries")
+    if queries is not None:
+        if not isinstance(queries, list) or not queries:
+            raise HTTPException(422, "config.queries must be a non-empty list")
+        if len(queries) > 6:
+            raise HTTPException(422, "config.queries capped at 6 sub-queries")
+        raw = queries
+    elif cfg.get("query"):
+        raw = [cfg["query"]]
+    else:
+        return  # no query yet: the widget renders empty, as before
+    for n, q in enumerate(raw, 1):
+        where = f"query {n}" if len(raw) > 1 else "query"
+        if not isinstance(q, dict):
+            raise HTTPException(422, f"config {where} must be an object")
+        try:
+            req = QueryPreviewRequest(**q)
+            _build_query(req, await _cf_map_for_table(req.table, db))
+        except ValidationError as e:
+            raise HTTPException(422, f"config {where}: {e.errors()[0].get('msg', 'invalid')}")
+        except HTTPException as e:
+            raise HTTPException(422, f"config {where}: {e.detail}")
+
+
 @router.post("/widgets", status_code=201)
 async def create_widget(
     data: WidgetCreate,
@@ -704,6 +735,7 @@ async def create_widget(
     """Create a custom widget definition (admin only)."""
     if not await has_global_permission(current_user, Permission.MANAGE_DASHBOARD_WIDGETS, db):
         raise HTTPException(status_code=403, detail="Permission denied")
+    await _validate_widget_config(data.data_source, data.config, db)
     widget = DashboardWidget(
         name=data.name,
         description=data.description,
@@ -738,6 +770,9 @@ async def update_widget(
         raise HTTPException(status_code=404, detail="Widget not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    if "config" in update_data or "data_source" in update_data:
+        await _validate_widget_config(update_data.get("data_source", widget.data_source),
+                                      update_data.get("config", widget.config), db)
     for key, value in update_data.items():
         setattr(widget, key, value)
 
