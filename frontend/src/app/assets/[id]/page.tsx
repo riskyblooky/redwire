@@ -66,6 +66,7 @@ import { InlineMarkdownField } from '@/components/ui/inline/inline-markdown-fiel
 import { InlineComboboxField, InlineComboboxOption } from '@/components/ui/inline/inline-combobox-field';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
+import { copyText } from '@/lib/clipboard';
 
 const assetTypeAccentColors: Record<string, string> = {
     IP_ADDRESS: 'bg-blue-500',
@@ -281,9 +282,10 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                                         type="button"
                                         className="p-1 rounded text-slate-500 hover:text-pink-300 hover:bg-slate-700/60 transition-colors"
                                         title="Copy to clipboard"
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(asset.identifier);
-                                            toast.success('Copied to clipboard', { description: asset.identifier });
+                                        onClick={async () => {
+                                            if (await copyText(asset.identifier)) {
+                                                toast.success('Copied to clipboard', { description: asset.identifier });
+                                            }
                                         }}
                                     >
                                         <Copy className="h-3 w-3" />

@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiErrorMessage } from '@/lib/api';
+import { copyText } from '@/lib/clipboard';
 
 interface ApiToken {
     id: string;
@@ -110,9 +111,8 @@ export function ApiTokenManagement() {
         }
     };
 
-    const copyToken = () => {
-        if (rawToken) {
-            navigator.clipboard.writeText(rawToken);
+    const copyToken = async () => {
+        if (rawToken && await copyText(rawToken)) {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         }

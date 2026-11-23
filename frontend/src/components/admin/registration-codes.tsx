@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, Plus, Trash2, Copy, Check, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { copyText } from '@/lib/clipboard';
 
 interface CodeUser {
     id: string;
@@ -121,8 +122,8 @@ export function RegistrationCodeManagement() {
         createMutation.mutate({ label: newLabel || undefined, max_uses: maxUses });
     };
 
-    const copyToClipboard = (text: string, id: string) => {
-        navigator.clipboard.writeText(text);
+    const copyToClipboard = async (text: string, id: string) => {
+        if (!(await copyText(text))) return;
         setCopiedId(id);
         setTimeout(() => setCopiedId(null), 2000);
         toast.success('Code copied to clipboard');

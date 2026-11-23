@@ -47,6 +47,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
 import { SEVERITY_BADGE as SEV_COLORS } from '@/lib/severity';
+import { copyText } from '@/lib/clipboard';
 
 /* ── Severity badge helper ──────────────────────────────────────── */
 
@@ -162,7 +163,7 @@ function ScanMeta({ fields }: { fields: ScanMetaFields }) {
                         </span>
                         <button
                             type="button"
-                            onClick={() => { navigator.clipboard.writeText(fields.command || ''); toast.success('Command copied'); }}
+                            onClick={async () => { if (await copyText(fields.command || '')) toast.success('Command copied'); }}
                             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-slate-800 hover:text-slate-200"
                         >
                             <Copy className="h-3 w-3" /> Copy

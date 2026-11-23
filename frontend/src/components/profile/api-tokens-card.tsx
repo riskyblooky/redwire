@@ -11,6 +11,7 @@ import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'luci
 import { toast } from 'sonner';
 import api, { apiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
+import { copyText } from '@/lib/clipboard';
 
 interface ApiToken {
     id: string;
@@ -98,9 +99,8 @@ export function ApiTokensCard() {
         }
     };
 
-    const copyToken = () => {
-        if (rawToken) {
-            navigator.clipboard.writeText(rawToken);
+    const copyToken = async () => {
+        if (rawToken && await copyText(rawToken)) {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         }

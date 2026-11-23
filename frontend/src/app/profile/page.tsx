@@ -54,6 +54,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSkillCategories, useUserSkills, useSetMySkills, useAverageSkills, SKILL_LEVELS, MAX_GROWTH_FOCUSES } from '@/lib/hooks/use-skills';
 import { SkillsRadarChart, buildCategoryRadarData } from '@/components/ui/skills-radar-chart';
+import { copyText } from '@/lib/clipboard';
 
 const TABS = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -290,10 +291,9 @@ export default function ProfilePage() {
         }
     };
 
-    const handleCopyAllCodes = () => {
+    const handleCopyAllCodes = async () => {
         if (!recoveryCodes) return;
-        navigator.clipboard.writeText(recoveryCodes.join('\n'));
-        toast.success('All 10 recovery codes copied to clipboard');
+        if (await copyText(recoveryCodes.join('\n'))) toast.success('All 10 recovery codes copied to clipboard');
     };
 
     const handleDownloadCodes = () => {
@@ -813,7 +813,7 @@ export default function ProfilePage() {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => { navigator.clipboard.writeText(totpSetup.secret); toast.success('Secret copied!'); }}
+                                                        onClick={async () => { if (await copyText(totpSetup.secret)) toast.success('Secret copied!'); }}
                                                         className="h-6 px-2 text-slate-500 hover:text-slate-300"
                                                     >
                                                         <Copy className="h-3 w-3" />

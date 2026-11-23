@@ -16,6 +16,7 @@ import {
     ScoreResult, ScoringMetric, useEvaluateScoring, useScoringModel,
 } from '@/lib/hooks/use-scoring';
 import { severityHex } from '@/lib/severity';
+import { copyText } from '@/lib/clipboard';
 
 
 export interface ScoringApplyResult {
@@ -105,9 +106,8 @@ export function ScoringCalculatorModal({
         onOpenChange(false);
     };
 
-    const handleCopy = () => {
-        if (result?.vector) {
-            navigator.clipboard.writeText(result.vector);
+    const handleCopy = async () => {
+        if (result?.vector && await copyText(result.vector)) {
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
         }

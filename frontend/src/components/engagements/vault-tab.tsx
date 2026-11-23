@@ -55,6 +55,7 @@ import { SprayTracker } from './spray-tracker';
 import { LinkEntityDialog, LinkedIdMap, LinkResourceType } from '@/components/ui/link-entity-dialog';
 import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
 import { GitBranch } from 'lucide-react';
+import { copyText } from '@/lib/clipboard';
 
 interface VaultTabProps {
     engagementId: string;
@@ -933,8 +934,8 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         }
     };
 
-    const copyToClipboard = (text: string, id: string) => {
-        navigator.clipboard.writeText(text);
+    const copyToClipboard = async (text: string, id: string) => {
+        if (!(await copyText(text))) return;
         setCopiedId(id);
         setTimeout(() => setCopiedId(null), 2000);
     };

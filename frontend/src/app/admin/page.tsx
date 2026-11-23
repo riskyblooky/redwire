@@ -99,6 +99,7 @@ import {
     TabsList,
     TabsTrigger,
 } from '@/components/ui/tabs';
+import { copyText } from '@/lib/clipboard';
 
 // Platform-role badge styling. Covers every UserRole so the users table shows
 // the real role (Operator / Team Lead / …) instead of a generic "User".
@@ -890,9 +891,8 @@ export default function AdminPage() {
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => {
-                                        if (tempPassword) {
-                                            navigator.clipboard.writeText(tempPassword);
+                                    onClick={async () => {
+                                        if (tempPassword && await copyText(tempPassword)) {
                                             toast.success('Copied to clipboard');
                                         }
                                     }}

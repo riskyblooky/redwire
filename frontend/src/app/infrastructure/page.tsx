@@ -79,6 +79,7 @@ import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { copyText } from '@/lib/clipboard';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -301,9 +302,8 @@ function InfraDetailDialog({ itemId, onClose }: { itemId: string; onClose: () =>
         if (secret) setRevealed(prev => ({ ...prev, [vi.id]: secret }));
     };
 
-    const copyToClipboard = (text: string, label: string) => {
-        navigator.clipboard.writeText(text);
-        toast.success(`${label} copied`);
+    const copyToClipboard = async (text: string, label: string) => {
+        if (await copyText(text)) toast.success(`${label} copied`);
     };
 
     const copySecret = async (vi: IVaultItem, field: keyof InfraVaultSecret, label: string) => {
