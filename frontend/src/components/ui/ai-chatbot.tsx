@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePathname } from 'next/navigation';
-import api, { authedFetch } from '@/lib/api';
+import api from '@/lib/api';
+import { streamAiChat } from '@/lib/ai-chat-stream';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -422,35 +423,8 @@ export function AiChatbot() {
         });
 
         try {
-            // authedFetch: a stream needs fetch, but not a stale token (raw
-            // fetch skipped the 401 refresh, so an expired token failed chat).
-            const resp = await authedFetch('/ai/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal,
-                body: JSON.stringify({
-                    // Error-only / empty assistant turns aren't conversation.
-                    messages: newMessages.filter(m => !m.isMcp && !(m.role === 'assistant' && !m.content)).map(m => ({
-                        role: m.role,
-                        content: m.content,
-                    })),
-                    editor_content: '',
-                    field_context: { resourceType: 'chatbot', fieldName: 'general' },
-                }),
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                showError(typeof err.detail === 'string' ? err.detail : (resp.statusText || `HTTP ${resp.status}`));
-                return;
-            }
-
-            const reader = resp.body?.getReader();
-            const decoder = new TextDecoder();
             let rawContent = '';
             let toolCalls: ToolCall[] = [];
-            setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '', toolCalls: [] }]);
-            placeholderAdded = true;
 
             // Helper: push the updated tool-call list into the last
             // assistant message in-place. Used by every tool_call_*
@@ -466,116 +440,103 @@ export function AiChatbot() {
                 });
             };
 
-            if (reader) {
-                // SSE format from the backend: ``event: <name>\ndata: <json>\n\n``.
-                // The previous parser only handled bare data: lines (no event:
-                // discriminator). New shape pairs an event line with a data
-                // line; we buffer the most recent event name and apply it
-                // when the matching data line arrives.
-                let buffer = '';
-                let currentEvent = 'chunk'; // default if backend omits event:
-                while (true) {
-                    const { done, value: chunk } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(chunk, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            currentEvent = line.slice(7).trim();
-                            continue;
+            await streamAiChat({
+                // Error-only / empty assistant turns aren't conversation.
+                messages: newMessages.filter(m => !m.isMcp && !(m.role === 'assistant' && !m.content)).map(m => ({
+                    role: m.role,
+                    content: m.content,
+                })),
+                editor_content: '',
+                field_context: { resourceType: 'chatbot', fieldName: 'general' },
+            }, {
+                signal: controller.signal,
+                onOpen: () => {
+                    setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '', toolCalls: [] }]);
+                    placeholderAdded = true;
+                },
+                onEvent: (event, parsed) => {
+                    if (event === 'chunk') {
+                        // OpenAI-compat streaming delta (or our own
+                        // {"error":...} envelope on upstream failure).
+                        if (parsed.error) {
+                            showError(String(parsed.error));
+                            return;
+                        } else {
+                            const delta = parsed.choices?.[0]?.delta?.content || '';
+                            rawContent += delta;
                         }
-                        if (!line.startsWith('data: ')) continue;
-                        const data = line.slice(6).trim();
-                        if (!data || data === '[DONE]') continue;
-                        let parsed: any;
-                        try { parsed = JSON.parse(data); } catch { continue; }
-
-                        if (currentEvent === 'chunk') {
-                            // OpenAI-compat streaming delta (or our own
-                            // {"error":...} envelope on upstream failure).
-                            if (parsed.error) {
-                                showError(String(parsed.error));
-                                continue;
-                            } else {
-                                const delta = parsed.choices?.[0]?.delta?.content || '';
-                                rawContent += delta;
+                        const { thinking, content, stillThinking } = parseThinking(rawContent);
+                        setIsThinking(stillThinking);
+                        setMessages(prev => {
+                            const updated = [...prev];
+                            const last = updated[updated.length - 1];
+                            if (last && last.role === 'assistant') {
+                                updated[updated.length - 1] = {
+                                    ...last,
+                                    content,
+                                    thinking: thinking || undefined,
+                                };
                             }
-                            const { thinking, content, stillThinking } = parseThinking(rawContent);
-                            setIsThinking(stillThinking);
-                            setMessages(prev => {
-                                const updated = [...prev];
-                                const last = updated[updated.length - 1];
-                                if (last && last.role === 'assistant') {
-                                    updated[updated.length - 1] = {
-                                        ...last,
-                                        content,
-                                        thinking: thinking || undefined,
-                                    };
-                                }
-                                return updated;
-                            });
-                        } else if (currentEvent === 'tool_call_pending') {
-                            const newCall: ToolCall = {
-                                callId: parsed.call_id,
-                                name: parsed.name,
-                                arguments: parsed.arguments || {},
-                                requiresApproval: !!parsed.requires_approval,
-                                status: 'pending',
-                            };
-                            toolCalls = [...toolCalls, newCall];
-                            syncToolCalls();
-                            // Auto-approve if the user has previously
-                            // ticked "always allow" for this tool name
-                            // this session. Fire-and-forget POST; the
-                            // backend's BLPOP wakes up immediately.
-                            if (newCall.requiresApproval && toolAllowlistRef.current.has(newCall.name)) {
-                                api.post(`/ai/chat/tool-approval/${newCall.callId}`, { decision: 'approve' })
-                                    .catch(() => toast.error(`Couldn't auto-approve ${newCall.name}; approve it below or it will time out`));
-                            }
-                        } else if (currentEvent === 'tool_call_result') {
-                            toolCalls = toolCalls.map(c =>
-                                c.callId === parsed.call_id
-                                    ? { ...c, status: 'executed', resultPreview: parsed.result_preview }
-                                    : c
-                            );
-                            syncToolCalls();
-                        } else if (currentEvent === 'tool_call_denied') {
-                            toolCalls = toolCalls.map(c =>
-                                c.callId === parsed.call_id
-                                    ? { ...c, status: 'denied', deniedReason: parsed.reason }
-                                    : c
-                            );
-                            syncToolCalls();
-                        } else if (currentEvent === 'context_compacted') {
-                            // Stash the stats on the in-flight
-                            // assistant message; the renderer shows
-                            // a small "earlier context compacted"
-                            // marker above the response so the user
-                            // can see what happened.
-                            setMessages(prev => {
-                                const updated = [...prev];
-                                const last = updated[updated.length - 1];
-                                if (last && last.role === 'assistant') {
-                                    updated[updated.length - 1] = {
-                                        ...last,
-                                        compactionStats: {
-                                            tokens_before: parsed.tokens_before,
-                                            tokens_after: parsed.tokens_after,
-                                            summarized_count: parsed.summarized_count,
-                                            kept_count: parsed.kept_count,
-                                        },
-                                    };
-                                }
-                                return updated;
-                            });
+                            return updated;
+                        });
+                    } else if (event === 'tool_call_pending') {
+                        const newCall: ToolCall = {
+                            callId: parsed.call_id,
+                            name: parsed.name,
+                            arguments: parsed.arguments || {},
+                            requiresApproval: !!parsed.requires_approval,
+                            status: 'pending',
+                        };
+                        toolCalls = [...toolCalls, newCall];
+                        syncToolCalls();
+                        // Auto-approve if the user has previously
+                        // ticked "always allow" for this tool name
+                        // this session. Fire-and-forget POST; the
+                        // backend's BLPOP wakes up immediately.
+                        if (newCall.requiresApproval && toolAllowlistRef.current.has(newCall.name)) {
+                            api.post(`/ai/chat/tool-approval/${newCall.callId}`, { decision: 'approve' })
+                                .catch(() => toast.error(`Couldn't auto-approve ${newCall.name}; approve it below or it will time out`));
                         }
-                        // event === 'done' is a no-op; the while loop exits
-                        // on reader done anyway.
+                    } else if (event === 'tool_call_result') {
+                        toolCalls = toolCalls.map(c =>
+                            c.callId === parsed.call_id
+                                ? { ...c, status: 'executed', resultPreview: parsed.result_preview }
+                                : c
+                        );
+                        syncToolCalls();
+                    } else if (event === 'tool_call_denied') {
+                        toolCalls = toolCalls.map(c =>
+                            c.callId === parsed.call_id
+                                ? { ...c, status: 'denied', deniedReason: parsed.reason }
+                                : c
+                        );
+                        syncToolCalls();
+                    } else if (event === 'context_compacted') {
+                        // Stash the stats on the in-flight
+                        // assistant message; the renderer shows
+                        // a small "earlier context compacted"
+                        // marker above the response so the user
+                        // can see what happened.
+                        setMessages(prev => {
+                            const updated = [...prev];
+                            const last = updated[updated.length - 1];
+                            if (last && last.role === 'assistant') {
+                                updated[updated.length - 1] = {
+                                    ...last,
+                                    compactionStats: {
+                                        tokens_before: parsed.tokens_before,
+                                        tokens_after: parsed.tokens_after,
+                                        summarized_count: parsed.summarized_count,
+                                        kept_count: parsed.kept_count,
+                                    },
+                                };
+                            }
+                            return updated;
+                        });
                     }
-                }
-            }
+                    // 'done' needs nothing: the stream ends with it.
+                },
+            });
         } catch (err: unknown) {
             // Stopped by the user (Stop / Clear / closing): keep what arrived.
             if (!(err instanceof DOMException && err.name === 'AbortError')) {

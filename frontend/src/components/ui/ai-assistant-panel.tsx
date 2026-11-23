@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles, Send, X, ClipboardPaste, Loader2, Database, TextSelect, ListChecks } from 'lucide-react';
-import api, { authedFetch } from '@/lib/api';
+import api from '@/lib/api';
+import { streamAiChat } from '@/lib/ai-chat-stream';
 import { cn } from '@/lib/utils';
 import { EditorFieldContext } from '@/lib/types';
 import { ChatMarkdown, ChatMarkdownStyles } from './chat-markdown';
@@ -119,71 +120,34 @@ export function AiAssistantPanel({ editor, fieldContext, maxHeight }: AiAssistan
         }
     }, [editor]);
 
-    // Shared fetch + SSE stream loop. The caller appends the assistant
+    // Runs one chat turn. The caller appends the assistant
     // placeholder as the last message (with any UI flags); this fills its
     // content and preserves those flags.
     const streamChat = useCallback(async (body: Record<string, any>) => {
         setAiStreaming(true);
         setAiToolActivity(null);
         try {
-            // authedFetch: a stream needs fetch, but not a stale token (raw
-            // fetch skipped the 401 refresh, so an expired token failed chat).
-            const resp = await authedFetch('/ai/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                setAiMessages(prev => {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: `Error: ${err.detail || resp.statusText}` };
-                    return updated;
-                });
-                setAiStreaming(false);
-                return;
-            }
-            const reader = resp.body?.getReader();
-            const decoder = new TextDecoder();
             let assistantContent = '';
-            let currentEvent = 'chunk';
-            if (reader) {
-                // A read can end mid-line (or mid-character): keep the
-                // unfinished tail for the next one, as the chatbot does.
-                let buffer = '';
-                while (true) {
-                    const { done, value: chunk } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(chunk, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) { currentEvent = line.slice(7).trim(); continue; }
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6).trim();
-                            if (data === '[DONE]') continue;
-                            let parsed: any;
-                            try { parsed = JSON.parse(data); } catch { continue; }
-                            if (currentEvent === 'tool_call_pending') { setAiToolActivity(`Calling ${parsed.name || 'tool'}`); continue; }
-                            if (currentEvent === 'tool_call_result') { setAiToolActivity(`Reading ${parsed.name || 'tool'}`); continue; }
-                            if (currentEvent === 'tool_call_denied' || currentEvent === 'context_compacted' || currentEvent === 'done') continue;
-                            if (parsed.error) {
-                                assistantContent += `\nError: ${parsed.error}`;
-                            } else {
-                                const delta = parsed.choices?.[0]?.delta?.content || '';
-                                if (delta) setAiToolActivity(null);
-                                assistantContent += delta;
-                            }
-                            const cleaned = sanitizeAiOutput(assistantContent);
-                            setAiMessages(prev => {
-                                const updated = [...prev];
-                                updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: cleaned };
-                                return updated;
-                            });
-                        }
+            await streamAiChat(body, {
+                onEvent: (event, parsed) => {
+                    if (event === 'tool_call_pending') { setAiToolActivity(`Calling ${parsed.name || 'tool'}`); return; }
+                    if (event === 'tool_call_result') { setAiToolActivity(`Reading ${parsed.name || 'tool'}`); return; }
+                    if (event !== 'chunk') return;  // denied / compacted / done
+                    if (parsed.error) {
+                        assistantContent += `\nError: ${parsed.error}`;
+                    } else {
+                        const delta = parsed.choices?.[0]?.delta?.content || '';
+                        if (delta) setAiToolActivity(null);
+                        assistantContent += delta;
                     }
-                }
-            }
+                    const cleaned = sanitizeAiOutput(assistantContent);
+                    setAiMessages(prev => {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: cleaned };
+                        return updated;
+                    });
+                },
+            });
         } catch (err: any) {
             setAiMessages(prev => {
                 const updated = [...prev];
