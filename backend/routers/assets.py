@@ -3,7 +3,6 @@ from schemas._field_limits import MAX_LIST_LIMIT
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from models.loaders import load, options
 from typing import List, Optional
 from database import get_db
@@ -402,10 +401,8 @@ async def import_assets(
         )
 
     # Get existing assets for dedup
-    existing_result = await db.execute(
-        select(Asset).where(Asset.engagement_id == engagement_id).options(selectinload(Asset.ports))
-    )
-    existing_assets = {a.identifier.lower(): a for a in existing_result.scalars().all()}
+    from utils.asset_identity import identifier_key, load_assets_by_key, normalize_identifier
+    existing_assets = await load_assets_by_key(db, engagement_id, with_ports=True)
 
     result = AssetImportResult()
     # (port, protocol) keys per identifier for the whole batch: ports added
@@ -437,13 +434,13 @@ async def import_assets(
 
     for asset_data in parsed_assets:
         name = asset_data.get("name", "")
-        identifier = asset_data.get("identifier", "")
+        identifier = normalize_identifier(asset_data.get("identifier", ""))
 
         if not name or not identifier:
             result.errors.append(f"Skipped row: missing name or identifier")
             continue
 
-        identifier_lower = identifier.lower()
+        identifier_lower = identifier_key(identifier)
 
         if identifier_lower in existing_assets:
             # Merge ports into the existing (or earlier-in-file) asset
@@ -841,6 +838,19 @@ async def _require_asset_type(raw: str, db: AsyncSession) -> str:
     return resolved
 
 
+async def _refuse_duplicate_identifier(db, engagement_id: str, identifier: str, exclude_id: str | None = None) -> None:
+    """409 when the engagement already has an asset with this identifier
+    (case and surrounding spaces ignored). The unique index catches the
+    race; this gives the usual case a message naming the asset."""
+    from utils.asset_identity import find_asset
+    other = await find_asset(db, engagement_id, identifier, exclude_id=exclude_id)
+    if other is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This engagement already has an asset with identifier '{other.identifier}' ({other.name}).",
+        )
+
+
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     asset_data: AssetCreate,
@@ -850,6 +860,7 @@ async def create_asset(
     """Create a new asset"""
     # Check permissions using RBAC
     await require_engagement_perm(current_user, asset_data.engagement_id, Permission.ASSET_CREATE, db, action="add assets")
+    await _refuse_duplicate_identifier(db, asset_data.engagement_id, asset_data.identifier)
 
     db_asset = Asset(
         id=str(uuid.uuid4()),
@@ -905,6 +916,8 @@ async def update_asset(
     update_data = asset_update.model_dump(exclude_unset=True)
     if update_data.get("asset_type") is not None:
         update_data["asset_type"] = await _require_asset_type(update_data["asset_type"], db)
+    if update_data.get("identifier") is not None:
+        await _refuse_duplicate_identifier(db, db_asset.engagement_id, update_data["identifier"], exclude_id=db_asset.id)
 
     # Custom fields are validated + applied separately (full-replace on save)
     # so the raw dict doesn't flow through the change-summary/automation diff.

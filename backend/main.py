@@ -506,6 +506,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limited)
 # requests at once), so it's a 409 rather than a 500.
 _UNIQUE_CONFLICTS = {
     "uq_engagements_name_ci": "An engagement with this name already exists.",
+    "uq_assets_engagement_identifier_ci": "This engagement already has an asset with that identifier.",
     "ix_users_email": "Another user already has this email address.",
     "ix_users_username": "Another user already has this username.",
     "uq_attacker_node_edges_pair": "Connection already exists",

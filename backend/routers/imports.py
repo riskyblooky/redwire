@@ -26,6 +26,7 @@ from schemas.imports import (
 )
 from models.scan_import import ScanImport
 from utils.parsers import detect_and_parse, ParsedImportData
+from utils.asset_identity import identifier_key, load_assets_by_key, normalize_identifier
 from utils.collaboration import create_activity_log
 from utils.uploads import read_upload_capped
 import logging
@@ -87,7 +88,7 @@ def _parsed_to_preview(
                 state=p.state,
                 version=p.version,
             ) for p in a.ports],
-            is_duplicate=a.identifier.lower() in existing_identifiers,
+            is_duplicate=identifier_key(a.identifier) in existing_identifiers,
         ))
 
     preview_findings = []
@@ -187,7 +188,7 @@ async def preview_import(
             select(Asset.identifier).where(Asset.engagement_id == engagement_id)
         )
         existing_identifiers = {
-            row[0].lower() for row in asset_result.all() if row[0]
+            identifier_key(row[0]) for row in asset_result.all() if row[0]
         }
 
         # Existing findings
@@ -255,10 +256,7 @@ async def commit_import(
             raise HTTPException(status_code=400, detail="Invalid finding_indices format.")
 
     # Get existing assets for dedup
-    existing_result = await db.execute(
-        select(Asset).where(Asset.engagement_id == engagement_id).options(selectinload(Asset.ports))
-    )
-    existing_assets = {a.identifier.lower(): a for a in existing_result.scalars().all()}
+    existing_assets = await load_assets_by_key(db, engagement_id, with_ports=True)
 
     # Existing findings by title, for dedup. A re-import of a known finding
     # still links it to any hosts it's newly seen on.
@@ -322,7 +320,7 @@ async def commit_import(
             if selected_asset_idx is not None and i not in selected_asset_idx:
                 continue
 
-            identifier_lower = parsed_asset.identifier.lower()
+            identifier_lower = identifier_key(parsed_asset.identifier)
 
             if identifier_lower in existing_assets:
                 # Asset exists (in the engagement or earlier in this file) — merge ports
@@ -341,7 +339,7 @@ async def commit_import(
                     engagement_id=engagement_id,
                     name=parsed_asset.name,
                     asset_type=canonical_name(parsed_asset.asset_type, type_names) or parsed_asset.asset_type,
-                    identifier=parsed_asset.identifier,
+                    identifier=normalize_identifier(parsed_asset.identifier),
                     description=parsed_asset.description,
                     is_scanned=is_port_scan,
                     created_by=current_user.id,
@@ -355,7 +353,7 @@ async def commit_import(
     else:
         # Even if not importing assets, map existing ones for finding links
         for i, parsed_asset in enumerate(parsed.assets):
-            identifier_lower = parsed_asset.identifier.lower()
+            identifier_lower = identifier_key(parsed_asset.identifier)
             if identifier_lower in existing_assets:
                 asset_map[i] = existing_assets[identifier_lower]
 

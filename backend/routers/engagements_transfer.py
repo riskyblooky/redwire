@@ -1629,9 +1629,24 @@ async def import_engagement(
         from models.asset import Asset
         from models.asset_port import AssetPort
         from utils.asset_types import resolve_asset_type
+        from utils.asset_identity import identifier_key, normalize_identifier
+        # One asset per identifier (the unique index): a bundle with two rows
+        # for the same host — exported before the index existed — folds the
+        # later one into the first, so its links and ports follow it.
+        asset_by_key: dict[str, str] = {}
         for a in rows("assets"):
+            ident = normalize_identifier(a.get("identifier") if isinstance(a.get("identifier"), str) else "") \
+                or normalize_identifier(a.get("name") if isinstance(a.get("name"), str) else "")
+            if not ident:
+                continue  # nothing to identify it by; its links are dropped with it
+            key = identifier_key(ident)
+            if key in asset_by_key:
+                if a.get("id"):
+                    id_map[a["id"]] = asset_by_key[key]
+                continue
+            asset_by_key[key] = new_id(a["id"])
             db.add(Asset(
-                id=new_id(a["id"]),
+                id=asset_by_key[key],
                 engagement_id=eng_new_id,
                 **plain(Asset, a, handled={"asset_type", "identifier"}),
                 # Same resolution as a direct create: legacy spellings map onto
@@ -1639,16 +1654,25 @@ async def import_engagement(
                 asset_type=await resolve_asset_type(
                     a.get("asset_type") if isinstance(a.get("asset_type"), str) else None, db, fallback="Other",
                 ) or "Other",
-                identifier=a.get("identifier") if isinstance(a.get("identifier"), str) else "",
+                identifier=ident,
                 created_by=resolve_user(a.get("created_by")),
                 updated_by=resolve_user(a.get("updated_by")),
             ))
         await db.flush()
+        port_by_key: dict[tuple, str] = {}
         for p in rows("asset_ports"):
             asset_id = remap(p.get("asset_id"))
             if asset_id is None:
                 continue
-            db.add(AssetPort(id=new_id(p["id"]), asset_id=asset_id, **plain(AssetPort, p)))
+            # Merged assets can bring the same port twice (unique per
+            # asset/port/protocol): the duplicate's id maps to the kept port.
+            pkey = (asset_id, p.get("port_number"), p.get("protocol"))
+            if pkey in port_by_key:
+                if p.get("id"):
+                    id_map[p["id"]] = port_by_key[pkey]
+                continue
+            port_by_key[pkey] = new_id(p["id"])
+            db.add(AssetPort(id=port_by_key[pkey], asset_id=asset_id, **plain(AssetPort, p)))
         await db.flush()
 
         # ── 4. Findings ──────────────────────────────────────────────

@@ -218,20 +218,24 @@ async def commit_spray(
     # Distinct, non-null hosts seen in this run.
     spray_hosts = {r.target_host for r in data.results if r.target_host}
 
-    # Existing assets in the engagement, keyed by identifier.
-    existing_q = await db.execute(
-        select(Asset).where(Asset.engagement_id == data.engagement_id)
-    )
-    asset_by_identifier: dict[str, Asset] = {
-        a.identifier: a for a in existing_q.scalars().all() if a.identifier
-    }
+    # Existing assets in the engagement, keyed like the unique index
+    # (case-insensitive: a spray at "HOST01" belongs to asset "host01").
+    from utils.asset_identity import identifier_key, load_assets_by_key, normalize_identifier
+    asset_by_identifier: dict[str, Asset] = await load_assets_by_key(db, data.engagement_id)
+    spray_hosts = {normalize_identifier(h) for h in spray_hosts}
+    spray_hosts.discard("")
 
     # Optionally inventory the hosts we sprayed but haven't seen before.
     created_assets = 0
     if data.create_missing_assets:
         from utils.asset_types import resolve_asset_type
         spray_asset_type = await resolve_asset_type("IP Address", db, fallback="Other") or "IP Address"
-        for host in sorted(spray_hosts - asset_by_identifier.keys()):
+        missing: dict[str, str] = {}
+        for host in sorted(spray_hosts):
+            missing.setdefault(identifier_key(host), host)  # first spelling wins
+        for key, host in missing.items():
+            if key in asset_by_identifier:
+                continue
             new_asset = Asset(
                 engagement_id=data.engagement_id,
                 name=host,
@@ -243,7 +247,7 @@ async def commit_spray(
                 created_by=current_user.id,
             )
             db.add(new_asset)
-            asset_by_identifier[host] = new_asset
+            asset_by_identifier[key] = new_asset
             created_assets += 1
         if created_assets:
             await db.flush()  # populate IDs before referencing as FK
@@ -252,7 +256,7 @@ async def commit_spray(
     # at bind time under the same Fernet key as campaign.password_used.
     linked_results = 0
     for r in data.results:
-        linked_asset = asset_by_identifier.get(r.target_host) if r.target_host else None
+        linked_asset = asset_by_identifier.get(identifier_key(r.target_host)) if r.target_host else None
         if linked_asset is not None:
             linked_results += 1
         db.add(SprayResult(

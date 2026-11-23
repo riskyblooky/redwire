@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Boolean, JSON, Index, text
 from sqlalchemy.orm import relationship, backref
 from database import Base, AuditMixin
 from datetime import datetime
@@ -7,6 +7,11 @@ import uuid
 
 class Asset(Base, AuditMixin):
     __tablename__ = "assets"
+    # One row per host per engagement, whatever the case or surrounding
+    # spaces (see utils/asset_identity.py).
+    __table_args__ = (
+        Index("uq_assets_engagement_identifier_ci", "engagement_id", text("lower(btrim(identifier))"), unique=True),
+    )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False, index=True)

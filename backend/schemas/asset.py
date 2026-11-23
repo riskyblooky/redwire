@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import field_validator, BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from models.asset_port import PortProtocol, PortState
@@ -85,6 +85,13 @@ class AssetBase(BaseModel):
     in_scope: bool = True
     custom_fields: Optional[dict] = None
 
+    @field_validator("identifier", mode="before")
+    @classmethod
+    def _strip_identifier(cls, v):
+        # Stored without surrounding whitespace (utils/asset_identity.py);
+        # before the length check, so all-blank is refused.
+        return v.strip() if isinstance(v, str) else v
+
 class AssetCreate(AssetBase):
     engagement_id: str = Field(..., max_length=UUID_FIELD)
 
@@ -98,6 +105,13 @@ class AssetUpdate(BaseModel):
     is_scanned: Optional[bool] = None
     in_scope: Optional[bool] = None
     custom_fields: Optional[dict] = None
+
+    @field_validator("identifier", mode="before")
+    @classmethod
+    def _strip_identifier(cls, v):
+        # Stored without surrounding whitespace (utils/asset_identity.py);
+        # before the length check, so all-blank is refused.
+        return v.strip() if isinstance(v, str) else v
 
 class AssetResponse(AssetBase):
     id: str
