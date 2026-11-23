@@ -67,6 +67,7 @@ import { EntityClassificationField } from '@/components/marking/entity-classific
 import { CustomFieldsForm } from '@/components/custom-fields/custom-fields-form';
 import { useCustomFieldDefs } from '@/lib/hooks/use-custom-fields';
 import { apiErrorMessage } from '@/lib/api';
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 
 const severities = [
     { value: 'CRITICAL', label: 'Critical', color: 'text-red-500 bg-red-500/10 border-red-500/20' },
@@ -123,13 +124,6 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
     const [cvssCalcOpen, setCvssCalcOpen] = useState(false);
     const [scoreModelId, setScoreModelId] = useState('cvss31');
     const [isDirty, setIsDirty] = useState(false);
-    // The record refetches whenever anything touches it (a comment, a live
-    // save, a teammate's edit). Re-copying it into the form then would wipe
-    // unsaved changes and disarm the leave-page guard, so after the first load
-    // only a clean form follows the server.
-    const isDirtyRef = useRef(false);
-    isDirtyRef.current = isDirty;
-    const loadedIdRef = useRef<string | null>(null);
 
     const getBackPath = () => {
         const query = returnEngagementId ? `?engagementId=${returnEngagementId}&tab=${returnTab}` : '';
@@ -219,46 +213,46 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
             .map(({ asset }) => asset);
     })();
 
-    useEffect(() => {
-        if (finding && !(loadedIdRef.current === finding.id && isDirtyRef.current)) {
-            loadedIdRef.current = finding.id;
-            setFormData({
-                title: finding.title,
-                engagement_id: finding.engagement_id,
-                category: finding.category || '',
-                severity: finding.severity?.toUpperCase().trim(),
-                status: finding.status?.toUpperCase().trim(),
-                description: finding.description,
-                impact: finding.impact || '',
-                technical_details: finding.technical_details || '',
-                steps_to_reproduce: finding.steps_to_reproduce || '',
-                mitigations: finding.mitigations || '',
-                references: finding.references || '',
-                cvss_score: finding.cvss_score || 0,
-                cvss_vector: finding.cvss_vector || '',
-                score_model: finding.score_model || '',
-                score_inputs: finding.score_inputs || null,
-                classification_level: finding.classification_level || '',
-                classification_suffix: finding.classification_suffix || '',
-                asset_ids: finding.assets?.map((a: any) => a.id) || [],
-                tag_ids: finding.tags?.map((t: any) => t.id) || [],
-                attack_technique_ids: finding.attack_technique_ids || [],
-                custom_fields: (finding.custom_fields as Record<string, unknown>) || {},
-            });
-            if (finding.score_model) setScoreModelId(finding.score_model);
-            // Initialize port selections from finding response
-            if (finding.assets) {
-                const portMap = new Map<string, Set<string>>();
-                for (const asset of finding.assets as any[]) {
-                    if (asset.port_ids && asset.port_ids.length > 0) {
-                        portMap.set(asset.id, new Set(asset.port_ids));
-                    }
+    // The record refetches whenever anything touches it (a comment, a live
+    // save, a teammate's edit); only a clean form follows the server, so
+    // unsaved changes and the leave-page guard survive.
+    useFormFromQuery(finding, (finding) => {
+        setFormData({
+            title: finding.title,
+            engagement_id: finding.engagement_id,
+            category: finding.category || '',
+            severity: finding.severity?.toUpperCase().trim(),
+            status: finding.status?.toUpperCase().trim(),
+            description: finding.description,
+            impact: finding.impact || '',
+            technical_details: finding.technical_details || '',
+            steps_to_reproduce: finding.steps_to_reproduce || '',
+            mitigations: finding.mitigations || '',
+            references: finding.references || '',
+            cvss_score: finding.cvss_score || 0,
+            cvss_vector: finding.cvss_vector || '',
+            score_model: finding.score_model || '',
+            score_inputs: finding.score_inputs || null,
+            classification_level: finding.classification_level || '',
+            classification_suffix: finding.classification_suffix || '',
+            asset_ids: finding.assets?.map((a: any) => a.id) || [],
+            tag_ids: finding.tags?.map((t: any) => t.id) || [],
+            attack_technique_ids: finding.attack_technique_ids || [],
+            custom_fields: (finding.custom_fields as Record<string, unknown>) || {},
+        });
+        if (finding.score_model) setScoreModelId(finding.score_model);
+        // Initialize port selections from finding response
+        if (finding.assets) {
+            const portMap = new Map<string, Set<string>>();
+            for (const asset of finding.assets as any[]) {
+                if (asset.port_ids && asset.port_ids.length > 0) {
+                    portMap.set(asset.id, new Set(asset.port_ids));
                 }
-                if (portMap.size > 0) setSelectedPortIds(portMap);
             }
-            setIsDirty(false);
+            if (portMap.size > 0) setSelectedPortIds(portMap);
         }
-    }, [finding]);
+        setIsDirty(false);
+    }, { key: finding?.id, isDirty });
 
     // Live text fields auto-save themselves (meta.autosaved) — only other
     // edits leave the form needing Save.

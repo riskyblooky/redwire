@@ -59,6 +59,7 @@ import { EditLockBanner } from '@/components/collaboration/edit-lock-banner';
 import { VersionHistoryPanel } from '@/components/ui/version-history-panel';
 import { useAuthStore } from '@/stores/auth-store';
 import { apiErrorMessage } from '@/lib/api';
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 
 
 export default function EditTestCasePage({ params }: { params: Promise<{ id: string }> }) {
@@ -93,13 +94,6 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
     const hasConcurrentEditor = otherEditors.length > 0;
     const [templateOpen, setTemplateOpen] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
-    // The record refetches whenever anything touches it (a comment, a live
-    // save, a teammate's edit). Re-copying it into the form then would wipe
-    // unsaved changes and disarm the leave-page guard, so after the first load
-    // only a clean form follows the server.
-    const isDirtyRef = useRef(false);
-    isDirtyRef.current = isDirty;
-    const loadedIdRef = useRef<string | null>(null);
 
     const getBackPath = () => returnEngagementId
         ? `/engagements/${returnEngagementId}?tab=${returnTab}`
@@ -129,30 +123,30 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
     const { data: cfDefs = [] } = useCustomFieldDefs('testcase');
     const hasCustomFields = cfDefs.length > 0;
 
-    useEffect(() => {
-        if (testcase && !(loadedIdRef.current === testcase.id && isDirtyRef.current)) {
-            loadedIdRef.current = testcase.id;
-            setFormData({
-                title: testcase.title || '',
-                engagement_id: testcase.engagement_id || '',
-                parent_id: testcase.parent_id || null,
-                category: testcase.category || '',
-                description: testcase.description || '',
-                steps: testcase.steps || '',
-                expected_result: testcase.expected_result || '',
-                actual_result: testcase.actual_result || '',
-                is_executed: !!testcase.is_executed,
-                is_successful: testcase.is_successful ?? null,
-                notes: testcase.notes || '',
-                classification_level: (testcase as any).classification_level || '',
-                classification_suffix: (testcase as any).classification_suffix || '',
-                tag_ids: testcase.tags?.map(t => t.id) || [],
-                attack_technique_ids: testcase.attack_technique_ids || [],
-                custom_fields: (testcase.custom_fields as Record<string, unknown>) || {},
-            });
-            setIsDirty(false);
-        }
-    }, [testcase]);
+    // The record refetches whenever anything touches it (a comment, a live
+    // save, a teammate's edit); only a clean form follows the server, so
+    // unsaved changes and the leave-page guard survive.
+    useFormFromQuery(testcase, (testcase) => {
+        setFormData({
+            title: testcase.title || '',
+            engagement_id: testcase.engagement_id || '',
+            parent_id: testcase.parent_id || null,
+            category: testcase.category || '',
+            description: testcase.description || '',
+            steps: testcase.steps || '',
+            expected_result: testcase.expected_result || '',
+            actual_result: testcase.actual_result || '',
+            is_executed: !!testcase.is_executed,
+            is_successful: testcase.is_successful ?? null,
+            notes: testcase.notes || '',
+            classification_level: (testcase as any).classification_level || '',
+            classification_suffix: (testcase as any).classification_suffix || '',
+            tag_ids: testcase.tags?.map(t => t.id) || [],
+            attack_technique_ids: testcase.attack_technique_ids || [],
+            custom_fields: (testcase.custom_fields as Record<string, unknown>) || {},
+        });
+        setIsDirty(false);
+    }, { key: testcase?.id, isDirty });
 
     // Live text fields auto-save themselves (meta.autosaved) — only other
     // edits leave the form needing Save.

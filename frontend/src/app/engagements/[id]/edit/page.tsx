@@ -55,6 +55,7 @@ import { useCanEdit } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { apiErrorMessage } from '@/lib/api';
+import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 
 // ── Phase colors ────────────────────────────────────────────────────
 const PHASE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -166,10 +167,8 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
     const [editingPhases, setEditingPhases] = useState<Record<string, { start: string; end: string }>>({});
     const [phasesEdited, setPhasesEdited] = useState(false);
     const [skillsDirty, setSkillsDirty] = useState(false);
-    // Read by the populate effects: a refetch (after a Team change, Generate
-    // Phases or another user's save) must not overwrite unsaved edits.
-    const detailsDirtyRef = useRef(false);
-    detailsDirtyRef.current = detailsDirty;
+    // Read by the phase populate effect: a refetch (after a Team change,
+    // Generate Phases or another user's save) must not overwrite unsaved edits.
     const phasesEditedRef = useRef(false);
     phasesEditedRef.current = phasesEdited;
     const skillsSaveRef = useRef<(() => Promise<void>) | null>(null);
@@ -198,33 +197,34 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         return match ? match.name : raw;
     };
 
-    // Populate form from engagement data
-    useEffect(() => {
-        if (engagement && !detailsDirtyRef.current) {
-            const rawType = (engagement.engagement_type as string) || '';
-            setFormData({
-                name:            engagement.name || '',
-                client_name:     engagement.client_name || '',
-                client_id:       engagement.client_id || '',
-                description:     engagement.description || '',
-                engagement_type: normalizeType(rawType, engagementTypes),
-                status:          (engagement.status as string)?.toUpperCase().trim() || 'PLANNING',
-                start_date:      engagement.start_date ? engagement.start_date.split('T')[0] : '',
-                end_date:        engagement.end_date   ? engagement.end_date.split('T')[0]   : '',
-                scope:           engagement.scope      || '',
-                objectives:      engagement.objectives || '',
-                marking_profile_id:            engagement.marking_profile_id || '',
-                default_classification_level:  engagement.default_classification_level || '',
-                default_classification_suffix: engagement.default_classification_suffix || '',
-                ceiling_classification_level:  engagement.ceiling_classification_level || '',
-                tag_ids:                       (engagement.tags || []).map(t => t.id),
-                custom_fields:                 (engagement.custom_fields as Record<string, unknown>) || {},
-                allowed_score_models:          engagement.allowed_score_models || [],
-                default_score_model:           engagement.default_score_model || '',
-            });
-            setDetailsDirty(false);
-        }
-    }, [engagement, engagementTypes]);
+    // Populate the Details form from the engagement: first load, a different
+    // engagement, or any refetch while Details is clean (Team / Phases saves
+    // refetch it, and must not wipe unsaved Details). Types that load later
+    // are handled by the re-normalize effect below.
+    useFormFromQuery(engagement, (engagement) => {
+        const rawType = (engagement.engagement_type as string) || '';
+        setFormData({
+            name:            engagement.name || '',
+            client_name:     engagement.client_name || '',
+            client_id:       engagement.client_id || '',
+            description:     engagement.description || '',
+            engagement_type: normalizeType(rawType, engagementTypes),
+            status:          (engagement.status as string)?.toUpperCase().trim() || 'PLANNING',
+            start_date:      engagement.start_date ? engagement.start_date.split('T')[0] : '',
+            end_date:        engagement.end_date   ? engagement.end_date.split('T')[0]   : '',
+            scope:           engagement.scope      || '',
+            objectives:      engagement.objectives || '',
+            marking_profile_id:            engagement.marking_profile_id || '',
+            default_classification_level:  engagement.default_classification_level || '',
+            default_classification_suffix: engagement.default_classification_suffix || '',
+            ceiling_classification_level:  engagement.ceiling_classification_level || '',
+            tag_ids:                       (engagement.tags || []).map(t => t.id),
+            custom_fields:                 (engagement.custom_fields as Record<string, unknown>) || {},
+            allowed_score_models:          engagement.allowed_score_models || [],
+            default_score_model:           engagement.default_score_model || '',
+        });
+        setDetailsDirty(false);
+    }, { key: engagement?.id, isDirty: detailsDirty });
 
     // Re-normalize type when types load AFTER engagement (async race)
     useEffect(() => {
