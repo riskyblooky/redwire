@@ -44,5 +44,8 @@ USER redwire
 
 EXPOSE 8000
 
-# Run database migrations and start server
-CMD alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Default: migrate, then serve without --reload (it watched the image's
+# own files for changes, a dev-only cost). Both compose files override
+# this — prod with its worker count and proxy flags, dev with --reload —
+# so it only applies to a bare `docker run`; it matches prod's form.
+CMD ["sh", "-c", "python migrate.py upgrade heads && exec uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers"]
