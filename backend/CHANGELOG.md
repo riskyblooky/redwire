@@ -18,6 +18,7 @@ section becomes one release entry.
 - **Sessions stay signed in with short token lifetimes.** If `ACCESS_TOKEN_EXPIRE_MINUTES` was set below 28 minutes, the background refresh came too late and requests briefly failed and were retried. It now refreshes shortly before the actual expiry.
 - The sign-in and registration pages show the installed version instead of a fixed "v2.0".
 - **Copy buttons tell you when copying fails.** Copying a temporary password, API token, recovery codes or similar showed "copied" even if the browser blocked it. It now shows an error instead.
+- **Muting an event in the app actually quiets it.** With an event's *Site* notifications turned off, new ones still raised the unread badge; they're now stored as read and only appear in the history.
 
 ## [1.9.2] — 2026-11-22
 

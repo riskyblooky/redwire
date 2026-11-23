@@ -41,3 +41,19 @@ async def test_push_is_dropped_on_rollback(db_session, make_user, monkeypatch):
     await db_session.rollback()
     await asyncio.sleep(0.05)
     assert sent == []
+
+
+async def test_site_muted_event_is_stored_read_and_not_pushed(db_session, make_user, monkeypatch):
+    """Site-muted used to skip only the toast: the row still counted as
+    unread and topped the bell list."""
+    from models.notification import NotificationPreference
+    sent = _capture(monkeypatch)
+    user = await make_user()
+    db_session.add(NotificationPreference(user_id=user.id, event_type="mention", site_muted=True, email_muted=True))
+    await db_session.flush()
+    muted = await collaboration.create_notification(db_session, user.id, "mention", "Muted")
+    loud = await collaboration.create_notification(db_session, user.id, "finding_assigned", "Not muted")
+    await db_session.commit()
+    await asyncio.sleep(0.05)
+    assert muted.is_read is True and loud.is_read is False
+    assert [m["notification"]["id"] for _, _, m in sent] == [loud.id]

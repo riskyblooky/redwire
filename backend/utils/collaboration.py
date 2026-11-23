@@ -111,9 +111,12 @@ async def create_notification(
 
     # Always persist the notification (user can view history)
     # id and created_at set here (not at flush) so the push payload is complete.
+    # A site-muted event is stored already read: it used to skip only the live
+    # toast, so it still raised the unread badge and topped the bell list.
     notif = Notification(
         id=str(uuid.uuid4()),
         created_at=datetime.utcnow(),
+        is_read=site_muted,
         user_id=user_id,
         event_type=event_type,
         title=title,
