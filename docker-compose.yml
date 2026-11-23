@@ -185,11 +185,15 @@ services:
     # --forwarded-allow-ips: trust X-Forwarded-* / X-Real-IP only from
     # private docker bridge subnets (where nginx lives), not '*' which
     # let any TCP peer claim to be the proxy. GHSA-xg53-8wgq-w9cw.
+    # 172.16.0.0/12 is Docker's default bridge pool; a daemon with custom
+    # default-address-pools sets TRUSTED_PROXY_CIDRS in .env. (The network
+    # subnet isn't pinned here: adding ipam to the existing network makes
+    # `up -d` recreate it under running containers.)
     # --workers: cross-worker state (WebSocket fan-out, presence, rate
     # limits, wordlist filter, plugin toggles) goes through Redis, and
     # startup seeding is serialised with a Postgres advisory lock. About
     # 200 MB per worker; set BACKEND_WORKERS in .env to change it.
-    command: sh -c "python migrate.py upgrade heads && exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${BACKEND_WORKERS:-2} --proxy-headers --forwarded-allow-ips='172.16.0.0/12'"
+    command: sh -c "python migrate.py upgrade heads && exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${BACKEND_WORKERS:-2} --proxy-headers --forwarded-allow-ips='${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}'"
     # Healthy once migrations ran and uvicorn answers; `up --wait` in
     # deploy_server.sh waits on this. start_period covers long migrations.
     healthcheck:

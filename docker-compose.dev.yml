@@ -99,7 +99,11 @@ services:
     # --forwarded-allow-ips: trust X-Forwarded-* / X-Real-IP only from
     # private docker bridge subnets (where nginx lives), not '*' which
     # let any TCP peer claim to be the proxy. GHSA-xg53-8wgq-w9cw.
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='172.16.0.0/12'
+    # 172.16.0.0/12 is Docker's default bridge pool; a daemon with custom
+    # default-address-pools sets TRUSTED_PROXY_CIDRS in .env. (The network
+    # subnet isn't pinned here: adding ipam to the existing network makes
+    # `up -d` recreate it under running containers.)
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}'
     networks:
       - redwire-network
 
