@@ -7,9 +7,10 @@ engagement_permissions).
 """
 
 from fastapi import HTTPException, status
+from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.user import User
+from models.user import User, UserRole
 from models.permission import Permission, GroupPermissions, EngagementRolePermissions, GLOBAL_PERMISSIONS, ENGAGEMENT_PERMISSIONS
 from models.group import Group, user_groups
 from models.associations import EngagementAssignment
@@ -155,3 +156,54 @@ async def require_global_permission(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Insufficient permissions. Required: {permission.value}"
         )
+
+
+# Roles a delegated (non-ADMIN) user manager may hand out or act on: the
+# ordinary ones, plus their own role. ADMIN / READ_ONLY_ADMIN / TEAM_LEAD
+# all carry role-level bypasses, so granting one is an escalation.
+_ORDINARY_ROLES = {UserRole.OPERATOR, UserRole.READ_ONLY}
+
+
+async def guard_user_admin_action(
+    actor: User,
+    db: AsyncSession,
+    *,
+    target: Optional[User] = None,
+    new_role: Optional[UserRole] = None,
+    added_group_ids=None,
+) -> None:
+    """Least-privilege ceiling for MANAGE_USERS holders (mirrors the group
+    permission ceiling in routers/permissions.py). A non-ADMIN user manager
+    may not assign a role above their own, may not act on an account that
+    holds a role or global permissions they don't (resetting its password
+    or editing its groups would hand them that access), and may only add
+    users to groups whose permissions they already hold."""
+    if actor.role == UserRole.ADMIN:
+        return
+    allowed_roles = _ORDINARY_ROLES | {actor.role}
+    if new_role is not None and new_role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Only an admin can assign the {new_role.value} role",
+        )
+    actor_perms = None
+    if target is not None:
+        if target.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Only an admin can manage a {target.role.value} account",
+            )
+        actor_perms = await global_permission_set(actor, db)
+        if not await global_permission_set(target, db) <= actor_perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot manage an account that holds permissions you do not",
+            )
+    if added_group_ids:
+        if actor_perms is None:
+            actor_perms = await global_permission_set(actor, db)
+        if not await group_permission_set(added_group_ids, db) <= actor_perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot add a user to a group that grants permissions you do not hold",
+            )

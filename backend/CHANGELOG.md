@@ -4,6 +4,11 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.9.3] — Unreleased
+
+### Fixed
+- **Security Center account actions respect the user-management ceiling.** A delegated security manager could disable or sign out team leads, read-only admins and accounts holding permissions they don't; only admin accounts were protected. It now follows the same rule as admin user management.
+
 ## [1.9.2] — 2026-11-22
 
 ### Changed

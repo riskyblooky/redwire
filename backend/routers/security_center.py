@@ -23,7 +23,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
-from auth.permissions import require_global_permission
+from auth.permissions import guard_user_admin_action, require_global_permission
 from database import get_db
 from models.api_token import ApiToken
 from models.permission import Permission
@@ -404,9 +404,10 @@ async def _target_user(db: AsyncSession, user_id: str, actor: User) -> User:
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    # A delegated security manager must not be able to lock out an admin.
-    if user.role == UserRole.ADMIN and actor.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Only an admin can act on an admin account")
+    # The same ceiling as /admin/users: a delegated manager can't act on an
+    # admin, a role above their own, or an account holding global
+    # permissions they don't (it only used to stop at admin accounts).
+    await guard_user_admin_action(actor, db, target=user)
     return user
 
 

@@ -106,3 +106,20 @@ async def test_unguarded_group_and_role_duplicates_removed(client, db_session, m
         assert (await getattr(client, method)(path)).status_code in (404, 405), path
     if default:
         assert (await client.delete(f"/admin/permissions/groups/{default.id}")).status_code == 403
+
+
+async def test_security_center_applies_the_same_ceiling(client, db_session, make_user, authenticate_as):
+    """A delegated security manager used to be stopped only at admin
+    accounts: it could disable a team lead, or an account holding global
+    permissions it doesn't, that /admin/users would refuse to touch."""
+    sec = await make_user(role="operator")
+    await _join(db_session, sec, await _group(db_session, "manage_security_center", "view_security_center"))
+    team_lead = await make_user(role="team_lead")
+    richer = await make_user(role="operator")
+    await _join(db_session, richer, await _group(db_session, "manage_users"))
+    peer = await make_user(role="operator")
+    authenticate_as(sec)
+    for target in (team_lead, richer):
+        assert (await client.post(f"/admin/security/users/{target.id}/disable")).status_code == 403
+        assert (await client.post(f"/admin/security/users/{target.id}/revoke-sessions")).status_code == 403
+    assert (await client.post(f"/admin/security/users/{peer.id}/disable")).status_code == 200
