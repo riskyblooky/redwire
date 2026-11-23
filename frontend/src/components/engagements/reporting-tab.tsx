@@ -1802,7 +1802,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
                                 sandbox={format === 'html' ? 'allow-scripts' : undefined}
                             />
                         ) : format === 'markdown' && previewResult ? (
-                            <MarkdownPreview blob={previewResult.blob} />
+                            <MarkdownReportPreview blob={previewResult.blob} />
                         ) : (format === 'json_zip' || format === 'json_layout_zip') && previewResult ? (
                             <div className="flex items-center justify-center h-full min-h-[300px]">
                                 <div className="text-center space-y-4">
@@ -1873,7 +1873,7 @@ const Separator = ({ className }: { className?: string }) => (
 // ── Markdown Preview Component ──────────────────────────────────
 // Reads the blob as text and renders it in a styled scrollable container.
 // Uses a simple HTML conversion approach (no external dependency).
-function MarkdownPreview({ blob }: { blob: Blob }) {
+function MarkdownReportPreview({ blob }: { blob: Blob }) {
     const [content, setContent] = useState<string>('');
 
     useEffect(() => {

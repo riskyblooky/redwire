@@ -80,20 +80,26 @@ import { AiAssistantPanel } from './ai-assistant-panel';
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common);
 
-// Cache for loaded users to avoid re-fetching
+// @-mention user list, shared by every editor on the page. It expires after
+// a few minutes: it used to be kept for the whole session, so a user added
+// after the first mention popup couldn't be mentioned until a full reload.
+const MENTION_USERS_TTL_MS = 5 * 60_000;
 let _cachedUsers: MentionSuggestionItem[] | null = null;
+let _cachedAt = 0;
 let _fetchPromise: Promise<MentionSuggestionItem[]> | null = null;
 
 async function fetchAllUsers(): Promise<MentionSuggestionItem[]> {
-    if (_cachedUsers) return _cachedUsers;
+    if (_cachedUsers && Date.now() - _cachedAt < MENTION_USERS_TTL_MS) return _cachedUsers;
     if (_fetchPromise) return _fetchPromise;
     // Every page: a bare request returned the first 100 users.
     _fetchPromise = fetchAllPages<MentionSuggestionItem>('/users').then(rows => {
         _cachedUsers = rows;
-        return _cachedUsers!;
+        _cachedAt = Date.now();
+        _fetchPromise = null;
+        return rows;
     }).catch(() => {
         _fetchPromise = null;
-        return [] as MentionSuggestionItem[];
+        return _cachedUsers ?? [];  // a failed refresh keeps the stale list
     });
     return _fetchPromise;
 }
