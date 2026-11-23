@@ -16,7 +16,7 @@ def _name(prefix: str) -> str:
 def _ids(body) -> set[str]:
     """Ids in a list response, whether it's a bare list or a page object."""
     if isinstance(body, dict):
-        for key in ("items", "results", "data", "engagements"):
+        for key in ("items", "results", "data", "engagements", "rules"):
             if isinstance(body.get(key), list):
                 body = body[key]
                 break
@@ -62,7 +62,22 @@ CASES = [
     ("engagement", "/engagements", lambda eid: {"name": _name("e"), "client_name": "Acme Corp",
                                            "engagement_type": "Red Team", "start_date": "2026-01-01T00:00:00"},
      "/engagements?limit=500", "/engagements/{id}"),
+    ("report-layout", "/engagements/{eid}/report-layouts", lambda eid: {"name": _name("rl"), "sections": []},
+     "/engagements/{eid}/report-layouts", "/engagements/{eid}/report-layouts/{id}"),
+    ("automation", "/automations", lambda eid: {"name": _name("au"), "trigger_type": "created_finding",
+                                                "engagement_id": eid, "is_enabled": False,
+                                                "actions": [{"type": "notify_role", "role": "admin",
+                                                             "message": "m"}]},
+     "/automations?scope=org", "/automations/{id}"),
+    ("calendar-event", "/calendar/events", lambda eid: {"title": _name("ev"), "start_time": "2026-03-02T09:00:00",
+                                                        "end_time": "2026-03-02T10:00:00"},
+     "/calendar/events?start=2026-03-01T00:00:00&end=2026-03-05T00:00:00", "/calendar/events/{id}"),
+    ("infra", "/infra/items", lambda eid: {"name": _name("inf")}, "/infra/items", "/infra/items/{id}"),
+    ("intel", "/intel/items", lambda eid: {"title": _name("in")}, "/intel/items", "/intel/items/{id}"),
 ]
+
+# No detail GET to 404: tags and calendar events are only listed.
+_NO_DETAIL = {"tag", "calendar-event"}
 
 
 @pytest.mark.parametrize("name, create, body, listing, item", CASES, ids=[c[0] for c in CASES])
@@ -89,5 +104,5 @@ async def test_deleted_item_leaves_the_list(name, create, body, listing, item,
     listed = await client.get(fmt(listing))
     assert listed.status_code == 200, listed.text
     assert new_id not in _ids(listed.json()), f"deleted {name} still listed"
-    if name != "tag":  # no detail endpoint
+    if name not in _NO_DETAIL:
         assert (await client.get(fmt(item, id=new_id))).status_code == 404
