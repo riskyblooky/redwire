@@ -826,20 +826,8 @@ async def force_change_password(
     current_user.hashed_password = await get_password_hash_async(body.new_password)
     current_user.must_change_password = False
     current_user.updated_at = datetime.utcnow()
-    from auth.jwt import revoke_user_api_tokens
-    await revoke_user_api_tokens(db, current_user.id)
-    await db.commit()
-    
-    # Revoke all existing sessions so old tokens become invalid. The
-    # password has already been committed; if the revoke fails the change
-    # is in place but old sessions live, which we must surface rather than
-    # silently no-op. GHSA-832g-v288-v593.
-    from auth.jwt import revoke_all_user_tokens
-    if not revoke_all_user_tokens(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session revocation failed. Please retry.",
-        )
+    from auth.sessions import end_all_sessions
+    await end_all_sessions(db, current_user.id)
 
     # Issue fresh tokens
     access_token = create_access_token(data={"sub": current_user.id, "role": current_user.role.value})
@@ -986,23 +974,10 @@ async def totp_verify_setup(
     except Exception:
         pass  # audit best-effort; don't block the 2FA-enable
 
-    # MFA boundary changed: invalidate every existing session and
-    # long-lived API token so a stolen pre-2FA bearer cannot survive
-    # the user enabling 2FA (mirrors the password-change path).
-    from auth.jwt import revoke_all_user_tokens
-    from sqlalchemy import update as _sa_update
-    from models.api_token import ApiToken
-    if not revoke_all_user_tokens(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session revocation failed. Please retry.",
-        )
-    await db.execute(
-        _sa_update(ApiToken)
-        .where(ApiToken.user_id == current_user.id)
-        .values(is_active=False)
-    )
-    await db.commit()
+    # MFA boundary changed: end every session and API token so a stolen
+    # bearer from before the change cannot survive it.
+    from auth.sessions import end_all_sessions
+    await end_all_sessions(db, current_user.id)
 
     return TotpVerifySetupResponse(
         message="Two-factor authentication enabled successfully",
@@ -1084,23 +1059,10 @@ async def totp_disable(
     except Exception:
         pass
 
-    # MFA boundary changed: invalidate every existing session and
-    # long-lived API token so a stolen post-2FA bearer cannot survive
-    # the user disabling 2FA (mirrors the password-change path).
-    from auth.jwt import revoke_all_user_tokens
-    from sqlalchemy import update as _sa_update
-    from models.api_token import ApiToken
-    if not revoke_all_user_tokens(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session revocation failed. Please retry.",
-        )
-    await db.execute(
-        _sa_update(ApiToken)
-        .where(ApiToken.user_id == current_user.id)
-        .values(is_active=False)
-    )
-    await db.commit()
+    # MFA boundary changed: end every session and API token so a stolen
+    # bearer from before the change cannot survive it.
+    from auth.sessions import end_all_sessions
+    await end_all_sessions(db, current_user.id)
 
     return {
         "message": "Two-factor authentication disabled successfully",
@@ -1704,23 +1666,16 @@ async def reset_password(
     from sqlalchemy import delete as _sa_delete
     from models.recovery_code import RecoveryCode
     await db.execute(_sa_delete(RecoveryCode).where(RecoveryCode.user_id == user.id))
-    from auth.jwt import revoke_user_api_tokens
-    await revoke_user_api_tokens(db, user.id)
-    await db.commit()
-    
-    # Blacklist the reset token so it cannot be replayed, then revoke
-    # all existing sessions. Both must surface failure instead of silently
+    # End every session and API token, then blacklist the reset token so
+    # it cannot be replayed. Both surface failure instead of silently
     # no-op. GHSA-832g-v288-v593.
-    from auth.jwt import blacklist_token, revoke_all_user_tokens
+    from auth.sessions import end_all_sessions, REVOCATION_FAILED
+    await end_all_sessions(db, user.id)
+    from auth.jwt import blacklist_token
     if not blacklist_token(req.token):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session revocation failed. Please retry.",
-        )
-    if not revoke_all_user_tokens(user.id):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session revocation failed. Please retry.",
+            detail=REVOCATION_FAILED,
         )
 
     logger.info(f"Password reset completed for user {user.username}")

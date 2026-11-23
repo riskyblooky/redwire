@@ -258,12 +258,8 @@ async def update_user(
     await db.refresh(user)
 
     if deactivating:
-        from auth.jwt import revoke_all_user_tokens
-        if not revoke_all_user_tokens(user.id):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Session revocation failed. Please retry.",
-            )
+        from auth.sessions import end_all_sessions
+        await end_all_sessions(db, user.id, api_tokens=False)
 
     if changes:
         await record_security_event("user_updated", request=request, user=user, actor=current_user,
@@ -344,19 +340,8 @@ async def reset_password(
     # Update user's password and force them to change it on next login
     user.hashed_password = await get_password_hash_async(temp_password)
     user.must_change_password = True
-    from auth.jwt import revoke_user_api_tokens
-    await revoke_user_api_tokens(db, user.id)
-    await db.commit()
-    
-    # Revoke all existing sessions. Surface failure rather than silently
-    # leaving the old session live after a "successful" admin reset.
-    # GHSA-832g-v288-v593.
-    from auth.jwt import revoke_all_user_tokens
-    if not revoke_all_user_tokens(user.id):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session revocation failed. Please retry.",
-        )
+    from auth.sessions import end_all_sessions
+    await end_all_sessions(db, user.id)
     
     # Notify user that their password was reset
     from utils.collaboration import create_notification

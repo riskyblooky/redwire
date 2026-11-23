@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Literal, Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -418,11 +418,9 @@ async def revoke_sessions(
 ):
     """Sign the user out everywhere: every access/refresh token issued so far
     stops working. API tokens are separate (revoke them individually)."""
-    from auth.jwt import revoke_all_user_tokens
+    from auth.sessions import end_all_sessions
     user = await _target_user(db, user_id, current_user)
-    if not revoke_all_user_tokens(user.id):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="Session revocation failed. Please retry.")
+    await end_all_sessions(db, user.id, api_tokens=False)
     await record_security_event("sessions_revoked", request=request, user=user, actor=current_user,
                                 details={"via": "security_center"})
     return {"ok": True}
@@ -434,15 +432,13 @@ async def disable_user(
     current_user: User = Depends(_manager), db: AsyncSession = Depends(get_db),
 ):
     """Deactivate the account and revoke its sessions (re-enable from Users)."""
-    from auth.jwt import revoke_all_user_tokens
+    from auth.sessions import end_all_sessions
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="You can't disable your own account")
     user = await _target_user(db, user_id, current_user)
     user.is_active = False
-    await db.commit()
-    if not revoke_all_user_tokens(user.id):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="Account disabled, but session revocation failed. Please retry.")
+    await end_all_sessions(db, user.id, api_tokens=False,
+                           detail="Account disabled, but session revocation failed. Please retry.")
     await record_security_event("user_updated", request=request, user=user, actor=current_user,
                                 details={"changes": {"is_active": {"old": True, "new": False}},
                                          "sessions_revoked": True, "via": "security_center"})

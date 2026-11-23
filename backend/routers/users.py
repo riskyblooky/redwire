@@ -257,28 +257,16 @@ async def update_current_user(
         if field in allowed_fields:
             setattr(current_user, field, value)
 
-    await db.commit()
-    await db.refresh(current_user)
-
     if email_changing:
-        # Treat email change as a credential change — invalidate all
-        # outstanding sessions and long-lived API tokens so any other
-        # stolen bearer can't keep the attacker in (mirrors the
-        # /me/password path; GHSA-hc9w-hggj-r52w).
-        from auth.jwt import revoke_all_user_tokens
-        from sqlalchemy import update as _sa_update
-        from models.api_token import ApiToken
-        if not revoke_all_user_tokens(current_user.id):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Session revocation failed. Please retry.",
-            )
-        await db.execute(
-            _sa_update(ApiToken)
-            .where(ApiToken.user_id == current_user.id)
-            .values(is_active=False)
-        )
+        # Treat email change as a credential change — end all outstanding
+        # sessions and long-lived API tokens (in the same commit as the
+        # change) so any other stolen bearer can't keep the attacker in.
+        # GHSA-hc9w-hggj-r52w.
+        from auth.sessions import end_all_sessions
+        await end_all_sessions(db, current_user.id)
+    else:
         await db.commit()
+    await db.refresh(current_user)
 
     return current_user
 
@@ -297,7 +285,6 @@ async def change_password(
     """
     from auth.totp import verify_totp_code
     from auth.crypto import decrypt_totp_secret
-    from auth.jwt import revoke_all_user_tokens, revoke_user_api_tokens
 
     if not await verify_password_async(password_data.old_password, current_user.hashed_password):
         raise HTTPException(
@@ -323,16 +310,9 @@ async def change_password(
         current_user.totp_last_timestep = matched_step
 
     current_user.hashed_password = await get_password_hash_async(password_data.new_password)
-    # A stolen session could have minted an rw_ token; a password change
-    # must end that too (email and 2FA changes already do).
-    await revoke_user_api_tokens(db, current_user.id)
-    await db.commit()
-
-    if not revoke_all_user_tokens(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session revocation failed. Please retry.",
-        )
+    # Ends API tokens too: a stolen session could have minted an rw_ token.
+    from auth.sessions import end_all_sessions
+    await end_all_sessions(db, current_user.id)
 
     return {"detail": "Password updated successfully"}
 
