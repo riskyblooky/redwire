@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useTestCase, useDeleteTestCase, useUpdateTestCase, useUnlinkFinding, useUnlinkAsset } from '@/lib/hooks/use-testcases';
 import { useEngagement } from '@/lib/hooks/use-engagements';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { useInfraByEntity } from '@/lib/hooks/use-infra';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
@@ -107,7 +107,8 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
 
     const { data: testcase, isLoading, refetch } = useTestCase(testcaseId || '');
     const { data: engagement } = useEngagement(testcase?.engagement_id || '');
-    const { data: allNotes = [] } = useNotes(engagementId);
+    // Titles only — not every note body.
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
     const { data: intelItems = [] } = useIntelByEntity('testcase', testcaseId || '');
     const { data: infraItems = [] } = useInfraByEntity('testcase', testcaseId || '');
 
@@ -187,7 +188,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
     };
 
     const linkedNotes = testcase
-        ? allNotes.filter((n: any) => n.linked_testcases?.some((t: any) => t.id === testcase.id))
+        ? (noteLinks?.testcase[testcase.id] ?? [])
         : [];
 
     const catStyle = testcase ? (categoryStyles[testcase.category] || categoryStyles.OTHER) : categoryStyles.OTHER;
@@ -787,7 +788,7 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 {linkedNotes.length > 0 && (
                                     <>
                                         <div className="space-y-1.5">
-                                            {linkedNotes.map((note: any) => (
+                                            {linkedNotes.map((note) => (
                                                 <Link
                                                     key={note.id}
                                                     href={`/engagements/${engagementId}?tab=notes&noteId=${note.id}`}

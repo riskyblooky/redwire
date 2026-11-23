@@ -28,7 +28,7 @@ import { useScoreModelLabel } from '@/lib/hooks/use-scoring';
 import { useFindingReviews } from '@/lib/hooks/use-finding-reviews';
 import { FindingPeerReview } from '@/components/findings/finding-peer-review';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { useInfraByEntity } from '@/lib/hooks/use-infra';
 import { useEngagement } from '@/lib/hooks/use-engagements';
@@ -133,7 +133,8 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
     const { data: finding, isLoading } = useFinding(fid);
     const scoreModelLabel = useScoreModelLabel(finding?.score_model);
     const { data: engagement } = useEngagement(finding?.engagement_id || '');
-    const { data: allNotes = [] } = useNotes(engagementId);
+    // Titles only — not every note body.
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
     const { data: intelItems = [] } = useIntelByEntity('finding', fid);
     const { data: infraItems = [] } = useInfraByEntity('finding', fid);
     const { data: reviewSummary } = useFindingReviews(fid);
@@ -328,7 +329,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
     };
 
     const linkedNotes = finding
-        ? allNotes.filter((n: any) => n.linked_findings?.some((f: any) => f.id === finding.id))
+        ? (noteLinks?.finding[finding.id] ?? [])
         : [];
 
     const handleDelete = async () => {
@@ -942,7 +943,7 @@ export function FindingDetailSheet({ findingId, engagementId, open, onOpenChange
                                 {linkedNotes.length > 0 && (
                                     <>
                                         <div className="space-y-1.5">
-                                            {linkedNotes.map((note: any) => (
+                                            {linkedNotes.map((note) => (
                                                 <Link
                                                     key={note.id}
                                                     href={`/engagements/${engagementId}?tab=notes&noteId=${note.id}`}

@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useAsset, useUpdateAsset, useDeleteAsset, useAddAssetPort, useDeleteAssetPort } from '@/lib/hooks/use-assets';
 import { useFindings } from '@/lib/hooks/use-findings';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
@@ -102,7 +102,8 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
     }, [nonModal, open]);
     const { data: asset, isLoading } = useAsset(assetId || '');
     const { data: findings = [] } = useFindings({ engagement_id: engagementId });
-    const { data: allNotes = [] } = useNotes(engagementId);
+    // Titles only — not every note body.
+    const { data: noteLinks } = useEngagementNoteLinks(engagementId);
     const { data: engagement } = useEngagement(engagementId);
     const { data: assetTypes = [] } = useConfigurableTypes('asset');
     const { user } = useAuthStore();
@@ -198,7 +199,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
     };
 
     const linkedNotes = asset
-        ? allNotes.filter((n: any) => n.linked_assets?.some((a: any) => a.id === asset?.id))
+        ? (noteLinks?.asset[asset.id] ?? [])
         : [];
 
     // Inline edit: single-field patch through the update hook (PUT is a partial patch)
@@ -738,7 +739,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                         <Separator className="bg-slate-800/60" />
                                         <CollapsibleSection title={`Linked Notes (${linkedNotes.length})`} icon={StickyNote} iconColor="text-teal-400">
                                             <div className="space-y-1.5">
-                                                {linkedNotes.map((note: any) => (
+                                                {linkedNotes.map((note) => (
                                                     <Link
                                                         key={note.id}
                                                         href={`/engagements/${engagementId}?tab=notes&noteId=${note.id}`}
