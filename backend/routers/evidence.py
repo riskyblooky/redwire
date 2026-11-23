@@ -8,7 +8,7 @@ import logging
 from database import get_db
 from models.evidence import Evidence
 from models.user import User, UserRole
-from schemas.evidence import EvidenceResponse
+from schemas.evidence import EvidenceResponse, EvidenceUpdate
 from auth.dependencies import get_current_user
 from auth.rbac import owned_perm, require_engagement_perm, role_bypasses
 from models.permission import Permission
@@ -146,11 +146,14 @@ async def get_evidence(
 @router.patch("/{evidence_id}", response_model=EvidenceResponse)
 async def update_evidence(
     evidence_id: str,
-    update_data: dict, # Using dict for simplicity or create a specific schema
+    payload: EvidenceUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Update evidence metadata."""
+    update_data = payload.model_dump(exclude_unset=True)
+    if update_data.get("include_in_report", False) is None:
+        del update_data["include_in_report"]  # not nullable in meaning: null = leave as is
     result = await db.execute(select(Evidence).where(Evidence.id == evidence_id))
     evidence = result.scalar_one_or_none()
     

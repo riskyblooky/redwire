@@ -10,6 +10,18 @@ class EvidenceBase(BaseModel):
     classification_level: Optional[str] = Field(None, max_length=ENUM_STR)
     classification_suffix: Optional[str] = Field(None, max_length=SHORT_LABEL)
 
+class EvidenceUpdate(BaseModel):
+    """PATCH /evidence/{id}: every field optional; only the ones sent apply.
+    A null classification or link clears it."""
+    # Caps are the column sizes (models/evidence.py).
+    description: Optional[str] = Field(None, max_length=500)
+    include_in_report: Optional[bool] = None
+    classification_level: Optional[str] = Field(None, max_length=20)
+    classification_suffix: Optional[str] = Field(None, max_length=120)
+    finding_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+    testcase_id: Optional[str] = Field(None, max_length=UUID_FIELD)
+
+
 class EvidenceCreate(EvidenceBase):
     finding_id: Optional[str] = Field(None, max_length=UUID_FIELD)
     testcase_id: Optional[str] = Field(None, max_length=UUID_FIELD)

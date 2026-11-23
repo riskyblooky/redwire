@@ -22,7 +22,7 @@ async def test_too_long_is_422(client, db_session, make_user, authenticate_as, m
     db_session.add(ev)
     await db_session.flush()
 
-    r = await client.patch(f"/evidence/{ev.id}", json={"description": "x" * 600})   # dict body: no schema cap
+    r = await client.patch(f"/evidence/{ev.id}", json={"description": "x" * 600})
     assert r.status_code == 422, (r.status_code, r.text)
 
     from utils import storage_tx
