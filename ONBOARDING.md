@@ -56,7 +56,7 @@ backend/
   models/            SQLAlchemy models — UUID PKs, AuditMixin
   schemas/           Pydantic request/response (~31 files)
   routers/           FastAPI routers — prefix declared ON the router
-  utils/             storage, vault_crypto, collaboration (activity logs), report_generator,
+  utils/             storage, vault_crypto, collaboration (activity logs), reports/ (one module per report format),
                      automation_engine, event_bus, email_service, ssrf, hash_utils, versioning,
                      yjs_server (collab), parsers/
   plugins/           servicenow_cmdb, shodan_enricher (each: plugin.yaml + __init__.py + router.py)
@@ -180,7 +180,7 @@ Each row is roughly: **router** (`backend/routers/`) ↔ **model(s)** (`backend/
 | Evidence | `evidence`, `markdown_images` | MinIO-backed uploads |
 | Cleanup | `cleanup_artifacts` | post-engagement teardown tracking |
 | Test cases / runbooks | `testcases`, `testcase_templates`, `runbooks`, `skills` | repeatable procedures |
-| Reporting | `reports`, `report_layouts`, `report_layout_templates`, `report_themes` | PDF/DOCX, `utils/report_generator.py` |
+| Reporting | `reports`, `report_layouts`, `report_layout_templates`, `report_themes` | PDF, Markdown, HTML — `utils/reports/` (`content.py` + one module per format; PDF split by report part under `pdf/`) |
 | Templates | `templates` (findings), `testcase_templates`, `configurable_types`, `clients` | reusable definitions & custom types |
 | Intel | `intel`, `attack_graph`, `attack_techniques` | feeds, ATT&CK mapping, graph layout |
 | Offensive tooling | `spray`, `wordlist`, `imports` | password spray tracking, wordlists, scan imports (`utils/parsers/`) |

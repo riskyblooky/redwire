@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from utils.report_generator import _md_inline_to_rl as rl
+from utils.reports.pdf.text import _md_inline_to_rl as rl
 
 
 @pytest.mark.parametrize("text", [

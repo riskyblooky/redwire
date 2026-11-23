@@ -1,4 +1,4 @@
-"""utils/report_generator.py coverage — HTML-output XSS escaping first.
+"""utils/reports coverage — HTML-output XSS escaping first.
 
 A stored-XSS class was flagged for the HTML report deliverable: finding
 titles / descriptions / evidence captions are author-controlled markdown and
@@ -32,16 +32,11 @@ import pytest
 
 from models.report_layout import SectionType
 
-import utils.report_generator as rg
-from utils.report_generator import (
-    _escape_xml,
-    _v,
-    _format_report_cf_value,
-    _report_cf_rows,
-    _markdown_from_html,
-    HTMLReportGenerator,
-    MarkdownReportGenerator,
-)
+import utils.reports.html_report as html_report
+from utils.reports import HTMLReportGenerator, MarkdownReportGenerator
+from utils.reports.common import _escape_xml
+from utils.reports.content import _v, _format_report_cf_value, _report_cf_rows
+from utils.reports.markdown_report import _markdown_from_html
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -221,7 +216,7 @@ def test_md_empty_returns_empty():
 # template sink escapes via esc() (pinned statically below, and verified in a
 # browser when the template was fixed).
 
-_TEMPLATE = Path(rg.__file__).resolve().parent.parent / "report_templates" / "interactive" / "report.template.html"
+_TEMPLATE = Path(html_report.__file__).resolve().parents[2] / "report_templates" / "interactive" / "report.template.html"
 
 
 def _payload(html: str) -> dict:

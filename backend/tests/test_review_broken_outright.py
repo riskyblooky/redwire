@@ -71,7 +71,7 @@ def _graph_self(findings, testcases, cleanup=()):
 
 
 def test_attack_graph_drops_edges_to_filtered_out_findings():
-    from utils.report_generator import PDFReportGenerator as G
+    from utils.reports import PDFReportGenerator as G
     kept = SimpleNamespace(id="f-kept", title="kept", severity="HIGH", assets=[])
     dropped = SimpleNamespace(id="f-dropped", title="filtered out", severity="LOW", assets=[])
     tc = SimpleNamespace(id="t1", title="tc", parent_id=None, findings=[kept, dropped])

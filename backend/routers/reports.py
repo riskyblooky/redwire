@@ -94,7 +94,7 @@ from auth.rbac import check_engagement_permission
 from models.permission import Permission
 from models.user import UserRole
 from utils import storage_tx
-from utils.report_generator import PDFReportGenerator, MarkdownReportGenerator, HTMLReportGenerator
+from utils.reports import PDFReportGenerator, MarkdownReportGenerator, HTMLReportGenerator
 from utils.storage import storage_service
 from utils.uploads import safe_content_type, content_disposition_attachment, read_upload_capped, sanitize_original_filename, MAX_EVIDENCE_BYTES
 
@@ -190,7 +190,7 @@ async def _do_generate_report(
     #        fallback so an admin who deleted the current default doesn't
     #        break every subsequent report generation. Delete guard in
     #        routers/report_themes.py prevents deleting the system row,
-    #        but this belt-and-suspenders keeps report_generator working
+    #        but this belt-and-suspenders keeps the report generators working
     #        even if the row goes missing (drift, hand-edited DB, etc.).
     theme = None
     if config.theme_id:

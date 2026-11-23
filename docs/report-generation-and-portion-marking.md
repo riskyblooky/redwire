@@ -20,7 +20,7 @@ from a settled design.
 ## 0. Where we are today (baseline)
 
 Appearance control is currently split across two objects, and almost everything
-else is hardcoded in `backend/utils/report_generator.py`:
+else is hardcoded in the report generators (`backend/utils/reports/`, formerly `utils/report_generator.py`):
 
 - **`ReportTheme`** (`backend/models/report_theme.py`) — 6 colors, `font_family`
   + body/heading sizes, `logo_base64`, `page_size`, `show_page_numbers`,
@@ -266,7 +266,7 @@ Generator gains a thin "marking" layer:
 **Implemented (branch `feat/report-marking-and-control`):**
 - `MarkingProfile` model/enums/schema/router (`/marking-profiles`), TLP 2.0 + IC/DoD seeded built-ins (read-only).
 - `{classification_level, classification_suffix}` on finding/evidence/testcase/cleanup_artifact/report_section; engagement `marking_profile_id` + default + ceiling. Migrations `293665bb09ce` + `a1f2c3d4e5b6` applied.
-- Generator (`utils/marking.py` + `report_generator.py`): inheritance + ceiling clamp, high-water banner roll-up, TLP header chip vs IC top+bottom banner, portion-marked section/finding/cleanup headers, evidence **image corner/edge/caption marks** (`MarkedImage`) + stamp toggle, table **caption mark lines + per-row mark column** + themeable zebra/grid, cover legend + distribution statement + metadata, themeable severity colors, header/footer L/C/R zones, **PDF bookmarks/outline**. Profile loaded in `reports.py` (config → engagement → default).
+- Generator (`utils/marking.py` + `utils/reports/pdf/`): inheritance + ceiling clamp, high-water banner roll-up, TLP header chip vs IC top+bottom banner, portion-marked section/finding/cleanup headers, evidence **image corner/edge/caption marks** (`MarkedImage`) + stamp toggle, table **caption mark lines + per-row mark column** + themeable zebra/grid, cover legend + distribution statement + metadata, themeable severity colors, header/footer L/C/R zones, **PDF bookmarks/outline**. Profile loaded in `reports.py` (config → engagement → default).
 - Frontend: `use-marking-profiles` hook, marking-profile management page (`/templates/marking-profiles`), `ClassificationPicker`, engagement edit marking section (profile + default + ceiling), report-generate marking picker.
 
 **Deferred (follow-ups):**
@@ -307,7 +307,7 @@ Operational note: applying b80ed9333c61 in dev surfaced lock contention from sta
 ## Report document (2026-11-19)
 
 All three formats render from one `ReportDocument` built by
-`backend/utils/report_content.py::build_report_document`. It owns every content
+`backend/utils/reports/content.py::build_report_document`. It owns every content
 decision: order (findings most-severe first, test cases as a depth-first
 parent → child tree), display ids (`F01`, `T1`, and `1.2` tree numbers),
 field lists and labels, test-case status (pass / fail / executed / not
@@ -319,6 +319,6 @@ mark, and the banner (high-water mark of every portion).
 
 `PDFReportGenerator`, `MarkdownReportGenerator` and `HTMLReportGenerator`
 keep only layout. A new field or a marking rule change goes in
-`report_content.py` once; `tests/test_report_content.py` checks the three
+`reports/content.py` once; `tests/test_report_content.py` checks the three
 formats agree on ids and marks.
 

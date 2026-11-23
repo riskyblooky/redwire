@@ -316,7 +316,7 @@ async def seed_skill_taxonomy() -> Tuple[int, int]:
 # ── Report theme ─────────────────────────────────────────────────────
 #
 # The PDF generator falls back to a hardcoded `_DEFAULTS` palette in
-# utils/report_generator.py when no theme is selected. Seeding a default
+# utils/reports/common.py (_DEFAULTS) when no theme is selected. Seeding a default
 # row gives operators a starting point they can clone or tweak in the UI.
 
 # Deterministic ID for the system-owned "RedWire Default" theme so

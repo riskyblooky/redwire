@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from utils.report_generator import HTMLReportGenerator, _markdown_from_html
+from utils.reports import HTMLReportGenerator
+from utils.reports.markdown_report import _markdown_from_html
 
 
 def _md(text):

@@ -3,7 +3,7 @@
 ``build_report_document`` turns the loaded rows (engagement, layout sections,
 findings, test cases, cleanup items) plus the marking profile into one
 ``ReportDocument``. The PDF, Markdown and interactive HTML renderers in
-``utils/report_generator.py`` each keep their own layout code but take every
+``utils/reports/`` (``pdf/``, ``markdown_report.py``, ``html_report.py``) each keep their own layout code but take every
 decision about *content* from it:
 
 - order: findings most-severe first, test cases as a parent → child tree;
@@ -37,7 +37,7 @@ from scoring.registry import DEFAULT_MODEL_ID, scoring_registry
 from utils.marking import MarkingEngine
 
 
-# ── small shared helpers (re-exported by utils.report_generator) ─────────────
+# ── small shared helpers (also used by the renderers) ─────────────
 
 _SEVERITY_RANK = {'CRITICAL': 5, 'HIGH': 4, 'MEDIUM': 3, 'LOW': 2, 'INFO': 1}
 SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO']

@@ -291,7 +291,7 @@ def _finding(**kw):
 
 
 def test_report_score_info_legacy_finding_is_cvss31():
-    from utils.report_generator import _score_info
+    from utils.reports.content import _score_info
 
     info = _score_info(_finding(cvss_score=9.8, cvss_vector="CVSS:3.1/AV:N"))
     assert info["label"] == "CVSS 3.1"
@@ -299,7 +299,7 @@ def test_report_score_info_legacy_finding_is_cvss31():
 
 
 def test_report_score_info_categorical_hides_nominal_score():
-    from utils.report_generator import _score_info
+    from utils.reports.content import _score_info
 
     info = _score_info(_finding(score_model="usaf-rac", cvss_score=9.5,
                                 score_inputs={"sev": "catastrophic", "prob": "frequent"},
@@ -310,7 +310,7 @@ def test_report_score_info_categorical_hides_nominal_score():
 
 
 def test_report_score_label_mixed_models():
-    from utils.report_generator import _score_label
+    from utils.reports.content import _score_label
 
     cvss = _finding(cvss_score=5.0)
     dread = _finding(score_model="dread", cvss_score=5.0)

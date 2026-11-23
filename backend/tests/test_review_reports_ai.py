@@ -22,7 +22,7 @@ def test_pdf_builds_in_each_theme_font(font):
     """Bold faces were built as font + "-Bold", which doesn't exist for Times."""
     from types import SimpleNamespace
     from tests.test_report_content import _SECTIONS, _engagement, _finding, _tc
-    from utils.report_generator import PDFReportGenerator
+    from utils.reports import PDFReportGenerator
 
     theme = SimpleNamespace(font_family=font)
     pdf = PDFReportGenerator(_engagement(), _SECTIONS, [_finding("F", description="**bold** text")],

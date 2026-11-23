@@ -9,7 +9,7 @@ import re
 
 from models.report_layout import SectionType
 from tests.test_report_content import _engagement, _evidence, _finding, _profile, _section, _tc
-from utils.report_generator import HTMLReportGenerator
+from utils.reports import HTMLReportGenerator
 
 
 def _build(**kw):

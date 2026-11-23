@@ -9,7 +9,7 @@ import pytest
 
 from models.report_layout import SectionType
 from tests.test_report_content import _engagement, _section, _tc
-from utils.report_generator import PDFReportGenerator
+from utils.reports import PDFReportGenerator
 
 # ~140 short lines: far taller than one page, ~4k characters.
 _LONG = "\n\n".join(f"step {i}: run the thing and capture output" for i in range(140))

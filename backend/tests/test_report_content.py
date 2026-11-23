@@ -1,4 +1,4 @@
-"""utils/report_content.py — the one report document every format renders.
+"""utils/reports/content.py — the one report document every format renders.
 
 The PDF, Markdown and interactive HTML renderers used to each decide order,
 display ids, fields, statuses and portion marks for themselves, and drifted
@@ -13,8 +13,8 @@ import uuid
 from types import SimpleNamespace
 
 from models.report_layout import SectionType
-from utils.report_content import build_report_document
-from utils.report_generator import HTMLReportGenerator, MarkdownReportGenerator, PDFReportGenerator
+from utils.reports.content import build_report_document
+from utils.reports import HTMLReportGenerator, MarkdownReportGenerator, PDFReportGenerator
 from tests.test_report_generator import _payload
 
 
