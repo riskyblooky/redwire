@@ -1,7 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../api';
+import { useQuery } from '@tanstack/react-query';
 import { fetchAllPages } from '../fetch-all';
-import { Group } from './use-rbac';
+import type { Group } from './use-admin-permissions';
 
 export interface User {
     id: string;
@@ -17,22 +16,6 @@ export interface User {
     groups: Group[];
 }
 
-export interface UserCreate {
-    username: string;
-    email: string;
-    password: string;
-    full_name?: string;
-    role: string;
-}
-
-export interface UserUpdate {
-
-    full_name?: string;
-    role?: string;
-    is_active?: boolean;
-    group_ids?: string[];
-}
-
 export function useUsers(enabled: boolean = true) {
     return useQuery({
         queryKey: ['users'],
@@ -43,32 +26,3 @@ export function useUsers(enabled: boolean = true) {
         enabled,
     });
 }
-
-export function useUpdateUser() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async ({ id, ...update }: UserUpdate & { id: string }) => {
-            const { data } = await api.patch<User>(`/admin/users/${id}`, update);
-            return data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['users'] });
-        },
-    });
-}
-
-export function useCreateUser() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async (user: UserCreate) => {
-            const { data } = await api.post<User>('/admin/users', user);
-            return data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['users'] });
-        },
-    });
-}
-

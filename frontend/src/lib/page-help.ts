@@ -151,14 +151,6 @@ const ENTRIES: { match: (p: string) => boolean; help: PageHelp }[] = [
         },
     },
     {
-        match: p => p.startsWith('/reports'),
-        help: {
-            title: 'Reporting Center',
-            body: 'Generate the deliverable per engagement: **PDF** (polished), **HTML** (self-contained interactive), or **JSON** (structured, with relationships). Output honours classification / portion marking and the report theme + layout you pick.',
-            doc: 'user',
-        },
-    },
-    {
         match: p => p.startsWith('/notifications'),
         help: {
             title: 'Notifications',
