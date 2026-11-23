@@ -12,6 +12,7 @@ section becomes one release entry.
 - **Sign out everywhere also ends sessions started the same second.** Tokens issued earlier in the second a password change, 2FA change or forced sign-out happened could keep working until they expired. Revoked tokens also stay revoked on servers not set to UTC.
 - **Automations lists every organisation rule you can open.** Without an admin or team-lead role you only saw the rules you wrote, although you could open and edit the others.
 - **Saving with a reference that no longer exists explains what's wrong.** Picking a client type, marking profile or similar that had been deleted meanwhile gave a server error; it now names the field. Listing the same ATT&CK technique twice on a finding or test case no longer fails the save.
+- **Renaming a permission group no longer shows an error.** The rename was saved, but the page reported a failure. Group responses also show the actual member count instead of 0.
 
 ## [1.9.2] — 2026-11-22
 

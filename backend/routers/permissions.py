@@ -4,7 +4,7 @@ Admin endpoints for managing groups, roles, and permissions.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from typing import List
 from database import get_db
 from auth.dependencies import get_current_user, require_roles, ADMIN_ROLES
@@ -85,6 +85,25 @@ class GroupResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+async def _group_response(db: AsyncSession, group, permissions=None) -> "GroupResponse":
+    """A group's response with its real member count (create/update used
+    to report 0 and drop is_system / is_default)."""
+    from models.group import user_groups
+    count = (await db.execute(
+        select(func.count()).select_from(user_groups).where(user_groups.c.group_id == group.id)
+    )).scalar() or 0
+    if permissions is None:
+        # Query rather than group.permission_set: after db.refresh() the
+        # relationship is unloaded and would lazy-load outside the greenlet.
+        permissions = (await db.execute(
+            select(GroupPermissions.permissions).where(GroupPermissions.group_id == group.id)
+        )).scalar_one_or_none() or []
+    return GroupResponse(
+        id=group.id, name=group.name, description=group.description, permissions=permissions,
+        member_count=count, is_system=bool(group.is_system), is_default=bool(group.is_default),
+    )
 
 
 class EngagementRoleBase(BaseModel):
@@ -232,13 +251,7 @@ async def create_group(
     await db.commit()
     await db.refresh(new_group)
     
-    return GroupResponse(
-        id=new_group.id,
-        name=new_group.name,
-        description=new_group.description,
-        permissions=[],
-        member_count=0
-    )
+    return await _group_response(db, new_group, permissions=[])
 
 
 @router.put("/groups/{group_id}", response_model=GroupResponse)
@@ -266,15 +279,7 @@ async def update_group(
     await db.commit()
     await db.refresh(group)
     
-    perms = group.permission_set.permissions if group.permission_set else []
-    
-    return GroupResponse(
-        id=group.id,
-        name=group.name,
-        description=group.description,
-        permissions=perms,
-        member_count=0  # TODO: Calculate member count with proper eager loading
-    )
+    return await _group_response(db, group)
 
 
 @router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -376,13 +381,7 @@ async def update_group_permissions(
     await db.commit()
     await db.refresh(group)
     
-    return GroupResponse(
-        id=group.id,
-        name=group.name,
-        description=group.description,
-        permissions=perm_data.permissions,
-        member_count=0  # TODO: Calculate member count with proper eager loading
-    )
+    return await _group_response(db, group, permissions=perm_data.permissions)
 
 
 # ============ Engagement Role Management ============
