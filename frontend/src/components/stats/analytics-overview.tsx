@@ -53,7 +53,7 @@ import {
     useOperatorPerformance,
     useTestCaseStats,
     useCleanupStats,
-    useClientStats,
+    useStatsByClient,
     useTimeOnTask,
 } from '@/lib/hooks/use-stats';
 import { useEngagementContext } from '@/stores/engagement-store';
@@ -185,7 +185,7 @@ export default function AnalyticsOverview() {
     const { data: operators, isLoading: opsLoading } = useOperatorPerformance(dateRangeParams);
     const { data: tcStats, isLoading: tcLoading } = useTestCaseStats(dateRangeParams);
     const { data: cleanupStats, isLoading: cleanupLoading } = useCleanupStats(dateRangeParams);
-    const { data: clientStats, isLoading: clientsLoading } = useClientStats(dateRangeParams);
+    const { data: clientStats, isLoading: clientsLoading } = useStatsByClient(dateRangeParams);
     const { data: timeOnTask, isLoading: totLoading } = useTimeOnTask(engagementId, queryParams.days);
 
     const handleCustomDateApply = () => {

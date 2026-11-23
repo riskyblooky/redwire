@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { useTeamAvailability } from '@/lib/hooks/use-calendar';
 import { useEngagements, useUpdateEngagement } from '@/lib/hooks/use-engagements';
-import { useEngagementRoles } from '@/lib/hooks/use-rbac';
+import { useEngagementRoles } from '@/lib/hooks/use-admin-permissions';
 import { useEngagementSkills, useFocusFit, SKILL_LEVELS, type EngagementSkill } from '@/lib/hooks/use-skills';
 import { AuthedImg } from '@/lib/hooks/use-authed-image';
 import { toast } from 'sonner';

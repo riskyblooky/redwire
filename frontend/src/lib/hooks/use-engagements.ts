@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { fetchAllPages } from '../fetch-all';
 import { UserRole } from '../types';
-import { EngagementRole } from './use-rbac';
+import type { EngagementRole } from './use-admin-permissions';
 
 export interface AssignedUser {
     id: string;

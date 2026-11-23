@@ -257,7 +257,8 @@ interface ClientStat {
     engagement_types: { type: string; count: number }[];
 }
 
-export function useClientStats(params?: { startDate?: string; endDate?: string }) {
+/** Per-client rollup for the analytics page (not the client detail panel's useClientStats in use-clients). */
+export function useStatsByClient(params?: { startDate?: string; endDate?: string }) {
     return useQuery<{ clients: ClientStat[] }>({
         queryKey: ['stats', 'client-stats', params],
         queryFn: async () => (await api.get(`/stats/client-stats?${buildParams(params)}`)).data,

@@ -19,7 +19,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { useUsers } from '@/lib/hooks/use-users';
-import { useEngagementRoles } from '@/lib/hooks/use-rbac';
+import { useEngagementRoles } from '@/lib/hooks/use-admin-permissions';
 import { useUpdateEngagement, Engagement } from '@/lib/hooks/use-engagements';
 import { UserPlus, Trash2, Shield, Loader2, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';

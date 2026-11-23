@@ -121,7 +121,7 @@ export function useUpdateGroupPermissions() {
 }
 
 // Engagement Roles
-export function useEngagementRoles() {
+export function useEngagementRoles(enabled: boolean = true) {
     return useQuery<EngagementRole[]>({
         queryKey: ['admin', 'engagement-roles'],
         queryFn: async () => {
@@ -133,6 +133,7 @@ export function useEngagementRoles() {
                 throw err;
             }
         },
+        enabled,
         retry: (count, err: any) => err?.response?.status !== 403 && count < 3,
     });
 }
