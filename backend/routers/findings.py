@@ -493,7 +493,7 @@ async def create_finding(
     if attack_technique_ids:
         from models.associations import FindingAttackTechnique
         new_finding.attack_techniques = [
-            FindingAttackTechnique(technique_id=tid) for tid in attack_technique_ids
+            FindingAttackTechnique(technique_id=tid) for tid in dict.fromkeys(attack_technique_ids)
         ]
 
     db.add(new_finding)
@@ -709,7 +709,7 @@ async def update_finding(
         from models.associations import FindingAttackTechnique
         # Replace entire set — delete old, add new
         finding.attack_techniques = [
-            FindingAttackTechnique(technique_id=tid) for tid in finding_data.attack_technique_ids
+            FindingAttackTechnique(technique_id=tid) for tid in dict.fromkeys(finding_data.attack_technique_ids)
         ]
 
     await db.commit()

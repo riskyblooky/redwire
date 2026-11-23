@@ -226,7 +226,7 @@ async def create_testcase(
     if attack_technique_ids:
         from models.associations import TestCaseAttackTechnique
         db_testcase.attack_techniques = [
-            TestCaseAttackTechnique(technique_id=tid) for tid in attack_technique_ids
+            TestCaseAttackTechnique(technique_id=tid) for tid in dict.fromkeys(attack_technique_ids)
         ]
 
     db.add(db_testcase)
@@ -314,7 +314,7 @@ async def update_testcase(
     if testcase_update.attack_technique_ids is not None:
         from models.associations import TestCaseAttackTechnique
         db_testcase.attack_techniques = [
-            TestCaseAttackTechnique(technique_id=tid) for tid in testcase_update.attack_technique_ids
+            TestCaseAttackTechnique(technique_id=tid) for tid in dict.fromkeys(testcase_update.attack_technique_ids)
         ]
     
     db_testcase.updated_by = current_user.id

@@ -517,6 +517,10 @@ _UNIQUE_CONFLICTS = {
 
 
 _NOT_NULL_RE = re.compile(r'null value in column "(\w+)"(?: of relation "(\w+)")? violates not-null constraint')
+# Postgres foreign-key errors: a reference to a row that doesn't exist
+# (a client-supplied id), or a delete of a row something still references.
+_FK_MISSING_RE = re.compile(r'Key \((\w+)\)=\([^)]*\) is not present in table "(\w+)"')
+_FK_IN_USE_RE = re.compile(r'update or delete on table "(\w+)" violates foreign key constraint')
 
 
 async def _integrity_conflict(request: Request, exc: IntegrityError):
@@ -532,6 +536,17 @@ async def _integrity_conflict(request: Request, exc: IntegrityError):
             "NOT NULL violation on %s.%s (%s %s)", m.group(2), m.group(1),
             getattr(request, "method", "?"), getattr(getattr(request, "url", None), "path", "?"))
         return JSONResponse(status_code=422, content={"detail": f"'{m.group(1)}' can't be empty."})
+    # An id in the request that names nothing (client_type_id,
+    # marking_profile_id, a technique id ...) used to be a 500.
+    m = _FK_MISSING_RE.search(text)
+    if m:
+        logging.getLogger(__name__).warning(
+            "FK violation: %s not in %s (%s %s)", m.group(1), m.group(2),
+            getattr(request, "method", "?"), getattr(getattr(request, "url", None), "path", "?"))
+        return JSONResponse(status_code=422, content={"detail": f"'{m.group(1)}' refers to something that doesn't exist."})
+    if _FK_IN_USE_RE.search(text):
+        logging.getLogger(__name__).warning("FK violation on delete/update: %s", text.splitlines()[0][:300])
+        return JSONResponse(status_code=409, content={"detail": "It's still in use elsewhere, so it can't be removed."})
     raise exc
 
 
