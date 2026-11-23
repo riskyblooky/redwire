@@ -1000,17 +1000,11 @@ async def delete_engagement(
             detail="Engagement not found"
         )
     
-    # GHSA-9h56-fv6g-5x98: READ_ONLY_ADMIN must not delete engagements
-    # (it would erase the audit trail of every action ever taken under them).
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, engagement_id, Permission.ENGAGEMENT_DELETE.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'engagement_delete' permission to delete this engagement."
-            )
+    # Admins and team leads bypass; everyone else needs engagement_delete.
+    # A write, so READ_ONLY_ADMIN gets no bypass (GHSA-9h56-fv6g-5x98: it
+    # would erase the audit trail of every action taken under it).
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_DELETE, db,
+                                  action="delete this engagement")
     
     # Log activity before deletion
     engagement_name = engagement.name
