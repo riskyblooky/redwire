@@ -93,12 +93,6 @@ export enum Severity {
     INFO = 'INFO',
 }
 
-export interface Tag {
-    id: string;
-    name: string;
-    color?: string;
-}
-
 // Asset types
 
 export interface AssetPort {
@@ -167,19 +161,6 @@ export interface Evidence {
 // Test Case types
 
 // Activity Log types
-export interface ActivityLog {
-    id: string;
-    engagement_id: string;
-    user_id: string;
-    action: string;
-    resource_type: string;
-    resource_id: string;
-    resource_name?: string;
-    details?: string;
-    created_at: string;
-    user_name?: string;
-    user_profile_photo?: string;
-}
 
 // Registration Code types
 export interface RegistrationCode {

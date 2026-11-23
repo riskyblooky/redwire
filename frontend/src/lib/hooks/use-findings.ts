@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { fetchAllPages } from '../fetch-all';
-import { Asset, Tag, Evidence } from '../types';
+import { Asset, Evidence } from '../types';
+import type { Tag } from './use-tags';
 
 export interface Finding {
     custom_fields?: Record<string, unknown>;

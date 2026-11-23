@@ -53,7 +53,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { ActivityLog } from '@/lib/types';
+import type { ActivityLog } from '@/lib/hooks/use-discussions';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
@@ -345,7 +345,7 @@ export function LogsTab({ engagementId }: LogsTabProps) {
                                                     >
                                                         {getIcon(log.resource_type)}
                                                     </Badge>
-                                                    <span className="text-xs font-medium text-slate-300 truncate max-w-[120px]" title={log.resource_name}>
+                                                    <span className="text-xs font-medium text-slate-300 truncate max-w-[120px]" title={log.resource_name ?? undefined}>
                                                         {log.resource_name || 'Unknown'}
                                                     </span>
                                                 </div>

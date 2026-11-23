@@ -76,6 +76,7 @@ export interface ActivityLog {
     details: string | null;
     created_at: string;
     user_name: string | null;
+    user_profile_photo: string | null;
 }
 
 // Threads
