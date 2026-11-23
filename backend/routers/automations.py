@@ -76,7 +76,8 @@ class ActionSchema(BaseModel):
     body_template: Optional[str] = Field(None, max_length=65536)
     recipients: Optional[List[str]] = None
     subject: Optional[str] = Field(None, max_length=500)
-    body: Optional[str] = Field(None, max_length=65536)
+    # (No `body`: it was accepted and stored but never read — the email
+    # action renders body_template. A client still sending it is ignored.)
     tag_ids: Optional[List[str]] = None
 
     @field_validator("url")

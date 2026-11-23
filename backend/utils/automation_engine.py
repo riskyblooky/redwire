@@ -14,7 +14,7 @@ from urllib.parse import quote as _url_quote
 from xml.sax.saxutils import escape as _xml_escape
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from utils.ssrf import validate_outbound_url, OutboundURLError
@@ -670,9 +670,11 @@ async def execute_rule_actions(
             logger.warning(f"[AUTOMATION] Action '{action_type}' FAILED: {e}")
             logger.error(f"Action '{action_type}' failed in rule '{rule.name}': {e}")
 
-    # Update trigger stats
+    # Update trigger stats. The count is incremented in SQL: a Python
+    # read-modify-write lost increments when two events fired the same rule
+    # concurrently (each background run has its own session).
     rule.last_triggered_at = datetime.utcnow()
-    rule.trigger_count = (rule.trigger_count or 0) + 1
+    rule.trigger_count = func.coalesce(type(rule).trigger_count, 0) + 1
 
 
 async def evaluate_rules(
