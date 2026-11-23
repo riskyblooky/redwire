@@ -75,6 +75,7 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="raise",
+        passive_deletes=True,
     )
 
     # recovery_codes_remaining (un-consumed 2FA recovery codes, surfaced
@@ -82,9 +83,15 @@ class User(Base):
     # GHSA-vm6w-9wm5-q367 follow-up) is a column_property defined at the
     # bottom of models/recovery_code.py: a count subquery on the user row,
     # instead of loading every code on every authenticated request.
-    findings = relationship("Finding", back_populates="created_by_user", foreign_keys="Finding.created_by")
-    created_engagements = relationship("Engagement", back_populates="created_by_user", foreign_keys="Engagement.created_by")
-    assignment_details = relationship("EngagementAssignment", back_populates="user", cascade="all, delete-orphan")
+    # passive_deletes: every FK to users has ON DELETE CASCADE / SET NULL, so
+    # deleting a user leaves the children to the database instead of loading
+    # all of them (every finding they ever wrote...) to null or delete one by one.
+    findings = relationship("Finding", back_populates="created_by_user", foreign_keys="Finding.created_by",
+                            passive_deletes=True)
+    created_engagements = relationship("Engagement", back_populates="created_by_user",
+                                       foreign_keys="Engagement.created_by", passive_deletes=True)
+    assignment_details = relationship("EngagementAssignment", back_populates="user", cascade="all, delete-orphan",
+                                      passive_deletes=True)
     assigned_engagements = relationship(
         "Engagement", 
         secondary="engagement_assignments", 
@@ -93,9 +100,11 @@ class User(Base):
         back_populates="assigned_users", 
         viewonly=True
     )
-    groups = relationship("Group", secondary=user_groups, back_populates="users")
-    calendar_events = relationship("CalendarEvent", back_populates="created_by_user", foreign_keys="CalendarEvent.created_by")
+    groups = relationship("Group", secondary=user_groups, back_populates="users", passive_deletes=True)
+    calendar_events = relationship("CalendarEvent", back_populates="created_by_user",
+                                   foreign_keys="CalendarEvent.created_by", passive_deletes=True)
     registration_code = relationship("RegistrationCode", foreign_keys=[registration_code_id])
-    client_access = relationship("ClientUserAccess", foreign_keys="ClientUserAccess.user_id", cascade="all, delete-orphan")
-    skills = relationship("UserSkill", back_populates="user", cascade="all, delete-orphan")
+    client_access = relationship("ClientUserAccess", foreign_keys="ClientUserAccess.user_id",
+                                 cascade="all, delete-orphan", passive_deletes=True)
+    skills = relationship("UserSkill", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
 

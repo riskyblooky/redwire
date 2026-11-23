@@ -67,3 +67,38 @@ async def test_delete_user_keeps_org_rules_and_reviews(client, db_session, make_
     assert kept.reviewer_id is None
     r = await client.get(f"/findings/{finding_id}/reviews")
     assert r.status_code == 200, r.text
+
+
+async def test_delete_user_leaves_children_to_the_database(client, db_session, make_user, authenticate_as):
+    """passive_deletes: deleting a user doesn't load their findings,
+    engagements, events, assignments... — the FKs' ON DELETE does the work."""
+    from sqlalchemy import event
+    from models.finding import Finding
+    from tests.test_authz_boundaries import _make_finding
+    eng = await _make_engagement(db_session)
+    gone = await make_user()
+    ids = []
+    for _ in range(3):
+        f = await _make_finding(db_session, eng)
+        f.created_by = gone.id
+        ids.append(f.id)
+    await db_session.flush()
+    gone_id = gone.id
+    authenticate_as(await make_user(role="admin"))
+
+    seen = []
+    engine = db_session.bind.sync_engine if hasattr(db_session.bind, "sync_engine") else db_session.bind
+
+    def spy(conn, cursor, statement, params, context, executemany):
+        seen.append(statement)
+    event.listen(engine, "before_cursor_execute", spy)
+    try:
+        assert (await client.delete(f"/admin/users/{gone_id}")).status_code == 204
+    finally:
+        event.remove(engine, "before_cursor_execute", spy)
+    child_selects = [s for s in seen if s.lstrip().upper().startswith("SELECT") and
+                     any(f"FROM {t}" in s for t in ("findings", "engagements", "calendar_events", "user_skills"))]
+    assert not child_selects, child_selects
+    rows = (await db_session.execute(select(Finding.created_by).where(Finding.id.in_(ids))
+                                     .execution_options(populate_existing=True))).scalars().all()
+    assert rows == [None, None, None]
