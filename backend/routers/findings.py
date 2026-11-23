@@ -306,18 +306,20 @@ async def get_remediation_summary(
         ],
     }
 
-@router.get("/{finding_id}", response_model=FindingResponse)
-async def get_finding(
-    finding_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get a specific finding by ID."""
+async def _finding_detail(db: AsyncSession, finding_id: str, viewer: Optional[User] = None) -> FindingResponse:
+    """The full finding response (creator, assets with port/remediation
+    data, technique ids, unresolved thread count). GET and PUT both return
+    it, so an update response matches what a re-fetch shows. With
+    ``viewer`` it also enforces finding_view."""
     result = await db.execute(
         select(Finding, User.username, User.full_name, User.profile_photo)
         .outerjoin(User, Finding.created_by == User.id)
         .where(Finding.id == finding_id)
         .options(selectinload(Finding.evidence), *options("FINDING"))
+        # The session keeps objects across commit (expire_on_commit=False):
+        # after an update, reload the row and its links rather than reuse
+        # what's already in the identity map.
+        .execution_options(populate_existing=True)
     )
     row = result.first()
     
@@ -329,23 +331,15 @@ async def get_finding(
     
     finding, creator_username, creator_full_name, creator_profile_photo = row
 
-    
-    if not finding:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Finding not found"
-        )
-    
-    # Authorization Check using RBAC
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, finding.engagement_id, Permission.FINDING_VIEW.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'finding_view' permission to view findings."
-            )
+    if viewer is not None:
+        is_admin = viewer.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
+        if not is_admin:
+            has_permission = await check_engagement_permission(viewer.id, finding.engagement_id, Permission.FINDING_VIEW.value, db)
+            if not has_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. You need the 'finding_view' permission to view findings."
+                )
 
     # Count unresolved discussion threads for this finding
     from models.discussion import Thread
@@ -385,6 +379,16 @@ async def get_finding(
         asset_dict["remediated_by"] = data.get("remediated_by")
 
     return FindingResponse(**finding_dict)
+
+
+@router.get("/{finding_id}", response_model=FindingResponse)
+async def get_finding(
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific finding by ID."""
+    return await _finding_detail(db, finding_id, viewer=current_user)
 
 from models.asset import Asset
 from models.associations import FindingAsset
@@ -788,7 +792,7 @@ async def update_finding(
         except Exception as _e:
             print(f"[findings] status_changed event emit error (non-fatal): {_e}")
 
-    return finding
+    return await _finding_detail(db, finding.id)
 
 
 # ── Per-Asset Remediation ─────────────────────────────────────────────
