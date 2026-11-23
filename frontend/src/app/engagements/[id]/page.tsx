@@ -29,9 +29,7 @@ import { PluginSlot, type PluginExtension } from '@/components/plugin-slot';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     ArrowLeft,
     FileText,
@@ -46,19 +44,14 @@ import {
     Lock,
     Shield,
     StickyNote,
-    Key,
     Sparkles,
 } from 'lucide-react';
 
 
 
-import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useEngagement, useDeleteEngagement, useUpdateEngagement, useEngagementCounts } from '@/lib/hooks/use-engagements';
-import { useDebounce } from '@/lib/hooks/use-debounce';
-import { useLinkVaultToFinding, useLinkVaultToTestCase, useLinkVaultToAsset } from '@/lib/hooks/use-vault';
-import { useAuthStore } from '@/stores/auth-store';
-import { UserRole } from '@/lib/hooks/use-auth';
+import { useEngagement, useDeleteEngagement, useEngagementCounts } from '@/lib/hooks/use-engagements';
+import { EngagementStatusControl } from '@/components/engagements/engagement-status-control';
 import { AccessDenied } from '@/components/ui/access-denied';
 import { useQueryClient as useQC } from '@tanstack/react-query';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
@@ -79,36 +72,12 @@ import { AttackTab } from '@/components/engagements/attack-tab';
 import { useAttackCoverage } from '@/lib/hooks/use-attack';
 import { AssetImportDialog } from '@/components/engagements/asset-import-dialog';
 import { AssetDetailSheet } from '@/components/engagements/asset-detail-sheet';
-import { useCreateCleanupArtifact, useLinkCleanupToFinding, useLinkCleanupToTestCase, useLinkCleanupToAsset, CleanupArtifact } from '@/lib/hooks/use-cleanup-artifacts';
+import { QuickCreateVaultDialog, QuickCreateCleanupDialog, type QuickLinkTarget } from '@/components/engagements/quick-create-dialogs';
 import { useClients, useClientTypes } from '@/lib/hooks/use-clients';
 import { ClientDetailModal } from '@/components/clients/client-detail-modal';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import api from '@/lib/api';
 
-const statusColors: Record<string, string> = {
-    PROPOSED: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
-    SCOPING: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
-    PLANNING: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    IN_PROGRESS: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-    REPORTING: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    COMPLETED: 'bg-green-500/10 text-green-400 border-green-500/20',
-    ON_HOLD: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
-
-
-
-const engagementStatuses = [
-    { value: 'PLANNING', label: 'Planning' },
-    { value: 'SCOPING', label: 'Scoping' },
-    { value: 'IN_PROGRESS', label: 'In Progress' },
-    { value: 'REPORTING', label: 'Reporting' },
-    { value: 'COMPLETED', label: 'Completed' },
-    { value: 'ON_HOLD', label: 'On Hold' },
-];
 
 
 export default function EngagementDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -117,62 +86,8 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     const searchParams = useSearchParams();
     const [activeTab, setActiveTab] = useState('overview');
 
-    // Sorting state
-    const [sortFieldFindings] = useState<string>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('redwire_sort_engagement_findings_field') || 'created_at';
-        }
-        return 'created_at';
-    });
-    const [sortOrderFindings] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') {
-            return (localStorage.getItem('redwire_sort_engagement_findings_order') as 'asc' | 'desc') || 'desc';
-        }
-        return 'desc';
-    });
-    const [sortFieldAssets] = useState<string>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('redwire_sort_engagement_assets_field') || 'name';
-        }
-        return 'name';
-    });
-    const [sortOrderAssets] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') {
-            return (localStorage.getItem('redwire_sort_engagement_assets_order') as 'asc' | 'desc') || 'asc';
-        }
-        return 'asc';
-    });
-    const [sortFieldTestCases] = useState<string>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('redwire_sort_engagement_testcases_field') || 'title';
-        }
-        return 'title';
-    });
-    const [sortOrderTestCases] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') {
-            return (localStorage.getItem('redwire_sort_engagement_testcases_order') as 'asc' | 'desc') || 'asc';
-        }
-        return 'asc';
-    });
-
     const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
     const [viewClientDetail, setViewClientDetail] = useState(false);
-
-    // Save preferences to localStorage when they change
-    useEffect(() => {
-        localStorage.setItem('redwire_sort_engagement_findings_field', sortFieldFindings);
-        localStorage.setItem('redwire_sort_engagement_findings_order', sortOrderFindings);
-    }, [sortFieldFindings, sortOrderFindings]);
-
-    useEffect(() => {
-        localStorage.setItem('redwire_sort_engagement_assets_field', sortFieldAssets);
-        localStorage.setItem('redwire_sort_engagement_assets_order', sortOrderAssets);
-    }, [sortFieldAssets, sortOrderAssets]);
-
-    useEffect(() => {
-        localStorage.setItem('redwire_sort_engagement_testcases_field', sortFieldTestCases);
-        localStorage.setItem('redwire_sort_engagement_testcases_order', sortOrderTestCases);
-    }, [sortFieldTestCases, sortOrderTestCases]);
 
     useEffect(() => {
         const tab = searchParams?.get('tab') || 'overview';
@@ -219,15 +134,6 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
             }
         },
     });
-    const [assetsSearch] = useState('');
-    const debouncedAssetsSearch = useDebounce(assetsSearch, 500);
-    const [, setCurrentPageAssets] = useState(1);
-
-    // Reset asset page when search or sort changes
-    useEffect(() => {
-        setCurrentPageAssets(1);
-    }, [debouncedAssetsSearch, sortFieldAssets, sortOrderAssets]);
-
     // ATT&CK coverage is heavy (loads all findings/test cases + their technique
     // maps) — only fetch it when the ATT&CK tab is open. The always-visible tab
     // badge uses the cheap counts.attack_techniques instead.
@@ -236,128 +142,19 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
     const { data: engAllClients } = useClients(viewClientDetail);
     const { data: engClientTypes } = useClientTypes(viewClientDetail);
     const deleteEngagement = useDeleteEngagement();
-    const updateEngagement = useUpdateEngagement();
-    const linkVaultToFinding = useLinkVaultToFinding();
-    const linkVaultToTestCase = useLinkVaultToTestCase();
-    const linkVaultToAsset = useLinkVaultToAsset();
     const { confirm, ConfirmDialog } = useConfirmDialog();
-    const { user: currentUser } = useAuthStore();
 
-    // Vault creation + linking state
-    const [isVaultCreateDialogOpen, setIsVaultCreateDialogOpen] = useState(false);
-    const [vaultLinkTarget, setVaultLinkTarget] = useState<{ type: 'finding' | 'testcase' | 'asset'; id: string; name: string } | null>(null);
-    const [newVaultItem, setNewVaultItem] = useState({ name: '', item_type: 'CREDENTIAL' as string, username: '', password: '', note: '', description: '' });
-    const [isCreatingVault, setIsCreatingVault] = useState(false);
-
-    // Cleanup artifact quick-create state
-    const createCleanupArtifact = useCreateCleanupArtifact();
-    const linkCleanupToFinding = useLinkCleanupToFinding();
-    const linkCleanupToTestCase = useLinkCleanupToTestCase();
-    const linkCleanupToAsset = useLinkCleanupToAsset();
-    const [isCleanupCreateDialogOpen, setIsCleanupCreateDialogOpen] = useState(false);
-    const [cleanupLinkTarget, setCleanupLinkTarget] = useState<{ type: 'finding' | 'testcase' | 'asset'; id: string; name: string } | null>(null);
-    const [newCleanupItem, setNewCleanupItem] = useState({ title: '', artifact_type: 'SSH_KEY' as string, location: '', description: '' });
-    const [isCreatingCleanup, setIsCreatingCleanup] = useState(false);
-
-    const handleOpenVaultCreate = (target: { type: 'finding' | 'testcase' | 'asset'; id: string; name: string }) => {
-        setVaultLinkTarget(target);
-        setNewVaultItem({ name: '', item_type: 'CREDENTIAL', username: '', password: '', note: '', description: '' });
-        setIsVaultCreateDialogOpen(true);
-    };
-
-    const handleCreateAndLinkVault = async () => {
-        if (!vaultLinkTarget || !newVaultItem.name) return;
-        setIsCreatingVault(true);
-        try {
-            const res = await api.post('/vault', { ...newVaultItem, engagement_id: id });
-            const createdId = res.data.id;
-            if (vaultLinkTarget.type === 'finding') {
-                await linkVaultToFinding.mutateAsync({ vaultItemId: createdId, findingId: vaultLinkTarget.id });
-            } else if (vaultLinkTarget.type === 'testcase') {
-                await linkVaultToTestCase.mutateAsync({ vaultItemId: createdId, testcaseId: vaultLinkTarget.id });
-            } else {
-                await linkVaultToAsset.mutateAsync({ vaultItemId: createdId, assetId: vaultLinkTarget.id });
-            }
-            const label = vaultLinkTarget.type === 'finding' ? 'finding' : vaultLinkTarget.type === 'testcase' ? 'test case' : 'asset';
-            toast.success(`Vault item created and linked to ${label}`);
-            setIsVaultCreateDialogOpen(false);
-            queryClient.invalidateQueries({ queryKey: ['engagements', id, 'vault'] });
-            queryClient.invalidateQueries({ queryKey: ['engagements', id, 'counts'] });
-        } catch (error: any) {
-            toast.error(getErrorMessage(error, 'Failed to create vault item'));
-        } finally {
-            setIsCreatingVault(false);
-        }
-    };
-
-    const handleOpenCleanupCreate = (target: { type: 'finding' | 'testcase' | 'asset'; id: string; name: string }) => {
-        setCleanupLinkTarget(target);
-        setNewCleanupItem({ title: '', artifact_type: 'SSH_KEY', location: '', description: '' });
-        setIsCleanupCreateDialogOpen(true);
-    };
-
-    const handleCreateAndLinkCleanup = async () => {
-        if (!cleanupLinkTarget || !newCleanupItem.title) return;
-        setIsCreatingCleanup(true);
-        try {
-            const created = await createCleanupArtifact.mutateAsync({
-                engagement_id: id,
-                title: newCleanupItem.title,
-                artifact_type: newCleanupItem.artifact_type as CleanupArtifact['artifact_type'],
-                status: 'PENDING',
-                location: newCleanupItem.location || undefined,
-                description: newCleanupItem.description || undefined,
-            } as any);
-            if (cleanupLinkTarget.type === 'finding') {
-                await linkCleanupToFinding.mutateAsync({ artifactId: created.id, findingId: cleanupLinkTarget.id });
-            } else if (cleanupLinkTarget.type === 'testcase') {
-                await linkCleanupToTestCase.mutateAsync({ artifactId: created.id, testcaseId: cleanupLinkTarget.id });
-            } else {
-                await linkCleanupToAsset.mutateAsync({ artifactId: created.id, assetId: cleanupLinkTarget.id });
-            }
-            const typeLabel = cleanupLinkTarget.type === 'finding' ? 'finding' : cleanupLinkTarget.type === 'testcase' ? 'test case' : 'asset';
-            toast.success(`Cleanup artifact created and linked to ${typeLabel}`);
-            setIsCleanupCreateDialogOpen(false);
-        } catch (error: any) {
-            toast.error(getErrorMessage(error, 'Failed to create cleanup artifact'));
-        } finally {
-            setIsCreatingCleanup(false);
-        }
-    };
+    // Quick-create a vault item / cleanup artifact linked to a row.
+    const [vaultTarget, setVaultTarget] = useState<QuickLinkTarget | null>(null);
+    const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
+    const [cleanupTarget, setCleanupTarget] = useState<QuickLinkTarget | null>(null);
+    const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+    const handleOpenVaultCreate = (target: QuickLinkTarget) => { setVaultTarget(target); setVaultDialogOpen(true); };
+    const handleOpenCleanupCreate = (target: QuickLinkTarget) => { setCleanupTarget(target); setCleanupDialogOpen(true); };
 
     // Permission checks for engagement operations
     const canEditEngagement = useCanEdit(id, 'engagement' as any, engagement?.created_by);
     const canDeleteEngagement = useCanDelete(id, 'engagement' as any, engagement?.created_by);
-
-    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-    // Who may change the status is what the backend accepts: engagement_edit,
-    // except that a COMPLETED engagement is locked to admins / team leads
-    // (GHSA-2gmw-jf4c-8q5g). The control used to be shown by role only.
-    const canChangeStatus = canEditEngagement && (
-        engagement?.status !== 'COMPLETED'
-        || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.TEAM_LEAD
-    );
-    // A PROPOSED engagement must show its own status (the Select rendered
-    // blank for a value not in its list); it's only offered while current.
-    const statusOptions = engagement?.status === 'PROPOSED'
-        ? [{ value: 'PROPOSED', label: 'Proposed' }, ...engagementStatuses]
-        : engagementStatuses;
-
-    const handleStatusChange = async (newStatus: string) => {
-        setIsUpdatingStatus(true);
-        try {
-            await updateEngagement.mutateAsync({
-                id: id,
-                status: newStatus
-            });
-        } catch (error) {
-            toast.error(getErrorMessage(error, 'Failed to update engagement status'));
-        } finally {
-            setIsUpdatingStatus(false);
-        }
-    };
-
-
 
     const handleEdit = () => {
         router.push(`/engagements/${id}/edit`);
@@ -441,39 +238,7 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                         <div>
                             <h1 className="text-3xl font-bold text-white tracking-tight">{engagement.name}</h1>
                             <div className="flex items-center gap-2 mt-1">
-                                {canChangeStatus ? (
-                                    <Select
-                                        value={engagement.status}
-                                        onValueChange={handleStatusChange}
-                                        disabled={isUpdatingStatus}
-                                    >
-                                        <SelectTrigger className={cn(
-                                            "h-7 w-fit min-w-[100px] px-2 py-0 border-none shadow-none focus:ring-0 text-[11px] font-bold uppercase",
-                                            statusColors[engagement.status] || statusColors.PLANNING
-                                        )}>
-                                            {isUpdatingStatus ? (
-                                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                            ) : (
-                                                <SelectValue />
-                                            )}
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                            {statusOptions.map((s) => (
-                                                <SelectItem
-                                                    key={s.value}
-                                                    value={s.value}
-                                                    className={cn("my-1 mx-1 rounded-md font-medium text-[11px]", statusColors[s.value])}
-                                                >
-                                                    {s.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                ) : (
-                                    <Badge className={cn("px-2 py-0.5", statusColors[engagement.status])}>
-                                        {engagement.status.replace('_', ' ')}
-                                    </Badge>
-                                )}
+                                <EngagementStatusControl engagement={engagement} canEdit={canEditEngagement} />
                                 <Separator orientation="vertical" className="h-4 bg-slate-800" />
                                 <span className="text-sm text-slate-400">{engagement.client_name}</span>
                             </div>
@@ -780,181 +545,20 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
                 )}
                 <ConfirmDialog />
 
-                {/* Vault Create & Link Dialog */}
-                <Dialog open={isVaultCreateDialogOpen} onOpenChange={setIsVaultCreateDialogOpen}>
-                    <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-[480px]">
-                        <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                                <Lock className="h-5 w-5 text-amber-400" />
-                                Create & Link Vault Item
-                            </DialogTitle>
-                            <DialogDescription className="text-slate-400">
-                                Create a new vault item linked to <span className="text-white font-semibold">{vaultLinkTarget?.name}</span>
-                            </DialogDescription>
-                        </DialogHeader>
-
-                        <div className="space-y-4 py-2">
-                            <div className="space-y-2">
-                                <Label>Name</Label>
-                                <Input
-                                    value={newVaultItem.name}
-                                    onChange={(e) => setNewVaultItem(p => ({ ...p, name: e.target.value }))}
-                                    placeholder="e.g. Admin Credentials"
-                                    className="bg-slate-950 border-slate-700 text-white"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Type</Label>
-                                <Select value={newVaultItem.item_type} onValueChange={(v) => setNewVaultItem(p => ({ ...p, item_type: v }))}>
-                                    <SelectTrigger className="bg-slate-950 border-slate-700 text-white">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-slate-900 border-slate-700 text-white">
-                                        <SelectItem value="CREDENTIAL"><div className="flex items-center gap-2"><Lock className="h-3.5 w-3.5 text-amber-400" /> Credential</div></SelectItem>
-                                        <SelectItem value="KEY"><div className="flex items-center gap-2"><Key className="h-3.5 w-3.5 text-primary" /> API Key / Token</div></SelectItem>
-                                        <SelectItem value="NOTE"><div className="flex items-center gap-2"><Shield className="h-3.5 w-3.5 text-emerald-400" /> Secure Note</div></SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            {newVaultItem.item_type === 'CREDENTIAL' && (
-                                <>
-                                    <div className="space-y-2">
-                                        <Label>Username</Label>
-                                        <Input
-                                            value={newVaultItem.username}
-                                            onChange={(e) => setNewVaultItem(p => ({ ...p, username: e.target.value }))}
-                                            placeholder="admin"
-                                            className="bg-slate-950 border-slate-700 text-white"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Password</Label>
-                                        <Input
-                                            type="password"
-                                            value={newVaultItem.password}
-                                            onChange={(e) => setNewVaultItem(p => ({ ...p, password: e.target.value }))}
-                                            placeholder="••••••••"
-                                            className="bg-slate-950 border-slate-700 text-white"
-                                        />
-                                    </div>
-                                </>
-                            )}
-                            {(newVaultItem.item_type === 'KEY' || newVaultItem.item_type === 'NOTE') && (
-                                <div className="space-y-2">
-                                    <Label>{newVaultItem.item_type === 'KEY' ? 'Key / Token' : 'Note Content'}</Label>
-                                    <Textarea
-                                        value={newVaultItem.note}
-                                        onChange={(e) => setNewVaultItem(p => ({ ...p, note: e.target.value }))}
-                                        placeholder={newVaultItem.item_type === 'KEY' ? 'Paste API key or token...' : 'Enter secure note...'}
-                                        className="bg-slate-950 border-slate-700 text-white font-mono text-xs"
-                                        rows={3}
-                                    />
-                                </div>
-                            )}
-                            <div className="space-y-2">
-                                <Label>Description (optional)</Label>
-                                <Textarea
-                                    value={newVaultItem.description}
-                                    onChange={(e) => setNewVaultItem(p => ({ ...p, description: e.target.value }))}
-                                    placeholder="Brief description..."
-                                    className="bg-slate-950 border-slate-700 text-white text-xs"
-                                    rows={2}
-                                />
-                            </div>
-                        </div>
-
-                        <DialogFooter>
-                            <Button variant="ghost" onClick={() => setIsVaultCreateDialogOpen(false)}>Cancel</Button>
-                            <Button
-                                onClick={handleCreateAndLinkVault}
-                                disabled={!newVaultItem.name || isCreatingVault}
-                                className="bg-amber-600 hover:bg-amber-500 text-white"
-                            >
-                                {isCreatingVault ? (
-                                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</>
-                                ) : (
-                                    <><Lock className="h-4 w-4 mr-2" /> Create & Link</>
-                                )}
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                <QuickCreateVaultDialog
+                    engagementId={id}
+                    target={vaultTarget}
+                    open={vaultDialogOpen}
+                    onOpenChange={setVaultDialogOpen}
+                />
             </div>
 
-            {/* Quick-Create Cleanup Artifact Dialog */}
-            <Dialog open={isCleanupCreateDialogOpen} onOpenChange={setIsCleanupCreateDialogOpen}>
-                <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-[500px]">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-lime-400" />
-                            Quick Add Cleanup Artifact
-                        </DialogTitle>
-                        <DialogDescription className="text-slate-400">
-                            Create a cleanup item and link it to{' '}
-                            <span className="text-white font-semibold">{cleanupLinkTarget?.name}</span>
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-2">
-                        <div>
-                            <label className="text-xs font-medium text-slate-400 block mb-1.5">Title *</label>
-                            <Input
-                                placeholder="e.g. Remove SSH key from target"
-                                value={newCleanupItem.title}
-                                onChange={(e) => setNewCleanupItem({ ...newCleanupItem, title: e.target.value })}
-                                className="bg-slate-800/50 border-slate-700 text-white"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-400 block mb-1.5">Type</label>
-                            <Select
-                                value={newCleanupItem.artifact_type}
-                                onValueChange={(v) => setNewCleanupItem({ ...newCleanupItem, artifact_type: v })}
-                            >
-                                <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent className="bg-slate-800 border-slate-700">
-                                    <SelectItem value="SSH_KEY">SSH Key</SelectItem>
-                                    <SelectItem value="FILE">File</SelectItem>
-                                    <SelectItem value="ACCOUNT">Account</SelectItem>
-                                    <SelectItem value="PERMISSION">Permission</SelectItem>
-                                    <SelectItem value="BACKDOOR">Backdoor</SelectItem>
-                                    <SelectItem value="IMPLANT">Implant</SelectItem>
-                                    <SelectItem value="OTHER">Other</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-400 block mb-1.5">Location</label>
-                            <Input
-                                placeholder="e.g. /home/user/.ssh/authorized_keys"
-                                value={newCleanupItem.location}
-                                onChange={(e) => setNewCleanupItem({ ...newCleanupItem, location: e.target.value })}
-                                className="bg-slate-800/50 border-slate-700 text-white"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-400 block mb-1.5">Description</label>
-                            <Textarea
-                                placeholder="Brief description of the artifact..."
-                                value={newCleanupItem.description}
-                                onChange={(e) => setNewCleanupItem({ ...newCleanupItem, description: e.target.value })}
-                                className="bg-slate-800/50 border-slate-700 text-white h-20 resize-none"
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setIsCleanupCreateDialogOpen(false)} disabled={isCreatingCleanup}>Cancel</Button>
-                        <Button
-                            className="bg-lime-600 hover:bg-lime-500 text-white"
-                            onClick={handleCreateAndLinkCleanup}
-                            disabled={!newCleanupItem.title || isCreatingCleanup}
-                        >
-                            {isCreatingCleanup ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create & Link'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <QuickCreateCleanupDialog
+                engagementId={id}
+                target={cleanupTarget}
+                open={cleanupDialogOpen}
+                onOpenChange={setCleanupDialogOpen}
+            />
 
             {/* Client Detail View Modal */}
             {(engagement as any)?.client && (
@@ -986,8 +590,3 @@ export default function EngagementDetailPage({ params }: { params: Promise<{ id:
         </DashboardLayout>
     );
 }
-
-
-// ═══════════════════════════════════════════════════════════════════
-//  ENGAGEMENT SKILLS OVERVIEW CARD
-// ═══════════════════════════════════════════════════════════════════
