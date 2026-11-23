@@ -165,7 +165,7 @@ def _match_condition(condition: dict, context: Dict[str, Any]) -> bool:
             actual = changes[field].get("new")
 
     if actual is None:
-        print(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → field not found in context")
+        logger.debug(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → field not found in context")
         return False
 
     # ── numeric operators ──────────────────────────────────────────────
@@ -182,7 +182,7 @@ def _match_condition(condition: dict, context: Dict[str, Any]) -> bool:
             result = a_num < e_num
         else:  # lte
             result = a_num <= e_num
-        print(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → actual={actual} → {'MATCH' if result else 'NO MATCH'}")
+        logger.debug(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → actual={actual} → {'MATCH' if result else 'NO MATCH'}")
         return result
 
     # ── list-typed actual (e.g. tags) ──────────────────────────────────
@@ -204,7 +204,7 @@ def _match_condition(condition: dict, context: Dict[str, Any]) -> bool:
             result = any(str(expected).lower() in v for v in actual_list)
         else:
             result = False
-        print(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → actual={actual_list} → {'MATCH' if result else 'NO MATCH'}")
+        logger.debug(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → actual={actual_list} → {'MATCH' if result else 'NO MATCH'}")
         return result
 
     # ── scalar string ops ──────────────────────────────────────────────
@@ -229,7 +229,7 @@ def _match_condition(condition: dict, context: Dict[str, Any]) -> bool:
     else:
         result = False
 
-    print(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → actual='{actual_str}' expected='{expected_str}' → {'MATCH' if result else 'NO MATCH'}")
+    logger.debug(f"  [AUTOMATION] Condition '{field} {operator} {expected}' → actual='{actual_str}' expected='{expected_str}' → {'MATCH' if result else 'NO MATCH'}")
     return result
 
 
@@ -648,13 +648,13 @@ async def execute_rule_actions(
     """
     actions = rule.actions or []
     rule_is_personal = getattr(rule, "owner_user_id", None) is not None
-    print(f"[AUTOMATION] Executing {len(actions)} action(s) for rule '{rule.name}' (personal={rule_is_personal})")
+    logger.debug(f"[AUTOMATION] Executing {len(actions)} action(s) for rule '{rule.name}' (personal={rule_is_personal})")
 
     for action_config in actions:
         action_type = action_config.get("type")
         executor = _ACTION_EXECUTORS.get(action_type)
         if not executor:
-            print(f"[AUTOMATION] Unknown action type '{action_type}' in rule '{rule.name}'")
+            logger.warning(f"[AUTOMATION] Unknown action type '{action_type}' in rule '{rule.name}'")
             continue
 
         try:
@@ -665,9 +665,9 @@ async def execute_rule_actions(
                 await executor(db, action_config, context, rule.name)
             else:
                 await executor(action_config, context, rule.name)
-            print(f"[AUTOMATION] Action '{action_type}' executed successfully")
+            logger.debug(f"[AUTOMATION] Action '{action_type}' executed successfully")
         except Exception as e:
-            print(f"[AUTOMATION] Action '{action_type}' FAILED: {e}")
+            logger.warning(f"[AUTOMATION] Action '{action_type}' FAILED: {e}")
             logger.error(f"Action '{action_type}' failed in rule '{rule.name}': {e}")
 
     # Update trigger stats
@@ -724,7 +724,7 @@ async def evaluate_rules(
         )
         rules = result.scalars().all()
     except Exception as e:
-        print(f"[AUTOMATION] ENGINE QUERY ERROR: {e}")
+        logger.warning(f"[AUTOMATION] ENGINE QUERY ERROR: {e}")
         logger.error(f"Automation engine query error: {e}")
         return
 
@@ -735,21 +735,21 @@ async def evaluate_rules(
         if r.owner_user_id is None or r.owner_user_id == event_actor_id
     ]
 
-    print(f"[AUTOMATION] evaluate_rules: trigger='{trigger_type}', found {len(rules)} rule(s), context keys={list(context.keys())}")
+    logger.debug(f"[AUTOMATION] evaluate_rules: trigger='{trigger_type}', found {len(rules)} rule(s), context keys={list(context.keys())}")
     if context.get('status'):
-        print(f"[AUTOMATION]   context status='{context.get('status')}', severity='{context.get('severity')}'")
+        logger.debug(f"[AUTOMATION]   context status='{context.get('status')}', severity='{context.get('severity')}'")
 
     for rule in rules:
         try:
             conditions = rule.conditions or []
 
-            print(f"[AUTOMATION] Evaluating rule '{rule.name}' with {len(conditions)} condition(s)")
+            logger.debug(f"[AUTOMATION] Evaluating rule '{rule.name}' with {len(conditions)} condition(s)")
 
             if not _all_conditions_match(conditions, context):
-                print(f"[AUTOMATION] Rule '{rule.name}' → conditions did NOT match, skipping")
+                logger.debug(f"[AUTOMATION] Rule '{rule.name}' → conditions did NOT match, skipping")
                 continue
 
-            print(f"[AUTOMATION] Rule '{rule.name}' → MATCHED! Executing actions")
+            logger.debug(f"[AUTOMATION] Rule '{rule.name}' → MATCHED! Executing actions")
             await execute_rule_actions(db, rule, context)
         except Exception as e:
             # One bad rule shouldn't suppress the others. Log with rule.id so
@@ -758,7 +758,7 @@ async def evaluate_rules(
                 "Automation rule %s ('%s') failed evaluation: %s",
                 rule.id, rule.name, e,
             )
-            print(f"[AUTOMATION] Rule '{rule.name}' (id={rule.id}) FAILED: {e}")
+            logger.warning(f"[AUTOMATION] Rule '{rule.name}' (id={rule.id}) FAILED: {e}")
 
     # Note: do NOT commit here — caller (create_activity_log) commits
     # after all rule evaluations complete

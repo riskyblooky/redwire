@@ -308,7 +308,7 @@ async def _suggest_for_finding(
             f"Category: {entity.category or 'N/A'}\n"
             f"Description: {desc_text[:AI_MAX_DESCRIPTION_CHARS]}{extra}"
         )
-        print(f"[ATT&CK Suggest] [{index}/{total}] Calling AI for {noun}: {entity.title[:60]}")
+        logger.debug(f"[ATT&CK Suggest] [{index}/{total}] Calling AI for {noun}: {entity.title[:60]}")
         try:
             resp = await client.post(
                 f"{api_url}/chat/completions",
@@ -344,7 +344,7 @@ async def _suggest_for_finding(
                     "stream": False,
                 },
             )
-            print(f"[ATT&CK Suggest] [{index}/{total}] AI response status: {resp.status_code}")
+            logger.debug(f"[ATT&CK Suggest] [{index}/{total}] AI response status: {resp.status_code}")
             if resp.status_code == 200:
                 data = resp.json()
                 choice = (data.get("choices") or [{}])[0]
@@ -382,7 +382,7 @@ async def _suggest_for_finding(
                 if techniques is None:
                     msg_keys = list(message.keys())
                     has_reasoning = bool(message.get("reasoning_content"))
-                    print(
+                    logger.debug(
                         f"[ATT&CK Suggest] [{index}/{total}] No parseable JSON found. "
                         f"finish_reason={finish_reason}, keys={msg_keys}, has_reasoning={has_reasoning}"
                     )
@@ -406,7 +406,7 @@ async def _suggest_for_finding(
                     }
 
                 preview = next(raw[:300] for src, raw in candidates if src == source_used)
-                print(
+                logger.debug(
                     f"[ATT&CK Suggest] [{index}/{total}] Parsed {len(techniques)} techniques "
                     f"from {source_used}. Preview: {preview}"
                 )
@@ -416,7 +416,7 @@ async def _suggest_for_finding(
                 }
             else:
                 resp_text = resp.text[:200]
-                print(f"[ATT&CK Suggest] [{index}/{total}] AI API error: {resp.status_code} — {resp_text}")
+                logger.warning(f"[ATT&CK Suggest] [{index}/{total}] AI API error: {resp.status_code} — {resp_text}")
                 # Extract a concise message from the AI backend's JSON body if present
                 err_msg = f"AI API returned {resp.status_code}"
                 try:
@@ -432,7 +432,7 @@ async def _suggest_for_finding(
                     "error": err_msg,
                 }
         except Exception as e:
-            print(f"[ATT&CK Suggest] [{index}/{total}] Exception: {type(e).__name__}: {e}")
+            logger.warning(f"[ATT&CK Suggest] [{index}/{total}] Exception: {type(e).__name__}: {e}")
             return {
                 **base,
                 "techniques": [],
@@ -466,27 +466,27 @@ async def suggest_techniques(
                 detail="Insufficient permissions for this engagement.",
             )
 
-    print(f"[ATT&CK Suggest] Called for engagement {engagement_id}, finding_ids={request.finding_ids}")
+    logger.debug(f"[ATT&CK Suggest] Called for engagement {engagement_id}, finding_ids={request.finding_ids}")
 
     # Check AI enabled
     ai_result = await db.execute(select(AiSetting))
     settings = {r.key: r.value for r in ai_result.scalars().all()}
 
     ai_enabled = settings.get("ai_enabled", "false")
-    print(f"[ATT&CK Suggest] ai_enabled={ai_enabled}")
+    logger.debug(f"[ATT&CK Suggest] ai_enabled={ai_enabled}")
 
     if ai_enabled.lower() != "true":
-        print("[ATT&CK Suggest] AI is disabled, returning 403")
+        logger.info("[ATT&CK Suggest] AI is disabled, returning 403")
         raise HTTPException(403, "AI assistant is disabled")
 
     api_url = settings.get("ai_api_url", "https://api.openai.com/v1").rstrip("/")
     api_key = settings.get("ai_api_key", "")
     model = settings.get("ai_default_model", "gpt-4o")
 
-    print(f"[ATT&CK Suggest] api_url={api_url}, model={model}, has_key={bool(api_key)}")
+    logger.debug(f"[ATT&CK Suggest] api_url={api_url}, model={model}, has_key={bool(api_key)}")
 
     if not api_key:
-        print("[ATT&CK Suggest] No API key, returning 400")
+        logger.info("[ATT&CK Suggest] No API key, returning 400")
         raise HTTPException(400, "AI API key not configured")
 
     # Resolve which entities to process — findings or test cases, honoring the
@@ -518,7 +518,7 @@ async def suggest_techniques(
 
     end = total if request.limit is None else request.offset + request.limit
     entities = entities[request.offset:end]
-    print(f"[ATT&CK Suggest] {len(rows)} {noun}; processing {len(entities)} of {total} from {request.offset} "
+    logger.debug(f"[ATT&CK Suggest] {len(rows)} {noun}; processing {len(entities)} of {total} from {request.offset} "
           f"(include_mapped={request.include_mapped})")
 
     # Process concurrently with bounded concurrency. Honor the admin's TLS-verify
@@ -540,7 +540,7 @@ async def suggest_techniques(
     failed = sum(1 for s in suggestions if s.get("error"))
     # First non-empty error string for the toast
     first_error = next((s.get("error") for s in suggestions if s.get("error")), None)
-    print(
+    logger.info(
         f"[ATT&CK Suggest] Done — {succeeded}/{len(suggestions)} succeeded, "
         f"{failed} failed. first_error={first_error}"
     )
