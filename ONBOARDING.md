@@ -68,9 +68,8 @@ frontend/src/
   lib/
     api.ts           THE axios instance (JWT inject + refresh-race protection) — never make ad-hoc instances
     types.ts         Shared TS types
-    cvss31.ts        CVSS 3.1 scoring
     hooks/           One use-<resource>.ts per resource (hook + exported TS interfaces)
-  stores/            Zustand: auth-store, engagement-store, user-settings-store
+  stores/            Zustand: auth-store, engagement-store
   middleware.ts      Route gating via has_session cookie
 mcp-server/          server.py (forwards session JWT to backend)
 nginx/               Nginx config + Certbot volumes
