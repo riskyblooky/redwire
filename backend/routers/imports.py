@@ -28,8 +28,11 @@ from models.scan_import import ScanImport
 from utils.parsers import detect_and_parse, ParsedImportData
 from utils.collaboration import create_activity_log
 from utils.uploads import read_upload_capped
+import logging
 import os
 import uuid
+
+_log = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -436,8 +439,8 @@ async def commit_import(
             resource_name=f"{source} Import",
             details=f"Imported {source} scan: {', '.join(details_parts)}",
         )
-    except Exception:
-        pass  # Don't fail the import if activity logging fails
+    except Exception:  # Don't fail the import if activity logging fails
+        _log.exception("Activity log for a scan import failed")
 
     # Persist a scan-import record so the command + scan metadata survive the
     # import and can be revisited in the scans menu. Best-effort — a failure
@@ -482,12 +485,15 @@ async def commit_import(
             ports_added=result.ports_added,
             created_by=current_user.id,
         )
-        db.add(scan)
+        # SAVEPOINT: a failed insert rolls back the record alone. It used to
+        # leave the session failed (swallowed, no rollback), so the raw-file
+        # attachment below broke and the import returned a 500.
+        async with db.begin_nested():
+            db.add(scan)
         await db.commit()
-        await db.refresh(scan)
         result.scan_import_id = scan.id
     except Exception:
-        pass
+        _log.exception("Saving the scan-import record failed (import itself succeeded)")
 
     # Retain the raw scan file as an engagement attachment (best-effort, excluded
     # from the report). The original file is preserved for the record alongside
