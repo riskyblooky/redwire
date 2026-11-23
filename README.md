@@ -40,7 +40,7 @@ RedWire centralizes the operational side of an engagement: who is doing what, wh
 ## Technology stack
 
 **Frontend**
-- Next.js 14 (App Router), React 18, TypeScript
+- Next.js 15 (App Router), React 19, TypeScript
 - Tailwind CSS v4, shadcn/ui (dark theme)
 - TanStack Query, Zustand
 - TipTap editor with Y.js for collaborative editing

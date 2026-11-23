@@ -35,7 +35,7 @@ Companion docs at repo root:
 | Layer | Stack |
 |-------|-------|
 | Backend | Python **FastAPI** (async), **SQLAlchemy 2.x**, PostgreSQL 15, Redis, MinIO (S3), Alembic. Async driver `asyncpg`; migrations use sync `psycopg2`. |
-| Frontend | **Next.js 14** (App Router), React 18, TypeScript, **Tailwind v4** (no config file — `@theme {}` in `globals.css`), shadcn/ui (slate, **dark only**), **TanStack Query**, Zustand, sonner, TipTap. |
+| Frontend | **Next.js 15** (App Router), React 19, TypeScript, **Tailwind v4** (no config file — `@theme {}` in `globals.css`), shadcn/ui (slate, **dark only**), **TanStack Query**, Zustand, sonner, TipTap. |
 | Infra | Docker Compose (dev + prod), Nginx reverse proxy, Certbot. |
 | Extras | `mcp-server/` (Starlette + SSE) exposes RedWire as MCP tools; plugin system loads from `backend/plugins/`. |
 
@@ -234,7 +234,7 @@ Fixtures live in `auth-test/`.
 
 ## 11. Production & deploy (see **`prod-build`** skill)
 
-- `docker-compose.prod.yml` + Nginx + Certbot (Let's Encrypt). Deploy via `scripts/deploy_server.sh`.
+- `docker-compose.yml` (the default file is prod) + Nginx + Certbot (Let's Encrypt). Deploy via `scripts/deploy_server.sh`.
 - **Deploy target is a 4GB VPS.** Frontend prod build heap capped at 2GB
   (`NODE_OPTIONS=--max-old-space-size=2048` in the Dockerfile) — don't raise it.
 - Internal services (postgres/redis/minio/mcp) have **no public port bindings** in prod. Don't add them.
@@ -281,7 +281,7 @@ Auto-loaded by topic; also invocable explicitly. Start here for any task:
 | `git-workflow` | commits, branching, deploy zip |
 | `prod-build` | prod compose, deploy script, SSL, backup/restore |
 | `troubleshooting` | runtime errors, build/startup failures, MinIO/vault/Nginx symptoms |
-| `testing` | test suite state (note: **no real suite yet**) |
+| `testing` | the backend pytest suite (~1,470 tests) and how to add to it |
 
 ---
 
