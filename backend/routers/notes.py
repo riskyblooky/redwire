@@ -471,14 +471,17 @@ async def delete_note(
 
 
 async def _get_note_with_perm_check(note_id: str, db: AsyncSession, current_user: User):
-    """Load a note and verify the user has edit permission."""
+    """Load a note and verify the user may edit it: the same rule as PATCH
+    (note_edit on your own note, note_edit_any on someone else's; admins and
+    team leads bypass, READ_ONLY_ADMIN writes only with an explicit grant).
+    Links used to need note_edit alone, whoever wrote the note."""
     result = await db.execute(select(Note).where(Note.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
-    await require_engagement_perm(current_user, note.engagement_id, Permission.NOTE_EDIT, db)
+    perm = Permission.NOTE_EDIT if note.created_by == current_user.id else Permission.NOTE_EDIT_ANY
+    await require_engagement_perm(current_user, note.engagement_id, perm, db, action="change this note's links")
 
     return note
 

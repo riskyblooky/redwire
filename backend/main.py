@@ -528,6 +528,14 @@ async def _integrity_conflict(request: Request, exc: IntegrityError):
     for name, detail in _UNIQUE_CONFLICTS.items():
         if name in text:
             return JSONResponse(status_code=409, content={"detail": detail})
+    # Any other unique violation is still a conflict, not a server error —
+    # typically two requests racing past an "already exists?" check (e.g.
+    # a double-clicked link button).
+    if "duplicate key value violates unique constraint" in text:
+        logging.getLogger(__name__).warning("Unique violation (%s %s): %s", getattr(request, "method", "?"),
+                                            getattr(getattr(request, "url", None), "path", "?"),
+                                            text.splitlines()[0][:300])
+        return JSONResponse(status_code=409, content={"detail": "That already exists."})
     # Update schemas take every field as optional, and a client that sends
     # an explicit null for a required one (title, name...) used to get a 500.
     m = _NOT_NULL_RE.search(text)
