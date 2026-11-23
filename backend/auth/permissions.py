@@ -1,28 +1,22 @@
 """
 Permission checking utilities for RBAC system.
 
-This module provides centralized permission verification for both global (site-wide)
-and engagement-specific permissions.
+Global (site-wide, group-granted) permissions. Engagement permissions live in
+auth/rbac.py (has_engagement_perm / require_engagement_perm and the set form,
+engagement_permissions).
 """
 
-from functools import wraps
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
 from models.user import User
 from models.permission import Permission, GroupPermissions, EngagementRolePermissions, GLOBAL_PERMISSIONS, ENGAGEMENT_PERMISSIONS
 from models.group import Group, user_groups
 from models.associations import EngagementAssignment
-from database import get_db
 
 
-def _is_read_permission(permission: Permission) -> bool:
-    """View-style permissions (e.g. view_all_users, finding_view) are
-    read-only; everything else (manage_*, *_create/edit/delete/_any) is
-    a write action."""
-    v = permission.value
-    return v.startswith("view_") or v.endswith("_view")
+# View-style permissions are reads (one rule, shared with the engagement checks).
+from auth.rbac import is_read_permission as _is_read_permission  # noqa: E402
 
 
 async def has_global_permission(
@@ -161,64 +155,3 @@ async def require_global_permission(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Insufficient permissions. Required: {permission.value}"
         )
-
-
-
-
-
-
-async def get_user_engagement_permissions(
-    user_id: str,
-    engagement_id: str,
-    db: AsyncSession
-) -> List[str]:
-    """
-    Get all permissions a user has for a specific engagement.
-    
-    Args:
-        user_id: The user ID to get permissions for
-        engagement_id: The engagement ID to check permissions for
-        db: Database session
-        
-    Returns:
-        List of permission strings the user has
-    """
-    permissions_set = set()
-    
-    # Get permissions from engagement role assignment
-    query = (
-        select(EngagementRolePermissions.permissions)
-        .join(EngagementAssignment, EngagementRolePermissions.role_id == EngagementAssignment.role_id)
-        .where(
-            EngagementAssignment.user_id == user_id,
-            EngagementAssignment.engagement_id == engagement_id
-        )
-    )
-    
-    result = await db.execute(query)
-    role_permissions = result.scalar_one_or_none()
-    
-    if role_permissions:
-        permissions_set.update(role_permissions)
-    
-    # Check for global permissions that grant engagement access
-    # For example, VIEW_ALL_ENGAGEMENTS grants all view permissions
-    global_query = (
-        select(GroupPermissions.permissions)
-        .join(Group, GroupPermissions.group_id == Group.id)
-        .join(user_groups, Group.id == user_groups.c.group_id)
-        .where(user_groups.c.user_id == user_id)
-    )
-    
-    global_result = await db.execute(global_query)
-    all_group_permissions = global_result.scalars().all()
-    
-    # VIEW_ALL_ENGAGEMENTS: the same grant check_engagement_permission
-    # applies (it used to list VAULT_VIEW here, so the UI offered a vault tab
-    # the API then refused).
-    from models.permission import VIEW_ALL_ENGAGEMENT_GRANTS
-    for group_perms in all_group_permissions:
-        if group_perms and Permission.VIEW_ALL_ENGAGEMENTS.value in group_perms:
-            permissions_set.update(VIEW_ALL_ENGAGEMENT_GRANTS)
-    
-    return list(permissions_set)

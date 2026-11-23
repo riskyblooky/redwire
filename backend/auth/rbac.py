@@ -1,34 +1,9 @@
-from functools import wraps
 from fastapi import HTTPException, status
 from models.user import UserRole
 from models.associations import EngagementAssignment
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
-
-def require_roles(allowed_roles: List[UserRole]):
-    """Decorator to enforce RBAC on endpoints."""
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            # Get current_user from kwargs
-            current_user = kwargs.get("current_user")
-            if not current_user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required"
-                )
-            
-            # Check if user's role is in allowed roles
-            if current_user.role not in allowed_roles:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Insufficient permissions. Required roles: {[r.value for r in allowed_roles]}"
-                )
-            
-            return await func(*args, **kwargs)
-        return wrapper
-    return decorator
+from typing import Optional
 
 async def is_engagement_member(user_id: str, engagement_id: str, db: AsyncSession) -> bool:
     """GHSA-7x2f-ff7r-h388 #1 (CWE-863): does this user currently hold
@@ -51,67 +26,44 @@ async def is_engagement_member(user_id: str, engagement_id: str, db: AsyncSessio
     return result.scalar_one_or_none() is not None
 
 
-async def check_engagement_role(user_id: str, engagement_id: str, allowed_role_names: List[str], db: AsyncSession) -> bool:
-    """Check if a user has one of the allowed roles on a specific engagement."""
-    from models.engagement_role import EngagementRole
-    
-    query = (
-        select(EngagementRole.name)
-        .join(EngagementAssignment)
-        .where(
-            EngagementAssignment.user_id == user_id,
-            EngagementAssignment.engagement_id == engagement_id
-        )
-    )
-    result = await db.execute(query)
-    role_name = result.scalar_one_or_none()
-    
-    return role_name in allowed_role_names
-
-async def check_engagement_permission(user_id: str, engagement_id: str, required_permission: str, db: AsyncSession) -> bool:
-    """Check if a user has a specific permission on an engagement based on their role's permissions.
-    
-    Args:
-        user_id: The user's ID
-        engagement_id: The engagement ID
-        required_permission: The permission string (e.g., 'asset_edit', 'finding_delete')
-        db: Database session
-        
-    Returns:
-        True if user has the permission, False otherwise
-    """
+async def _assigned_permissions(user_id: str, engagement_id: str, db: AsyncSession) -> list:
+    """Permissions the user's engagement role grants here ([] if unassigned)."""
     from models.engagement_role import EngagementRole
     from models.permission import EngagementRolePermissions
-    
-    # Query to get the user's role permissions for this engagement
-    query = (
+    result = await db.execute(
         select(EngagementRolePermissions.permissions)
         .join(EngagementRole, EngagementRolePermissions.role_id == EngagementRole.id)
         .join(EngagementAssignment, EngagementAssignment.role_id == EngagementRole.id)
         .where(
             EngagementAssignment.user_id == user_id,
-            EngagementAssignment.engagement_id == engagement_id
+            EngagementAssignment.engagement_id == engagement_id,
         )
     )
-    result = await db.execute(query)
-    permissions = result.scalar_one_or_none()
+    return result.scalar_one_or_none() or []
 
-    if permissions and required_permission in permissions:
+
+async def _has_view_all(user_id: str, db: AsyncSession) -> bool:
+    """Middle tier: a group-granted VIEW_ALL_ENGAGEMENTS reads every
+    engagement's content without an assignment (VIEW_ALL_ENGAGEMENT_GRANTS —
+    never the vault)."""
+    from models.user import User
+    from models.permission import Permission
+    from auth.permissions import has_global_permission
+    user = await db.get(User, user_id)
+    return user is not None and user.is_active and await has_global_permission(
+        user, Permission.VIEW_ALL_ENGAGEMENTS, db)
+
+
+async def check_engagement_permission(user_id: str, engagement_id: str, required_permission: str, db: AsyncSession) -> bool:
+    """Does the user hold ``required_permission`` on this engagement through
+    their engagement role, or through the view-all tier? Role bypasses
+    (ADMIN / TEAM_LEAD / READ_ONLY_ADMIN) are applied by has_engagement_perm,
+    not here. ``engagement_permissions`` is the set form."""
+    if required_permission in await _assigned_permissions(user_id, engagement_id, db):
         return True
+    from models.permission import VIEW_ALL_ENGAGEMENT_GRANTS
+    return required_permission in VIEW_ALL_ENGAGEMENT_GRANTS and await _has_view_all(user_id, db)
 
-    # Middle tier: a group-granted VIEW_ALL_ENGAGEMENTS reads every engagement's
-    # content without an assignment (lists already honoured it through
-    # resolve_engagement_scope; per-engagement reads 403'd, so the engagement
-    # page itself wouldn't open). Never the vault — see VIEW_ALL_ENGAGEMENT_GRANTS.
-    from models.permission import VIEW_ALL_ENGAGEMENT_GRANTS, Permission
-    if required_permission in VIEW_ALL_ENGAGEMENT_GRANTS:
-        from models.user import User
-        from auth.permissions import has_global_permission
-        user = await db.get(User, user_id)
-        if user is not None and user.is_active and await has_global_permission(
-                user, Permission.VIEW_ALL_ENGAGEMENTS, db):
-            return True
-    return False
 
 def engagements_with_permission(user_id: str, permission: str):
     """Scalar subquery of the engagement ids where the user's engagement role
@@ -364,7 +316,7 @@ def _perm_value(permission) -> str:
 
 def is_read_permission(permission) -> bool:
     """View-style permissions (``*_view`` / ``view_*``) are reads; everything
-    else is a write. Same rule as auth.permissions._is_read_permission."""
+    else is a write."""
     v = _perm_value(permission)
     return v.startswith("view_") or v.endswith("_view")
 
@@ -384,6 +336,21 @@ async def has_engagement_perm(user, engagement_id: Optional[str], permission, db
     if not engagement_id:
         return False
     return await check_engagement_permission(user.id, engagement_id, _perm_value(permission), db)
+
+
+async def engagement_permissions(user, engagement_id: str, db: AsyncSession) -> set:
+    """Every engagement permission the user holds here — the set form of
+    has_engagement_perm (role bypasses, the engagement role, the view-all
+    tier), for callers that need the whole set rather than one check."""
+    from models.permission import ENGAGEMENT_PERMISSIONS, VIEW_ALL_ENGAGEMENT_GRANTS
+    if user.role in WRITE_BYPASS_ROLES:
+        return {p.value for p in ENGAGEMENT_PERMISSIONS}
+    perms = set(await _assigned_permissions(user.id, engagement_id, db))
+    if user.role in READ_BYPASS_ROLES:
+        perms.update(p.value for p in ENGAGEMENT_PERMISSIONS if is_read_permission(p))
+    elif await _has_view_all(user.id, db):
+        perms.update(VIEW_ALL_ENGAGEMENT_GRANTS)
+    return perms
 
 
 def _denied(permission, action: str) -> HTTPException:

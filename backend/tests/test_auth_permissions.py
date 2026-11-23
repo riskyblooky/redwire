@@ -28,7 +28,6 @@ from tests.conftest import FakeDb, FakeScalarResult, make_fake_user
 from auth.permissions import (
     _is_read_permission,
     has_global_permission,
-    get_user_engagement_permissions,
 )
 from models.permission import Permission
 
@@ -115,40 +114,6 @@ async def test_group_without_grant_denies_global_permission():
 # the live path.
 
 
-# ── get_user_engagement_permissions ───────────────────────────────────────
-
-
-async def test_get_perms_returns_role_assignment_perms():
-    # First query: role perms (scalar_one_or_none). Second: global groups (all()).
-    db = FakeDb(
-        [
-            FakeScalarResult(["finding_edit", "finding_create"]),
-            FakeScalarResult(many=[]),
-        ]
-    )
-    perms = await get_user_engagement_permissions("u-1", "eng-1", db)
-    assert set(perms) == {"finding_edit", "finding_create"}
-
-
-async def test_get_perms_empty_when_no_grants():
-    db = FakeDb([FakeScalarResult(None), FakeScalarResult(many=[])])
-    perms = await get_user_engagement_permissions("u-1", "eng-1", db)
-    assert perms == []
-
-
-async def test_get_perms_view_all_engagements_adds_view_perms():
-    """A group carrying VIEW_ALL_ENGAGEMENTS expands into the view-permission
-    set even when the user has no engagement-role assignment."""
-    db = FakeDb(
-        [
-            FakeScalarResult(None),  # no role assignment
-            FakeScalarResult(many=[["view_all_engagements"]]),
-        ]
-    )
-    perms = set(await get_user_engagement_permissions("u-1", "eng-1", db))
-    assert Permission.ENGAGEMENT_VIEW.value in perms
-    assert Permission.FINDING_VIEW.value in perms
-    assert Permission.VAULT_VIEW.value not in perms  # credentials need an engagement role
-    assert Permission.NOTE_VIEW.value in perms and Permission.CLEANUP_VIEW.value in perms
-    # Non-view perms are NOT granted by the override.
-    assert Permission.FINDING_EDIT.value not in perms
+# get_user_engagement_permissions was a second engagement-permission engine;
+# its set form is auth.rbac.engagement_permissions, covered (against
+# has_engagement_perm) by tests/test_engagement_permissions_set.py.

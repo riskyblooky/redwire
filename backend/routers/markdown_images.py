@@ -75,11 +75,9 @@ async def _check_engagement_write(user: User, engagement_id: str, db: AsyncSessi
     on the engagement (images are pasted into findings, test cases, notes,
     discussions … each with its own create/edit permission). View-only
     members — and read-only admins without a grant — can still fetch."""
-    if user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD):
-        return
-    from auth.permissions import get_user_engagement_permissions
-    perms = await get_user_engagement_permissions(user.id, engagement_id, db)
-    if not any(not (p.startswith("view_") or p.endswith("_view")) for p in perms):
+    from auth.rbac import engagement_permissions, is_read_permission
+    perms = await engagement_permissions(user, engagement_id, db)
+    if not any(not is_read_permission(p) for p in perms):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to edit content in this engagement",

@@ -1186,19 +1186,11 @@ async def get_my_engagement_permissions(
     current_user: User = Depends(get_current_user)
 ):
     """Get the current user's permissions for a specific engagement."""
-    from auth.permissions import get_user_engagement_permissions, _is_read_permission
-    from models.permission import ENGAGEMENT_PERMISSIONS
-
-    # Mirrors has_engagement_permission: ADMIN and TEAM_LEAD hold everything;
-    # READ_ONLY_ADMIN holds the view permissions plus whatever its own
-    # assignment here grants (it was reported as holding every write too,
-    # so the UI showed edit/delete buttons that 403'd).
-    if current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD):
-        return sorted(p.value for p in ENGAGEMENT_PERMISSIONS)
-    permissions = set(await get_user_engagement_permissions(current_user.id, engagement_id, db))
-    if current_user.role == UserRole.READ_ONLY_ADMIN:
-        permissions.update(p.value for p in ENGAGEMENT_PERMISSIONS if _is_read_permission(p))
-    return sorted(permissions)
+    from auth.rbac import engagement_permissions
+    # Same answer has_engagement_perm gives one permission at a time (role
+    # bypasses, the engagement role, the view-all tier), so the UI shows
+    # exactly the actions the API will allow.
+    return sorted(await engagement_permissions(current_user, engagement_id, db))
 
 
 # ── Phase endpoints ──────────────────────────────────────────────

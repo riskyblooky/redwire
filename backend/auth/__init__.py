@@ -1,6 +1,6 @@
 from auth.password import verify_password, get_password_hash, verify_password_async, get_password_hash_async
 from auth.jwt import create_access_token, create_refresh_token, decode_token, blacklist_token, is_token_blacklisted
-from auth.rbac import require_roles, can_modify_resource
+from auth.rbac import can_modify_resource
 from auth.dependencies import get_current_user, get_current_active_user, require_write
 from auth.totp import generate_totp_secret, get_totp_uri, generate_qr_base64, verify_totp_code
 from auth.ldap_auth import authenticate_ldap, test_ldap_connection
@@ -16,7 +16,6 @@ __all__ = [
     "decode_token",
     "blacklist_token",
     "is_token_blacklisted",
-    "require_roles",
     "can_modify_resource",
     "get_current_user",
     "get_current_active_user",
