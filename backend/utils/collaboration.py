@@ -42,6 +42,18 @@ async def _run_post_commit(make_coro) -> None:
         logger.warning("post-commit notification work failed: %s", e)
 
 
+# The event loop holds only weak references to tasks, so a fire-and-forget
+# task can be garbage-collected before it finishes. Keep each one here
+# until it's done.
+_background_tasks: set = set()
+
+
+def _spawn(loop, coro) -> None:
+    task = loop.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 @event.listens_for(Session, "after_commit")
 def _collab_after_commit(session: Session) -> None:
     if session.in_nested_transaction():
@@ -54,7 +66,7 @@ def _collab_after_commit(session: Session) -> None:
     except RuntimeError:  # sync session outside an event loop: nothing to push to
         return
     for make_coro in pending:
-        loop.create_task(_run_post_commit(make_coro))
+        _spawn(loop, _run_post_commit(make_coro))
 
 
 @event.listens_for(Session, "after_rollback")
@@ -742,7 +754,7 @@ class ConnectionManager:
         except RuntimeError:
             return
         for r_type, r_id in channels:
-            loop.create_task(bus.presence_remove(r_type, r_id, conn_id))
+            _spawn(loop, bus.presence_remove(r_type, r_id, conn_id))
 
     def _purge_socket_everywhere(self, websocket: WebSocket) -> None:
         """Drop ``websocket`` from every channel it's registered in and from
