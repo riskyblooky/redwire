@@ -33,6 +33,7 @@ import {
 import { useDashboardStats } from '@/lib/hooks/use-analytics';
 import { useCustomWidgetData } from '@/lib/hooks/use-dashboard-widgets';
 import { severityHex } from '@/lib/severity';
+import { ACCENT_COLORS, TOOLTIP_STYLE } from '@/components/dashboard/chart-style';
 
 // Selects the backend scoping model for custom_query widget data. The
 // dashboard leaves the default ('dashboard' → assignment-scoped); a shared
@@ -56,19 +57,6 @@ const ICON_MAP: Record<string, any> = {
 // inside the chart (and therefore on-screen) — letting it escape the viewBox
 // made it run off the bottom of the page for widgets low on the dashboard.
 // The card doesn't clip its content, so clamping doesn't reintroduce clipping.
-const TOOLTIP_STYLE = {
-    contentStyle: {
-        backgroundColor: 'hsl(var(--popover))',
-        border: '1px solid hsl(var(--border))',
-        borderRadius: '8px',
-        color: 'hsl(var(--popover-foreground))',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
-    },
-    itemStyle: { color: 'hsl(var(--popover-foreground))' },
-    labelStyle: { color: 'hsl(var(--muted-foreground))' },
-    wrapperStyle: { zIndex: 50, outline: 'none' },
-    allowEscapeViewBox: { x: false, y: false } as { x: boolean; y: boolean },
-};
 
 const STATUS_COLORS: Record<string, string> = {
     OPEN: '#ef4444', IN_REVIEW: '#f59e0b', VERIFIED: '#3b82f6', REMEDIATED: '#10b981', CLOSED: '#64748b',
@@ -89,7 +77,6 @@ const ENG_STATUS_BADGE: Record<string, string> = {
 const CLEANUP_COLORS: Record<string, string> = {
     PENDING: '#f97316', CLEANED: '#10b981', PARTIALLY_CLEANED: '#f59e0b', NOT_APPLICABLE: '#64748b',
 };
-const ACCENT_COLORS = ['#818cf8', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
 
 // ── Number formatting ─────────────────────────────────────────────
 function formatValue(v: any): string {

@@ -37,6 +37,8 @@ import {
     ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip,
     XAxis, YAxis, CartesianGrid, AreaChart, Area, LineChart as RLineChart, Line, Legend,
 } from 'recharts';
+import { ACCENT_COLORS, TOOLTIP_STYLE } from '@/components/dashboard/chart-style';
+import { parseDateOnly } from '@/lib/utils';
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -149,13 +151,7 @@ const CATEGORY_COLORS: Record<string, string> = {
     custom: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
 };
 
-const ACCENT_COLORS = ['#818cf8', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
 
-const TOOLTIP_STYLE = {
-    contentStyle: { backgroundColor: '#1a2235', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' },
-    itemStyle: { color: '#e2e8f0' },
-    labelStyle: { color: '#94a3b8' },
-};
 
 // ── Form State ─────────────────────────────────────────────────────
 
@@ -1113,12 +1109,12 @@ function PreviewChart({ data, chartType }: { data: any; chartType: string }) {
                     <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }}
                         tickFormatter={v => {
                             if (!v) return '';
-                            const d = new Date(v);
+                            const d = parseDateOnly(v);
                             return `${d.getMonth()+1}/${d.getDate()}`;
                         }} />
                     <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} allowDecimals={false} />
                     <Tooltip {...TOOLTIP_STYLE}
-                        labelFormatter={v => v ? new Date(v).toLocaleDateString() : ''} />
+                        labelFormatter={v => v ? parseDateOnly(v).toLocaleDateString() : ''} />
                     <Legend
                         verticalAlign="bottom" iconType="circle" iconSize={8}
                         wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }}
@@ -1156,12 +1152,12 @@ function PreviewChart({ data, chartType }: { data: any; chartType: string }) {
                     <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }}
                         tickFormatter={v => {
                             if (!v) return '';
-                            const d = new Date(v);
+                            const d = parseDateOnly(v);
                             return `${d.getMonth()+1}/${d.getDate()}`;
                         }} />
                     <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 9 }} allowDecimals={false} />
                     <Tooltip {...TOOLTIP_STYLE}
-                        labelFormatter={v => v ? new Date(v).toLocaleDateString() : ''} />
+                        labelFormatter={v => v ? parseDateOnly(v).toLocaleDateString() : ''} />
                     <Area type="monotone" dataKey="value" stroke="#818cf8" strokeWidth={2}
                         fill="url(#prevGrad)" dot={{ fill: '#818cf8', r: 2 }} />
                 </AreaChart>
@@ -1504,7 +1500,7 @@ function CompositePreview({ data, chartType, seriesLabels }: { data: any; chartT
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                     <XAxis
                         dataKey="date"
-                        tickFormatter={(v: string) => v ? new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
+                        tickFormatter={(v: string) => v ? parseDateOnly(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
                         stroke="#94a3b8"
                         tick={{ fill: '#94a3b8', fontSize: 9 }}
                     />
