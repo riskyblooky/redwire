@@ -24,7 +24,8 @@ class FindingReview(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), nullable=False, index=True)
-    reviewer_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # SET NULL: the review record outlives a deleted reviewer.
+    reviewer_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(String(24), nullable=False)  # APPROVED | CHANGES_REQUESTED
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

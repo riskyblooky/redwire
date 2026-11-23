@@ -1366,7 +1366,7 @@ class FindingReviewCreate(BaseModel):
 class FindingReviewResponse(BaseModel):
     id: str
     finding_id: str
-    reviewer_id: str
+    reviewer_id: Optional[str] = None  # None: the reviewer's account was deleted
     reviewer_username: Optional[str] = None
     reviewer_full_name: Optional[str] = None
     status: str

@@ -14,7 +14,8 @@ class AutomationRule(Base):
     conditions = Column(JSON, nullable=False, default=list)   # [{field, operator, value}]
     actions = Column(JSON, nullable=False, default=list)       # [{type, ...config}]
     is_enabled = Column(Boolean, default=True, nullable=False)
-    created_by = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # SET NULL: an org rule outlives its author (personal rules go with owner_user_id).
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     # GHSA-jvcx-44v2-gc9m: NULL means a global rule (fires for every
     # engagement, gated at create time by VIEW_ALL_ENGAGEMENTS); a non-NULL
     # value scopes the rule to a single engagement.
