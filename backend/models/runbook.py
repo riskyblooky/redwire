@@ -17,7 +17,9 @@ class Runbook(Base, AuditMixin):
         SQLEnum(TemplateStatus, name="templatestatus", create_type=False),
         nullable=False,
         default=TemplateStatus.DRAFT,
-        server_default="PUBLISHED",
+        # Matches the ORM default (it was "PUBLISHED", left over from the
+        # backfill that published existing rows when the workflow arrived).
+        server_default="DRAFT",
         index=True,
     )
     submitted_at = Column(DateTime, nullable=True)
