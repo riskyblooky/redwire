@@ -248,8 +248,10 @@ async def list_rules(
 ):
     """List automation rules.
 
-    ``scope=org`` (default): org-scope rules (owner_user_id IS NULL). Admins
-    and TeamLeads see all; others see their own. Requires AUTOMATION_VIEW.
+    ``scope=org`` (default): every org-scope rule (owner_user_id IS NULL).
+    Requires AUTOMATION_VIEW — the same gate as opening one rule, and
+    AUTOMATION_EDIT edits any of them, so the list no longer hides other
+    authors' rules from non-admins.
 
     ``scope=personal``: rules owned by the current user. No AUTOMATION_VIEW
     check — personal rules belong to their owner regardless of the org
@@ -274,8 +276,6 @@ async def list_rules(
         .order_by(AutomationRule.created_at.desc())
     )
 
-    if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
-        query = query.where(AutomationRule.created_by == current_user.id)
 
     result = await db.execute(query)
     rules = result.scalars().all()
