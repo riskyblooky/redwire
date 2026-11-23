@@ -68,6 +68,7 @@ function refreshAccessToken(): Promise<string> {
                 localStorage.setItem('access_token', access_token);
                 // Renew session cookie on successful refresh
                 document.cookie = 'has_session=1; path=/; max-age=86400; SameSite=Lax';
+                scheduleProactiveRefresh();
                 return access_token as string;
             } finally {
                 refreshInFlight = null;
@@ -163,35 +164,52 @@ api.interceptors.response.use(
 );
 
 // --- Proactive token refresh ---
-// Refresh the access token 2 minutes before it expires (every 28 minutes for a 30-min token)
-const PROACTIVE_REFRESH_INTERVAL_MS = 28 * 60 * 1000; // 28 minutes
+// One timer, set from the current token's `exp`: refresh a little before it
+// runs out (10% of the lifetime, 30 s to 2 min ahead). It used to fire every
+// 28 minutes, which only fit the default 30-minute token: with a shorter
+// ACCESS_TOKEN_EXPIRE_MINUTES the token lapsed first (every tab then took the
+// 401-and-retry path), and with a longer one it refreshed needlessly. Every
+// successful refresh, from any caller or another tab, reschedules it.
+const MIN_LEAD_MS = 30_000;
+const MAX_LEAD_MS = 120_000;
+const RETRY_MS = 60_000;
 
-let proactiveRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let proactiveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-function startProactiveRefresh() {
-    if (proactiveRefreshTimer) return; // Already running
-
-    proactiveRefreshTimer = setInterval(async () => {
-        // If there's no access token in localStorage we're not logged in;
-        // the refresh cookie (if any) will be sent automatically, but there
-        // is nothing to keep alive on this tab.
-        if (!localStorage.getItem('access_token')) {
-            stopProactiveRefresh();
-            return;
-        }
-
+function scheduleProactiveRefresh(delayMs?: number) {
+    if (proactiveRefreshTimer) clearTimeout(proactiveRefreshTimer);
+    proactiveRefreshTimer = null;
+    const token = localStorage.getItem('access_token');
+    if (!token) return; // not signed in on this browser: nothing to keep alive
+    if (delayMs === undefined) {
+        const exp = jwtExpiry(token);
+        if (exp === null) return; // unreadable token: leave it to the 401 interceptor
+        const msLeft = exp * 1000 - Date.now();
+        const lifetime = Math.max(msLeft, 0);
+        const lead = Math.min(MAX_LEAD_MS, Math.max(MIN_LEAD_MS, lifetime / 10));
+        delayMs = Math.max(msLeft - lead, 1_000);
+    }
+    proactiveRefreshTimer = setTimeout(async () => {
+        proactiveRefreshTimer = null;
+        if (!localStorage.getItem('access_token')) return;
         try {
-            // Joins a refresh already in flight rather than starting another.
+            // Joins a refresh already in flight; success reschedules.
             await refreshAccessToken();
         } catch {
-            // Proactive refresh failed — don't force logout, let the reactive interceptor handle it
+            // Don't force logout here — the reactive interceptor owns that.
+            // Try again shortly in case it was a blip.
+            scheduleProactiveRefresh(RETRY_MS);
         }
-    }, PROACTIVE_REFRESH_INTERVAL_MS);
+    }, delayMs);
+}
+
+function startProactiveRefresh() {
+    scheduleProactiveRefresh();
 }
 
 function stopProactiveRefresh() {
     if (proactiveRefreshTimer) {
-        clearInterval(proactiveRefreshTimer);
+        clearTimeout(proactiveRefreshTimer);
         proactiveRefreshTimer = null;
     }
 }
