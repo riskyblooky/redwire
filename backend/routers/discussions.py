@@ -91,10 +91,12 @@ async def get_threads(
     engagement_id: Optional[str] = None,
     resource_type: Optional[ResourceType] = None,
     resource_id: Optional[str] = None,
+    limit: int = Query(MAX_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get threads with optional filters."""
+    """Get threads with optional filters, newest first, at most ``limit``."""
     # Authorization Check - need discussion_view permission
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     
@@ -127,7 +129,7 @@ async def get_threads(
             engagements_with_permission(current_user.id, Permission.DISCUSSION_VIEW.value)
         ))
 
-    query = query.order_by(Thread.created_at.desc())
+    query = query.order_by(Thread.created_at.desc(), Thread.id).offset(offset).limit(limit)
     result = await db.execute(query)
     
     threads_with_counts = []

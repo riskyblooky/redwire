@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func, distinct
 from sqlalchemy.orm import selectinload
@@ -23,6 +24,8 @@ router = APIRouter(prefix="/calendar", tags=["calendar"])
 async def get_calendar_events(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
+    limit: int = Query(MAX_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -49,6 +52,7 @@ async def get_calendar_events(
             CalendarEvent.end_time >= start_naive
         )
 
+    query = query.order_by(CalendarEvent.start_time, CalendarEvent.id).offset(offset).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models.loaders import load, options
@@ -115,10 +116,12 @@ def _build_note_response(note, creator_username=None, creator_profile_photo=None
 @router.get("/engagements/{engagement_id}/notes", response_model=List[NoteResponse])
 async def get_notes(
     engagement_id: str,
+    limit: int = Query(MAX_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all notes for an engagement."""
+    """An engagement's notes, most recently updated first, at most ``limit``."""
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
 
     if not is_admin:
@@ -145,7 +148,8 @@ async def get_notes(
         .outerjoin(CreatorUser, Note.created_by == CreatorUser.c.id)
         .outerjoin(EditorUser, Note.updated_by == EditorUser.c.id)
         .where(Note.engagement_id == engagement_id)
-        .order_by(Note.updated_at.desc())
+        .order_by(Note.updated_at.desc(), Note.id)
+        .offset(offset).limit(limit)
         .options(*options("NOTE"))
     )
 
