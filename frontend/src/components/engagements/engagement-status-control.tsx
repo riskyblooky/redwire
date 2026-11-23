@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { useUpdateEngagement, type Engagement } from '@/lib/hooks/use-engagements';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/hooks/use-auth';
+import { ENGAGEMENT_STATUSES } from '@/lib/engagement-status';
 
 const statusColors: Record<string, string> = {
     PROPOSED: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
@@ -26,14 +27,6 @@ const statusColors: Record<string, string> = {
 
 
 
-const engagementStatuses = [
-    { value: 'PLANNING', label: 'Planning' },
-    { value: 'SCOPING', label: 'Scoping' },
-    { value: 'IN_PROGRESS', label: 'In Progress' },
-    { value: 'REPORTING', label: 'Reporting' },
-    { value: 'COMPLETED', label: 'Completed' },
-    { value: 'ON_HOLD', label: 'On Hold' },
-];
 
 interface EngagementStatusControlProps {
     engagement: Engagement;
@@ -55,9 +48,8 @@ export function EngagementStatusControl({ engagement, canEdit }: EngagementStatu
     );
     // A PROPOSED engagement must show its own status (the Select rendered
     // blank for a value not in its list); it's only offered while current.
-    const statusOptions = engagement.status === 'PROPOSED'
-        ? [{ value: 'PROPOSED', label: 'Proposed' }, ...engagementStatuses]
-        : engagementStatuses;
+    const statusOptions = ENGAGEMENT_STATUSES.filter(
+        s => s.value !== 'PROPOSED' || engagement.status === 'PROPOSED');
 
     const handleStatusChange = async (newStatus: string) => {
         setIsUpdatingStatus(true);

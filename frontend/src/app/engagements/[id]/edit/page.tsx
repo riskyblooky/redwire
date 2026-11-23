@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthStore } from '@/stores/auth-store';
-import { canTransition, STATUS_PHASE_INDEX } from '@/lib/engagement-status';
+import { canTransition, STATUS_PHASE_INDEX, ENGAGEMENT_STATUSES } from '@/lib/engagement-status';
 import { useEffectiveScoringPolicy } from '@/lib/hooks/use-scoring';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -78,15 +78,6 @@ function getPhaseHealth(phase: EngagementPhase, engagementStatus: string): 'on-t
     return 'on-time';
 }
 
-const ENGAGEMENT_STATUSES = [
-    { value: 'PROPOSED',    label: 'Proposed'    },
-    { value: 'SCOPING',     label: 'Scoping'     },
-    { value: 'PLANNING',    label: 'Planning'    },
-    { value: 'IN_PROGRESS', label: 'In Progress' },
-    { value: 'REPORTING',   label: 'Reporting'   },
-    { value: 'COMPLETED',   label: 'Completed'   },
-    { value: 'ON_HOLD',     label: 'On Hold'     },
-];
 
 function SectionDivider({ label }: { label: string }) {
     return (

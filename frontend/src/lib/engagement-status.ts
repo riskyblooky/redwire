@@ -3,7 +3,23 @@
  * backend/utils/engagement_status.py (the backend enforces; this only greys
  * out options). Admins and team leads may make any transition.
  */
-const STAGES = ['PROPOSED', 'SCOPING', 'PLANNING', 'IN_PROGRESS', 'REPORTING'];
+/** Engagement statuses in lifecycle order (backend EngagementStatus), with
+ *  their display labels. The one list every status select and label uses. */
+export const ENGAGEMENT_STATUSES: { value: string; label: string }[] = [
+    { value: 'PROPOSED',    label: 'Proposed'    },
+    { value: 'SCOPING',     label: 'Scoping'     },
+    { value: 'PLANNING',    label: 'Planning'    },
+    { value: 'IN_PROGRESS', label: 'In Progress' },
+    { value: 'REPORTING',   label: 'Reporting'   },
+    { value: 'COMPLETED',   label: 'Completed'   },
+    { value: 'ON_HOLD',     label: 'On Hold'     },
+];
+
+export const ENGAGEMENT_STATUS_LABELS: Record<string, string> =
+    Object.fromEntries(ENGAGEMENT_STATUSES.map(s => [s.value, s.label]));
+
+// The forward sequence; COMPLETED and ON_HOLD are handled separately.
+const STAGES = ENGAGEMENT_STATUSES.map(s => s.value).filter(v => v !== 'COMPLETED' && v !== 'ON_HOLD');
 
 export function canTransition(from: string | null | undefined, to: string): boolean {
     if (!from || from === to) return true;

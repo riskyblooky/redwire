@@ -42,15 +42,11 @@ import { TagPickerField } from '@/components/engagements/tag-picker-field';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNavigationGuard } from '@/lib/hooks/use-navigation-guard';
 import { apiErrorMessage } from '@/lib/api';
+import { ENGAGEMENT_STATUSES } from '@/lib/engagement-status';
 
-const ENGAGEMENT_STATUSES = [
-    { value: 'PLANNING',    label: 'Planning'    },
-    { value: 'SCOPING',     label: 'Scoping'     },
-    { value: 'IN_PROGRESS', label: 'In Progress' },
-    { value: 'REPORTING',   label: 'Reporting'   },
-    { value: 'COMPLETED',   label: 'Completed'   },
-    { value: 'ON_HOLD',     label: 'On Hold'     },
-];
+
+// A new engagement starts at Scoping or later.
+const NEW_ENGAGEMENT_STATUSES = ENGAGEMENT_STATUSES.filter(s => s.value !== 'PROPOSED');
 
 function SectionDivider({ label }: { label: string }) {
     return (
@@ -242,7 +238,7 @@ export default function NewEngagementPage() {
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {ENGAGEMENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                                                {NEW_ENGAGEMENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
                                     </div>

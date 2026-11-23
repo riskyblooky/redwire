@@ -56,6 +56,7 @@ import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialo
 import api, { apiErrorMessage } from '@/lib/api';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
+import { ENGAGEMENT_STATUSES } from '@/lib/engagement-status';
 
 const statusColors: Record<string, string> = {
     PROPOSED: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
@@ -71,15 +72,6 @@ const statusColors: Record<string, string> = {
 type SortField = 'name' | 'engagement_type' | 'status' | 'start_date' | 'end_date';
 type SortOrder = 'asc' | 'desc';
 
-const ALL_STATUSES = [
-    { value: 'PROPOSED',    label: 'Proposed' },
-    { value: 'PLANNING',    label: 'Planning' },
-    { value: 'SCOPING',     label: 'Scoping' },
-    { value: 'IN_PROGRESS', label: 'In Progress' },
-    { value: 'REPORTING',   label: 'Reporting' },
-    { value: 'COMPLETED',   label: 'Completed' },
-    { value: 'ON_HOLD',     label: 'On Hold' },
-];
 
 interface EngagementRowProps {
     engagement: any;
@@ -748,7 +740,7 @@ export default function EngagementsPage() {
                                     </SelectTrigger>
                                     <SelectContent className="bg-slate-900 border-slate-700">
                                         <SelectItem value="all" className="text-slate-300">All Statuses</SelectItem>
-                                        {ALL_STATUSES.map(s => (
+                                        {ENGAGEMENT_STATUSES.map(s => (
                                             <SelectItem key={s.value} value={s.value} className="text-slate-300">
                                                 {s.label}
                                             </SelectItem>
@@ -840,7 +832,7 @@ export default function EngagementsPage() {
                                         className="bg-purple-500/20 text-purple-400 border-purple-500/30 cursor-pointer hover:bg-primary/30 gap-1"
                                         onClick={() => setStatusFilter('all')}
                                     >
-                                        {ALL_STATUSES.find(s => s.value === statusFilter)?.label}
+                                        {ENGAGEMENT_STATUSES.find(s => s.value === statusFilter)?.label}
                                         <X className="h-3 w-3" />
                                     </Badge>
                                 )}

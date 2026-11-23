@@ -50,6 +50,7 @@ import {
     Area,
     Tooltip,
 } from 'recharts';
+import { ENGAGEMENT_STATUS_LABELS } from '@/lib/engagement-status';
 
 // Types
 interface ActivityLog {
@@ -122,9 +123,6 @@ interface OverviewTabProps {
     onViewClientDetail?: () => void;
 }
 
-const PHASE_LABELS: Record<string, string> = {
-    SCOPING: 'Scoping', PLANNING: 'Planning', IN_PROGRESS: 'In Progress', REPORTING: 'Reporting',
-};
 
 export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onDelete, canEditEngagement, canDeleteEngagement, onViewClientDetail }: OverviewTabProps) {
     const router = useRouter();
@@ -306,7 +304,7 @@ export function OverviewTab({ engagement, engagementId, onTabChange, onEdit, onD
                                         <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Phases</p>
                                         {[...engagement.phases].sort((a, b) => a.sort_order - b.sort_order).map(ph => (
                                             <div key={ph.id} className="flex items-center justify-between gap-2">
-                                                <span className="text-sm text-white">{PHASE_LABELS[ph.phase_name] || ph.phase_name}</span>
+                                                <span className="text-sm text-white">{ENGAGEMENT_STATUS_LABELS[ph.phase_name] || ph.phase_name}</span>
                                                 <span className="text-xs text-slate-400 tabular-nums whitespace-nowrap">
                                                     {ph.planned_start ? new Date(ph.planned_start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}
                                                     {' – '}
