@@ -155,7 +155,7 @@ interface FindingsTimelineParams {
     engagementId?: string;
 }
 
-export function useFindingsTimeline(params: number | FindingsTimelineParams = 30) {
+export function useFindingsTimeline(params: number | FindingsTimelineParams = 30, options?: { enabled?: boolean }) {
     const queryParams = typeof params === 'number' ? { days: params } : params;
     return useQuery<{ timeline: TimelineData[]; start_date: string; end_date: string }>({
         queryKey: ['stats', 'findings-timeline', queryParams],
@@ -168,50 +168,57 @@ export function useFindingsTimeline(params: number | FindingsTimelineParams = 30
                 urlParams.append('engagement_id', queryParams.engagementId);
             return (await api.get(`/stats/findings-timeline?${urlParams.toString()}`)).data;
         },
+        enabled: options?.enabled ?? true,
     });
 }
 
-export function useSeverityDistribution(params?: { startDate?: string; endDate?: string; engagementId?: string }) {
+export function useSeverityDistribution(params?: { startDate?: string; endDate?: string; engagementId?: string }, options?: { enabled?: boolean }) {
     return useQuery<{ distribution: SeverityDistribution[] }>({
         queryKey: ['stats', 'severity-distribution', params],
         queryFn: async () => (await api.get(`/stats/severity-distribution?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 
-export function useUserActivity(params?: { startDate?: string; endDate?: string; engagementId?: string }) {
+export function useUserActivity(params?: { startDate?: string; endDate?: string; engagementId?: string }, options?: { enabled?: boolean }) {
     return useQuery<{ top_contributors: UserActivity[] }>({
         queryKey: ['stats', 'user-activity', params],
         queryFn: async () => (await api.get(`/stats/user-activity?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 
-export function useEngagementStatus(params?: { startDate?: string; endDate?: string; engagementId?: string }) {
+export function useEngagementStatus(params?: { startDate?: string; endDate?: string; engagementId?: string }, options?: { enabled?: boolean }) {
     return useQuery<{ distribution: EngagementStatusDistribution[] }>({
         queryKey: ['stats', 'engagement-status', params],
         queryFn: async () => (await api.get(`/stats/engagement-status?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 
 // ─── New hooks ───
 
-export function useFindingsByCategory(params?: { startDate?: string; endDate?: string; engagementId?: string }) {
+export function useFindingsByCategory(params?: { startDate?: string; endDate?: string; engagementId?: string }, options?: { enabled?: boolean }) {
     return useQuery<{ categories: FindingsByCategory[] }>({
         queryKey: ['stats', 'findings-by-category', params],
         queryFn: async () => (await api.get(`/stats/findings-by-category?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 
-export function useFindingsByStatus(params?: { startDate?: string; endDate?: string; engagementId?: string }) {
+export function useFindingsByStatus(params?: { startDate?: string; endDate?: string; engagementId?: string }, options?: { enabled?: boolean }) {
     return useQuery<{ statuses: FindingsByStatus[] }>({
         queryKey: ['stats', 'findings-by-status', params],
         queryFn: async () => (await api.get(`/stats/findings-by-status?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 
-export function useEngagementTypes(params?: { startDate?: string; endDate?: string }) {
+export function useEngagementTypes(params?: { startDate?: string; endDate?: string }, options?: { enabled?: boolean }) {
     return useQuery<{ types: EngagementType[] }>({
         queryKey: ['stats', 'engagement-types', params],
         queryFn: async () => (await api.get(`/stats/engagement-types?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 
@@ -229,17 +236,19 @@ export function useOperatorPerformance(params?: { startDate?: string; endDate?: 
     });
 }
 
-export function useTestCaseStats(params?: { startDate?: string; endDate?: string; engagementId?: string }) {
+export function useTestCaseStats(params?: { startDate?: string; endDate?: string; engagementId?: string }, options?: { enabled?: boolean }) {
     return useQuery<TestCaseStats>({
         queryKey: ['stats', 'testcase-stats', params],
         queryFn: async () => (await api.get(`/stats/testcase-stats?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 
-export function useCleanupStats(params?: { startDate?: string; endDate?: string; engagementId?: string }) {
+export function useCleanupStats(params?: { startDate?: string; endDate?: string; engagementId?: string }, options?: { enabled?: boolean }) {
     return useQuery<CleanupStats>({
         queryKey: ['stats', 'cleanup-stats', params],
         queryFn: async () => (await api.get(`/stats/cleanup-stats?${buildParams(params)}`)).data,
+        enabled: options?.enabled ?? true,
     });
 }
 

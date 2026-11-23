@@ -83,8 +83,9 @@ export interface DashboardStats {
     };
 }
 
-export function useDashboardStats(engagementId?: string | null) {
+export function useDashboardStats(engagementId?: string | null, enabled: boolean = true) {
     return useQuery({
+        enabled,
         queryKey: ['analytics', 'dashboard', engagementId || 'global'],
         queryFn: async () => {
             const params = engagementId && engagementId !== 'global'

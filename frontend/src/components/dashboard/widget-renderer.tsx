@@ -112,7 +112,9 @@ interface WidgetRendererProps {
 // ══════════════════════════════════════════════════════════════════
 
 export default function WidgetRenderer({ widget, isEditing, engagementId, onRemove }: WidgetRendererProps) {
-    const { data: dashStats } = useDashboardStats(engagementId);
+    // Only stat cards read these totals; every other widget type used to
+    // trigger the request too.
+    const { data: dashStats } = useDashboardStats(engagementId, widget.widget_type === 'stat_card');
 
     switch (widget.widget_type) {
         case 'stat_card':
@@ -646,15 +648,19 @@ function useWidgetChartData(dataSource: string): any[] | null {
 
     const skip = dataSource === '__none__';
 
-    const { data: severity } = useSeverityDistribution(!skip && dataSource === 'severity_distribution' ? stableParams : undefined);
-    const { data: engStatus } = useEngagementStatus(!skip && dataSource === 'engagement_status' ? stableParams : undefined);
-    const { data: findingStatus } = useFindingsByStatus(!skip && dataSource === 'findings_by_status' ? stableParams : undefined);
-    const { data: timeline } = useFindingsTimeline(30);
-    const { data: engTypes } = useEngagementTypes(!skip && dataSource === 'engagement_types' ? stableParams : undefined);
-    const { data: cleanup } = useCleanupStats(!skip && dataSource === 'cleanup_status' ? stableParams : undefined);
-    const { data: activity } = useUserActivity(!skip && dataSource === 'top_contributors' ? stableParams : undefined);
-    const { data: tcStats } = useTestCaseStats(!skip && dataSource === 'testcase_coverage' ? stableParams : undefined);
-    const { data: catStats } = useFindingsByCategory(!skip && dataSource === 'findings_by_category' ? stableParams : undefined);
+    // One request per widget: each hook is enabled only for its own data
+    // source. (Passing undefined params didn't disable the others — they
+    // still fetched, under a different key, for every chart on the page.)
+    const on = (source: string) => ({ enabled: !skip && dataSource === source });
+    const { data: severity } = useSeverityDistribution(stableParams, on('severity_distribution'));
+    const { data: engStatus } = useEngagementStatus(stableParams, on('engagement_status'));
+    const { data: findingStatus } = useFindingsByStatus(stableParams, on('findings_by_status'));
+    const { data: timeline } = useFindingsTimeline(30, on('findings_timeline'));
+    const { data: engTypes } = useEngagementTypes(stableParams, on('engagement_types'));
+    const { data: cleanup } = useCleanupStats(stableParams, on('cleanup_status'));
+    const { data: activity } = useUserActivity(stableParams, on('top_contributors'));
+    const { data: tcStats } = useTestCaseStats(stableParams, on('testcase_coverage'));
+    const { data: catStats } = useFindingsByCategory(stableParams, on('findings_by_category'));
 
     if (skip) return null;
 
