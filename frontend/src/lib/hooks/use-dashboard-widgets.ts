@@ -43,7 +43,6 @@ export interface QueryDefinition {
     date_end?: string;
     time_bucket?: string;
     series_by?: string;
-    join_tables?: string[];
 }
 
 export interface QuerySchemaTable {
@@ -52,7 +51,6 @@ export interface QuerySchemaTable {
     date_columns: string[];
     filter_columns: string[];
     series_by: string[];
-    joins: string[];
 }
 
 export interface QuerySchema {

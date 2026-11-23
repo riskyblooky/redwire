@@ -138,7 +138,6 @@ class QueryPreviewRequest(BaseModel):
     date_end: Optional[str] = Field(None, max_length=32)          # custom end (ISO date)
     time_bucket: Optional[str] = None       # "day", "week", "month" → time-series
     series_by: Optional[str] = None         # column to split into multi-series
-    join_tables: Optional[List[str]] = None  # e.g. ["engagements", "clients"]
 
 
 # ── Query Builder Allowlist ──────────────────────────────────────────
@@ -330,79 +329,10 @@ _ALLOWED_COLUMNS: dict[str, dict[str, list[str]]] = {
     },
 }
 
-# ── Join graph ──────────────────────────────────────────────────────
-#
-# Each entry declares an edge (from → to) plus the SQLAlchemy join
-# condition. When the caller asks for join_tables=[X, Y, Z], the query
-# builder walks each requested edge in the order given, ensuring
-# dependencies are added first via ``_via`` chains. Extending is a
-# matter of appending one row per new join — the walker figures out
-# the rest.
-_JOIN_PATHS = {
-    # Findings
-    ("findings", "engagements"): lambda: (Engagement, Finding.engagement_id == Engagement.id),
-    ("findings", "clients"): lambda: (Client, Engagement.client_id == Client.id),
-    # Assets / testcases / cleanup
-    ("assets", "engagements"): lambda: (Engagement, Asset.engagement_id == Engagement.id),
-    ("assets", "clients"): lambda: (Client, Engagement.client_id == Client.id),
-    ("testcases", "engagements"): lambda: (Engagement, TestCase.engagement_id == Engagement.id),
-    ("testcases", "clients"): lambda: (Client, Engagement.client_id == Client.id),
-    ("cleanup_artifacts", "engagements"): lambda: (Engagement, CleanupArtifact.engagement_id == Engagement.id),
-    ("cleanup_artifacts", "clients"): lambda: (Client, Engagement.client_id == Client.id),
-    # Content
-    ("notes", "engagements"): lambda: (Engagement, Note.engagement_id == Engagement.id),
-    ("notes", "users"): lambda: (User, Note.created_by == User.id),
-    ("evidence", "engagements"): lambda: (Engagement, Evidence.engagement_id == Engagement.id),
-    ("evidence", "findings"): lambda: (Finding, Evidence.finding_id == Finding.id),
-    ("evidence", "testcases"): lambda: (TestCase, Evidence.testcase_id == TestCase.id),
-    ("vault_items", "engagements"): lambda: (Engagement, VaultItem.engagement_id == Engagement.id),
-    # Automation / notifications / activity
-    ("automation_rules", "users"): lambda: (User, AutomationRule.created_by == User.id),
-    ("automation_rules", "engagements"): lambda: (Engagement, AutomationRule.engagement_id == Engagement.id),
-    ("notifications", "users"): lambda: (User, Notification.user_id == User.id),
-    ("notifications", "engagements"): lambda: (Engagement, Notification.engagement_id == Engagement.id),
-    ("activity_logs", "users"): lambda: (User, ActivityLog.user_id == User.id),
-    ("activity_logs", "engagements"): lambda: (Engagement, ActivityLog.engagement_id == Engagement.id),
-    # Collaboration
-    ("threads", "engagements"): lambda: (Engagement, Thread.engagement_id == Engagement.id),
-    ("threads", "users"): lambda: (User, Thread.created_by == User.id),
-    ("comments", "threads"): lambda: (Thread, Comment.thread_id == Thread.id),
-    ("comments", "users"): lambda: (User, Comment.created_by == User.id),
-    ("comments", "engagements"): lambda: (Engagement, Thread.engagement_id == Engagement.id),
-    # Intel
-    ("intel_items", "intel_feeds"): lambda: (IntelFeed, IntelItem.feed_id == IntelFeed.id),
-    ("intel_items", "users"): lambda: (User, IntelItem.created_by == User.id),
-    ("intel_feeds", "users"): lambda: (User, IntelFeed.created_by == User.id),
-    # Spray
-    ("spray_campaigns", "engagements"): lambda: (Engagement, SprayCampaign.engagement_id == Engagement.id),
-    ("spray_campaigns", "clients"): lambda: (Client, Engagement.client_id == Client.id),
-    ("spray_results", "spray_campaigns"): lambda: (SprayCampaign, SprayResult.campaign_id == SprayCampaign.id),
-    ("spray_results", "engagements"): lambda: (Engagement, SprayCampaign.engagement_id == Engagement.id),
-    # Clients
-    ("engagements", "clients"): lambda: (Client, Engagement.client_id == Client.id),
-}
-
-# When a requested join depends on an intermediate join being present,
-# declare it here. Keys are (from_table, to_table), values are the list
-# of prerequisite intermediate tables that must be joined first.
-_JOIN_PREREQS: dict[tuple[str, str], list[str]] = {
-    ("findings", "clients"): ["engagements"],
-    ("assets", "clients"): ["engagements"],
-    ("testcases", "clients"): ["engagements"],
-    ("cleanup_artifacts", "clients"): ["engagements"],
-    ("spray_campaigns", "clients"): ["engagements"],
-    ("spray_results", "spray_campaigns"): [],
-    ("spray_results", "engagements"): ["spray_campaigns"],
-    ("comments", "engagements"): ["threads"],
-}
-
-# Columns available via JOINs
-_JOIN_COLUMNS = {
-    "engagement_name": (Engagement, "name"),
-    "engagement_status": (Engagement, "status"),
-    "engagement_type": (Engagement, "engagement_type"),
-    "client_name_joined": (Engagement, "client_name"),
-}
+# (Joins: the builder used to accept join_tables and LEFT JOIN them in, but
+# no column of a joined table could be selected, grouped or filtered — the
+# join only multiplied rows under the aggregate. Removed until there's a
+# table.column reference scheme and a UI for it.)
 
 _AGG_FUNCS = {
     "count": lambda col: func.count(col),
@@ -884,45 +814,12 @@ def _assert_query_access(req: "QueryPreviewRequest", current_user: User) -> None
     to enumerate credential names or per-user inbox contents.
     """
     all_tables = {req.table}
-    if req.join_tables:
-        all_tables.update(req.join_tables)
     if all_tables & _SENSITIVE_TABLES:
         if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD):
             raise HTTPException(
                 status_code=403,
                 detail=f"Tables {sorted(_SENSITIVE_TABLES & all_tables)} require admin or team-lead role",
             )
-
-
-def _apply_joins(query, req: "QueryPreviewRequest"):
-    """Walk the requested join list, adding each edge in order and
-    inserting any declared prerequisites first. Duplicate joins are
-    silently coalesced so a caller asking for the same table twice
-    doesn't blow up the query planner."""
-    if not req.join_tables:
-        return query
-    joined: set[str] = set()
-
-    def _add_edge(jtable: str) -> object:
-        """Recursive: add prereqs first, then the edge itself. Returns the
-        (possibly mutated) query. Uses a nonlocal ``query`` so recursion
-        can chain updates without the caller threading it through."""
-        nonlocal query
-        if jtable in joined:
-            return query
-        key = (req.table, jtable)
-        if key not in _JOIN_PATHS:
-            raise HTTPException(400, f"No join path from '{req.table}' to '{jtable}'")
-        for prereq in _JOIN_PREREQS.get(key, []):
-            _add_edge(prereq)
-        target_model, condition = _JOIN_PATHS[key]()
-        query = query.join(target_model, condition, isouter=True)
-        joined.add(jtable)
-        return query
-
-    for jtable in req.join_tables:
-        _add_edge(jtable)
-    return query
 
 
 # Query-builder tables that carry admin-defined custom fields. Custom-field
@@ -1043,9 +940,6 @@ def _build_query(req: QueryPreviewRequest, cf_map: dict | None = None):
             selects.append(col.label(f"label{i}" if i > 0 else "label"))
         selects.append(agg_fn(value_col).label("value"))
         query = select(*selects).group_by(*cols).order_by(agg_fn(value_col).desc())
-
-    # Apply JOINs
-    query = _apply_joins(query, req)
 
     # Apply date-range filter
     date_filter = _resolve_date_filter(req, model)
@@ -1465,7 +1359,6 @@ async def get_query_schema(
             "date_columns": columns.get("date_columns", []),
             "filter_columns": filter_columns,
             "series_by": series_by,
-            "joins": sorted({jt for (ft, jt) in _JOIN_PATHS.keys() if ft == table_name}),
             "sensitive": table_name in _SENSITIVE_TABLES,
         }
     return {
