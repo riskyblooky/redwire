@@ -90,7 +90,7 @@ from models.report_theme import ReportTheme
 from models.marking_profile import MarkingProfile
 from schemas.report import ReportConfiguration, ReportFormat
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, require_engagement_perm
 from models.permission import Permission
 from models.user import UserRole
 from utils import storage_tx
@@ -158,14 +158,7 @@ async def _do_generate_report(
         )
 
     # Check permissions
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(current_user.id, config.engagement_id, Permission.REPORT_GENERATE.value, db)
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions. You need the 'report_generate' permission to generate reports."
-            )
+    await require_engagement_perm(current_user, config.engagement_id, Permission.REPORT_GENERATE, db, action="generate reports")
 
     # 2. Fetch Layout with sections
     layout_result = await db.execute(

@@ -14,7 +14,7 @@ from typing import Optional
 from database import get_db
 from models.user import User, UserRole
 from models.permission import Permission
-from auth.rbac import check_engagement_permission
+from auth.rbac import check_engagement_permission, require_engagement_perm
 from models.asset import Asset
 from utils.asset_types import canonical_name, configured_asset_types
 from models.asset_port import AssetPort, PortProtocol, PortState
@@ -120,16 +120,7 @@ def _parsed_to_preview(
 async def _check_import_permission(current_user: User, engagement_id: str, db: AsyncSession):
     """Ensure the user can import (i.e. has asset_create access)."""
     # Write gate: READ_ONLY_ADMIN views everything but only writes with an explicit grant.
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.ASSET_CREATE.value, db
-        )
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to import scans.",
-            )
+    await require_engagement_perm(current_user, engagement_id, Permission.ASSET_CREATE, db, action="import scans")
 
 
 # ─── Preview Endpoint ────────────────────────────────────────────────────────

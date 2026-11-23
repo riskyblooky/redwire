@@ -542,7 +542,7 @@ async def apply_runbook_to_engagement(
 
     The runbook must be visible to the user (PUBLISHED, or their own DRAFT/SUBMITTED).
     """
-    from auth.rbac import check_engagement_permission
+    from auth.rbac import require_engagement_perm
     from models.permission import Permission
     from utils.collaboration import create_activity_log
 
@@ -556,13 +556,7 @@ async def apply_runbook_to_engagement(
     _enforce_referenced_templates_published(runbook, current_user, "apply")
 
     # Check engagement-scoped testcase create permission
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, Permission.TESTCASE_CREATE.value, db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Insufficient permissions to create test cases")
+    await require_engagement_perm(current_user, engagement_id, Permission.TESTCASE_CREATE, db, action="create test cases")
 
     # If nesting under an existing test case, verify it belongs to the
     # target engagement. Otherwise an attacker could parent the new test

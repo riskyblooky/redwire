@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete as sa_delete
 import json
@@ -21,8 +21,8 @@ from models.infra_item import InfraItem
 from models.vault import VaultItem
 from models.chain_link import ChainLink
 from auth.dependencies import get_current_user
-from auth.rbac import check_engagement_permission
-from models.user import UserRole
+from auth.rbac import require_engagement_perm
+from models.permission import Permission
 from utils.collaboration import manager
 
 router = APIRouter(prefix="/engagements", tags=["attack-graph"])
@@ -37,13 +37,7 @@ async def get_attack_graph(
     """Build attack graph nodes and edges from engagement data and associations."""
 
     # Permission check
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_VIEW, db, action="view this engagement's attack graph")
 
     # Verify engagement exists
     eng = await db.execute(select(Engagement).where(Engagement.id == engagement_id))
@@ -440,13 +434,7 @@ async def list_attack_graph_layouts(
     current_user: User = Depends(get_current_user),
 ):
     """List all saved named layouts for this engagement."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_view", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_VIEW, db, action="view this engagement's attack graph")
 
     result = await db.execute(
         select(AttackGraphLayout, User.username)
@@ -478,13 +466,7 @@ async def create_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Save current positions as a new named layout."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     positions = body.get("positions")
     name = body.get("name", "Unnamed Layout")
@@ -557,13 +539,7 @@ async def update_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Update positions and/or name of a saved layout."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     result = await db.execute(
         select(AttackGraphLayout).where(
@@ -616,13 +592,7 @@ async def activate_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Set a layout as the active one for all users."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     # Verify layout belongs to this engagement
     result = await db.execute(
@@ -667,13 +637,7 @@ async def delete_attack_graph_layout_named(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a named layout."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     result = await db.execute(
         select(AttackGraphLayout).where(
@@ -719,13 +683,7 @@ async def save_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Pin the current attack graph layout (legacy: upsert a Default active layout)."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     positions = body.get("positions")
     if not positions or not isinstance(positions, dict):
@@ -790,13 +748,7 @@ async def delete_attack_graph_layout(
     current_user: User = Depends(get_current_user),
 ):
     """Remove active layout flag (legacy reset)."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=403, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     # Just deactivate all – don't delete, so named layouts are preserved
     from sqlalchemy import update as sa_update
@@ -831,13 +783,7 @@ async def create_attacker_node(
     current_user: User = Depends(get_current_user),
 ):
     """Create an attacker node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     node = AttackerNode(
         engagement_id=engagement_id,
@@ -869,13 +815,7 @@ async def update_attacker_node(
     current_user: User = Depends(get_current_user),
 ):
     """Update an attacker node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     result = await db.execute(
         select(AttackerNode).where(AttackerNode.id == attacker_id, AttackerNode.engagement_id == engagement_id)
@@ -912,13 +852,7 @@ async def delete_attacker_node(
     current_user: User = Depends(get_current_user),
 ):
     """Delete an attacker node (cascades to edges)."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
     await db.execute(
         sa_delete(AttackerNode).where(AttackerNode.id == attacker_id, AttackerNode.engagement_id == engagement_id)
@@ -957,13 +891,7 @@ async def create_attacker_edge(
     current_user: User = Depends(get_current_user),
 ):
     """Create an edge from attacker to a target node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
     await _require_attacker_in_engagement(db, attacker_id, engagement_id)
 
     target_node_id = body.get("target_node_id")
@@ -1079,13 +1007,7 @@ async def delete_attacker_edge(
     current_user: User = Depends(get_current_user),
 ):
     """Remove an edge from attacker node."""
-    is_admin = current_user.role in [UserRole.ADMIN, UserRole.TEAM_LEAD]
-    if not is_admin:
-        has_permission = await check_engagement_permission(
-            current_user.id, engagement_id, "engagement_edit", db
-        )
-        if not has_permission:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
     await _require_attacker_in_engagement(db, attacker_id, engagement_id)
 
     await db.execute(
