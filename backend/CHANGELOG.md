@@ -4,6 +4,11 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.9.4] — Unreleased
+
+### Fixed
+- **Frontend security updates.** Next.js 15.5.29 (fixes, among others, remote-code-execution and denial-of-service advisories in the image optimizer and Server Actions), axios 1.21.1, TipTap 3.35 / ProseMirror (paste XSS), DOMPurify, zod and PostCSS, plus transitive packages; `npm audit` goes from 31 advisories (1 critical, 14 high) to 2 low.
+
 ## [1.9.3] — 2026-11-24
 
 ### Fixed
