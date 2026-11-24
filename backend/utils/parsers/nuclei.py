@@ -10,7 +10,7 @@ import json
 from urllib.parse import urlparse
 from typing import Optional
 from utils.parsers import (
-    ParsedImportData, ParsedAsset, ParsedFinding, ParsedPort,
+    ParsedImportData, ParsedAsset, ParsedFinding, ParsedInstance, ParsedPort,
 )
 
 # Nuclei severity → RedWire severity
@@ -189,9 +189,16 @@ def parse(content: bytes) -> ParsedImportData:
             tags = [t.strip() for t in tags.split(",")]
         category = tags[0] if tags else None
 
+        instance = ParsedInstance(
+            asset_index=asset_idx,
+            location=matched_at or None,
+            detail="\n".join(str(r) for r in extracted_results) or None,
+        )
+
         # Dedup by template_id (merge hosts)
         if template_id and template_id in finding_dedup:
             existing_idx = finding_dedup[template_id]
+            result.findings[existing_idx].instances.append(instance)
             if asset_idx not in result.findings[existing_idx].affected_asset_indices:
                 result.findings[existing_idx].affected_asset_indices.append(asset_idx)
         else:
@@ -205,6 +212,7 @@ def parse(content: bytes) -> ParsedImportData:
                 cvss_vector=str(cvss_metrics) if cvss_metrics else None,
                 category=category,
                 affected_asset_indices=[asset_idx],
+                instances=[instance],
             )
             dedup_key = template_id or f"{template_name}_{len(result.findings)}"
             finding_dedup[dedup_key] = len(result.findings)

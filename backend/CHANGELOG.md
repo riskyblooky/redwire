@@ -28,6 +28,7 @@ Engagement members without the note_view permission no longer see linked notes' 
 Engagement statuses use one colour palette everywhere (the planning page's): the engagements list, status control, dashboard widgets, stats charts and remediation previously used a different mix.
 Engagement phases now follow changes to the engagement's dates (including dates added after creation), unless a phase's dates were adjusted by hand.
 Attack-chain links that would make a loop through three or more items are refused, not just direct back-links.
+Scan imports (Nessus, Burp, Nuclei) keep each host's evidence — port or location and the scanner's output — in the merged finding's technical details, instead of only the first host's.
 
 ## [1.9.2] — 2026-11-22
 

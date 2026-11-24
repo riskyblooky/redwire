@@ -25,7 +25,7 @@ from schemas.imports import (
     CommitResponse, ScanImportResponse,
 )
 from models.scan_import import ScanImport
-from utils.parsers import detect_and_parse, ParsedImportData
+from utils.parsers import detect_and_parse, ParsedImportData, render_instances
 from utils.asset_identity import identifier_key, load_assets_by_key, normalize_identifier
 from utils.collaboration import create_activity_log
 from utils.uploads import read_upload_capped
@@ -353,6 +353,7 @@ async def commit_import(
 
     # ── Phase 2: Create Findings ─────────────────────────────────────────
     if import_findings:
+        asset_labels = {i: a.identifier for i, a in enumerate(parsed.assets)}
         for i, parsed_finding in enumerate(parsed.findings):
             if selected_finding_idx is not None and i not in selected_finding_idx:
                 continue
@@ -360,11 +361,18 @@ async def commit_import(
             # Dedup by title; a known finding picks up hosts it's new on.
             known = existing_findings.get(parsed_finding.title.lower())
             if known is not None:
+                new_idx = set()
                 for asset_idx in parsed_finding.affected_asset_indices:
                     asset = asset_map.get(asset_idx)
                     if asset is not None and asset not in known.assets:
                         known.assets.append(asset)
+                        new_idx.add(asset_idx)
                         result.finding_asset_links += 1
+                # The evidence for hosts it's new on goes with them.
+                added = render_instances(
+                    [x for x in parsed_finding.instances if x.asset_index in new_idx], asset_labels)
+                if added:
+                    known.technical_details = "\n\n".join(p for p in (known.technical_details, added) if p)
                 result.findings_skipped += 1
                 continue
 
@@ -388,6 +396,9 @@ async def commit_import(
                 impact=parsed_finding.impact,
                 mitigations=parsed_finding.mitigations,
                 references=parsed_finding.references,
+                # Per-host evidence (port / location and the scanner's output
+                # for each host); the parser merged the hosts into one finding.
+                technical_details=render_instances(parsed_finding.instances, asset_labels) or None,
                 created_by=current_user.id,
             )
             db.add(db_finding)

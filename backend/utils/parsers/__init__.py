@@ -36,6 +36,16 @@ class ParsedAsset:
 
 
 @dataclass
+class ParsedInstance:
+    """One occurrence of a finding: where it was seen and what the scanner
+    reported there (Nessus plugin output, Burp issue detail, Nuclei
+    extracted values)."""
+    asset_index: int
+    location: Optional[str] = None
+    detail: Optional[str] = None
+
+
+@dataclass
 class ParsedFinding:
     """A finding/vulnerability extracted from scanner output."""
     title: str
@@ -49,6 +59,9 @@ class ParsedFinding:
     category: Optional[str] = None
     # Indices into the parent ParsedImportData.assets list
     affected_asset_indices: list[int] = field(default_factory=list)
+    # Every occurrence, kept through the per-tool dedupe (which merges a
+    # finding seen on several hosts into one).
+    instances: list[ParsedInstance] = field(default_factory=list)
 
 
 @dataclass
@@ -154,3 +167,27 @@ def detect_and_parse(content: bytes, filename: str) -> ParsedImportData:
         raise ValueError(f"Unrecognised text output in {filename} (expected NetExec / nxc output).")
 
     raise ValueError(f"Unsupported file format: {filename}")
+
+
+_INSTANCE_DETAIL_CAP = 4000
+
+
+def render_instances(instances: list[ParsedInstance], asset_labels: dict[int, str]) -> str:
+    """Markdown list of a finding's per-host evidence, or "" when the
+    instances carry nothing beyond the host (the host links say that)."""
+    rows = [i for i in instances if i.location or i.detail]
+    if not rows:
+        return ""
+    out = []
+    for inst in rows:
+        head = f"- `{asset_labels.get(inst.asset_index, '?')}`"
+        if inst.location:
+            head += f" — `{inst.location}`"
+        out.append(head)
+        if inst.detail:
+            detail = inst.detail.strip()
+            if len(detail) > _INSTANCE_DETAIL_CAP:
+                detail = detail[:_INSTANCE_DETAIL_CAP] + "\n… (truncated)"
+            fence = "````" if "```" in detail else "```"
+            out.append(f"  {fence}\n" + "\n".join("  " + ln for ln in detail.splitlines()) + f"\n  {fence}")
+    return "\n".join(out)

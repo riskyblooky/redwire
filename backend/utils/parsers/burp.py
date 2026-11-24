@@ -16,7 +16,7 @@ import html
 import re
 from typing import Optional
 from utils.parsers import (
-    ParsedImportData, ParsedAsset, ParsedFinding, ParsedPort,
+    ParsedImportData, ParsedAsset, ParsedFinding, ParsedInstance, ParsedPort,
 )
 
 # Burp severity → RedWire severity
@@ -200,8 +200,10 @@ def parse(content: bytes) -> ParsedImportData:
 
         # Dedup by issue type (merge affected hosts)
         dedup_key = issue_name
+        instance = ParsedInstance(asset_index=asset_idx, location=location or path or None, detail=issue_detail or None)
         if dedup_key in finding_dedup:
             existing_idx = finding_dedup[dedup_key]
+            result.findings[existing_idx].instances.append(instance)
             if asset_idx not in result.findings[existing_idx].affected_asset_indices:
                 result.findings[existing_idx].affected_asset_indices.append(asset_idx)
         else:
@@ -214,6 +216,7 @@ def parse(content: bytes) -> ParsedImportData:
                 references="\n".join(refs) if refs else None,
                 category="Web Application",
                 affected_asset_indices=[asset_idx],
+                instances=[instance],
             )
             finding_dedup[dedup_key] = len(result.findings)
             result.findings.append(finding)

@@ -15,7 +15,7 @@ from __future__ import annotations
 import defusedxml.ElementTree as ET
 from typing import Optional
 from utils.parsers import (
-    ParsedImportData, ParsedAsset, ParsedFinding, ParsedPort,
+    ParsedImportData, ParsedAsset, ParsedFinding, ParsedInstance, ParsedPort,
 )
 
 # Nessus risk_factor → RedWire severity
@@ -157,8 +157,16 @@ def parse(content: bytes) -> ParsedImportData:
             # Skip informational items to reduce noise (optional)
             # Users can still import them via checkbox
 
+            instance = ParsedInstance(
+                asset_index=asset_idx,
+                location=f"{port_str}/{protocol.lower()}" + (f" ({svc_name})" if svc_name and svc_name != "general" else "")
+                if port_str and port_str != "0" else None,
+                detail=_get_child_text(item, "plugin_output") or None,
+            )
+
             # Build or merge finding
             if plugin_id in finding_map:
+                finding_map[plugin_id].instances.append(instance)
                 # Merge: add this asset to affected list
                 existing_finding = finding_map[plugin_id]
                 if asset_idx not in existing_finding.affected_asset_indices:
@@ -225,6 +233,7 @@ def parse(content: bytes) -> ParsedImportData:
                     cvss_vector=cvss_vector,
                     category=category,
                     affected_asset_indices=[asset_idx],
+                    instances=[instance],
                 )
                 finding_map[plugin_id] = finding
 
