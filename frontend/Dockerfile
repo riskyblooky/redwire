@@ -8,7 +8,7 @@
 # runtime mount transparently shadows the COPY'd copy, so live
 # plugin edits show up on the next ``next dev`` restart without
 # rebuilding the image.
-FROM node:22.23.5-alpine AS base
+FROM node:24.22.3-alpine AS base
 
 # Development stage
 FROM base AS development
