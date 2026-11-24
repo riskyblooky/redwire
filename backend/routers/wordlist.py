@@ -16,7 +16,7 @@ from auth.dependencies import get_current_user
 from utils.hash_utils import (
     compute_all_hashes,
     compute_ntlm,
-    identify_hash_type,
+    parse_hash,
     bloom_service,
     bloom_capacity_for,
 )
@@ -93,7 +93,7 @@ async def lookup_hash(
     current_user: User = Depends(get_current_user),
 ):
     """Look up a hash to find the plaintext password. Works for NTLM, MD5, SHA-1."""
-    hash_type = identify_hash_type(req.hash)
+    hash_type, h = parse_hash(req.hash)
 
     if hash_type in ("bcrypt", "krb5tgs"):
         return LookupHashResponse(
@@ -105,10 +105,15 @@ async def lookup_hash(
     if hash_type is None:
         return LookupHashResponse(found=False, note="Unrecognized hash format.")
 
-    h = req.hash.strip().lower()
-
     # Query the database for matching hash
-    if hash_type == "md5_or_ntlm":
+    if hash_type == "ntlm":
+        # The NT field of an LM:NT pair or pwdump line: NTLM for certain.
+        row = (await db.execute(
+            select(WordlistEntry.password).where(WordlistEntry.ntlm == h).limit(1)
+        )).scalar_one_or_none()
+        if row:
+            return LookupHashResponse(found=True, password=row, hash_type="ntlm")
+    elif hash_type == "md5_or_ntlm":
         # 32-char hex could be MD5 or NTLM — check both
         result = await db.execute(
             select(WordlistEntry.password)

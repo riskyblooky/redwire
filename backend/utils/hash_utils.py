@@ -5,6 +5,7 @@ Supports NTLM, MD5, SHA-1 for rainbow table reverse-lookups.
 bcrypt and krb5tgs are salted — cannot be reversed from hash alone.
 """
 import hashlib
+import re
 import struct
 import logging
 import asyncio
@@ -99,37 +100,53 @@ def compute_all_hashes(password: str) -> dict:
 # Hash type identification
 # ═══════════════════════════════════════════════════════════════════
 
-def identify_hash_type(hash_str: str) -> Optional[str]:
-    """
-    Identify a hash type from its format.
-    Returns: 'ntlm', 'md5', 'sha1', 'bcrypt', 'krb5tgs', or None.
-    """
-    if not hash_str:
-        return None
+_HEX32 = re.compile(r"^[0-9a-fA-F]{32}$")
 
+
+def _nt_from_pair_or_pwdump(h: str) -> Optional[str]:
+    """The NT hash from an ``LM:NT`` pair or a pwdump / secretsdump line
+    (``[domain\\]user:rid:LM:NT:::``), else None."""
+    parts = h.split(":")
+    if len(parts) == 2 and _HEX32.match(parts[0]) and _HEX32.match(parts[1]):
+        return parts[1]
+    if len(parts) >= 4 and parts[1].isdigit() and _HEX32.match(parts[2]) and _HEX32.match(parts[3]):
+        return parts[3]
+    return None
+
+
+def parse_hash(hash_str: str) -> Tuple[Optional[str], Optional[str]]:
+    """``(type, value)`` for a pasted hash: the value is what to look up
+    (lower-case hex; the NT field of an ``LM:NT`` pair or pwdump line).
+    Types: 'ntlm', 'md5_or_ntlm', 'sha1', 'bcrypt', 'krb5tgs'; (None, None)
+    when unrecognised."""
+    if not hash_str:
+        return None, None
     h = hash_str.strip()
 
-    # bcrypt
     if h.startswith(("$2b$", "$2a$", "$2y$")):
-        return "bcrypt"
-
-    # Kerberos TGS
+        return "bcrypt", h
     if h.startswith("$krb5tgs$"):
-        return "krb5tgs"
+        return "krb5tgs", h
 
-    # Check hex hashes by length
+    nt = _nt_from_pair_or_pwdump(h)
+    if nt:
+        return "ntlm", nt.lower()
+
     try:
         int(h, 16)  # Valid hex?
     except ValueError:
-        return None
-
+        return None, None
     if len(h) == 32:
-        # Could be MD5 or NTLM — we'll try both during lookup
-        return "md5_or_ntlm"
-    elif len(h) == 40:
-        return "sha1"
+        # Could be MD5 or NTLM — both are tried during lookup
+        return "md5_or_ntlm", h.lower()
+    if len(h) == 40:
+        return "sha1", h.lower()
+    return None, None
 
-    return None
+
+def identify_hash_type(hash_str: str) -> Optional[str]:
+    """The hash type of a pasted value (see parse_hash), or None."""
+    return parse_hash(hash_str)[0]
 
 
 # ═══════════════════════════════════════════════════════════════════
