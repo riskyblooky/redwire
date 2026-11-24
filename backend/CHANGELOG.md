@@ -26,6 +26,7 @@ Leaving a new finding, asset or test case, the runbook builder, or the report la
 Engagement status menus (list filter, new engagement, status control) list Scoping before Planning, matching the lifecycle.
 Engagement members without the note_view permission no longer see linked notes' titles in the findings / test case / asset / vault / cleanup tables.
 Engagement statuses use one colour palette everywhere (the planning page's): the engagements list, status control, dashboard widgets, stats charts and remediation previously used a different mix.
+Engagement phases now follow changes to the engagement's dates (including dates added after creation), unless a phase's dates were adjusted by hand.
 
 ## [1.9.2] — 2026-11-22
 

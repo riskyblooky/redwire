@@ -50,36 +50,37 @@ router = APIRouter(prefix="/engagements", tags=["engagements"])
 
 
 # ── Helper: auto-create default phases ──────────────────────────
-async def auto_create_default_phases(db: AsyncSession, engagement: Engagement):
-    """Create SCOPING/PLANNING/IN_PROGRESS/REPORTING phases with dates
-    evenly distributed across the engagement's date range."""
-    start = engagement.start_date
-    end = engagement.end_date
+def _naive(d):
+    # asyncpg needs naive datetimes for DateTime columns.
+    return d.replace(tzinfo=None) if d is not None and d.tzinfo else d
+
+
+def default_phase_ranges(start, end) -> dict:
+    """The automatic phase layout: {sort_order: (planned_start, planned_end)}.
+
+    The default phases split the engagement's date range evenly (at least a
+    day each; the last one ends on the engagement's end date). Without both
+    dates every phase is undated."""
+    start, end = _naive(start), _naive(end)
     if not start or not end:
-        # If no dates, create phases without date ranges
-        for phase_name, order in EngagementPhase.DEFAULT_PHASES:
-            db.add(EngagementPhase(
-                engagement_id=engagement.id,
-                phase_name=phase_name,
-                sort_order=order,
-            ))
-        return
-
-    # Strip timezone info if present (asyncpg requires naive datetimes for DateTime columns)
-    if start.tzinfo:
-        start = start.replace(tzinfo=None)
-    if end.tzinfo:
-        end = end.replace(tzinfo=None)
-
+        return {order: (None, None) for _, order in EngagementPhase.DEFAULT_PHASES}
     total_days = max((end - start).days, 4)  # at least 1 day per phase
     phase_count = len(EngagementPhase.DEFAULT_PHASES)
     days_per_phase = total_days / phase_count
-
-    for phase_name, order in EngagementPhase.DEFAULT_PHASES:
+    layout = {}
+    for _, order in EngagementPhase.DEFAULT_PHASES:
         p_start = start + timedelta(days=int(order * days_per_phase))
-        p_end = start + timedelta(days=int((order + 1) * days_per_phase))
-        if order == phase_count - 1:
-            p_end = end  # last phase extends to engagement end
+        p_end = end if order == phase_count - 1 else start + timedelta(days=int((order + 1) * days_per_phase))
+        layout[order] = (p_start, p_end)
+    return layout
+
+
+async def auto_create_default_phases(db: AsyncSession, engagement: Engagement):
+    """Create the default phases, evenly distributed across the engagement's
+    date range (undated when it has no range)."""
+    layout = default_phase_ranges(engagement.start_date, engagement.end_date)
+    for phase_name, order in EngagementPhase.DEFAULT_PHASES:
+        p_start, p_end = layout[order]
         db.add(EngagementPhase(
             engagement_id=engagement.id,
             phase_name=phase_name,
@@ -87,6 +88,32 @@ async def auto_create_default_phases(db: AsyncSession, engagement: Engagement):
             planned_start=p_start,
             planned_end=p_end,
         ))
+
+
+async def realign_auto_phases(db: AsyncSession, engagement_id: str, old_start, old_end, new_start, new_end) -> bool:
+    """Re-spread the phases over a changed engagement date range — but only
+    while they're still the automatic layout (undated, or exactly the split
+    of the old range). Phases someone has adjusted are left alone. Returns
+    whether they were moved."""
+    if (_naive(old_start), _naive(old_end)) == (_naive(new_start), _naive(new_end)):
+        return False
+    phases = (await db.execute(
+        select(EngagementPhase).where(EngagementPhase.engagement_id == engagement_id)
+    )).scalars().all()
+    defaults = dict(EngagementPhase.DEFAULT_PHASES)
+    if not phases or len(phases) != len(defaults):
+        return False
+    old_layout = default_phase_ranges(old_start, old_end)
+    for ph in phases:
+        if defaults.get(ph.phase_name) != ph.sort_order:
+            return False
+        current = (_naive(ph.planned_start), _naive(ph.planned_end))
+        if current != (None, None) and current != old_layout[ph.sort_order]:
+            return False
+    new_layout = default_phase_ranges(new_start, new_end)
+    for ph in phases:
+        ph.planned_start, ph.planned_end = new_layout[ph.sort_order]
+    return True
 
 
 def _inject_response(response: Response) -> Response:
@@ -845,10 +872,14 @@ async def update_engagement(
         if date_field in update_data and update_data[date_field] and hasattr(update_data[date_field], 'tzinfo') and update_data[date_field].tzinfo:
             update_data[date_field] = update_data[date_field].replace(tzinfo=None)
 
+    old_start, old_end = engagement.start_date, engagement.end_date
     for field, value in update_data.items():
         setattr(engagement, field, value)
-    
+
     engagement.updated_by = current_user.id
+
+    # Phases still in their automatic layout follow the new date range.
+    await realign_auto_phases(db, engagement_id, old_start, old_end, engagement.start_date, engagement.end_date)
     
     # Track new user IDs for notifications
     new_assigned_user_ids: set = set()
