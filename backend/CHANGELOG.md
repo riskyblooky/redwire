@@ -8,6 +8,7 @@ section becomes one release entry.
 
 ### Fixed
 - **Frontend security updates.** Next.js 15.5.29 (fixes, among others, remote-code-execution and denial-of-service advisories in the image optimizer and Server Actions), axios 1.21.1, TipTap 3.35 / ProseMirror (paste XSS), DOMPurify, zod and PostCSS, plus transitive packages; `npm audit` goes from 31 advisories (1 critical, 14 high) to 2 low.
+- **Diagram rendering updated to mermaid 12**, closing its prototype-pollution and CSS-injection advisories; diagrams look slightly different (wider nodes, soft shadow).
 
 ## [1.9.3] — 2026-11-24
 
