@@ -28,7 +28,7 @@
  *
  * Recharts: `BarChart`, `PieChart`, `AreaChart`, `RadialBarChart`.
  * Helpers: `StatCard`, `LoadingPlaceholder`, `EmptyState`.
- * Colour maps: `SEVERITY_COLORS`, `STATUS_COLORS`, `ENG_STATUS_COLORS`,
+ * Colour maps: `SEVERITY_COLORS`, `STATUS_COLORS`, `ENGAGEMENT_STATUS_HEX`,
  * `CLEANUP_COLORS`, `ACCENT_COLORS`.
  */
 'use client';
@@ -69,15 +69,13 @@ import {
 } from 'lucide-react';
 import { AuthedImg } from '@/lib/hooks/use-authed-image';
 import { SEVERITY_HEX as SEVERITY_COLORS } from '@/lib/severity';
+import { ENGAGEMENT_STATUS_HEX } from '@/lib/engagement-status';
 
 type TimeRange = '7d' | '30d' | '90d' | '180d' | 'custom';
 
 // ─── Shared constants ───
 const STATUS_COLORS: Record<string, string> = {
     OPEN: '#ef4444', IN_REVIEW: '#f59e0b', VERIFIED: '#3b82f6', REMEDIATED: '#10b981', CLOSED: '#64748b',
-};
-const ENG_STATUS_COLORS: Record<string, string> = {
-    SCOPING: '#06b6d4', PLANNING: '#818cf8', IN_PROGRESS: '#3b82f6', REPORTING: '#f59e0b', COMPLETED: '#10b981', ON_HOLD: '#ef4444',
 };
 const CLEANUP_COLORS: Record<string, string> = {
     PENDING: '#f97316', CLEANED: '#10b981', PARTIALLY_CLEANED: '#f59e0b', NOT_APPLICABLE: '#64748b',
@@ -356,7 +354,7 @@ export default function AnalyticsOverview() {
                                                 <Tooltip {...TOOLTIP_STYLE} />
                                                 <Bar dataKey="count" radius={[0, 6, 6, 0]}>
                                                     {engagementStatus?.distribution.map((e, i) => (
-                                                        <Cell key={i} fill={ENG_STATUS_COLORS[e.status] || '#818cf8'} />
+                                                        <Cell key={i} fill={ENGAGEMENT_STATUS_HEX[e.status] || '#818cf8'} />
                                                     ))}
                                                 </Bar>
                                             </BarChart>

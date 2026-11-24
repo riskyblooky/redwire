@@ -34,6 +34,7 @@ import { useDashboardStats } from '@/lib/hooks/use-analytics';
 import { useCustomWidgetData } from '@/lib/hooks/use-dashboard-widgets';
 import { severityHex } from '@/lib/severity';
 import { ACCENT_COLORS, TOOLTIP_STYLE } from '@/components/dashboard/chart-style';
+import { ENGAGEMENT_STATUS_BADGE, ENGAGEMENT_STATUS_HEX } from '@/lib/engagement-status';
 
 // Selects the backend scoping model for custom_query widget data. The
 // dashboard leaves the default ('dashboard' → assignment-scoped); a shared
@@ -60,19 +61,6 @@ const ICON_MAP: Record<string, any> = {
 
 const STATUS_COLORS: Record<string, string> = {
     OPEN: '#ef4444', IN_REVIEW: '#f59e0b', VERIFIED: '#3b82f6', REMEDIATED: '#10b981', CLOSED: '#64748b',
-};
-const ENG_STATUS_COLORS: Record<string, string> = {
-    PLANNING: '#818cf8', IN_PROGRESS: '#3b82f6', REPORTING: '#f59e0b',
-    COMPLETED: '#10b981', ON_HOLD: '#ef4444', PROPOSED: '#a855f7', SCOPING: '#06b6d4',
-};
-const ENG_STATUS_BADGE: Record<string, string> = {
-    PLANNING: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
-    IN_PROGRESS: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-    REPORTING: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-    COMPLETED: 'bg-green-500/10 text-green-400 border-green-500/30',
-    ON_HOLD: 'bg-red-500/10 text-red-400 border-red-500/30',
-    PROPOSED: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-    SCOPING: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
 };
 const CLEANUP_COLORS: Record<string, string> = {
     PENDING: '#f97316', CLEANED: '#10b981', PARTIALLY_CLEANED: '#f59e0b', NOT_APPLICABLE: '#64748b',
@@ -460,7 +448,7 @@ function ListWidget({ widget, stats, isEditing, onRemove }: {
                 return (
                     <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-1">
                         {items.map((e: any) => {
-                            const badgeClass = ENG_STATUS_BADGE[e.status] || 'bg-slate-500/10 text-slate-400 border-slate-500/30';
+                            const badgeClass = ENGAGEMENT_STATUS_BADGE[e.status] || 'bg-slate-500/10 text-slate-400 border-slate-500/30';
                             return (
                                 <div key={e.id} onClick={() => router.push(`/engagements/${e.id}`)}
                                     className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-slate-800/40 cursor-pointer transition-all group border border-transparent hover:border-slate-700/50">
@@ -688,7 +676,7 @@ function getColor(widget: DashboardWidgetDef, entry: any, index: number): string
     if (widget.data_source === 'custom_query') return ACCENT_COLORS[index % ACCENT_COLORS.length];
     switch (widget.data_source) {
         case 'severity_distribution': return severityHex(entry.severity) || ACCENT_COLORS[index % ACCENT_COLORS.length];
-        case 'engagement_status': return ENG_STATUS_COLORS[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];
+        case 'engagement_status': return ENGAGEMENT_STATUS_HEX[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];
         case 'findings_by_status': return STATUS_COLORS[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];
         case 'cleanup_status': return CLEANUP_COLORS[entry.status] || ACCENT_COLORS[index % ACCENT_COLORS.length];
         default: return widget.config?.colors?.[entry[getDataKey(widget)]] || ACCENT_COLORS[index % ACCENT_COLORS.length];

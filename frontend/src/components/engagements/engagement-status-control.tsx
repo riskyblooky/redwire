@@ -13,17 +13,8 @@ import { cn } from '@/lib/utils';
 import { useUpdateEngagement, type Engagement } from '@/lib/hooks/use-engagements';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserRole } from '@/lib/hooks/use-auth';
-import { ENGAGEMENT_STATUSES } from '@/lib/engagement-status';
+import { ENGAGEMENT_STATUSES, ENGAGEMENT_STATUS_BADGE, ENGAGEMENT_STATUS_BADGE_FALLBACK } from '@/lib/engagement-status';
 
-const statusColors: Record<string, string> = {
-    PROPOSED: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
-    SCOPING: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
-    PLANNING: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    IN_PROGRESS: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-    REPORTING: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    COMPLETED: 'bg-green-500/10 text-green-400 border-green-500/20',
-    ON_HOLD: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 
 
@@ -70,7 +61,7 @@ export function EngagementStatusControl({ engagement, canEdit }: EngagementStatu
             >
                 <SelectTrigger className={cn(
                     "h-7 w-fit min-w-[100px] px-2 py-0 border-none shadow-none focus:ring-0 text-[11px] font-bold uppercase",
-                    statusColors[engagement.status] || statusColors.PLANNING
+                    ENGAGEMENT_STATUS_BADGE[engagement.status] || ENGAGEMENT_STATUS_BADGE_FALLBACK
                 )}>
                     {isUpdatingStatus ? (
                         <Loader2 className="h-3 w-3 animate-spin mr-1" />
@@ -83,7 +74,7 @@ export function EngagementStatusControl({ engagement, canEdit }: EngagementStatu
                         <SelectItem
                             key={s.value}
                             value={s.value}
-                            className={cn("my-1 mx-1 rounded-md font-medium text-[11px]", statusColors[s.value])}
+                            className={cn("my-1 mx-1 rounded-md font-medium text-[11px]", ENGAGEMENT_STATUS_BADGE[s.value])}
                         >
                             {s.label}
                         </SelectItem>
@@ -91,7 +82,7 @@ export function EngagementStatusControl({ engagement, canEdit }: EngagementStatu
                 </SelectContent>
             </Select>
         ) : (
-            <Badge className={cn("px-2 py-0.5", statusColors[engagement.status])}>
+            <Badge className={cn("px-2 py-0.5", ENGAGEMENT_STATUS_BADGE[engagement.status])}>
                 {engagement.status.replace('_', ' ')}
             </Badge>
         );

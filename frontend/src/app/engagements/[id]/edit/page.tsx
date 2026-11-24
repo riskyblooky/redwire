@@ -61,7 +61,7 @@ import { useFormFromQuery } from '@/lib/hooks/use-form-from-query';
 const PHASE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
     SCOPING:     { bg: 'bg-cyan-500',   text: 'text-cyan-400',   label: 'Scoping'     },
     PLANNING:    { bg: 'bg-amber-500',  text: 'text-amber-400',  label: 'Planning'    },
-    IN_PROGRESS: { bg: 'bg-primary', text: 'text-primary', label: 'In Progress' },
+    IN_PROGRESS: { bg: 'bg-purple-500', text: 'text-purple-400', label: 'In Progress' },
     REPORTING:   { bg: 'bg-blue-500',   text: 'text-blue-400',   label: 'Reporting'   },
 };
 

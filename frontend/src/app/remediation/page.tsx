@@ -85,6 +85,7 @@ import DiscussionSection from '@/components/discussions/discussion-section';
 import { useAuthStore } from '@/stores/auth-store';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { SEVERITY_BADGE } from '@/lib/severity';
+import { ENGAGEMENT_STATUS_BADGE, ENGAGEMENT_STATUS_BADGE_FALLBACK } from '@/lib/engagement-status';
 
 // ── Config Maps ───────────────────────────────────────────────────
 
@@ -342,9 +343,7 @@ export default function RemediationPage() {
                                                 <span className="truncate">{selectedEngagement.name}</span>
                                                 <Badge variant="outline" className={cn(
                                                     "text-[9px] px-1.5 h-4 border-none uppercase font-bold shrink-0",
-                                                    selectedEngagement.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400' :
-                                                        selectedEngagement.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400' :
-                                                            'bg-slate-500/10 text-slate-400'
+                                                    ENGAGEMENT_STATUS_BADGE[selectedEngagement.status] || ENGAGEMENT_STATUS_BADGE_FALLBACK
                                                 )}>
                                                     {selectedEngagement.status?.replace(/_/g, ' ')}
                                                 </Badge>
@@ -383,9 +382,7 @@ export default function RemediationPage() {
                                                         )}
                                                         <Badge variant="outline" className={cn(
                                                             "text-[9px] px-1.5 h-4 border-none uppercase font-bold ml-2 shrink-0",
-                                                            eng.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400' :
-                                                                eng.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400' :
-                                                                    'bg-slate-500/10 text-slate-400'
+                                                            ENGAGEMENT_STATUS_BADGE[eng.status] || ENGAGEMENT_STATUS_BADGE_FALLBACK
                                                         )}>
                                                             {eng.status?.replace(/_/g, ' ')}
                                                         </Badge>

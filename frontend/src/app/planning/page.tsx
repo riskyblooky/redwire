@@ -108,7 +108,7 @@ import { SchedulingAssistant } from '@/components/calendar/scheduling-assistant'
 import { useAuthStore } from '@/stores/auth-store';
 import { useFocusFit } from '@/lib/hooks/use-skills';
 import { UserRole } from '@/lib/types';
-import { STATUS_PHASE_INDEX } from '@/lib/engagement-status';
+import { STATUS_PHASE_INDEX, ENGAGEMENT_STATUS_BADGE } from '@/lib/engagement-status';
 
 // ── Phase colors (distinct from status colors) ─────────────────
 const PHASE_COLORS: Record<string, { bg: string; label: string; border: string }> = {
@@ -120,15 +120,6 @@ const PHASE_COLORS: Record<string, { bg: string; label: string; border: string }
 
 // Status-to-phase index mapping for on-time/late calculation
 
-const STATUS_BADGE_COLORS: Record<string, string> = {
-    PROPOSED: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
-    SCOPING: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
-    PLANNING: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    IN_PROGRESS: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-    REPORTING: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    COMPLETED: 'bg-green-500/10 text-green-400 border-green-500/20',
-    ON_HOLD: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 type TabType = 'timeline' | 'scheduling';
 
@@ -1127,7 +1118,7 @@ export default function PlanningPage() {
                                     ) : (
                                         <div className="space-y-5">
                                             <div>
-                                                <Badge className={STATUS_BADGE_COLORS[selectedEngagement.status] || ''}>
+                                                <Badge className={ENGAGEMENT_STATUS_BADGE[selectedEngagement.status] || ''}>
                                                     {selectedEngagement.status.replace('_', ' ')}
                                                 </Badge>
                                                 <h3 className="text-lg font-bold text-white mt-2 leading-tight">{selectedEngagement.name}</h3>

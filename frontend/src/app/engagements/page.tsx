@@ -56,16 +56,8 @@ import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialo
 import api, { apiErrorMessage } from '@/lib/api';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
-import { ENGAGEMENT_STATUSES } from '@/lib/engagement-status';
+import { ENGAGEMENT_STATUSES, ENGAGEMENT_STATUS_BADGE, ENGAGEMENT_STATUS_BADGE_FALLBACK } from '@/lib/engagement-status';
 
-const statusColors: Record<string, string> = {
-    PROPOSED: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
-    PLANNING: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    IN_PROGRESS: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-    REPORTING: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    COMPLETED: 'bg-green-500/10 text-green-400 border-green-500/20',
-    ON_HOLD: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
-};
 
 
 
@@ -132,7 +124,7 @@ const EngagementRow = ({ engagement, handleView, handleEdit, handleDelete, handl
                 <span className="text-sm">{typeLabels[engagement.engagement_type] || engagement.engagement_type}</span>
             </TableCell>
             <TableCell>
-                <Badge className={statusColors[engagement.status] || statusColors.PLANNING}>
+                <Badge className={ENGAGEMENT_STATUS_BADGE[engagement.status] || ENGAGEMENT_STATUS_BADGE_FALLBACK}>
                     {engagement.status.replace('_', ' ')}
                 </Badge>
             </TableCell>
