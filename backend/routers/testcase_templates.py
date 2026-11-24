@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime
 from database import get_db
 
-from models.user import User, UserRole
+from models.user import User
 from models.permission import Permission
 from auth.permissions import has_global_permission
 from models.template_status import TemplateStatus
@@ -201,12 +201,16 @@ async def delete_testcase_template(
             detail="Submitted templates cannot be deleted. Withdraw or reject the submission first.",
         )
 
-    if template.status == TemplateStatus.DRAFT:
-        if template.created_by != current_user.id and current_user.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Only the creator can delete a draft")
-    else:  # PUBLISHED
-        if not await _can_manage(current_user, db):
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    # The creator may delete their own draft; anything else (someone else's
+    # draft, a published template) takes the manage permission — not the
+    # ADMIN role name.
+    own_draft = template.status == TemplateStatus.DRAFT and template.created_by == current_user.id
+    if not own_draft and not await _can_manage(current_user, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the creator can delete a draft" if template.status == TemplateStatus.DRAFT
+            else "Insufficient permissions",
+        )
 
     # runbook_items.template_id cascades on delete, so deleting a template
     # in use would silently strip it out of every runbook (approved ones

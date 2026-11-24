@@ -29,6 +29,7 @@ Engagement statuses use one colour palette everywhere (the planning page's): the
 Engagement phases now follow changes to the engagement's dates (including dates added after creation), unless a phase's dates were adjusted by hand.
 Attack-chain links that would make a loop through three or more items are refused, not just direct back-links.
 Scan imports (Nessus, Burp, Nuclei) keep each host's evidence — port or location and the scanner's output — in the merged finding's technical details, instead of only the first host's.
+Deleting someone else's draft template or runbook follows the manage / runbook_delete permission instead of the admin role, and the templates page offers Delete on the same terms.
 
 ## [1.9.2] — 2026-11-22
 

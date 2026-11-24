@@ -32,7 +32,6 @@ import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
-import { UserRole } from '@/lib/types';
 import { cn, parseUTCDate } from '@/lib/utils';
 import {
     useFindingTemplates,
@@ -249,6 +248,8 @@ export default function TemplatesPage() {
     const canManageFT = useGlobalPermission('manage_finding_templates');
     const canManageTCT = useGlobalPermission('manage_testcase_templates');
     const canManageRB = useGlobalPermission('runbook_edit');
+    // Deleting another's draft or a published runbook (backend: runbook_delete).
+    const canDeleteRB = useGlobalPermission('runbook_delete');
     const canManageRLT = useGlobalPermission('manage_report_layout_templates');
     const canManageTheme = useGlobalPermission('manage_report_themes');
     const canManageMarking = useGlobalPermission('manage_marking_profiles');
@@ -969,7 +970,7 @@ export default function TemplatesPage() {
                                                     const isSubmitted = template.status === 'SUBMITTED';
                                                     const isPublished = template.status === 'PUBLISHED';
                                                     const canEditRow = (isDraft && (isOwner || canManageFT)) || (isPublished && canManageFT);
-                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManageFT);
+                                                    const canDeleteRow = (isDraft && isOwner) || ((isDraft || isPublished) && canManageFT);
                                                     return (
                                                         <TableRow key={template.id} className="border-slate-800 hover:bg-slate-800/50 cursor-pointer" onClick={() => setViewingFT(template)}>
                                                             <TableCell className="font-medium text-white">
@@ -1204,7 +1205,7 @@ export default function TemplatesPage() {
                                                     const isSubmitted = template.status === 'SUBMITTED';
                                                     const isPublished = template.status === 'PUBLISHED';
                                                     const canEditRow = (isDraft && (isOwner || canManageTCT)) || (isPublished && canManageTCT);
-                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManageTCT);
+                                                    const canDeleteRow = (isDraft && isOwner) || ((isDraft || isPublished) && canManageTCT);
                                                     return (
                                                         <TableRow key={template.id} className="border-slate-800 hover:bg-slate-800/50 cursor-pointer" onClick={() => setViewingTC(template)}>
                                                             <TableCell className="font-medium text-white">
@@ -1440,7 +1441,7 @@ export default function TemplatesPage() {
                                                     const isSubmitted = rb.status === 'SUBMITTED';
                                                     const isPublished = rb.status === 'PUBLISHED';
                                                     const canEditRow = (isDraft && (isOwner || canManageRB)) || (isPublished && canManageRB);
-                                                    const canDeleteRow = (isDraft && (isOwner || user?.role === UserRole.ADMIN)) || (isPublished && canManageRB);
+                                                    const canDeleteRow = (isDraft && isOwner) || ((isDraft || isPublished) && canDeleteRB);
                                                     return (
                                                         <TableRow key={rb.id} className="border-slate-800 hover:bg-slate-800/50 cursor-pointer" onClick={() => setViewingRB(rb)}>
                                                             <TableCell className="font-medium text-white">

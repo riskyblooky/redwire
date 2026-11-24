@@ -9,7 +9,7 @@ import logging
 from database import get_db
 import uuid
 
-from models.user import User, UserRole
+from models.user import User
 from models.permission import Permission
 from auth.permissions import has_global_permission
 from models.template_status import TemplateStatus
@@ -371,12 +371,16 @@ async def delete_runbook(
             detail="Submitted runbooks cannot be deleted. Withdraw or reject the submission first.",
         )
 
-    if runbook.status == TemplateStatus.DRAFT:
-        if runbook.created_by != current_user.id and current_user.role != UserRole.ADMIN:
-            raise HTTPException(status_code=403, detail="Only the creator can delete a draft")
-    else:  # PUBLISHED
-        if not await has_global_permission(current_user, Permission.RUNBOOK_DELETE, db):
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    # The creator may delete their own draft; anything else (someone else's
+    # draft, a published runbook) takes runbook_delete — a permission, not
+    # the ADMIN role name.
+    own_draft = runbook.status == TemplateStatus.DRAFT and runbook.created_by == current_user.id
+    if not own_draft and not await has_global_permission(current_user, Permission.RUNBOOK_DELETE, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the creator can delete a draft" if runbook.status == TemplateStatus.DRAFT
+            else "Insufficient permissions",
+        )
 
     await db.delete(runbook)
     await db.commit()
@@ -594,14 +598,15 @@ async def apply_runbook_to_engagement(
     for item in ordered_items:
         template = item.template
         frozen = _uses_frozen(runbook, item)
+        # Parent: the test case made from the parent item (or, for a
+        # skipped parent, whatever it nested under), else the requested
+        # parent test case — a top-level item never lands at the root when
+        # parent_testcase_id was given.
+        tc_parent_id = (runbook_item_id_to_testcase_id.get(item.parent_id) if item.parent_id else None) \
+            or parent_testcase_id
         if not template and not frozen:
+            runbook_item_id_to_testcase_id[item.id] = tc_parent_id
             continue
-
-        tc_parent_id = None
-        if item.parent_id:
-            tc_parent_id = runbook_item_id_to_testcase_id.get(item.parent_id)
-        elif parent_testcase_id:
-            tc_parent_id = parent_testcase_id
 
         testcase_id = str(uuid.uuid4())
         testcase = TestCase(
