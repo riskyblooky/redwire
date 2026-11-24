@@ -32,6 +32,7 @@ Scan imports (Nessus, Burp, Nuclei) keep each host's evidence — port or locati
 Deleting someone else's draft template or runbook follows the manage / runbook_delete permission instead of the admin role, and the templates page offers Delete on the same terms.
 Hash lookup recognises LM:NT pairs and pwdump / secretsdump lines (user:rid:LM:NT:::) and looks up the NT hash, instead of reporting an unrecognised format.
 Saving a finding, test case, asset or engagement with a blank required field (title, name, identifier, start date) stops with a message instead of saving a whitespace title or failing with a validation error.
+Scoring a finding with malformed calculator inputs (a non-text CVSS value, NaN / infinite / out-of-range DREAD or OWASP numbers) is rejected with a clear error instead of failing or storing an invalid score.
 
 ## [1.9.2] — 2026-11-22
 

@@ -45,6 +45,12 @@ def calculate_from_metrics(metrics: Dict[str, str]) -> Tuple[float, str]:
     if missing:
         raise ValueError(f"CVSS 3.1 missing base metric(s): {', '.join(missing)}")
 
+    # Values come straight from request JSON: a list or dict would raise
+    # TypeError in the lookups below (a 500), not the ValueError callers expect.
+    not_str = [k for k in _BASE_METRICS if not isinstance(metrics[k], str)]
+    if not_str:
+        raise ValueError(f"CVSS 3.1 metric value(s) must be strings: {', '.join(not_str)}")
+
     av, ac, pr, ui, s, c, i, a = (metrics[k] for k in _BASE_METRICS)
 
     bad = []

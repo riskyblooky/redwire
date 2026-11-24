@@ -21,6 +21,7 @@ refs (matrix/lookup axes) resolve a select to its chosen ``value``.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Dict, List, Optional, Union
 
@@ -52,10 +53,19 @@ def _resolve_number(ref: Any, model: ScoringModel, inputs: Dict[str, Any], steps
         if raw is None or raw == "":
             raise ScoringError(f"missing value for metric '{metric.id}'")
         if metric.type == "number":
+            # bool is an int subclass and float() takes "nan" / "inf": none
+            # of them is a usable input.
             try:
-                return float(raw)
+                val = float(raw) if not isinstance(raw, bool) else math.nan
             except (TypeError, ValueError):
+                val = math.nan
+            if not math.isfinite(val):
                 raise ScoringError(f"metric '{metric.id}' is not a number: {raw!r}")
+            if (metric.min is not None and val < metric.min) or (metric.max is not None and val > metric.max):
+                raise ScoringError(
+                    f"metric '{metric.id}' must be between {metric.min if metric.min is not None else '-∞'}"
+                    f" and {metric.max if metric.max is not None else '∞'}, got {raw!r}")
+            return val
         # select -> option weight
         for opt in metric.options or []:
             if opt.value == raw:
@@ -225,7 +235,7 @@ def evaluate(model: ScoringModel, inputs: Dict[str, Any]) -> ScoreResult:
                 raise ScoringError(f"unknown engine {eng!r} (no provider registered)")
             try:
                 numeric_value, vector = provider(inputs)
-            except ValueError as exc:
+            except (TypeError, ValueError) as exc:  # plugin code, request-JSON inputs
                 raise ScoringError(str(exc))
     else:
         result = _eval(formula, model, inputs, {})
@@ -233,6 +243,11 @@ def evaluate(model: ScoringModel, inputs: Dict[str, Any]) -> ScoreResult:
             numeric_value = float(result)
         else:
             token_value = str(result)
+
+    # A formula can still divide its way to inf / nan (a model weight of
+    # zero, say); that's never a score to store.
+    if numeric_value is not None and not math.isfinite(numeric_value):
+        raise ScoringError(f"model '{model.id}' produced a non-finite score")
 
     mapping = model.severity
     if mapping.from_ == "bands":
