@@ -293,6 +293,13 @@ export default function EditEngagementPage({ params }: { params: Promise<{ id: s
         // even if another failed, so a retry doesn't resend it.
         const saves: { label: string; run: Promise<unknown>; clear: () => void }[] = [];
 
+        // No <form> here and the Details tab may not be mounted, so the
+        // inputs' `required` never fires: check before saving anything.
+        if (detailsDirty && (!formData.name?.trim() || !formData.start_date)) {
+            toast.error('Name and start date are required');
+            return false;
+        }
+
         if (detailsDirty) {
             const { allowed_score_models: _a, default_score_model: _d, ...details } = formData;
             saves.push({ label: 'Details', clear: () => setDetailsDirty(false), run: updateEngagement.mutateAsync({

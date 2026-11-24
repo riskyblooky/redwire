@@ -31,6 +31,7 @@ Attack-chain links that would make a loop through three or more items are refuse
 Scan imports (Nessus, Burp, Nuclei) keep each host's evidence — port or location and the scanner's output — in the merged finding's technical details, instead of only the first host's.
 Deleting someone else's draft template or runbook follows the manage / runbook_delete permission instead of the admin role, and the templates page offers Delete on the same terms.
 Hash lookup recognises LM:NT pairs and pwdump / secretsdump lines (user:rid:LM:NT:::) and looks up the NT hash, instead of reporting an unrecognised format.
+Saving a finding, test case, asset or engagement with a blank required field (title, name, identifier, start date) stops with a message instead of saving a whitespace title or failing with a validation error.
 
 ## [1.9.2] — 2026-11-22
 

@@ -341,6 +341,12 @@ export default function EditFindingPage({ params }: { params: Promise<{ id: stri
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        // Save sits outside the <form> and Title is on a tab that may not be
+        // mounted, so the input's `required` never fires: check here.
+        if (!formData.title?.trim()) {
+            toast.error('Title is required');
+            return;
+        }
 
         // Warn before verifying a finding that still has unresolved discussion threads.
         // Only fires when the user actually changes the status to VERIFIED on this save.

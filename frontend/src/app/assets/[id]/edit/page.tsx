@@ -205,6 +205,10 @@ export default function EditAssetPage({ params }: { params: Promise<{ id: string
 
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
+        if (!formData.name?.trim() || !formData.identifier?.trim()) {
+            toast.error('Name and identifier are required');
+            return;
+        }
         try {
             await updateAsset.mutateAsync({ id: id, ...formData });
             setIsDirty(false);

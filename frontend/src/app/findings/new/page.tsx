@@ -238,6 +238,12 @@ export default function NewFindingPage() {
             toast.error('Please select an engagement');
             return;
         }
+        // Create sits outside the <form> and Title is on a tab that may not be
+        // mounted, so the input's `required` never fires: check here.
+        if (!formData.title?.trim()) {
+            toast.error('Title is required');
+            return;
+        }
 
         const score = parseFloat(formData.cvss_score.toString());
 

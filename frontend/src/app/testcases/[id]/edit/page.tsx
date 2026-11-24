@@ -188,6 +188,12 @@ export default function EditTestCasePage({ params }: { params: Promise<{ id: str
 
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
+        // Title is on the Definition tab (not mounted by default) and Save is
+        // outside the <form>, so the input's `required` never fires.
+        if (!formData.title?.trim()) {
+            toast.error('Title is required');
+            return;
+        }
         try {
             await updateTestCase.mutateAsync({
                 id: id,

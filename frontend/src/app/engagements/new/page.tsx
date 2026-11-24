@@ -95,7 +95,7 @@ export default function NewEngagementPage() {
 
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
-        if (!formData.name || !formData.engagement_type || !formData.start_date) {
+        if (!formData.name?.trim() || !formData.engagement_type || !formData.start_date) {
             toast.error('Name, type, and start date are required');
             return;
         }
