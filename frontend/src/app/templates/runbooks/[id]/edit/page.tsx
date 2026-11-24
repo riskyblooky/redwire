@@ -75,6 +75,15 @@ interface TreeNode {
 type DropPosition = 'before' | 'inside' | 'after';
 
 // ─── Tree helpers ─────────────────────────────────────────────────
+/** sort_order = position among siblings, at every level. */
+function renumberTree(nodes: TreeNode[]): TreeNode[] {
+    return nodes.map((n, i) => ({
+        ...n,
+        sort_order: i,
+        children: renumberTree(n.children),
+    }));
+}
+
 function flattenTree(nodes: TreeNode[]): RunbookItemCreate[] {
     const items: RunbookItemCreate[] = [];
     const walk = (nodeList: TreeNode[]) => {
@@ -425,15 +434,6 @@ export default function RunbookEditorPage() {
             return insertNode(treeWithout, removed, targetKey, position, targetParentKey);
         });
     }, []);
-
-    // ── Renumber sort_order ──
-    const renumberTree = (nodes: TreeNode[]): TreeNode[] => {
-        return nodes.map((n, i) => ({
-            ...n,
-            sort_order: i,
-            children: renumberTree(n.children),
-        }));
-    };
 
     // What Save sends; also the leave-page guard's dirty snapshot.
     const saveItems = useMemo(() => flattenTree(renumberTree(tree)), [tree]);
