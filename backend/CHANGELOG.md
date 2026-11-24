@@ -27,6 +27,7 @@ Engagement status menus (list filter, new engagement, status control) list Scopi
 Engagement members without the note_view permission no longer see linked notes' titles in the findings / test case / asset / vault / cleanup tables.
 Engagement statuses use one colour palette everywhere (the planning page's): the engagements list, status control, dashboard widgets, stats charts and remediation previously used a different mix.
 Engagement phases now follow changes to the engagement's dates (including dates added after creation), unless a phase's dates were adjusted by hand.
+Attack-chain links that would make a loop through three or more items are refused, not just direct back-links.
 
 ## [1.9.2] — 2026-11-22
 

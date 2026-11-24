@@ -269,6 +269,28 @@ async def _fetch_scoped(type_: str, id_: str, engagement_id: str, db: AsyncSessi
     return entity
 
 
+async def _reaches(engagement_id: str, start: tuple[str, str], goal: tuple[str, str], db: AsyncSession) -> bool:
+    """Whether ``goal`` is reachable from ``start`` along the engagement's
+    chain links (source → target)."""
+    rows = (await db.execute(
+        select(ChainLink.source_type, ChainLink.source_id, ChainLink.target_type, ChainLink.target_id)
+        .where(ChainLink.engagement_id == engagement_id)
+    )).all()
+    out: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for st, si, tt, ti in rows:
+        out.setdefault((st, si), []).append((tt, ti))
+    seen, stack = {start}, [start]
+    while stack:
+        node = stack.pop()
+        if node == goal:
+            return True
+        for nxt in out.get(node, ()):
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return False
+
+
 def _node_name(entity) -> str:
     return getattr(entity, "title", None) or getattr(entity, "name", None) or "item"
 
@@ -321,6 +343,15 @@ async def create_chain_link(
     )).scalar_one_or_none()
     if dup is not None:
         raise HTTPException(status_code=409, detail="These two items are already linked in a chain")
+
+    # A chain is acyclic: refuse a link whose target already leads (through
+    # any number of links) back to its source — the inverse check above only
+    # caught the two-item loop.
+    if await _reaches(engagement_id, (body.target_type, body.target_id), (body.source_type, body.source_id), db):
+        raise HTTPException(
+            status_code=409,
+            detail="This link would make a loop: the target already leads back to the source",
+        )
 
     link = ChainLink(
         engagement_id=engagement_id,

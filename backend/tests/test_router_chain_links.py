@@ -290,3 +290,28 @@ async def test_delete_finding_sweeps_chain(client, db_session, make_user, authen
         select(ChainLink).where(ChainLink.engagement_id == eng.id)
     )).scalars().all())
     assert n_after == 0
+
+
+@pytest.mark.asyncio
+async def test_longer_loop_rejected(client, db_session, make_user, authenticate_as):
+    """testcase → finding → vault → (back to) testcase would close a loop of
+    three; the inverse check only caught two. A branch that doesn't loop
+    back is still fine."""
+    admin = await make_user(role="admin")
+    authenticate_as(admin)
+    eng = await _make_engagement(db_session)
+    t = await _make_testcase(db_session, eng.id)
+    f = await _make_finding(db_session, eng.id)
+    f2 = await _make_finding(db_session, eng.id, title="XSS")
+    v = await _make_vault(db_session, eng.id)
+
+    def link(st, si, tt, ti):
+        return client.post(f"/engagements/{eng.id}/chain-links",
+                           json={"source_type": st, "source_id": si, "target_type": tt, "target_id": ti})
+
+    assert (await link("testcase", t.id, "finding", f.id)).status_code == 201
+    assert (await link("finding", f.id, "vault_item", v.id)).status_code == 201
+    r = await link("vault_item", v.id, "testcase", t.id)
+    assert r.status_code == 409
+    assert "loop" in r.json()["detail"]
+    assert (await link("vault_item", v.id, "finding", f2.id)).status_code == 201
