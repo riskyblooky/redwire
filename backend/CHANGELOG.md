@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.9.3] — Unreleased
+## [1.9.3] — 2026-11-24
 
 ### Fixed
 - **Security Center account actions respect the user-management ceiling.** A delegated security manager could disable or sign out team leads, read-only admins and accounts holding permissions they don't; only admin accounts were protected. It now follows the same rule as admin user management.
@@ -22,17 +22,17 @@ section becomes one release entry.
 - **Engagements without a start date no longer show 12/31/1969** or crowd the top of the engagements list; they show a dash and sort last.
 - **Email and 2FA changes always end API tokens.** If session revocation failed partway, an email change or 2FA enable/disable could leave the account's API tokens working. They're now ended together with the change.
 - **One asset per host in an engagement.** Adding an asset whose identifier (IP, hostname, URL) already exists in the engagement, in any letter case, now says so instead of creating a duplicate, and password-spray imports match existing assets regardless of case. Existing duplicates are merged into the oldest one when you upgrade.
-Leaving a new finding, asset or test case, the runbook builder, or the report layout / theme editors with unsaved changes now asks first, like the edit pages.
-Engagement status menus (list filter, new engagement, status control) list Scoping before Planning, matching the lifecycle.
-Engagement members without the note_view permission no longer see linked notes' titles in the findings / test case / asset / vault / cleanup tables.
-Engagement statuses use one colour palette everywhere (the planning page's): the engagements list, status control, dashboard widgets, stats charts and remediation previously used a different mix.
-Engagement phases now follow changes to the engagement's dates (including dates added after creation), unless a phase's dates were adjusted by hand.
-Attack-chain links that would make a loop through three or more items are refused, not just direct back-links.
-Scan imports (Nessus, Burp, Nuclei) keep each host's evidence — port or location and the scanner's output — in the merged finding's technical details, instead of only the first host's.
-Deleting someone else's draft template or runbook follows the manage / runbook_delete permission instead of the admin role, and the templates page offers Delete on the same terms.
-Hash lookup recognises LM:NT pairs and pwdump / secretsdump lines (user:rid:LM:NT:::) and looks up the NT hash, instead of reporting an unrecognised format.
-Saving a finding, test case, asset or engagement with a blank required field (title, name, identifier, start date) stops with a message instead of saving a whitespace title or failing with a validation error.
-Scoring a finding with malformed calculator inputs (a non-text CVSS value, NaN / infinite / out-of-range DREAD or OWASP numbers) is rejected with a clear error instead of failing or storing an invalid score.
+- Leaving a new finding, asset or test case, the runbook builder, or the report layout / theme editors with unsaved changes now asks first, like the edit pages.
+- Engagement status menus (list filter, new engagement, status control) list Scoping before Planning, matching the lifecycle.
+- Engagement members without the note_view permission no longer see linked notes' titles in the findings / test case / asset / vault / cleanup tables.
+- Engagement statuses use one colour palette everywhere (the planning page's): the engagements list, status control, dashboard widgets, stats charts and remediation previously used a different mix.
+- Engagement phases now follow changes to the engagement's dates (including dates added after creation), unless a phase's dates were adjusted by hand.
+- Attack-chain links that would make a loop through three or more items are refused, not just direct back-links.
+- Scan imports (Nessus, Burp, Nuclei) keep each host's evidence — port or location and the scanner's output — in the merged finding's technical details, instead of only the first host's.
+- Deleting someone else's draft template or runbook follows the manage / runbook_delete permission instead of the admin role, and the templates page offers Delete on the same terms.
+- Hash lookup recognises LM:NT pairs and pwdump / secretsdump lines (user:rid:LM:NT:::) and looks up the NT hash, instead of reporting an unrecognised format.
+- Saving a finding, test case, asset or engagement with a blank required field (title, name, identifier, start date) stops with a message instead of saving a whitespace title or failing with a validation error.
+- Scoring a finding with malformed calculator inputs (a non-text CVSS value, NaN / infinite / out-of-range DREAD or OWASP numbers) is rejected with a clear error instead of failing or storing an invalid score.
 
 ## [1.9.2] — 2026-11-22
 
