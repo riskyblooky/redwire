@@ -310,12 +310,17 @@ if [ "${SKIP_BACKUP:-0}" != "1" ] && docker inspect -f '{{.State.Running}}' redw
         exit 1
     fi
     SNAP="backups/$(date -u +%Y%m%dT%H%M%SZ)-predeploy"
-    mkdir -p "$SNAP" && chmod 700 "$SNAP"
-    if ! ( umask 077; docker exec redwire-db pg_dump -U "$PG_U" -d "$PG_D" -Fc > "$SNAP/db.dump" ); then
+    # Written as <snap>.partial and renamed once complete, so a failed dump
+    # never counts toward the 5 kept below (backup.sh does the same).
+    mkdir -p "$SNAP.partial" && chmod 700 "$SNAP.partial"
+    if ! ( umask 077; docker exec redwire-db pg_dump -U "$PG_U" -d "$PG_D" -Fc > "$SNAP.partial/db.dump" \
+           && docker exec -i redwire-db pg_restore -l < "$SNAP.partial/db.dump" > /dev/null ); then
+        rm -rf "$SNAP.partial"
         echo -e "${RED}pg_dump failed — aborting before touching anything.${NC}"
         exit 1
     fi
-    docker exec redwire-db psql -U "$PG_U" -d "$PG_D" -Atc "select version_num from alembic_version" > "$SNAP/alembic_version.txt" 2>/dev/null || true
+    docker exec redwire-db psql -U "$PG_U" -d "$PG_D" -Atc "select version_num from alembic_version" > "$SNAP.partial/alembic_version.txt" 2>/dev/null || true
+    mv "$SNAP.partial" "$SNAP"
     echo -e "${GREEN}Database snapshot: $SNAP/db.dump ($(du -sh "$SNAP" | cut -f1))${NC}"
     echo "  Restore: ./$(backup_script) --restore-db $SNAP/db.dump   (or ./deploy_server.sh --rollback)"
     record_rollback_point "$SNAP"
@@ -500,10 +505,10 @@ mkdir -p backups && touch "$DEPLOY_OK_MARK"
 # 7c. Daily backups (backup.sh --install-cron), once per host.
 BK="$(backup_script)"
 if [ -n "$BK" ] && [ "$(id -u)" -eq 0 ] && [ -d /etc/cron.d ]; then
-    if [ ! -f /etc/cron.d/redwire-backup ]; then
-        echo -e "\n${BLUE}[7c] Installing the daily backup job...${NC}"
-        bash "$BK" --install-cron
-    fi
+    # Rewritten on every deploy so existing hosts pick up schedule changes
+    # (1.9.4 added the weekly restore drill).
+    echo -e "\n${BLUE}[7c] Installing the backup jobs...${NC}"
+    bash "$BK" --install-cron
     echo "  Backups land in $(pwd)/backups — copy them off this server (BACKUP_REMOTE in backup.sh)."
 fi
 

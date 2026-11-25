@@ -202,69 +202,90 @@ Four things need backup. In priority order:
 | 1 | `VAULT_ENCRYPTION_KEY` + `TOTP_ENCRYPTION_KEY` | `.env` | Every vault credential + every user's TOTP secret becomes unrecoverable. There is no admin override for lost-key decrypt. |
 | 2 | Postgres data | `postgres_data` Docker volume | All engagements, findings, users, audit trail, settings |
 | 3 | MinIO evidence bucket | `minio_data` Docker volume | Uploaded evidence files, generated reports, plugin assets |
-| 4 | `.env` (rest of it) | Repo root | Config only — you can regenerate on install, but you'll lose custom values |
+| 4 | `.env` (rest of it) | Install directory | Config only — you can regenerate on install, but you'll lose custom values |
 
-The encryption keys should live in a DIFFERENT backup than the database.
-Backing them up in the same file/vault as the DB means an attacker who
-gets the DB backup also gets the keys, and every "encrypted at rest"
-value becomes plaintext to them.
+`backup.sh` covers 2 and 3 (plus `backend/uploads`). **The keys (1) are
+not in its backups by default**: store `.env` — or at least the two keys —
+in your team's secret store, away from the database backups. A backup that
+holds both the database and the keys hands every vault secret to whoever
+gets a copy of it.
 
-### Postgres backup
+### Automated: `backup.sh`
+
+`deploy_server.sh` installs `/etc/cron.d/redwire-backup` (rewritten on
+every deploy) with two jobs, run from the install directory:
+
+- **Daily 03:30 — backup.** Writes `backups/<timestamp>/` (owner-only
+  permissions): `db.dump` (Postgres, custom format), `minio.tar.gz`,
+  `uploads.tar.gz`, `alembic_version.txt` and `keys.sha256` (fingerprints
+  of the two encryption keys — not the keys). MinIO is stopped for the
+  seconds its volume takes to archive, so the copy is consistent; uploads
+  made in that window fail and can be retried. A run writes into
+  `<timestamp>.partial/` and renames it only once every part is written and
+  reads back, so a failed run leaves nothing behind and never pushes a good
+  backup out of retention. The newest 7 are kept.
+- **Sunday 04:30 — restore drill** (`backup.sh --verify`). Restores the
+  newest backup's database into a scratch database, checks its migration
+  revision, decrypts a stored vault value and a 2FA secret with the keys in
+  use now, tests the archives, compares the key fingerprints, and drops the
+  scratch database. Failures are logged as `verify FAIL` lines.
+
+Both log to `backups/backup.log`. Every deploy also writes a database-only
+`backups/<timestamp>-predeploy/` snapshot before migrating (the newest 5
+are kept) — that's the `--rollback` point.
 
 ```bash
-docker exec redwire-db pg_dump -U redwire redwire | gzip > redwire-$(date +%F).sql.gz
+./backup.sh                      # full backup now
+./backup.sh --db-only            # database only
+./backup.sh --verify             # restore drill on the newest full backup
+./backup.sh --verify backups/<timestamp>
 ```
 
-Cron this. Rotate weekly; keep 30 days.
+Settings, as environment variables or the same names in `.env` (`.env`
+survives deploys and needs no cron edits):
 
-### MinIO backup
-
-```bash
-docker exec redwire-minio mc alias set local http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
-docker exec redwire-minio mc mirror --overwrite local/redwire-evidence /tmp/evidence-backup
-docker cp redwire-minio:/tmp/evidence-backup ./evidence-$(date +%F)
-```
-
-For large buckets, prefer `mc mirror` to a remote S3 target instead of
-pulling to disk locally.
-
-### `.env` backup
-
-Whatever secret store your team uses. **Not** in the same git repo, not
-in the same S3 bucket as the DB backup, not on the same host in an
-un-restricted directory.
+| Setting | Default | |
+|---|---|---|
+| `BACKUP_REMOTE` | — | rsync target, e.g. `user@host:/srv/redwire-backups`. **Set this**: backups on the server's own disk don't survive losing the server. |
+| `BACKUP_KEEP` | `7` | full backups kept |
+| `BACKUP_DIR` | `./backups` | where backups go |
+| `BACKUP_INCLUDE_ENV` | `0` | `1` also copies `.env` into each backup as `env`. Only if those backups are themselves kept as secrets. |
 
 ---
 
 ## Restoring from backup
 
-Prerequisites: the Fernet keys from the original install (else the
-vault + TOTP data comes back as unreadable ciphertext).
+You need the encryption keys the backup was taken with (from your secret
+store), else vault items and 2FA secrets come back as unreadable
+ciphertext. `--restore-db` compares them with the backup's `keys.sha256`
+and refuses on a mismatch (`RESTORE_IGNORE_KEYS=1` overrides).
 
 ```bash
-# 1. Restore .env with the original VAULT_ENCRYPTION_KEY / TOTP_ENCRYPTION_KEY / JWT_SECRET
-cp path/to/backup/.env .env
+# 1. .env with the original VAULT_ENCRYPTION_KEY / TOTP_ENCRYPTION_KEY
+#    (and JWT_SECRET, or everyone signs in again)
 chmod 600 .env
 
-# 2. Start Postgres alone
-docker compose up -d postgres
+# 2. The database: stops the app containers, recreates the database empty,
+#    restores the dump into it.
+./backup.sh --restore-db backups/<timestamp>/db.dump
 
-# 3. Restore the DB
-gunzip -c redwire-YYYY-MM-DD.sql.gz | docker exec -i redwire-db psql -U redwire -d redwire
+# 3. MinIO objects and uploads (MinIO stopped while its data is replaced)
+docker compose stop minio
+docker run --rm --volumes-from redwire-minio -v "$PWD/backups/<timestamp>":/in alpine \
+    sh -c 'rm -rf /data/* && tar xzf /in/minio.tar.gz -C /data'
+tar xzf backups/<timestamp>/uploads.tar.gz -C backend/
 
-# 4. Restore MinIO
-docker compose up -d minio
-docker exec redwire-minio mc alias set local http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
-docker cp ./evidence-YYYY-MM-DD redwire-minio:/tmp/evidence-restore
-docker exec redwire-minio mc mirror --overwrite /tmp/evidence-restore local/redwire-evidence
-
-# 5. Bring the rest up
-docker compose up -d
+# 4. Start everything (images of the backup's version or newer — newer
+#    ones migrate the database forward on start)
+docker compose up -d --wait
 ```
 
-Verify by logging in as the original admin and opening an engagement
-whose vault items you know the plaintext of — if the values decrypt
-cleanly you have the right keys.
+Don't `pg_restore --clean` over the live database instead: tables the dump
+doesn't know survive it, and the backend then crash-loops re-running the
+migrations that created them.
+
+Verify by logging in as the original admin and opening a vault item whose
+plaintext you know — or run `./backup.sh --verify` on the backup first.
 
 ---
 

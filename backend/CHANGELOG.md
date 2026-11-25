@@ -8,6 +8,7 @@ section becomes one release entry.
 
 ### Changed
 - The frontend runs on Node.js 24 LTS (was 22); rebuild the frontend image when upgrading.
+- **Backups no longer include `.env` (the encryption keys).** Keep `VAULT_ENCRYPTION_KEY` / `TOTP_ENCRYPTION_KEY` in your secret store, as the guides advise; `BACKUP_INCLUDE_ENV=1` restores the old behaviour. Backups now record key fingerprints, and restoring a backup with different keys is refused. A weekly restore drill (`backup.sh --verify`, Sundays 04:30) checks the newest backup restores and decrypts, failed runs no longer count toward retention, MinIO is archived stopped for a consistent copy, and `BACKUP_*` settings can live in `.env`.
 
 ### Fixed
 - **Frontend security updates.** Next.js 15.5.29 (fixes, among others, remote-code-execution and denial-of-service advisories in the image optimizer and Server Actions), axios 1.21.1, TipTap 3.35 / ProseMirror (paste XSS), DOMPurify, zod and PostCSS, plus transitive packages; `npm audit` goes from 31 advisories (1 critical, 14 high) to 2 low.
