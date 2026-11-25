@@ -1,0 +1,32 @@
+# Direct dependencies. requirements.txt is the lock compiled from this file —
+# every transitive package pinned — and is what the image installs.
+# Edit this file, never requirements.txt, then regenerate the lock with the
+# image's own Python (from the repo root):
+#
+#   docker run --rm --entrypoint sh -u 0 -v "$PWD/mcp-server":/w -w /w redwire-mcp-server:dev -c \
+#     "pip install -q pip-tools && pip-compile --strip-extras --no-emit-index-url \
+#      --output-file requirements.txt requirements.in"
+#
+# Existing pins are kept; add --upgrade-package <name> to move one, or
+# --upgrade for all. Check it with: pip-audit -r requirements.txt --no-deps
+
+# MCP SDK with SSE transport.
+# server.py targets the 2.x low-level API: the @list_tools()/@call_tool()
+# decorators were replaced by mcp.add_request_handler("tools/list"|"tools/call",
+# params_type, handler) returning ListToolsResult/CallToolResult (see the
+# adapters in server.py). SseServerTransport, mcp.run(), and the Tool/TextContent
+# types are unchanged from 1.x. Pinned <3.0.0 against the next breaking bump.
+mcp[cli]>=2.0.0,<3.0.0
+
+# HTTP client for RedWire API.
+# Keep this explicit: mcp 2.0's internal client moved to the separate `httpx2`
+# package, so `mcp[cli]` no longer pulls httpx transitively — and server.py
+# does `import httpx` for every backend call.
+httpx>=0.26.0
+
+# Data validation
+pydantic>=2.5.0
+
+# ASGI server for SSE transport
+uvicorn[standard]>=0.27.0
+starlette>=0.35.0
