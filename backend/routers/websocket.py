@@ -412,6 +412,52 @@ async def websocket_endpoint(
 # _serve_yjs_room). Saves always re-check.
 _ACCESS_RECHECK_S = 15
 
+# One access check per (user, record) per interval, shared by that user's
+# sockets on the record — an edit page opens one socket per rich-text field,
+# and each used to run the same 3-4 queries on its own timer. Worker-local:
+# a result is never older than _ACCESS_RECHECK_S, the same bound each socket
+# had before, so a revocation still lands within one interval everywhere.
+# Saves bypass it (fresh=True).
+_access_cache: dict[tuple[str, str], tuple[float, Optional[bool]]] = {}
+_access_inflight: dict[tuple[str, str], "asyncio.Future"] = {}
+
+
+async def _run_access_check(user_id: str, recheck) -> Optional[bool]:
+    from database import AsyncSessionLocal
+    async with AsyncSessionLocal() as rdb:
+        live_user = (await rdb.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if live_user is None or not live_user.is_active or live_user.must_change_password:
+            return None
+        return await recheck(rdb, live_user)
+
+
+async def _shared_access_check(cache_key: tuple[str, str], user_id: str, recheck, fresh: bool) -> Optional[bool]:
+    """``recheck``'s answer for ``cache_key``: a cached one younger than
+    _ACCESS_RECHECK_S, else the in-flight check's, else a new check (always
+    a new one when ``fresh``). Errors propagate and aren't cached."""
+    if not fresh:
+        hit = _access_cache.get(cache_key)
+        if hit is not None and _time.monotonic() - hit[0] < _ACCESS_RECHECK_S:
+            return hit[1]
+        pending = _access_inflight.get(cache_key)
+        if pending is not None:
+            return await asyncio.shield(pending)
+    task = asyncio.ensure_future(_run_access_check(user_id, recheck))
+    _access_inflight[cache_key] = task
+    try:
+        # shield: a socket closing mid-check mustn't cancel the others' wait.
+        allowed = await asyncio.shield(task)
+    finally:
+        if _access_inflight.get(cache_key) is task:
+            del _access_inflight[cache_key]
+    now = _time.monotonic()
+    _access_cache[cache_key] = (now, allowed)
+    if len(_access_cache) > 1024:
+        for k, (ts, _v) in list(_access_cache.items()):
+            if now - ts >= _ACCESS_RECHECK_S:
+                del _access_cache[k]
+    return allowed
+
 
 @router.websocket("/ws/yjs/note/{note_id}")
 async def yjs_websocket_endpoint(
@@ -479,7 +525,7 @@ async def yjs_websocket_endpoint(
     await _serve_yjs_room(
         websocket, note_id, user_id, can_edit,
         initial_content=note.content or "", persist=True, on_save=_save,
-        extra_initial={"note_id": note_id}, recheck=_recheck,
+        extra_initial={"note_id": note_id}, recheck=_recheck, share_key=f"note:{note_id}",
     )
 
 
@@ -561,6 +607,8 @@ async def yjs_field_websocket_endpoint(
     await _serve_yjs_room(
         websocket, room_key(resource_type, resource_id, field), user_row.id, target.can_edit,
         initial_content=target.content, persist=False, on_save=_save, recheck=_recheck,
+        # Access is per record, not per field: the page's field sockets share it.
+        share_key=f"{resource_type}:{resource_id}",
     )
 
 
@@ -575,6 +623,7 @@ async def _serve_yjs_room(
     on_save,
     extra_initial: Optional[dict] = None,
     recheck=None,
+    share_key: Optional[str] = None,
 ):
     """Join the Y.js room ``key``, send the bootstrap frame, and relay frames
     until the client disconnects. ``on_save`` handles a client's
@@ -588,7 +637,9 @@ async def _serve_yjs_room(
     ``_ACCESS_RECHECK_S`` — an idle client sends nothing, so frames alone
     would leave a revoked viewer watching indefinitely. Edit lost →
     the socket becomes read-only (``access_changed``); view lost →
-    ``access_revoked`` and close."""
+    ``access_revoked`` and close. The timer and frame checks share one
+    result per (user, ``share_key``) per interval (``_shared_access_check``);
+    a save always checks afresh."""
     from utils.yjs_server import yjs_store
     from utils.ws_bus import bus as _bus
     import json as _json
@@ -630,20 +681,16 @@ async def _serve_yjs_room(
 
     last_check = _time.monotonic()
 
-    async def _refresh_access(force: bool) -> bool:
+    cache_key = (user_id, share_key or key)
+
+    async def _refresh_access(force: bool, fresh: bool = False) -> bool:
         """Re-check access; False if the socket was closed for lost view."""
         nonlocal can_edit, last_check
         if recheck is None or (not force and _time.monotonic() - last_check < _ACCESS_RECHECK_S):
             return True
         last_check = _time.monotonic()
         try:
-            from database import AsyncSessionLocal
-            async with AsyncSessionLocal() as rdb:
-                live_user = (await rdb.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-                if live_user is None or not live_user.is_active or live_user.must_change_password:
-                    allowed = None
-                else:
-                    allowed = await recheck(rdb, live_user)
+            allowed = await _shared_access_check(cache_key, user_id, recheck, fresh)
         except Exception as e:  # noqa: BLE001
             # Fail closed for writes only: a transient DB error shouldn't
             # kick viewers, but nobody saves on an unverified right.
@@ -709,7 +756,7 @@ async def _serve_yjs_room(
                     if data.get("type") == "save_content":
                         if on_save is None:
                             continue
-                        if not await _refresh_access(force=True):
+                        if not await _refresh_access(force=True, fresh=True):
                             raise WebSocketDisconnect(status.WS_1008_POLICY_VIOLATION)
                         if not can_edit:
                             # Tell the client, so it stops showing "Saving…".
