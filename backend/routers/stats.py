@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, extract, case, literal_column
+from sqlalchemy import select, func, and_, extract, case, literal_column, or_, distinct
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from database import get_db
@@ -764,48 +764,48 @@ async def time_on_task(
     distinct-contributor count — never per-named-user. Engagement-scoped via the
     standard stats scoping (admins / VIEW_ALL_ENGAGEMENTS see across engagements).
     """
-    from collections import defaultdict
     from models.activity_ping import ActivityPing
 
     is_admin, allowed, _strip = await apply_stats_scope(engagement_id, db, current_user)
     days = max(1, min(days, 365))
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    q = select(
-        ActivityPing.user_id, ActivityPing.resource_type, ActivityPing.created_at,
-    ).where(ActivityPing.created_at >= cutoff)
-    q = scope_to_assignments(q, ActivityPing.engagement_id, engagement_id, is_admin, allowed)
-    q = q.order_by(ActivityPing.user_id, ActivityPing.resource_type, ActivityPing.created_at)
-    rows = (await db.execute(q)).all()
-
     IDLE_SECONDS = 10 * 60          # gap > 10 min → new session
     TAIL_SECONDS = 60              # nominal work each session's final ping represents
     MIN_CONTRIBUTORS = 1          # raise for stricter anonymity (hide thin cohorts)
 
-    series: dict = defaultdict(list)
-    for user_id, rtype, ts in rows:
-        series[(user_id, rtype)].append(ts)
-
-    per_type: dict = defaultdict(lambda: {"seconds": 0.0, "sessions": 0, "users": set(), "pings": 0})
-    for (user_id, rtype), times in series.items():
-        agg = per_type[rtype]
-        agg["users"].add(user_id)
-        agg["pings"] += len(times)
-        sessions = 1 if times else 0
-        secs = 0.0
-        for i in range(1, len(times)):
-            gap = (times[i] - times[i - 1]).total_seconds()
-            if gap <= IDLE_SECONDS:
-                secs += gap
-            else:
-                sessions += 1
-        secs += sessions * TAIL_SECONDS
-        agg["seconds"] += secs
-        agg["sessions"] += sessions
+    # Sessionised in the database: each ping's gap to the same user's
+    # previous ping on that resource type (lag over the window). A gap up to
+    # IDLE_SECONDS is time worked; no previous ping or a longer gap starts a
+    # session. Used to pull every ping of the window into Python.
+    pings = select(
+        ActivityPing.user_id.label("user_id"),
+        ActivityPing.resource_type.label("resource_type"),
+        func.extract("epoch", ActivityPing.created_at - func.lag(ActivityPing.created_at).over(
+            partition_by=(ActivityPing.user_id, ActivityPing.resource_type),
+            order_by=ActivityPing.created_at,
+        )).label("gap"),
+    ).where(ActivityPing.created_at >= cutoff)
+    pings = scope_to_assignments(pings, ActivityPing.engagement_id, engagement_id, is_admin, allowed).subquery()
+    in_session = pings.c.gap <= IDLE_SECONDS
+    rows = (await db.execute(
+        select(
+            pings.c.resource_type,
+            func.coalesce(func.sum(pings.c.gap).filter(in_session), 0),
+            func.count().filter(or_(pings.c.gap.is_(None), pings.c.gap > IDLE_SECONDS)),
+            func.count(distinct(pings.c.user_id)),
+            func.count(),
+        ).group_by(pings.c.resource_type).order_by(pings.c.resource_type)
+    )).all()
+    per_type = {
+        rtype: {"seconds": float(worked) + sessions * TAIL_SECONDS, "sessions": sessions,
+                "users": contributors, "pings": n}
+        for rtype, worked, sessions, contributors, n in rows
+    }
 
     by_type = []
     for rtype, agg in sorted(per_type.items()):
-        contributors = len(agg["users"])
+        contributors = agg["users"]
         if contributors < MIN_CONTRIBUTORS:
             continue
         by_type.append({
