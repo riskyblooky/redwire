@@ -535,6 +535,13 @@ async def seed_testcase_templates() -> int:
 
 # ── Orchestrator ────────────────────────────────────────────────────
 
+async def seed_system_widgets() -> int:
+    """Built-in dashboard widgets (SYSTEM_WIDGETS) missing from the table."""
+    from routers.dashboard_widgets import _seed_system_widgets
+    async with AsyncSessionLocal() as db:
+        return await _seed_system_widgets(db)
+
+
 async def seed_all_defaults():
     """Run every seeder in dependency order. Each is idempotent, and each
     runs on its own: one failing (e.g. on unexpected data) used to abort
@@ -558,3 +565,4 @@ async def seed_all_defaults():
     await _run("report layout", seed_default_report_layout, lambda ok: ok and f"+1 ({_DEFAULT_LAYOUT_NAME})")
     await _run("finding templates", seed_finding_templates, lambda n: n and f"+{n}")
     await _run("testcase templates", seed_testcase_templates, lambda n: n and f"+{n}")
+    await _run("system widgets", seed_system_widgets, lambda n: n and f"+{n}")

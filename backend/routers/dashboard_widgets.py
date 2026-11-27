@@ -606,22 +606,9 @@ async def list_widgets(
         select(DashboardWidget).where(DashboardWidget.is_active == True).order_by(DashboardWidget.category, DashboardWidget.name)
     )
     widgets = result.scalars().all()
-
-    # Seed any missing system widgets. Guard used to be "zero system
-    # widgets in DB" which meant that once the original set was seeded on
-    # a fresh install, later additions to SYSTEM_WIDGETS never landed on
-    # existing deployments. The seeder is already per-ID idempotent
-    # (checks each id before inserting), so simply comparing the count
-    # against the source list catches any gap.
-    system_ids_in_db = {w.id for w in widgets if w.is_system}
-    system_ids_in_source = {w["id"] for w in SYSTEM_WIDGETS}
-    if system_ids_in_source - system_ids_in_db:
-        await _seed_system_widgets(db)
-        result = await db.execute(
-            select(DashboardWidget).where(DashboardWidget.is_active == True).order_by(DashboardWidget.category, DashboardWidget.name)
-        )
-        widgets = result.scalars().all()
-
+    # System widgets are seeded at startup (seed_defaults → seed_system_widgets),
+    # not here: a GET that wrote also re-ran the seeder on every load once an
+    # admin had deactivated a system widget (inactive ones aren't listed).
     return [_widget_to_dict(w) for w in widgets]
 
 
@@ -1468,12 +1455,16 @@ def _widget_to_dict(w: DashboardWidget) -> dict:
     }
 
 
-async def _seed_system_widgets(db: AsyncSession):
-    """Seed built-in system widgets if they don't exist. ON CONFLICT so two
-    workers serving the first dashboard load at once don't collide on the id."""
+async def _seed_system_widgets(db: AsyncSession) -> int:
+    """Insert the built-in system widgets that don't exist yet; returns how
+    many were added. Runs at startup (seed_defaults), so widgets added to
+    SYSTEM_WIDGETS in a release reach existing installs. ON CONFLICT keeps it
+    safe if two processes ever run it at once; an existing row (an admin
+    may have deactivated it) is left as it is."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
+    added = 0
     for w_data in SYSTEM_WIDGETS:
-        await db.execute(pg_insert(DashboardWidget).values(
+        res = await db.execute(pg_insert(DashboardWidget).values(
             id=w_data["id"],
             name=w_data["name"],
             widget_type=w_data["widget_type"],
@@ -1485,4 +1476,6 @@ async def _seed_system_widgets(db: AsyncSession):
             is_system=True,
             is_active=True,
         ).on_conflict_do_nothing(index_elements=["id"]))
+        added += res.rowcount or 0
     await db.commit()
+    return added
