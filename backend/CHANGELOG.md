@@ -17,6 +17,7 @@ section becomes one release entry.
 - AI chat no longer keeps a database connection open while a reply streams or waits for a tool approval, which could exhaust connections with several chats open and stall database migrations during an upgrade.
 - Paging through notifications, activity logs, scan imports and the Security Center no longer repeats some entries and skips others when several share the same time (or, in the activity log sorted by action, the same action).
 - Deleting an asset, or an engagement with its assets, now also removes the Shodan and ServiceNow CMDB enrichment data stored for those assets; data left behind by earlier deletes is cleaned up on upgrade.
+- The dashboard loads faster: its statistics now take 9 database queries instead of 33 and no longer load every finding and test case of your engagements to count them.
 
 ## [1.9.3] — 2026-11-24
 
