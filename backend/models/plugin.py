@@ -11,7 +11,8 @@ mistake. Same model as ``AuthSetting``. Rows from before the switch are
 re-encrypted at boot (utils/plugin_settings_field_migration.py).
 """
 
-from sqlalchemy import Column, String, DateTime, Boolean, UniqueConstraint
+from sqlalchemy import Column, String, DateTime, Boolean, UniqueConstraint, delete, event, func
+from sqlalchemy.orm import Session
 from database import Base
 from utils.encrypted_types import EncryptedText
 from datetime import datetime
@@ -48,6 +49,24 @@ async def upsert_plugin_setting(db, plugin_id: str, key: str, value, is_secret: 
         set_={"value": stmt.excluded.value, "is_secret": stmt.excluded.is_secret,
               "updated_at": stmt.excluded.updated_at},
     ))
+
+
+# Per-asset plugin data (enrichment results) is stored as "<prefix>:<asset id>"
+# rows — shodan_enricher's "enrich:", servicenow_cmdb's "cmdb:". Drop them with
+# the asset, in the same flush, whether the asset is deleted on its own or
+# through an engagement's cascade, and whether or not the plugin is enabled.
+_UUID_LEN = 36
+
+
+@event.listens_for(Session, "after_flush")
+def _drop_deleted_assets_plugin_data(session, _flush_context):
+    from models.asset import Asset
+    suffixes = [f":{o.id}" for o in session.deleted if isinstance(o, Asset) and o.id]
+    if not suffixes:
+        return
+    session.connection().execute(
+        delete(PluginSetting).where(func.right(PluginSetting.key, _UUID_LEN + 1).in_(suffixes))
+    )
 
 
 class PluginState(Base):
