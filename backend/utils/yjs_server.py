@@ -270,8 +270,9 @@ def _register_bus_handlers() -> None:
 _register_bus_handlers()
 
 
-async def save_note_content(note_id: str, content: str, user_id: str):
-    """Persist note content to the database."""
+async def save_note_content(note_id: str, content: str, user_id: str) -> bool:
+    """Persist note content to the database. False if the note is gone or
+    the write failed (the editor shows "Not saved"), like save_collab_field."""
     try:
         from database import AsyncSessionLocal
         from models.note import Note
@@ -281,13 +282,13 @@ async def save_note_content(note_id: str, content: str, user_id: str):
             result = await db.execute(select(Note).where(Note.id == note_id))
             note = result.scalar_one_or_none()
             if not note:
-                return
+                return False
 
             if (note.content or "") == content:
                 # Opening a note, or a save request after cursor moves only,
                 # sends back the content as it is: not an edit, so leave
                 # updated_by / updated_at alone.
-                return
+                return True
             engagement_id = note.engagement_id
             note_title = note.title
 
@@ -318,8 +319,10 @@ async def save_note_content(note_id: str, content: str, user_id: str):
 
             if starts_session:
                 await _log_note_update(db, engagement_id, note_id, note_title, user_id)
+            return True
     except Exception as e:
         logger.warning(f"Y.js save_note_content error: {e}")
+        return False
 
 
 async def _recent_note_log_exists(db, note_id: str) -> bool:

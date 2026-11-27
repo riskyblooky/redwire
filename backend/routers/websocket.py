@@ -516,7 +516,15 @@ async def yjs_websocket_endpoint(
 
     # 3. Join the Y.js room and relay until the client leaves.
     async def _save(content: str):
-        await save_note_content(note_id, content, user_id)
+        if not isinstance(content, str):
+            return
+        ok = await save_note_content(note_id, content, user_id)
+        # Same acknowledgement as the field socket: the shared editor shows
+        # Saving… / Saved / Not saved from it.
+        try:
+            await websocket.send_text(json.dumps({"type": "content_saved", "ok": ok}))
+        except Exception:
+            pass
 
     async def _recheck(rdb: AsyncSession, live_user: User) -> Optional[bool]:
         live_note = (await rdb.execute(select(Note).where(Note.id == note_id))).scalar_one_or_none()

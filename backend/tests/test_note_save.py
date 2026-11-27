@@ -47,7 +47,7 @@ async def test_unchanged_content_is_not_an_edit(note_db, make_user):
     author, reader = await make_user(), await make_user()
     note = await _note(note_db, author)
 
-    await save_note_content(note.id, "# hello", reader.id)
+    assert await save_note_content(note.id, "# hello", reader.id) is True
 
     await note_db.refresh(note)
     assert note.updated_by == author.id
@@ -60,12 +60,17 @@ async def test_changed_content_is_saved(note_db, make_user):
     author, editor = await make_user(), await make_user()
     note = await _note(note_db, author)
 
-    await save_note_content(note.id, "# hello\n\nmore", editor.id)
+    assert await save_note_content(note.id, "# hello\n\nmore", editor.id) is True
 
     await note_db.refresh(note)
     assert note.content == "# hello\n\nmore"
     assert note.updated_by == editor.id
     assert note.updated_at > datetime(2026, 1, 1)
+
+
+async def test_missing_note_reports_not_saved(note_db, make_user):
+    from utils.yjs_server import save_note_content
+    assert await save_note_content(str(uuid.uuid4()), "x", (await make_user()).id) is False
 
 
 @pytest.mark.parametrize("carries_update, schedules", [(False, False), (True, True)])

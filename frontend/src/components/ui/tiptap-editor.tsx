@@ -48,7 +48,7 @@ import {
     Underline as UnderlineIcon, Highlighter, Palette, Subscript as SubIcon,
     Superscript as SupIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Table as TableIcon, Trash2, Plus, Minus, Workflow, TextSelect, ListChecks, ChevronsUpDown, Hash,
-    MoreHorizontal, Users, Wifi, WifiOff, Eye, Check, AlertTriangle,
+    MoreHorizontal, Users, Wifi, WifiOff, Eye, Check, AlertTriangle, Clock, Timer,
 } from 'lucide-react';
 import { ySyncPluginKey } from '@tiptap/y-tiptap';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -217,14 +217,51 @@ interface TiptapEditorProps {
      *  on every real text change (see EditorChangeMeta). `onAccess` hears
      *  the server's mid-session verdict (false once edit is taken away or
      *  access is revoked), for hosts that show their own editing hints. */
-    collab?: { path: string; onAccess?: (canEdit: boolean) => void };
+    collab?: {
+        path: string;
+        onAccess?: (canEdit: boolean) => void;
+        /** Answer the server's own save requests (the note room persists on
+         *  a server-side debounce as well as the author's autosave). */
+        answerSaveRequests?: boolean;
+    };
+    /** Toolbar timestamp controls: insert `[YYYY-MM-DD HH:MM:SS] `, and a
+     *  toggle that prefixes every new line with one (an operator log). */
+    timestamps?: boolean;
+    /** Show the AI assistant panel (default true). */
+    aiPanel?: boolean;
 }
 
-const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any; showLineNumbers?: boolean; onToggleLineNumbers?: () => void }) => {
+/** `[YYYY-MM-DD HH:MM:SS] ` in local time, for note timestamps. */
+function fmtTimestamp(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `[${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}] `;
+}
+
+const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers, timestamps }: { editor: any; showLineNumbers?: boolean; onToggleLineNumbers?: () => void; timestamps?: boolean }) => {
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
     const [imageDialogOpen, setImageDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
     const [imageUrl, setImageUrl] = useState('');
+
+    // Auto-timestamp mode (with `timestamps`): each new line (Enter) is
+    // prefixed with a timestamp. A ref so the keydown listener isn't re-bound.
+    const [persistTimestamp, setPersistTimestamp] = useState(false);
+    const persistRef = useRef(persistTimestamp);
+    persistRef.current = persistTimestamp;
+    useEffect(() => {
+        if (!editor || !timestamps) return;
+        const dom = editor.view?.dom as HTMLElement | undefined;
+        if (!dom) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (persistRef.current && e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                // Let the newline commit first, then prefix the fresh line.
+                setTimeout(() => editor.chain().insertContent(fmtTimestamp()).run(), 0);
+            }
+        };
+        dom.addEventListener('keydown', onKey);
+        return () => dom.removeEventListener('keydown', onKey);
+    }, [editor, timestamps]);
     // Lesser-used controls live on a second row, hidden by default. The choice
     // persists so a user who wants the full toolbar keeps it.
     const [showMore, setShowMore] = useState(false);
@@ -432,6 +469,32 @@ const MenuBar = ({ editor, showLineNumbers, onToggleLineNumbers }: { editor: any
                 >
                     <ImageIcon className="h-4 w-4" />
                 </Button>
+
+                {timestamps && (
+                    <>
+                        <Separator orientation="vertical" className="h-6 bg-slate-700 mx-1" />
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title="Insert current timestamp"
+                            onClick={() => editor.chain().focus().insertContent(fmtTimestamp()).run()}
+                            className="h-8 w-8 hover:bg-slate-800 text-slate-400"
+                        >
+                            <Clock className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title={persistTimestamp ? 'Auto-timestamp each new line: ON (click to turn off)' : 'Auto-timestamp each new line'}
+                            onClick={() => setPersistTimestamp(p => !p)}
+                            className={cn("h-8 w-8 hover:bg-slate-800", persistTimestamp ? 'text-primary bg-primary/10' : 'text-slate-400')}
+                        >
+                            <Timer className="h-4 w-4" />
+                        </Button>
+                    </>
+                )}
 
                 <div className="flex-1" />
 
@@ -893,7 +956,7 @@ function parseInitialEditorHeight(minHeight?: string): number {
     return m ? Math.max(220, parseInt(m[1], 10)) : 360;
 }
 
-export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable = true, fillHeight = false, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover, collab }: TiptapEditorProps) {
+export default function TiptapEditor({ value, onChange, placeholder, disabled, minHeight = '300px', id, className, fieldContext, engagementId, imageScope, resizable = true, fillHeight = false, lineNumbers = false, commentThreads, activeCommentId, onEditorReady, onCommentClick, onCommentHover, collab, timestamps = false, aiPanel = true }: TiptapEditorProps) {
     const [, setForceUpdate] = useState(0);
     const [showLineNumbers, setShowLineNumbers] = useState(lineNumbers);
     const showLineNumbersRef = useRef(lineNumbers);
@@ -929,14 +992,28 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
     // synced from a peer is reported once (below) so the form matches what's
     // on screen. After that, onChange fires only on real text changes.
     const [collabPath] = useState(() => collab?.path ?? null);
+    const [answerSaveRequests] = useState(() => !!collab?.answerSaveRequests);
     const valueRef = useRef(value);
     valueRef.current = value;
+    const socketRef = useRef<WebSocket | null>(null);
     const room = useYjsRoom({
         path: collabPath,
         editorRef,
         seed: (ed, content) => { ed.commands.setContent(content, { emitUpdate: false }); },
         autosave: collabPath ? () => (editorRef.current?.storage as any)?.markdown?.getMarkdown?.() ?? '' : undefined,
+        onRequestSave: answerSaveRequests ? (data) => {
+            const ed = editorRef.current;
+            const ws = socketRef.current;
+            if (ed && ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'save_content',
+                    content: (ed.storage as any).markdown?.getMarkdown?.() || '',
+                    note_id: data?.note_id,
+                }));
+            }
+        } : undefined,
     });
+    socketRef.current = room.socket;
     const collabSourceRef = useRef(room.contentSource);
     collabSourceRef.current = room.contentSource;
     const collabStatusRef = useRef(room.status);
@@ -1253,15 +1330,15 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
             className={cn("flex flex-col border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40", fillHeight && "h-full", className)}
             style={resizable && !fillHeight ? { height: editorHeight } : undefined}
         >
-            <MenuBar editor={editor} showLineNumbers={showLineNumbers} onToggleLineNumbers={() => setShowLineNumbers(v => !v)} />
+            <MenuBar editor={editor} showLineNumbers={showLineNumbers} onToggleLineNumbers={() => setShowLineNumbers(v => !v)} timestamps={timestamps} />
             {collabPath && (
                 <div className="flex shrink-0 items-center justify-end gap-2 border-b border-slate-800/60 px-2 py-0.5 text-[10px]">
                     {room.revoked ? (
-                        <span className="flex items-center gap-1 text-red-400" title="Your access to this record was removed. Reload the page.">
+                        <span className="flex items-center gap-1 text-red-400" title="Your access was removed. Reload the page.">
                             <AlertTriangle className="h-3 w-3" /> Access removed
                         </span>
                     ) : (disabled || serverReadOnly) && (
-                        <span className="flex items-center gap-1 text-slate-400" title={serverReadOnly && !disabled ? "Your edit access to this field was removed. Others' edits still appear live." : "You can't edit this field. Others' edits still appear live."}>
+                        <span className="flex items-center gap-1 text-slate-400" title={serverReadOnly && !disabled ? "Your edit access was removed. Others' edits still appear live." : "You can't edit this. Others' edits still appear live."}>
                             <Eye className="h-3 w-3" /> Read only
                         </span>
                     )}
@@ -1271,17 +1348,17 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                         </span>
                     )}
                     {(room.saveState === 'pending' || room.saveState === 'saving') && (
-                        <span className="flex items-center gap-1 text-muted-foreground" title="Saving your edits to this field">
+                        <span className="flex items-center gap-1 text-muted-foreground" title="Saving your edits">
                             <Loader2 className="h-3 w-3 animate-spin" /> Saving…
                         </span>
                     )}
                     {room.saveState === 'saved' && (
-                        <span className="flex items-center gap-1 text-muted-foreground" title="Your edits to this field are saved">
+                        <span className="flex items-center gap-1 text-muted-foreground" title="Your edits are saved">
                             <Check className="h-3 w-3" /> Saved
                         </span>
                     )}
                     {room.saveState === 'error' && (
-                        <span className="flex items-center gap-1 text-red-400" title="This field couldn't be saved (was the record deleted?). Copy your text before leaving.">
+                        <span className="flex items-center gap-1 text-red-400" title="This couldn't be saved (was it deleted?). Copy your text before leaving.">
                             <AlertTriangle className="h-3 w-3" /> Not saved
                         </span>
                     )}
@@ -1327,13 +1404,14 @@ export default function TiptapEditor({ value, onChange, placeholder, disabled, m
                 <EditorContent editor={editor} />
             </div>
 
-            {/* AI assistant (shared with the collaborative editor). Docks below
-                the content; owns its own split. */}
-            <AiAssistantPanel
-                editor={editor}
-                fieldContext={fieldContext}
-                maxHeight={resizable && !fillHeight ? editorHeight - 150 : undefined}
-            />
+            {/* AI assistant. Docks below the content; owns its own split. */}
+            {aiPanel && (
+                <AiAssistantPanel
+                    editor={editor}
+                    fieldContext={fieldContext}
+                    maxHeight={resizable && !fillHeight ? editorHeight - 150 : undefined}
+                />
+            )}
 
             {/* Corner grab handle: drag to resize the whole editor vertically. */}
             {resizable && !fillHeight && (

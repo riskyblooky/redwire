@@ -768,7 +768,6 @@ export function NotesTab({ engagementId, initialNoteId }: NotesTabProps) {
                                 engagementId={engagementId}
                                 placeholder="Start writing your notes..."
                                 disabled={!canEditNote}
-                                minHeight="0"
                                 initialPreview={selectedNote.content}
                             />
                         </div>
