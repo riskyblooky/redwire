@@ -25,7 +25,7 @@ class Thread(Base):
     __tablename__ = "threads"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False, index=True)
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False, index=True)
     resource_type = Column(String(50), nullable=False)  # Changed from Enum to String
     resource_id = Column(String, nullable=True, index=True) # ID of specific finding/asset/testcase
     title = Column(String(255), nullable=False)
@@ -55,7 +55,7 @@ class Comment(Base):
     __tablename__ = "comments"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    thread_id = Column(String, ForeignKey("threads.id"), nullable=False, index=True)
+    thread_id = Column(String, ForeignKey("threads.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

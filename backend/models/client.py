@@ -26,7 +26,9 @@ class Client(Base, AuditMixin):
     # Relationships
     client_type = relationship("ConfigurableType", foreign_keys=[client_type_id])
     parent = relationship("Client", remote_side=[id], back_populates="children")
-    children = relationship("Client", back_populates="parent", cascade="all, delete-orphan",
+    # No delete cascade: deleting a client with sub-clients is refused
+    # (routers/clients.py), and the FK is ON DELETE SET NULL.
+    children = relationship("Client", back_populates="parent", cascade="save-update, merge",
                             order_by="Client.sort_order")
     engagements = relationship("Engagement", back_populates="client")
     access_grants = relationship("ClientUserAccess", cascade="all, delete-orphan", foreign_keys="ClientUserAccess.client_id")

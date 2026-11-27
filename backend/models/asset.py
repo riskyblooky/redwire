@@ -14,7 +14,7 @@ class Asset(Base, AuditMixin):
     )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=False, index=True)
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False, index=True)
     asset_type = Column(String(100), nullable=False)
 

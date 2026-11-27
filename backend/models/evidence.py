@@ -8,9 +8,9 @@ class Evidence(Base, AuditMixin):
     __tablename__ = "evidence"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    finding_id = Column(String, ForeignKey("findings.id"), nullable=True, index=True)
-    testcase_id = Column(String, ForeignKey("testcases.id"), nullable=True, index=True)
-    engagement_id = Column(String, ForeignKey("engagements.id"), nullable=True, index=True)
+    finding_id = Column(String, ForeignKey("findings.id", ondelete="CASCADE"), nullable=True, index=True)
+    testcase_id = Column(String, ForeignKey("testcases.id", ondelete="SET NULL"), nullable=True, index=True)
+    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=True, index=True)
     filename = Column(String(255), nullable=False)
     original_filename = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=False)  # Path/key in MinIO
