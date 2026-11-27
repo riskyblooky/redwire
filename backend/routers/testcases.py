@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Form, Header
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -28,13 +28,15 @@ router = APIRouter(prefix="/testcases", tags=["testcases"])
 
 @router.get("", response_model=List[TestCaseResponse])
 async def get_testcases(
+    response: Response,
     engagement_id: Optional[str] = Query(None),
     skip: int = 0,
     limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all test cases, optionally filtered by engagement"""
+    """Get all test cases, optionally filtered by engagement. The total
+    matching (same filters, ignoring paging) is in ``X-Total-Count``."""
     from models.discussion import Thread
     from sqlalchemy import func
     
@@ -53,17 +55,21 @@ async def get_testcases(
         TestCase.created_by == User.id
     ).group_by(TestCase.id, User.username, User.full_name, User.profile_photo)
     
+    filters = []
     if engagement_id:
-        query = query.where(TestCase.engagement_id == engagement_id)
-    
+        filters.append(TestCase.engagement_id == engagement_id)
+
     # Restrict to engagements where the caller's role can view these
     # (same rule as the single-item GET) for non-admins
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
         from auth.rbac import engagements_with_permission
-        query = query.where(TestCase.engagement_id.in_(
+        filters.append(TestCase.engagement_id.in_(
             engagements_with_permission(current_user.id, Permission.TESTCASE_VIEW.value)
         ))
-    
+    query = query.where(*filters)
+    total = (await db.execute(select(func.count()).select_from(TestCase).where(*filters))).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+
     query = query.offset(skip).limit(limit).order_by(TestCase.created_at.desc(), TestCase.id).options(*options("TESTCASE"))
     
     result = await db.execute(query)

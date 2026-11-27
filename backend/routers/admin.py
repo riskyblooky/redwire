@@ -863,7 +863,7 @@ async def get_deleted_engagement_logs(
         select(ActivityLog, User.username)
         .outerjoin(User, User.id == ActivityLog.user_id)
         .where(*_ORPHAN, ActivityLog.origin_engagement_id == engagement_id)
-        .order_by(ActivityLog.created_at.asc())
+        .order_by(ActivityLog.created_at.asc(), ActivityLog.id)
         .limit(limit).offset(offset)
     )).all()
     return [

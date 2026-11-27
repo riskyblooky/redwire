@@ -532,7 +532,7 @@ async def list_scan_imports(
         select(ScanImport, User.username, User.full_name)
         .outerjoin(User, ScanImport.created_by == User.id)
         .where(ScanImport.engagement_id == engagement_id)
-        .order_by(ScanImport.created_at.desc())
+        .order_by(ScanImport.created_at.desc(), ScanImport.id)
         .offset(offset)
         .limit(limit)
     )).all()

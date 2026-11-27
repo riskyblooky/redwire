@@ -130,7 +130,7 @@ async def list_events(
     where = and_(*conds)
     total = (await db.execute(select(func.count()).select_from(SecurityEvent).where(where))).scalar_one()
     rows = (await db.execute(
-        select(SecurityEvent).where(where).order_by(SecurityEvent.created_at.desc()).limit(limit).offset(offset)
+        select(SecurityEvent).where(where).order_by(SecurityEvent.created_at.desc(), SecurityEvent.id).limit(limit).offset(offset)
     )).scalars().all()
     names = await _usernames(db, [r.user_id for r in rows] + [r.actor_id for r in rows])
     return {"items": [_event_row(r, names) for r in rows], "total": total}
@@ -295,7 +295,7 @@ async def traffic_requests(
     where = and_(*conds)
     total = (await db.execute(select(func.count()).select_from(HttpRequestLog).where(where))).scalar_one()
     rows = (await db.execute(
-        select(HttpRequestLog).where(where).order_by(HttpRequestLog.ts.desc()).limit(limit).offset(offset)
+        select(HttpRequestLog).where(where).order_by(HttpRequestLog.ts.desc(), HttpRequestLog.id).limit(limit).offset(offset)
     )).scalars().all()
     return {"total": total, "items": [{
         "id": r.id, "ts": _iso(r.ts), "ip": r.ip, "method": r.method, "path": r.path,
@@ -486,7 +486,7 @@ async def sensitive_activity(
     where = and_(ActivityLog.action.in_(SENSITIVE_ACTIONS), ActivityLog.created_at >= _since(hours))
     total = (await db.execute(select(func.count()).select_from(ActivityLog).where(where))).scalar_one()
     rows = (await db.execute(
-        select(ActivityLog).where(where).order_by(ActivityLog.created_at.desc()).limit(limit).offset(offset)
+        select(ActivityLog).where(where).order_by(ActivityLog.created_at.desc(), ActivityLog.id).limit(limit).offset(offset)
     )).scalars().all()
     names = await _usernames(db, [r.user_id for r in rows])
     return {"total": total, "items": [{

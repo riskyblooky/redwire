@@ -66,7 +66,7 @@ async def get_notifications(
     )
     if unread_only:
         query = query.where(Notification.is_read == False)
-    query = query.order_by(Notification.created_at.desc()).offset(skip).limit(limit)
+    query = query.order_by(Notification.created_at.desc(), Notification.id).offset(skip).limit(limit)
 
     result = await db.execute(query)
     rows = result.all()
@@ -125,7 +125,7 @@ async def browse_notifications(
         select(Notification, func.coalesce(User.full_name, User.username).label("actor_name"))
         .outerjoin(User, Notification.actor_id == User.id)
         .where(*conds)
-        .order_by(order)
+        .order_by(order, Notification.id)
         .offset(skip)
         .limit(limit)
     )

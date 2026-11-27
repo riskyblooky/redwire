@@ -849,9 +849,9 @@ async def get_activity_log(
         sort_col = ActivityLog.created_at
 
     if sort_order == 'asc':
-        base_query = base_query.order_by(sort_col.asc())
+        base_query = base_query.order_by(sort_col.asc(), ActivityLog.id)
     else:
-        base_query = base_query.order_by(sort_col.desc())
+        base_query = base_query.order_by(sort_col.desc(), ActivityLog.id)
         
     base_query = base_query.options(selectinload(ActivityLog.user)).offset(offset).limit(limit)
     
@@ -1281,7 +1281,7 @@ async def get_activity_feed(
     total = (await db.execute(select(func.count()).select_from(base_query.subquery()))).scalar() or 0
 
     order = ActivityLog.created_at.asc() if sort_order == "asc" else ActivityLog.created_at.desc()
-    page_query = base_query.options(selectinload(ActivityLog.user)).order_by(order).offset(offset).limit(limit)
+    page_query = base_query.options(selectinload(ActivityLog.user)).order_by(order, ActivityLog.id).offset(offset).limit(limit)
     logs = (await db.execute(page_query)).scalars().all()
 
     items = []
