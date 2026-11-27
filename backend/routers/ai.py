@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 import httpx
 
+import database
 from database import get_db
 from models.user import User, UserRole
 from models.ai_settings import AiSetting
@@ -947,9 +948,14 @@ async def ai_chat(
                                 continue
 
                             try:
-                                result = await _execute_mcp_tool(
-                                    tool_name, tool_args, current_user, db,
-                                )
+                                # Own short session per call: the request's
+                                # session was released before streaming (see
+                                # below), and a tool must not hold a pool
+                                # connection across the LLM / approval waits.
+                                async with database.AsyncSessionLocal() as tool_db:
+                                    result = await _execute_mcp_tool(
+                                        tool_name, tool_args, current_user, tool_db,
+                                    )
                                 result_str = json.dumps(result, default=str)
                             except Exception as e:
                                 result_str = json.dumps({"error": str(e)})
@@ -1125,6 +1131,14 @@ async def ai_chat(
             logger.exception("ai_chat stream failed")
             yield _sse("chunk", {"error": str(e)})
             yield _sse("done", {})
+
+    # FastAPI keeps the request's yield-dependencies open until a streamed
+    # response finishes, so without this the session's transaction — and its
+    # pool connection, snapshot and table locks — stayed open for the whole
+    # reply: LLM latency plus up to five minutes per tool approval. Nothing
+    # below uses `db`; end its transaction here (expire_on_commit=False keeps
+    # current_user readable).
+    await db.commit()
 
     return StreamingResponse(
         stream_response(),
