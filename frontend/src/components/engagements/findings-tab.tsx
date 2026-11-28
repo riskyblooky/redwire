@@ -16,7 +16,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
-import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs, compareCustomFieldValues } from '@/components/custom-fields/custom-field-list-columns';
+import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs } from '@/components/custom-fields/custom-field-list-columns';
 import { ColumnToggle } from '@/components/ui/column-toggle';
 import { useRouter } from 'next/navigation';
 import {
@@ -24,14 +24,17 @@ import {
     Lock, Sparkles, Server, MoreVertical, Trash2, Edit, MessageSquare,
     StickyNote, Radar, Settings, Filter, X, Link as LinkIcon, Paperclip, GitBranch, CheckSquare,
 } from 'lucide-react';
-import { cn, parseDateOnly } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useFindings, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { useFindingsPage, useFindingFacets, useDeleteFinding, useTags } from '@/lib/hooks/use-findings';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { useDebounce } from '@/lib/hooks/use-debounce';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { ResultCount } from '@/components/ui/result-count';
 import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { Tag as TagIcon } from 'lucide-react';
-import { useInfiniteScroll } from '@/lib/hooks/use-infinite-scroll';
 import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { usePermission, useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -41,7 +44,6 @@ import { LinkTooltip } from '@/components/ui/link-tooltip';
 import { TagList } from '@/components/ui/tag-list';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { displayNameFrom } from '@/lib/display-name';
-import { relevanceComparator } from '@/lib/search-relevance';
 import { formatDistanceToNow } from 'date-fns';
 import { parseUTCDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -80,13 +82,6 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { FindingDetailSheet } from '@/components/engagements/finding-detail-sheet';
 import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
 import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
@@ -94,9 +89,6 @@ import { ScoreModelPolicyBadge } from '@/components/findings/score-model-policy-
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const severityOrder: Record<string, number> = {
-    CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4,
-};
 
 const findingStatusColors: Record<string, string> = {
     OPEN: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -367,6 +359,28 @@ const FINDINGS_COLUMNS: ColumnDef[] = [
     { key: 'actions',     label: 'Actions',     required: true },
 ];
 
+/** URL keys of the findings list (prefixed f_ on the engagement page). The
+ *  sort default is this browser's last choice, as before. */
+function findingListSpec() {
+    const stored = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) : null);
+    return {
+        q: { kind: 'string' },
+        sev: { kind: 'array' },
+        status: { kind: 'array' },
+        cat: { kind: 'array' },
+        tag: { kind: 'array' },
+        by: { kind: 'string' },
+        after: { kind: 'string' },
+        sort: { kind: 'string', default: stored('redwire_sort_engagement_findings_field') || 'created_at' },
+        dir: { kind: 'enum', values: ['asc', 'desc'], default: stored('redwire_sort_engagement_findings_order') === 'asc' ? 'asc' : 'desc' },
+        page: { kind: 'int', default: 1, min: 1 },
+        size: { kind: 'int', default: 50, min: 1, max: 500 },
+    } satisfies ParamSpec;
+}
+
+/** ?finding=<id> opens the detail sheet. */
+const SHEET_SPEC = { finding: { kind: 'string' } } satisfies ParamSpec;
+
 export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: FindingsTabProps) {
     const router = useRouter();
     const canCreateFinding = usePermission(engagementId, 'finding_create');
@@ -375,16 +389,50 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
     const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_findings', findingColumns);
     const col = (key: string) => visibleCols.has(key);
 
-    // Data
-    const findingsParams = useMemo(() => ({ engagement_id: engagementId }), [engagementId]);
-    const { data: findings = [], isLoading } = useFindings(findingsParams);
+    // View state lives in the URL (f_-prefixed: the engagement page hosts
+    // several lists); the sort default is the last one this browser used.
+    const listSpec = useMemo(() => findingListSpec(), []);
+    const [p, setP] = useListParams(listSpec, 'f_');
+    const [sheet, setSheet] = useListParams(SHEET_SPEC);
+
+    // Search and created-by are typed: keep the keystrokes local and commit
+    // them to the URL (and the server query) after a pause.
+    const [searchText, setSearchText] = useState(p.q);
+    const [createdByText, setCreatedByText] = useState(p.by);
+    const debouncedSearch = useDebounce(searchText, 300);
+    const debouncedCreatedBy = useDebounce(createdByText, 300);
+    useEffect(() => { if (debouncedSearch !== p.q) setP({ q: debouncedSearch }); }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { if (debouncedCreatedBy !== p.by) setP({ by: debouncedCreatedBy }); }, [debouncedCreatedBy]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Back / forward changes the URL under us: follow it.
+    useEffect(() => { setSearchText(p.q); }, [p.q]);
+    useEffect(() => { setCreatedByText(p.by); }, [p.by]);
+    const search = searchText;
+    const setSearch = setSearchText;
+
+    // Data: one server page plus the facets (unfiltered total, categories).
+    const { data: page, isLoading, isFetching } = useFindingsPage({
+        engagement_id: engagementId,
+        q: p.q || undefined,
+        severity: p.sev,
+        status: p.status,
+        category: p.cat,
+        tag: p.tag,
+        created_by: p.by || undefined,
+        created_after: p.after || undefined,
+        sort_by: p.sort,
+        sort_order: p.dir as 'asc' | 'desc',
+        ...toSkipLimit(p.page, p.size),
+    });
+    const { data: facets } = useFindingFacets(engagementId);
+    const rows = page?.rows ?? [];
+    const total = page?.total ?? 0;
     // Linked-notes tooltips come from the lightweight note-links endpoint —
     // no need to download every note body just to show which notes link here.
     const { data: noteLinks } = useEngagementNoteLinks(engagementId);
     const notesByFinding = noteLinks?.finding || {};
 
-    // Detail sheet state
-    const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+    // Detail sheet: ?finding=<id>, so a link or reload reopens it.
+    const selectedFindingId = sheet.finding || null;
 
     // View mode toggle: 'panel' = side sheet, 'page' = full page nav
     const [viewMode, setViewMode] = useState<'panel' | 'page'>(() => {
@@ -397,29 +445,29 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
         if (viewMode === 'page') {
             router.push(`/findings/${findingId}?engagementId=${engagementId}&tab=findings`);
         } else {
-            setSelectedFindingId(findingId);
+            setSheet({ finding: findingId });
         }
     };
 
-    // Sort & search & filter state
-    const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
-    const [filters, setFilters] = useState<{
-        severities: string[];
-        statuses: string[];
-        categories: string[];
-        tags: string[];
-        createdBy: string;
-        dateAfter: string;
-    }>({ severities: [], statuses: [], categories: [], tags: [], createdBy: '', dateAfter: '' });
+    // The filter panel's shape, over the URL state.
+    const filters = {
+        severities: p.sev, statuses: p.status, categories: p.cat, tags: p.tag,
+        createdBy: createdByText, dateAfter: p.after,
+    };
+    type Filters = typeof filters;
+    const setFilters = (next: Filters | ((prev: Filters) => Filters)) => {
+        const f = typeof next === 'function' ? next(filters) : next;
+        if (f.createdBy !== createdByText) setCreatedByText(f.createdBy);
+        setP({ sev: f.severities, status: f.statuses, cat: f.categories, tag: f.tags, after: f.dateAfter });
+    };
     const { data: allTags = [] } = useTags('finding');
     const { data: findingTypes = [] } = useConfigurableTypes('finding');
-    // Category options come from the categories actually present in the data
-    // (free-form), colour-matched to configurable types by name where available.
+    // Category options are the categories in use (free-form), colour-matched
+    // to configurable types by name where available.
     const categoryColor: Record<string, string> = {};
     findingTypes.forEach((t: any) => { if (t.color) categoryColor[t.name.toLowerCase()] = t.color; });
-    const categoryOptions = [...new Set(findings.map((f: any) => f.category).filter(Boolean) as string[])]
-        .sort((a, b) => a.localeCompare(b))
+    const categoryOptions = (facets?.categories ?? [])
         .map((c) => ({ value: c, label: c, color: categoryColor[c.toLowerCase()] || null }));
 
     const hasActiveFilters = filters.severities.length > 0 || filters.statuses.length > 0 || filters.categories.length > 0 || filters.tags.length > 0 || !!filters.createdBy || !!filters.dateAfter;
@@ -432,59 +480,19 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
     };
     const clearFilters = () => setFilters({ severities: [], statuses: [], categories: [], tags: [], createdBy: '', dateAfter: '' });
 
-    const [sortField, setSortField] = useState<string>(() => {
-        if (typeof window !== 'undefined') return localStorage.getItem('redwire_sort_engagement_findings_field') || 'created_at';
-        return 'created_at';
-    });
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') return (localStorage.getItem('redwire_sort_engagement_findings_order') as 'asc' | 'desc') || 'desc';
-        return 'desc';
-    });
-
+    const sortField = p.sort;
+    const sortOrder = p.dir as 'asc' | 'desc';
     const handleSort = (field: string) => {
         if (sortField === field) {
             const next = sortOrder === 'asc' ? 'desc' : 'asc';
-            setSortOrder(next);
+            setP({ dir: next });
             localStorage.setItem('redwire_sort_engagement_findings_order', next);
         } else {
-            setSortField(field);
-            setSortOrder('asc');
+            setP({ sort: field, dir: 'asc' });
             localStorage.setItem('redwire_sort_engagement_findings_field', field);
             localStorage.setItem('redwire_sort_engagement_findings_order', 'asc');
         }
     };
-
-    const sortedFindings = [...findings]
-        .filter(f => {
-            const term = search.toLowerCase();
-            const matchesText = !term || f.title.toLowerCase().includes(term) ||
-                f.description.toLowerCase().includes(term) ||
-                f.status.toLowerCase().includes(term) ||
-                f.severity.toLowerCase().includes(term);
-            const matchesSeverity = filters.severities.length === 0 || filters.severities.includes(f.severity);
-            const matchesStatus = filters.statuses.length === 0 || filters.statuses.includes(f.status);
-            const matchesCategory = filters.categories.length === 0 || (f.category != null && filters.categories.includes(f.category));
-            const matchesTags = filters.tags.length === 0 || (f.tags || []).some((t: any) => filters.tags.includes(t.id));
-            const matchesCreatedBy = !filters.createdBy || (f.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
-            const matchesDate = !filters.dateAfter || parseUTCDate(f.created_at) >= parseDateOnly(filters.dateAfter);
-            return matchesText && matchesSeverity && matchesStatus && matchesCategory && matchesTags && matchesCreatedBy && matchesDate;
-        })
-        .sort(relevanceComparator(
-            search,
-            [item => item.title, item => item.description],
-            (a, b) => {
-                let comparison = 0;
-                if (sortField === 'severity') comparison = severityOrder[a.severity] - severityOrder[b.severity];
-                else if (sortField === 'created_at') comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                else if (sortField === 'unresolved_thread_count') comparison = (a.unresolved_thread_count || 0) - (b.unresolved_thread_count || 0);
-                else if (sortField === 'created_by_username') comparison = (a.created_by_username || '').localeCompare(b.created_by_username || '');
-                else if (sortField.startsWith('cf:')) comparison = compareCustomFieldValues((a.custom_fields as any)?.[sortField.slice(3)], (b.custom_fields as any)?.[sortField.slice(3)]);
-                else comparison = String((a as any)[sortField]).localeCompare(String((b as any)[sortField]));
-                return sortOrder === 'asc' ? comparison : -comparison;
-            }
-        ));
-
-    const { visible: visibleFindings, sentinelRef, hasMore } = useInfiniteScroll(sortedFindings);
 
     return (
         <>
@@ -500,7 +508,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
                         <Input placeholder="Search findings..." className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <span className="w-32 shrink-0 flex justify-end overflow-hidden mr-1">
-                        {!isLoading && <ResultCount count={sortedFindings.length} total={findings.length} noun="finding" />}
+                        {!isLoading && <ResultCount count={total} total={facets?.total} noun="finding" />}
                     </span>
                     <Button
                         size="icon" variant="ghost"
@@ -653,10 +661,10 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
                     <div className="flex justify-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
                     </div>
-                ) : findings.length === 0 ? (
+                ) : total === 0 ? (
                     <div className="text-center py-8 text-slate-400">
                         <Bug className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>No findings yet</p>
+                        <p>{search || hasActiveFilters ? 'No findings match your search or filters' : 'No findings yet'}</p>
                     </div>
                 ) : (
                     <Table>
@@ -675,7 +683,7 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {visibleFindings.map((finding) => (
+                            {rows.map((finding) => (
                                 <FindingRow
                                     key={finding.id}
                                     finding={finding}
@@ -690,18 +698,17 @@ export function FindingsTab({ engagementId, onAddVaultItem, onAddCleanup }: Find
                         </TableBody>
                     </Table>
                 )}
-                {hasMore && (
-                    <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-4 text-xs text-slate-500">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Loading more… ({visibleFindings.length} of {sortedFindings.length})
-                    </div>
-                )}
+                <ListPagination
+                    page={p.page} pageSize={p.size} total={total} isFetching={isFetching}
+                    onPageChange={(n) => setP({ page: n })} onPageSizeChange={(n) => setP({ size: n })}
+                />
             </CardContent>
         </Card>
         <FindingDetailSheet
             findingId={selectedFindingId}
             engagementId={engagementId}
             open={!!selectedFindingId}
-            onOpenChange={(open) => { if (!open) setSelectedFindingId(null); }}
+            onOpenChange={(open) => { if (!open) setSheet({ finding: '' }); }}
             nonModal
         />
         </>

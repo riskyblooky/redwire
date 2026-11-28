@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header, Response
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from models.loaders import load, options
-from sqlalchemy import func
+from sqlalchemy import case, func
+from utils import listing
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pydantic import BaseModel, Field
 import json
 import logging
@@ -37,26 +38,72 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/findings", tags=["findings"])
 
+def _finding_list_filters(current_user: User, engagement_id, severity, status, category, tag,
+                          created_by, created_after, term) -> list:
+    """The WHERE clauses of the findings list (shared with its facets)."""
+    from sqlalchemy import String, cast
+    from models.associations import FindingTag
+    filters = []
+    if engagement_id:
+        filters.append(Finding.engagement_id == engagement_id)
+    if severity:
+        filters.append(Finding.severity.in_(severity))
+    if status:
+        filters.append(Finding.status.in_(status))
+    if category:
+        filters.append(Finding.category.in_(category))
+    if tag:
+        filters.append(Finding.id.in_(select(FindingTag.finding_id).where(FindingTag.tag_id.in_(tag))))
+    if created_by:
+        filters.append(Finding.created_by.in_(
+            select(User.id).where(User.username.ilike(f"%{listing._like_escape(created_by)}%", escape="\\"))))
+    if created_after:
+        filters.append(Finding.created_at >= datetime.combine(created_after, datetime.min.time()))
+    if term:
+        filters.append(listing.search_clause(term, [
+            Finding.title, Finding.description, cast(Finding.status, String), cast(Finding.severity, String)]))
+    # Restrict to engagements where the caller's role can view these (same
+    # rule as the single-item GET) for non-admins.
+    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+        from auth.rbac import engagements_with_permission
+        filters.append(Finding.engagement_id.in_(
+            engagements_with_permission(current_user.id, Permission.FINDING_VIEW.value)
+        ))
+    return filters
+
+
+_SEVERITY_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
+
+
 @router.get("", response_model=List[FindingResponse])
 async def get_findings(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     engagement_id: Optional[str] = Query(None),
-    severity: Optional[Severity] = Query(None),
-    status: Optional[FindingStatus] = Query(None),
-    skip: int = 0,
-    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT)
+    severity: Optional[List[Severity]] = Query(None),
+    status: Optional[List[FindingStatus]] = Query(None),
+    category: Optional[List[str]] = Query(None),
+    tag: Optional[List[str]] = Query(None, description="Tag ids; any of them."),
+    created_by: Optional[str] = Query(None, max_length=100, description="Creator username contains."),
+    created_after: Optional[date] = Query(None),
+    page: listing.ListParams = Depends(listing.list_params(default_limit=100)),
 ):
-    """Get findings with optional filters."""
+    """Findings matching the filters, paged; the total matching is in
+    ``X-Total-Count``. ``q`` searches title, description, status and
+    severity, best matches first. Sort by ``created_at`` (default, newest
+    first), ``updated_at``, ``title``, ``severity``, ``status``,
+    ``category``, ``cvss_score``, ``unresolved_thread_count``,
+    ``created_by_username`` or ``cf:<custom field key>``."""
     from models.discussion import Thread
-    
-    # Join with threads to count unresolved threads
+
+    unresolved = func.count(Thread.id).filter(Thread.is_resolved == False)
     query = select(
         Finding,
         User.username.label("creator_username"),
         User.full_name.label("creator_full_name"),
         User.profile_photo.label("creator_profile_photo"),
-        func.count(Thread.id).filter(Thread.is_resolved == False).label("unresolved_count")
+        unresolved.label("unresolved_count")
     ).outerjoin(
         Thread,
         (Thread.resource_type == "finding") & (Thread.resource_id == Finding.id)
@@ -65,27 +112,28 @@ async def get_findings(
         Finding.created_by == User.id
     ).options(selectinload(Finding.evidence), *options("FINDING")).group_by(Finding.id, User.username, User.full_name, User.profile_photo)
 
-    if engagement_id:
-        query = query.where(Finding.engagement_id == engagement_id)
-    # Both were accepted and documented but never applied, so a filtered
-    # request returned every finding.
-    if severity is not None:
-        query = query.where(Finding.severity == severity)
-    if status is not None:
-        query = query.where(Finding.status == status)
-    
-    # Restrict to engagements where the caller's role can view these
-    # (same rule as the single-item GET) for non-admins
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        from auth.rbac import engagements_with_permission
-        query = query.where(Finding.engagement_id.in_(
-            engagements_with_permission(current_user.id, Permission.FINDING_VIEW.value)
-        ))
-    
-    query = query.offset(skip).limit(limit).order_by(Finding.created_at.desc(), Finding.id)
-    
-    result = await db.execute(query)
-    rows = result.all()
+    filters = _finding_list_filters(current_user, engagement_id, severity, status, category, tag,
+                                    created_by, created_after, page.q)
+    query = query.where(*filters)
+
+    sortable = {
+        "created_at": Finding.created_at,
+        "updated_at": Finding.updated_at,
+        "title": func.lower(Finding.title),
+        "status": Finding.status,
+        "category": func.lower(Finding.category),
+        "cvss_score": Finding.cvss_score,
+        "unresolved_thread_count": unresolved,
+        "created_by_username": func.lower(User.username),
+        "severity": case(*((Finding.severity == k, v) for k, v in _SEVERITY_RANK.items()), else_=5),
+    }
+    if page.sort_by and page.sort_by.startswith("cf:"):
+        sortable[page.sort_by] = Finding.custom_fields[page.sort_by[3:]].as_string()
+    rank = listing.search_rank(page.q, [Finding.title, Finding.description]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=Finding.id, rank=rank)
+    rows = await listing.count_and_page(db, response, query, page, count_from=Finding,
+                                        filters=filters, order=order)
 
     # Batch-load port_ids from FindingAsset join table for all findings
     finding_ids = [row[0].id for row in rows]
@@ -124,6 +172,23 @@ async def get_findings(
         findings_with_counts.append(FindingResponse(**finding_dict))
     
     return findings_with_counts
+
+
+@router.get("/facets")
+async def get_finding_facets(
+    engagement_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """What a paged findings list needs besides the page: the unfiltered
+    total in scope (for "N of M") and the categories in use (filter options)."""
+    filters = _finding_list_filters(current_user, engagement_id, None, None, None, None, None, None, None)
+    total = (await db.execute(select(func.count()).select_from(Finding).where(*filters))).scalar_one()
+    categories = (await db.execute(
+        select(Finding.category).where(*filters, Finding.category.is_not(None), Finding.category != "")
+        .distinct().order_by(Finding.category)
+    )).scalars().all()
+    return {"total": total, "categories": categories}
 
 
 # ── Remediation Summary ───────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { fetchAllPages } from '../fetch-all';
+import { fetchPage } from '../fetch-page';
 import { Asset, Evidence } from '../types';
 import type { Tag } from './use-tags';
 
@@ -125,6 +126,49 @@ export function useFindings(params?: { engagement_id?: string; severity?: string
             return fetchAllPages<Finding>('/findings', { ...params });
         },
         enabled,
+        staleTime: 30_000,
+    });
+}
+
+/** Query parameters of ``GET /findings`` for one server page. */
+export interface FindingPageParams {
+    engagement_id?: string;
+    q?: string;
+    severity?: string[];
+    status?: string[];
+    category?: string[];
+    tag?: string[];
+    created_by?: string;
+    created_after?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+    skip: number;
+    limit: number;
+}
+
+/** One page of findings plus the total matching the filters. Keeps the
+ *  current page on screen while the next one loads. */
+export function useFindingsPage(params: FindingPageParams, enabled: boolean = true) {
+    return useQuery({
+        queryKey: ['findings', 'page', params],
+        queryFn: () => fetchPage<Finding>('/findings', { ...params }),
+        enabled,
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
+    });
+}
+
+/** The unfiltered total in scope and the categories in use, for a paged
+ *  findings list's "N of M" and its category filter. */
+export function useFindingFacets(engagementId?: string) {
+    return useQuery({
+        queryKey: ['findings', 'facets', engagementId ?? null],
+        queryFn: async () => {
+            const { data } = await api.get<{ total: number; categories: string[] }>('/findings/facets', {
+                params: engagementId ? { engagement_id: engagementId } : {},
+            });
+            return data;
+        },
         staleTime: 30_000,
     });
 }

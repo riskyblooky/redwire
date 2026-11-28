@@ -11,7 +11,7 @@
  */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { parseUTCDate } from '@/lib/utils';
@@ -33,12 +33,15 @@ import {
     AlertTriangle, AlertCircle, Info, ShieldAlert, MessageSquare,
     ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
-import { useFindings, useDeleteFinding } from '@/lib/hooks/use-findings';
+import { useFindingsPage, useDeleteFinding } from '@/lib/hooks/use-findings';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { useDebounce } from '@/lib/hooks/use-debounce';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { relevanceComparator } from '@/lib/search-relevance';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 
 const FindingRow = ({ finding, router, severityColors, statusColors, getSeverityIcon, handleDelete, isDeleting }: any) => {
@@ -123,13 +126,6 @@ import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
 import { ScoreModelPolicyBadge } from '@/components/findings/score-model-policy-badge';
 
 
-const severityOrder: Record<string, number> = {
-    CRITICAL: 0,
-    HIGH: 1,
-    MEDIUM: 2,
-    LOW: 3,
-    INFO: 4,
-};
 
 const statusColors: Record<string, string> = {
     OPEN: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -142,31 +138,41 @@ const statusColors: Record<string, string> = {
 type SortField = 'title' | 'severity' | 'status' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
+/** URL keys of the global findings list; the sort default is this
+ *  browser's last choice. */
+function findingsPageSpec() {
+    const stored = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) : null);
+    return {
+        q: { kind: 'string' },
+        sort: { kind: 'enum', values: ['title', 'severity', 'status', 'created_at'], default: stored('redwire_sort_findings_field') || 'created_at' },
+        dir: { kind: 'enum', values: ['asc', 'desc'], default: stored('redwire_sort_findings_order') === 'asc' ? 'asc' : 'desc' },
+        page: { kind: 'int', default: 1, min: 1 },
+        size: { kind: 'int', default: 50, min: 1, max: 500 },
+    } satisfies ParamSpec;
+}
+
+// useSearchParams (the list's URL state) needs a Suspense boundary for the
+// production build's prerender.
 export default function FindingsPage() {
+    return <Suspense fallback={null}><FindingsList /></Suspense>;
+}
+
+function FindingsList() {
     const router = useRouter();
-    const [searchTerm, setSearchTerm] = useState('');
-    const [sortField, setSortField] = useState<SortField>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('redwire_sort_findings_field');
-            if (saved) return saved as SortField;
-        }
-        return 'created_at';
-    });
-    const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('redwire_sort_findings_order');
-            if (saved) return saved as SortOrder;
-        }
-        return 'desc';
-    });
+    const spec = useMemo(() => findingsPageSpec(), []);
+    const [p, setP] = useListParams(spec);
+    const [searchTerm, setSearchTerm] = useState(p.q);
+    const debouncedSearch = useDebounce(searchTerm, 300);
+    useEffect(() => { if (debouncedSearch !== p.q) setP({ q: debouncedSearch }); }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearchTerm(p.q); }, [p.q]);
+    const sortField = p.sort as SortField;
+    const sortOrder = p.dir as SortOrder;
 
-    // Save preferences to localStorage when they change
-    useEffect(() => {
-        localStorage.setItem('redwire_sort_findings_field', sortField);
-        localStorage.setItem('redwire_sort_findings_order', sortOrder);
-    }, [sortField, sortOrder]);
-
-    const { data: findings = [], isLoading, error, refetch } = useFindings();
+    const { data: page, isLoading, isFetching, error, refetch } = useFindingsPage({
+        q: p.q || undefined, sort_by: p.sort, sort_order: sortOrder, ...toSkipLimit(p.page, p.size),
+    });
+    const findings = page?.rows ?? [];
+    const total = page?.total ?? 0;
     const deleteFinding = useDeleteFinding();
     const queryClient = useQueryClient();
     const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -189,36 +195,13 @@ export default function FindingsPage() {
     // per-finding based on their engagement_id.
 
     const handleSort = (field: SortField) => {
-        if (sortField === field) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortField(field);
-            setSortOrder('asc');
-        }
+        const next = sortField === field ? { sort: field, dir: sortOrder === 'asc' ? 'desc' : 'asc' } : { sort: field, dir: 'asc' };
+        setP(next);
+        localStorage.setItem('redwire_sort_findings_field', next.sort);
+        localStorage.setItem('redwire_sort_findings_order', next.dir);
     };
 
-    const sortedFindings = [...findings]
-        .filter((f) => {
-            const matchesSearch = f.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                f.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (f.assets?.some(a => a.name.toLowerCase().includes(searchTerm.toLowerCase())) ?? false);
-            return matchesSearch;
-        })
-        .sort(relevanceComparator(
-            searchTerm,
-            [item => item.title, item => item.description],
-            (a, b) => {
-                let comparison = 0;
-                if (sortField === 'severity') {
-                    comparison = severityOrder[a.severity] - severityOrder[b.severity];
-                } else if (sortField === 'created_at') {
-                    comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                } else {
-                    comparison = String(a[sortField]).localeCompare(String(b[sortField]));
-                }
-                return sortOrder === 'asc' ? comparison : -comparison;
-            }
-        ));
+    const sortedFindings = findings;
 
     const handleDelete = async (id: string) => {
         const confirmed = await confirm({
@@ -283,7 +266,7 @@ export default function FindingsPage() {
                             <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                                 <Input
-                                    placeholder="Search by title, description, or asset..."
+                                    placeholder="Search by title or description..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     className="pl-10 bg-slate-800/50 border-slate-700 text-white focus:ring-red-500 focus:border-red-500"
@@ -297,7 +280,7 @@ export default function FindingsPage() {
                 <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs overflow-hidden">
                     <CardHeader>
                         <CardTitle className="text-white">
-                            All Findings {!isLoading && `(${sortedFindings.length})`}
+                            All Findings {!isLoading && `(${total})`}
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="px-0">
@@ -375,6 +358,11 @@ export default function FindingsPage() {
                                         )}
                                     </TableBody>
                                 </Table>
+                                <ListPagination
+                                    className="px-6"
+                                    page={p.page} pageSize={p.size} total={total} isFetching={isFetching}
+                                    onPageChange={(n) => setP({ page: n })} onPageSizeChange={(n) => setP({ size: n })}
+                                />
                             </div>
                         )}
                     </CardContent>
