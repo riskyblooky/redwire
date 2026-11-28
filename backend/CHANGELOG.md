@@ -17,6 +17,7 @@ section becomes one release entry.
 - Every open tab no longer receives the full list of signed-in users, with photos, each time someone opens or closes a page. That list was never displayed, and the traffic grew with the square of the number of users online.
 - Database downgrades (`migrate.py downgrade`) work again for every revision, down to an empty database; several failed partway. Unused leftover enum types are removed on upgrade.
 - Users who can view all engagements now see an engagement's findings, assets and test cases (and find them in search). Those tabs used to come back empty for them unless they were also a member.
+- A review comment anchored on a phrase that appears more than once with the same surrounding text now stays on the copy it was left on, instead of moving to the first one.
 
 ## [1.9.4] — 2026-11-27
 

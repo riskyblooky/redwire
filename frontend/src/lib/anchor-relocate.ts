@@ -72,9 +72,7 @@ export function relocateAnchor(text: string, anchor: StoredAnchor): CharRange | 
     const prefix = anchor.prefix || '';
     const suffix = anchor.suffix || '';
 
-    let best: CharRange | null = null;
-    let bestScore = -1;
-    for (const start of matches) {
+    const scores = matches.map((start) => {
         const end = start + quote.length;
         let score = 0;
         if (prefix) {
@@ -85,21 +83,19 @@ export function relocateAnchor(text: string, anchor: StoredAnchor): CharRange | 
             const after = text.slice(end, end + suffix.length);
             score += commonPrefixLen(after, suffix);
         }
-        if (score > bestScore) {
-            bestScore = score;
-            best = { start, end };
-        }
-    }
+        return score;
+    });
 
-    // No usable context signal → prefer the stored occurrence index.
-    if (bestScore <= 0) {
-        const occ = anchor.occurrence ?? 0;
-        if (occ >= 0 && occ < matches.length) {
-            return { start: matches[occ], end: matches[occ] + quote.length };
-        }
-        return { start: matches[0], end: matches[0] + quote.length };
-    }
-    return best;
+    // Best context match; among equally good ones (including "no context
+    // signal at all"), the stored occurrence index, then the first. Ties with
+    // a non-zero score used to take the first match, so an anchor on the
+    // second of two identical phrases jumped to the first.
+    const bestScore = Math.max(...scores);
+    const occ = anchor.occurrence ?? 0;
+    const pick = occ >= 0 && occ < matches.length && scores[occ] === bestScore
+        ? occ
+        : scores.indexOf(bestScore);
+    return { start: matches[pick], end: matches[pick] + quote.length };
 }
 
 /**
