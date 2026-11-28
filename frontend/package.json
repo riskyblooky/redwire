@@ -10,7 +10,8 @@
     "build": "next build",
     "sync-plugin-frontends": "node scripts/sync-plugin-frontends.mjs",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@dagrejs/dagre": "^2.0.4",
@@ -107,10 +108,14 @@
     "eslint-config-next": "^15.5.29",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "5.8.2",
-    "typescript-eslint": "^8.63.0"
+    "typescript-eslint": "^8.63.0",
+    "vitest": "4.1.12"
   },
   "overrides": {
     "glob": "^11.0.0",
+    "vitest": {
+      "vite": "8.3.8"
+    },
     "next": {
       "postcss": "$postcss"
     }

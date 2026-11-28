@@ -35,3 +35,5 @@ jobs:
         run: npx tsc --noEmit -p .
       - name: Lint
         run: npx next lint
+      - name: Unit tests
+        run: npm test

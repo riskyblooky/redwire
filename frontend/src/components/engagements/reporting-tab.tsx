@@ -70,6 +70,7 @@ import { useEngagement } from '@/lib/hooks/use-engagements';
 import { EntityClassificationField } from '@/components/marking/entity-classification-field';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { SectionType, type ReportLayout } from '@/lib/types';
+import { type LocalSection, toSectionPayload, toTemplateSectionPayload, adoptSavedSectionIds } from '@/lib/report-sections';
 import { isAxiosError } from 'axios';
 import { toast } from 'sonner';
 import { useFindings } from '@/lib/hooks/use-findings';
@@ -89,18 +90,6 @@ const AttackGraph = dynamic(
     () => import('@/components/engagements/attack-graph').then(m => ({ default: m.AttackGraph })),
     { ssr: false, loading: () => <div className="h-[300px] flex items-center justify-center text-slate-500"><Loader2 className="h-6 w-6 animate-spin" /></div> }
 );
-
-// ── Local section type for in-memory editing ──
-interface LocalSection {
-    localId: string; // for dnd-kit key; may not map to a real id
-    id?: string;     // server id once saved — keeps review threads attached
-    section_type: SectionType;
-    title: string;
-    content: string;
-    classification_level?: string | null;
-    classification_suffix?: string | null;
-    page_break_before?: boolean;
-}
 
 function newLocalId() {
     return 'local_' + Math.random().toString(36).slice(2, 10);
@@ -723,16 +712,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             toast.error('Please enter a layout name');
             return false;
         }
-        const sectionPayload = sections.map((s, i) => ({
-            id: s.id,
-            section_type: s.section_type as 'text' | 'findings' | 'testcases' | 'cleanup_artifacts',
-            title: s.title,
-            content: s.content,
-            sort_order: i,
-            classification_level: s.classification_level || null,
-            classification_suffix: s.classification_suffix || null,
-            page_break_before: !!s.page_break_before,
-        }));
+        const sectionPayload = toSectionPayload(sections);
         try {
             let saved: { updated_at: string; sections: { id: string; sort_order: number }[] };
             if (selectedLayoutId) {
@@ -756,8 +736,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             // Adopt server ids (new sections get one; existing ones keep theirs),
             // then re-anchor review highlights against the saved text.
             setLayoutVersion(saved.updated_at);
-            const savedIds = [...saved.sections].sort((a, b) => a.sort_order - b.sort_order).map(s => s.id);
-            setSections(prev => prev.map((s, i) => ({ ...s, id: savedIds[i] ?? s.id })));
+            setSections(prev => adoptSavedSectionIds(prev, saved.sections));
             await Promise.all([...surfaceRefs.current.values()].map(h => h.refreshAnchors().catch(() => undefined)));
             setIsDirty(false);
             return true;
@@ -823,12 +802,7 @@ export function ReportingTab({ engagementId, engagementName }: ReportingTabProps
             await saveAsTemplate.mutateAsync({
                 name: templateName,
                 description: templateDescription || undefined,
-                sections: sections.map((s, i) => ({
-                    section_type: s.section_type as 'text' | 'findings' | 'testcases' | 'cleanup_artifacts',
-                    title: s.title,
-                    content: s.content,
-                    sort_order: i,
-                })),
+                sections: toTemplateSectionPayload(sections),
             });
             setSaveTemplateDialogOpen(false);
             setTemplateName('');

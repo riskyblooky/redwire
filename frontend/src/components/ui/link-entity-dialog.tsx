@@ -25,6 +25,7 @@ import { useIntelItems, useLinkIntel, useUnlinkIntel, useIntelByEntity } from '@
 import { useInfraItems, useLinkInfra, useUnlinkInfra, useInfraByEntity } from '@/lib/hooks/use-infra';
 import { toast } from 'sonner';
 import { apiErrorMessage } from '@/lib/api';
+import { diffLinkSelection } from '@/lib/link-diff';
 
 export type EntityType = 'finding' | 'testcase' | 'asset' | 'vault' | 'cleanup';
 export type LinkResourceType = 'findings' | 'testcases' | 'assets' | 'vault' | 'cleanup' | 'intel' | 'infra';
@@ -243,8 +244,7 @@ export function LinkEntityDialog({
             if (excluded.includes(type)) continue;
             const currentlyLinked = linkedIds[type];
             const selected = selectionMap[type];
-            const toLink = [...selected].filter(id => !currentlyLinked.has(id));
-            const toUnlink = [...currentlyLinked].filter(id => !selected.has(id));
+            const { toLink, toUnlink } = diffLinkSelection(currentlyLinked, selected);
             for (const resourceId of toLink) {
                 try { await onLink(type, resourceId); linked++; } catch (e) { errors++; firstError ??= e; }
             }
@@ -257,11 +257,11 @@ export function LinkEntityDialog({
         if (intelLinksQ.isError && !excluded.includes('intel')) errors++;
         if (!excluded.includes('intel') && !intelLinksQ.isError) {
             const currentLinkedIntel = new Set(linkedIntelItems.map(i => i.id));
-            const selectedIntel = selectionMap.intel;
-            for (const itemId of [...selectedIntel].filter(id => !currentLinkedIntel.has(id))) {
+            const intelDiff = diffLinkSelection(currentLinkedIntel, selectionMap.intel);
+            for (const itemId of intelDiff.toLink) {
                 try { await linkIntel.mutateAsync({ itemId, entityType, entityId }); linked++; } catch (e) { errors++; firstError ??= e; }
             }
-            for (const itemId of [...currentLinkedIntel].filter(id => !selectedIntel.has(id))) {
+            for (const itemId of intelDiff.toUnlink) {
                 try { await unlinkIntel.mutateAsync({ itemId, entityType, entityId }); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }
@@ -270,11 +270,11 @@ export function LinkEntityDialog({
         if (infraLinksQ.isError && !excluded.includes('infra')) errors++;
         if (!excluded.includes('infra') && !infraLinksQ.isError) {
             const currentLinkedInfra = new Set(linkedInfraItems.map(i => i.id));
-            const selectedInfra = selectionMap.infra;
-            for (const itemId of [...selectedInfra].filter(id => !currentLinkedInfra.has(id))) {
+            const infraDiff = diffLinkSelection(currentLinkedInfra, selectionMap.infra);
+            for (const itemId of infraDiff.toLink) {
                 try { await linkInfra.mutateAsync({ itemId, entityType, entityId }); linked++; } catch (e) { errors++; firstError ??= e; }
             }
-            for (const itemId of [...currentLinkedInfra].filter(id => !selectedInfra.has(id))) {
+            for (const itemId of infraDiff.toUnlink) {
                 try { await unlinkInfra.mutateAsync({ itemId, entityType, entityId }); unlinked++; } catch (e) { errors++; firstError ??= e; }
             }
         }

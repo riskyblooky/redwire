@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { MarkdownPreview } from '@/components/ui/markdown-editor';
-import { computeLineDiff } from '@/components/ui/version-history-panel';
+import { computeLineDiff } from '@/lib/line-diff';
 import { resourceTypeIcons, resourceTypeColors, openThreadFromLog } from './logs-tab';
 import { FeedItemPicker } from './feed-item-picker';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
