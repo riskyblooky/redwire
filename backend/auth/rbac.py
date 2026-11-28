@@ -66,23 +66,47 @@ async def check_engagement_permission(user_id: str, engagement_id: str, required
 
 
 def engagements_with_permission(user_id: str, permission: str):
-    """Scalar subquery of the engagement ids where the user's engagement role
-    grants ``permission`` — the set form of check_engagement_permission, for
-    scoping list / search / feed queries with ``column.in_(...)``. Membership
-    alone is not enough: a role without e.g. finding_view must not see
-    findings through a list when the single-item GET refuses them."""
-    from sqlalchemy import cast
+    """Scalar subquery of the engagement ids where the user holds
+    ``permission`` — the set form of check_engagement_permission, for scoping
+    list / search / feed queries with ``column.in_(...)``: the engagements
+    whose role grants it, or every engagement when the permission is one the
+    view-all tier grants and a group gives the user VIEW_ALL_ENGAGEMENTS.
+    Membership alone is not enough: a role without e.g. finding_view must not
+    see findings through a list when the single-item GET refuses them. Role
+    bypasses (admin roles) are the caller's, as for check_engagement_permission.
+
+    The view-all half used to be missing, so a view-all user could open an
+    engagement and each finding in it, but its findings / assets / test case
+    lists came back empty."""
+    from sqlalchemy import cast, exists, or_
     from sqlalchemy.dialects.postgresql import JSONB
-    from models.permission import EngagementRolePermissions
-    return (
+    from models.engagement import Engagement
+    from models.group import user_groups
+    from models.permission import EngagementRolePermissions, GroupPermissions, Permission, VIEW_ALL_ENGAGEMENT_GRANTS
+    from models.user import User
+    assigned = (
         select(EngagementAssignment.engagement_id)
         .join(EngagementRolePermissions, EngagementRolePermissions.role_id == EngagementAssignment.role_id)
         .where(
             EngagementAssignment.user_id == user_id,
             cast(EngagementRolePermissions.permissions, JSONB).contains([permission]),
         )
-        .scalar_subquery()
     )
+    if permission not in VIEW_ALL_ENGAGEMENT_GRANTS:
+        return assigned.scalar_subquery()
+    # Same rule as _has_view_all: an active user in a group granting it.
+    view_all = exists(
+        select(1)
+        .select_from(user_groups)
+        .join(GroupPermissions, GroupPermissions.group_id == user_groups.c.group_id)
+        .join(User, User.id == user_groups.c.user_id)
+        .where(
+            user_groups.c.user_id == user_id,
+            User.is_active.is_(True),
+            cast(GroupPermissions.permissions, JSONB).contains([Permission.VIEW_ALL_ENGAGEMENTS.value]),
+        )
+    )
+    return select(Engagement.id).where(or_(Engagement.id.in_(assigned), view_all)).scalar_subquery()
 
 
 _ADMIN_ROLES = (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD)
