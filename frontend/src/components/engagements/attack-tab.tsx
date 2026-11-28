@@ -71,7 +71,7 @@ import { useUpdateTestCase } from '@/lib/hooks/use-testcases';
 import { CheckSquare } from 'lucide-react';
 import api, { apiErrorMessage } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
-import { SEVERITY_BADGE as severityColors } from '@/lib/severity';
+import { SEVERITY_BADGE as severityColors, SEVERITY_CELL } from '@/lib/severity';
 
 export type AttackTabSource = 'finding' | 'testcase';
 
@@ -84,16 +84,15 @@ interface AttackTabProps {
 // Severity is only meaningful for findings — testcases get a flat tone.
 type CoverageItem = CoverageFinding | CoverageTestCase;
 
-// ── Severity colors for finding badges ────────────────────────────────
-
-// ── Intensity colors for heatmap cells ────────────────────────────────
+// ── Intensity colors for heatmap cells (the canonical severity palette) ──
 function getCellColor(count: number, maxSeverity?: string): string {
     if (count === 0) return 'bg-slate-900/30 border-slate-800/40';
-    if (maxSeverity === 'CRITICAL') return 'bg-red-500/25 border-red-500/40 hover:bg-red-500/35';
-    if (maxSeverity === 'HIGH') return 'bg-orange-500/20 border-orange-500/35 hover:bg-orange-500/30';
-    if (maxSeverity === 'MEDIUM') return 'bg-amber-500/15 border-amber-500/30 hover:bg-amber-500/25';
-    if (maxSeverity === 'LOW') return 'bg-blue-500/15 border-blue-500/30 hover:bg-blue-500/25';
-    return 'bg-emerald-500/15 border-emerald-500/30 hover:bg-emerald-500/25';
+    return SEVERITY_CELL[maxSeverity ?? 'INFO'] ?? SEVERITY_CELL.INFO;
+}
+
+/** Text class for a cell's count, from the shared badge palette. */
+function severityText(maxSeverity?: string): string {
+    return (severityColors[maxSeverity ?? 'INFO'] ?? severityColors.INFO).split(' ')[1];
 }
 
 function getMaxSeverity(findings: CoverageFinding[]): string | undefined {
@@ -668,26 +667,12 @@ export function AttackTab({ engagementId, source = 'finding' }: AttackTabProps) 
                     <div className="w-4 h-4 rounded bg-slate-900/30 border border-slate-800/40" />
                     <span className="text-[10px] text-slate-500">Untested</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded bg-emerald-500/15 border border-emerald-500/30" />
-                    <span className="text-[10px] text-slate-500">Info</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded bg-blue-500/15 border border-blue-500/30" />
-                    <span className="text-[10px] text-slate-500">Low</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded bg-amber-500/15 border border-amber-500/30" />
-                    <span className="text-[10px] text-slate-500">Medium</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded bg-orange-500/20 border border-orange-500/35" />
-                    <span className="text-[10px] text-slate-500">High</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded bg-red-500/25 border border-red-500/40" />
-                    <span className="text-[10px] text-slate-500">Critical</span>
-                </div>
+                {(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const).map(sev => (
+                    <div key={sev} className="flex items-center gap-1.5">
+                        <div className={cn('w-4 h-4 rounded border', SEVERITY_CELL[sev])} />
+                        <span className="text-[10px] text-slate-500">{sev.charAt(0) + sev.slice(1).toLowerCase()}</span>
+                    </div>
+                ))}
             </div>
         </div>
     );
@@ -744,11 +729,7 @@ function TechniqueCell({
                                 <span className={cn(
                                     'ml-auto font-bold flex items-center gap-0.5',
                                     isSub ? 'text-[8px]' : 'text-[9px]',
-                                    maxSeverity === 'CRITICAL' ? 'text-red-400' :
-                                    maxSeverity === 'HIGH' ? 'text-orange-400' :
-                                    maxSeverity === 'MEDIUM' ? 'text-amber-400' :
-                                    maxSeverity === 'LOW' ? 'text-blue-400' :
-                                    'text-emerald-400'
+                                    severityText(maxSeverity)
                                 )}>
                                     {count}
                                 </span>

@@ -25,6 +25,16 @@ export const SEVERITY_SOLID: Record<string, string> = {
     INFO: 'bg-slate-400',
 };
 
+/** Tinted cell classes (bg, border, hover) for heatmaps such as the
+ *  ATT&CK matrix, weakest to strongest with severity. */
+export const SEVERITY_CELL: Record<string, string> = {
+    CRITICAL: 'bg-red-500/25 border-red-500/40 hover:bg-red-500/35',
+    HIGH: 'bg-orange-500/20 border-orange-500/35 hover:bg-orange-500/30',
+    MEDIUM: 'bg-yellow-500/15 border-yellow-500/30 hover:bg-yellow-500/25',
+    LOW: 'bg-blue-400/15 border-blue-400/30 hover:bg-blue-400/25',
+    INFO: 'bg-slate-400/15 border-slate-400/30 hover:bg-slate-400/25',
+};
+
 /** Hex colors for charts and inline styles. */
 export const SEVERITY_HEX: Record<string, string> = {
     CRITICAL: '#ef4444',

@@ -35,7 +35,7 @@ Companion docs at repo root:
 | Layer | Stack |
 |-------|-------|
 | Backend | Python **FastAPI** (async), **SQLAlchemy 2.x**, PostgreSQL 15, Redis, MinIO (S3), Alembic. Async driver `asyncpg`; migrations use sync `psycopg2`. |
-| Frontend | **Next.js 15** (App Router), React 19, TypeScript, **Tailwind v4** (no config file — `@theme {}` in `globals.css`), shadcn/ui (slate, **dark only**), **TanStack Query**, Zustand, sonner, TipTap. |
+| Frontend | **Next.js 15** (App Router), React 19, TypeScript, **Tailwind v4** (no config file — `@theme {}` in `globals.css`), shadcn/ui (slate; per-user **palettes + accents**), **TanStack Query**, Zustand, sonner, TipTap. |
 | Infra | Docker Compose (dev + prod), Nginx reverse proxy, Certbot. |
 | Extras | `mcp-server/` (Starlette + SSE) exposes RedWire as MCP tools; plugin system loads from `backend/plugins/`. |
 
@@ -157,9 +157,11 @@ Other app wiring:
   `refetchOnWindowFocus: false`.
 - Mutations invalidate by **broad** query key (`['findings']`) — TanStack matches partials.
 - Toasts: `sonner` (dark theme already wired).
-- **Dark only.** Never add a light variant. Use semantic Tailwind (`bg-card`, `text-muted-foreground`,
-  `hover:bg-accent`) — no raw hex/grays. Severity: Critical=red-500, High=orange-500, Medium=yellow-500,
-  Low=blue-400, Info=slate-400.
+- **Themes:** always `.dark`, plus a per-user palette (`aurora`/`operator`/`half-dark`/`light`) and accent
+  set as `data-palette`/`data-accent` on `<html>`. Palettes redefine the `slate-*` scale and the semantic
+  tokens, so use those (`bg-card`, `text-muted-foreground`, `hover:bg-accent` preferred in new shared
+  components) — never raw hex or `gray-*`/`zinc-*`, which don't follow the palette. Severity colours come from
+  `src/lib/severity.ts` (Critical=red-500, High=orange-500, Medium=yellow-500, Low=blue-400, Info=slate-400).
 - Route gating is via `has_session` cookie in `middleware.ts` + the `use-navigation-guard` hook.
 
 ---

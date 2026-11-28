@@ -19,6 +19,7 @@ section becomes one release entry.
 - Paging through notifications, activity logs, scan imports and the Security Center no longer repeats some entries and skips others when several share the same time (or, in the activity log sorted by action, the same action).
 - Deleting an asset, or an engagement with its assets, now also removes the Shodan and ServiceNow CMDB enrichment data stored for those assets; data left behind by earlier deletes is cleaned up on upgrade.
 - The dashboard loads faster: its statistics now take 9 database queries instead of 33 and no longer load every finding and test case of your engagements to count them.
+- The ATT&CK matrix now uses the standard severity colours (Medium yellow, Low light blue, Info grey) to match the rest of the app.
 
 ## [1.9.3] — 2026-11-24
 
