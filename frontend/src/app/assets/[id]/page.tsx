@@ -50,7 +50,7 @@ import { UserName } from '@/components/ui/user-name';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-modal';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { CustomFieldsDisplay } from '@/components/custom-fields/custom-fields-display';
 import { LinkEntityDialog } from '@/components/ui/link-entity-dialog';
 import {
@@ -154,8 +154,9 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
     };
 
     // Get notes linked to this asset
-    const { data: allNotes = [] } = useNotes(asset?.engagement_id || '');
-    const linkedNotes = allNotes.filter(n => n.linked_assets?.some(a => a.id === id));
+    // Only id + title are shown: the lightweight links map, not every note body.
+    const { data: noteLinksForPage } = useEngagementNoteLinks(asset?.engagement_id || '');
+    const linkedNotes = noteLinksForPage?.asset[id] ?? [];
 
     const handleToggleStatus = async (field: 'is_scanned' | 'is_pwned' | 'in_scope') => {
         if (!asset) return;

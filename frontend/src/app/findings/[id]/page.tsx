@@ -89,7 +89,7 @@ import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
 import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-modal';
-import { useNotes } from '@/lib/hooks/use-notes';
+import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { useIntelByEntity } from '@/lib/hooks/use-intel';
 import { IntelDetailDialog } from '@/components/intel/intel-detail-dialog';
 import { LinkEntityDialog, LinkedIdMap } from '@/components/ui/link-entity-dialog';
@@ -279,8 +279,9 @@ export default function FindingDetailPage({ params }: { params: Promise<{ id: st
     });
 
     // Get notes linked to this finding
-    const { data: allNotes = [] } = useNotes(finding?.engagement_id || '');
-    const linkedNotes = allNotes.filter(n => n.linked_findings?.some(f => f.id === id));
+    // Only id + title are shown: the lightweight links map, not every note body.
+    const { data: noteLinksForPage } = useEngagementNoteLinks(finding?.engagement_id || '');
+    const linkedNotes = noteLinksForPage?.finding[id] ?? [];
 
     // Get intel items linked to this finding
     const { data: linkedIntel = [] } = useIntelByEntity('finding', id);
