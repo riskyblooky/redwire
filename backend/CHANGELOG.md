@@ -21,6 +21,7 @@ section becomes one release entry.
 - Scan imports: Burp findings keep their reference links (they were dropped) and show lists on separate lines; Nessus hosts scanned by name keep that name instead of the IP.
 - Report exports: titles, names and other plain-text fields are now escaped in the Markdown export (an HTML tag in a finding title was live markup in the .md file), and finding and test case categories appear as typed instead of title-cased.
 - Users who can view all engagements now find engagements and clients by name in search, not just their findings, assets and test cases.
+- Importing an Nmap scan from the Assets page now reads it the same way as the scan import: closed|filtered ports are no longer recorded as open, service versions include Nmap's extra info, and the OS match and MAC address appear in the asset description.
 
 ## [1.9.4] — 2026-11-27
 

@@ -1,7 +1,7 @@
 [
   {
     "asset_type": "IP Address",
-    "description": "Imported from NMAP scan (dc01.corp.example)",
+    "description": "Imported from Nmap scan\nHostname: dc01.corp.example\nOS: Microsoft Windows Server 2019 (accuracy: 96%)\nMAC: 00:50:56:A1:2B:3C",
     "identifier": "10.20.0.2",
     "name": "dc01.corp.example",
     "ports": [
@@ -17,14 +17,14 @@
         "protocol": "TCP",
         "service_name": "kerberos-sec",
         "state": "OPEN",
-        "version": "Microsoft Windows Kerberos"
+        "version": "Microsoft Windows Kerberos server time: 2026-11-28 10:02:30Z"
       },
       {
         "port_number": 389,
         "protocol": "TCP",
         "service_name": "ldap",
         "state": "OPEN",
-        "version": "Microsoft Windows Active Directory LDAP"
+        "version": "Microsoft Windows Active Directory LDAP Domain: corp.example0., Site: Default-First-Site-Name"
       },
       {
         "port_number": 445,
@@ -58,14 +58,14 @@
         "port_number": 137,
         "protocol": "UDP",
         "service_name": "netbios-ns",
-        "state": "OPEN",
+        "state": "FILTERED",
         "version": null
       }
     ]
   },
   {
     "asset_type": "IP Address",
-    "description": "Imported from NMAP scan",
+    "description": "Imported from Nmap scan",
     "identifier": "10.20.0.5",
     "name": "10.20.0.5",
     "ports": [
@@ -74,7 +74,7 @@
         "protocol": "TCP",
         "service_name": "ssh",
         "state": "OPEN",
-        "version": "OpenSSH 9.6p1 Ubuntu 3ubuntu13.5"
+        "version": "OpenSSH 9.6p1 Ubuntu 3ubuntu13.5 Ubuntu Linux; protocol 2.0"
       },
       {
         "port_number": 443,
@@ -94,7 +94,7 @@
   },
   {
     "asset_type": "IP Address",
-    "description": "Imported from NMAP scan",
+    "description": "Imported from Nmap scan",
     "identifier": "fd00:20::7",
     "name": "fd00:20::7",
     "ports": [

@@ -19,7 +19,6 @@ import os
 import uuid
 import io
 import csv
-import defusedxml.ElementTree as ET
 from utils.collaboration import create_activity_log, build_change_summary, compute_changes_dict
 from utils.uploads import read_upload_capped
 from utils.custom_fields import validate_custom_fields
@@ -224,100 +223,33 @@ def _parse_xlsx_rows(content: bytes) -> list:
 
 
 def _parse_nmap_xml(content: bytes) -> list:
-    """Parse NMAP XML output into asset + port structures."""
-    assets = []
-    try:
-        root = ET.fromstring(content)
-    except ET.ParseError:
-        return []
+    """Nmap XML -> the asset dicts /assets/import consumes, via the unified
+    parser (utils/parsers/nmap.py) so both import paths read a scan the same
+    way. This used to be a second copy of that parser that had drifted: it
+    recorded closed|filtered ports as open, dropped the service extrainfo,
+    and left OS and MAC out of the description."""
+    from utils.parsers import nmap as nmap_parser
 
-    for host in root.findall(".//host"):
-        # Skip hosts that are down
-        status_elem = host.find("status")
-        if status_elem is not None and status_elem.get("state") != "up":
-            continue
-
-        # Get address
-        addr_elem = host.find("address")
-        if addr_elem is None:
-            continue
-
-        addr = addr_elem.get("addr", "")
-        addr_type = addr_elem.get("addrtype", "ipv4")
-
-        if not addr:
-            continue
-
-        # Determine asset type
-        if addr_type in ("ipv4", "ipv6"):
-            asset_type = "IP Address"
-        else:
-            asset_type = "Other"
-
-        # Try to get hostname
-        hostname = None
-        hostnames = host.find("hostnames")
-        if hostnames is not None:
-            hn = hostnames.find("hostname")
-            if hn is not None:
-                hostname = hn.get("name")
-
-        name = hostname or addr
-
-        # Parse ports
-        ports = []
-        ports_elem = host.find("ports")
-        if ports_elem is not None:
-            for port_elem in ports_elem.findall("port"):
-                port_num = port_elem.get("portid")
-                protocol = port_elem.get("protocol", "tcp").upper()
-
-                state_elem = port_elem.find("state")
-                state = "OPEN"
-                if state_elem is not None:
-                    state_val = state_elem.get("state", "open").upper()
-                    if state_val in ("OPEN", "CLOSED", "FILTERED"):
-                        state = state_val
-
-                service_elem = port_elem.find("service")
-                service_name = None
-                version = None
-                if service_elem is not None:
-                    service_name = service_elem.get("name")
-                    product = service_elem.get("product", "")
-                    svc_version = service_elem.get("version", "")
-                    if product or svc_version:
-                        version = f"{product} {svc_version}".strip()
-
-                try:
-                    port_int = int(port_num)
-                    if 1 <= port_int <= 65535:
-                        port_protocol = PortProtocol.UDP if protocol == "UDP" else PortProtocol.TCP
-                        port_state = PortState.OPEN
-                        if state == "CLOSED":
-                            port_state = PortState.CLOSED
-                        elif state == "FILTERED":
-                            port_state = PortState.FILTERED
-
-                        ports.append({
-                            "port_number": port_int,
-                            "protocol": port_protocol,
-                            "service_name": service_name,
-                            "state": port_state,
-                            "version": version,
-                        })
-                except (ValueError, TypeError):
-                    continue
-
-        assets.append({
-            "name": name,
-            "asset_type": asset_type,
-            "identifier": addr,
-            "description": f"Imported from NMAP scan{' (' + hostname + ')' if hostname and hostname != addr else ''}",
-            "ports": ports,
-        })
-
-    return assets
+    states = {"OPEN": PortState.OPEN, "CLOSED": PortState.CLOSED, "FILTERED": PortState.FILTERED}
+    return [
+        {
+            "name": a.name,
+            "asset_type": a.asset_type,
+            "identifier": a.identifier,
+            "description": a.description,
+            "ports": [
+                {
+                    "port_number": p.port_number,
+                    "protocol": PortProtocol.UDP if p.protocol == "UDP" else PortProtocol.TCP,
+                    "service_name": p.service_name,
+                    "state": states.get(p.state, PortState.OPEN),
+                    "version": p.version,
+                }
+                for p in a.ports
+            ],
+        }
+        for a in nmap_parser.parse(content).assets
+    ]
 
 
 @router.post("/import", response_model=AssetImportResult)
