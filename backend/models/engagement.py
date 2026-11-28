@@ -56,7 +56,7 @@ class Engagement(Base, AuditMixin):
     client = relationship("Client", back_populates="engagements")
     created_by_user = relationship("User", back_populates="created_engagements", foreign_keys="Engagement.created_by")
     updated_by_user = relationship("User", foreign_keys="Engagement.updated_by")
-    assignment_details = relationship("EngagementAssignment", back_populates="engagement", cascade="all, delete-orphan")
+    assignment_details = relationship("EngagementAssignment", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
     assigned_users = relationship(
         "User", 
         secondary="engagement_assignments", 
@@ -65,19 +65,23 @@ class Engagement(Base, AuditMixin):
         back_populates="assigned_engagements", 
         viewonly=True
     )
-    findings = relationship("Finding", back_populates="engagement", cascade="all, delete-orphan")
-    assets = relationship("Asset", back_populates="engagement", cascade="all, delete-orphan")
-    testcases = relationship("TestCase", back_populates="engagement", cascade="all, delete-orphan")
-    evidence = relationship("Evidence", back_populates="engagement", cascade="all, delete-orphan")
-    threads = relationship("Thread", back_populates="engagement", cascade="all, delete-orphan")
+    # passive_deletes: every child FK cascades in the database (ondelete=CASCADE
+    # down the whole tree), so deleting an engagement doesn't load its children.
+    # Anything that has to happen per child on delete — object storage, version
+    # history, plugin data (models/plugin.py) — is done explicitly, not by the ORM.
+    findings = relationship("Finding", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
+    assets = relationship("Asset", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
+    testcases = relationship("TestCase", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
+    evidence = relationship("Evidence", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
+    threads = relationship("Thread", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
     # GHSA-9h56-fv6g-5x98: deliberately NOT cascade-deleted. Activity log rows
     # must outlive their parent engagement so an "engagement deleted by user X"
     # tombstone (and every prior action under that engagement) survives the
     # delete commit. FK is ON DELETE SET NULL — see ActivityLog.engagement_id.
     activity_logs = relationship("ActivityLog", back_populates="engagement", passive_deletes=True)
-    vault_items = relationship("VaultItem", back_populates="engagement", cascade="all, delete-orphan")
-    cleanup_artifacts = relationship("CleanupArtifact", back_populates="engagement", cascade="all, delete-orphan")
-    phases = relationship("EngagementPhase", backref="engagement", cascade="all, delete-orphan", order_by="EngagementPhase.sort_order")
-    required_skills = relationship("EngagementSkill", back_populates="engagement", cascade="all, delete-orphan")
+    vault_items = relationship("VaultItem", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
+    cleanup_artifacts = relationship("CleanupArtifact", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
+    phases = relationship("EngagementPhase", backref="engagement", cascade="all, delete-orphan", passive_deletes=True, order_by="EngagementPhase.sort_order")
+    required_skills = relationship("EngagementSkill", back_populates="engagement", cascade="all, delete-orphan", passive_deletes=True)
     # Global tag pool shared with findings + testcases.
     tags = relationship("Tag", secondary="engagement_tags", backref="engagements", lazy="raise")

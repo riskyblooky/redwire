@@ -11,7 +11,7 @@ mistake. Same model as ``AuthSetting``. Rows from before the switch are
 re-encrypted at boot (utils/plugin_settings_field_migration.py).
 """
 
-from sqlalchemy import Column, String, DateTime, Boolean, UniqueConstraint, delete, event, func
+from sqlalchemy import Column, String, DateTime, Boolean, UniqueConstraint, delete, event, func, literal, select
 from sqlalchemy.orm import Session
 from database import Base
 from utils.encrypted_types import EncryptedText
@@ -56,6 +56,22 @@ async def upsert_plugin_setting(db, plugin_id: str, key: str, value, is_secret: 
 # the asset, in the same flush, whether the asset is deleted on its own or
 # through an engagement's cascade, and whether or not the plugin is enabled.
 _UUID_LEN = 36
+
+
+@event.listens_for(Session, "before_flush")
+def _drop_deleted_engagements_plugin_data(session, _flush_context, _instances):
+    # Engagement children are deleted by the database cascade
+    # (passive_deletes), so their assets never reach session.deleted. Drop
+    # their rows here, while the assets still exist to be looked up.
+    from models.asset import Asset
+    from models.engagement import Engagement
+    ids = [o.id for o in session.deleted if isinstance(o, Engagement) and o.id]
+    if not ids:
+        return
+    suffixes = select(literal(":") + Asset.id).where(Asset.engagement_id.in_(ids))
+    session.connection().execute(
+        delete(PluginSetting).where(func.right(PluginSetting.key, _UUID_LEN + 1).in_(suffixes))
+    )
 
 
 @event.listens_for(Session, "after_flush")

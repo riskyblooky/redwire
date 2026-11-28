@@ -9,6 +9,9 @@ section becomes one release entry.
 ### Added
 - `rotate_encryption_keys.py --verify` checks that every encrypted value and vault file opens under the current keys, without changing anything. The key-rotation guides now end with it.
 
+### Changed
+- Deleting a large engagement is much faster: the database removes its findings, assets, test cases and their children in one step instead of one row at a time.
+
 ## [1.9.4] — 2026-11-27
 
 ### Changed
