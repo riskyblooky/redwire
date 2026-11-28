@@ -127,12 +127,12 @@ async def test_yjs_remote_frame_relayed_to_all_local_clients(monkeypatch):
     await room.add_client(a, "u1")
     await room.add_client(b, "u2")
     try:
-        await yjs_server._on_remote_frame({"note": note, "data": ws_bus.b64(b"\x00\x01")})
-        assert a.bytes == [b"\x00\x01"] and b.bytes == [b"\x00\x01"]
+        await yjs_server._on_remote_frame({"note": note, "data": ws_bus.b64(b"\x00\x02")})
+        assert a.bytes == [b"\x00\x02"] and b.bytes == [b"\x00\x02"]
 
         # A local frame goes to the other local client and onto the bus.
         await room.relay_binary(a, b"\x02")
-        assert b.bytes[-1] == b"\x02" and a.bytes == [b"\x00\x01"]
+        assert b.bytes[-1] == b"\x02" and a.bytes == [b"\x00\x02"]
         assert ws_bus.bus.published[-1][0] == "yjs_frame"
     finally:
         if room._save_task:

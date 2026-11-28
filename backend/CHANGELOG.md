@@ -12,6 +12,9 @@ section becomes one release entry.
 ### Changed
 - Deleting a large engagement is much faster: the database removes its findings, assets, test cases and their children in one step instead of one row at a time.
 
+### Fixed
+- Edits made in a shared note or field while your connection was down now reach the other editors when you reconnect; before, they could stay on your screen only. Joining a busy shared document also no longer sends the whole document to every other editor.
+
 ## [1.9.4] — 2026-11-27
 
 ### Changed

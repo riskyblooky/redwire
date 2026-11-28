@@ -32,6 +32,24 @@ const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 const SYNC_STEP1 = 0;
 
+/** True if the state vector in a peer's sync step 1 frame has updates this
+ *  doc lacks. */
+export function peerIsAhead(frame: Uint8Array, ydoc: Y.Doc): boolean {
+    try {
+        const d = decoding.createDecoder(frame);
+        decoding.readVarUint(d); // MSG_SYNC
+        decoding.readVarUint(d); // step 1
+        const theirs = Y.decodeStateVector(decoding.readVarUint8Array(d));
+        const ours = Y.decodeStateVector(Y.encodeStateVector(ydoc));
+        for (const [client, clock] of theirs) {
+            if (clock > (ours.get(client) ?? 0)) return true;
+        }
+    } catch {
+        // malformed frame: nothing to ask for
+    }
+    return false;
+}
+
 // Cursor colors — consistent per user via hash.
 const CURSOR_COLORS = [
     '#14b8a6', '#f97316', '#a855f7', '#ef4444',
@@ -409,6 +427,15 @@ export function useYjsRoom({ path, editorRef, seed, onRequestSave, autosave }: U
                         syncProtocol.readSyncMessage(decoder, reply, ydoc, 'remote');
                         setHasSynced(true);
                         if (encoding.length(reply) > 1) sendBinary(encoding.toUint8Array(reply));
+                        // The server sends a step-2 reply only to whoever asked,
+                        // so a joiner's edits made while it was offline reach us
+                        // only if we ask too: its state vector shows them.
+                        if (bytes[1] === SYNC_STEP1 && peerIsAhead(bytes, ydoc)) {
+                            const ask = encoding.createEncoder();
+                            encoding.writeVarUint(ask, MSG_SYNC);
+                            syncProtocol.writeSyncStep1(ask, ydoc);
+                            sendBinary(encoding.toUint8Array(ask));
+                        }
                         // Peer state arrived — cancel the DB-seed fallback.
                         if (ydoc.getXmlFragment('default').length > 0 && initialContentPending !== null) {
                             clearTimeout(initialContentTimer);

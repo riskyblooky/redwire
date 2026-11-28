@@ -35,6 +35,20 @@ logger = logging.getLogger(__name__)
 # produces a single rolling "edited note" entry rather than a stream.
 NOTE_UPDATE_LOG_DEBOUNCE = timedelta(minutes=10)
 
+# A sync step 2 (a peer's reply carrying the document a step 1 asked for) is
+# only useful to whoever sent the step 1. Relayed to everyone, each join cost
+# N-1 full documents sent to N-1 sockets. A client that sent a step 1 is
+# "awaiting" for this long; step 2 frames go to awaiting clients only.
+_STEP2_WINDOW_S = 5.0
+
+
+def _sync_subtype(data: bytes) -> Optional[int]:
+    """The y-protocols sync subtype (0 = step 1, 1 = step 2, 2 = update) of a
+    MSG_SYNC frame, else None. Both varUints are one byte for these values."""
+    if len(data) >= 2 and data[0] == 0:
+        return data[1]
+    return None
+
 
 class YjsRoom:
     """
@@ -53,6 +67,7 @@ class YjsRoom:
         self.clients: Set[WebSocket] = set()
         self.client_user_ids: Dict[WebSocket, str] = {}  # ws → user_id for save
         self.client_yjs_ids: Dict[WebSocket, int] = {}   # ws → Y.js clientID for awareness cleanup
+        self.awaiting_sync: Dict[WebSocket, float] = {}  # ws → step-2 window deadline (see _STEP2_WINDOW_S)
         self.last_activity = time.time()
         self._save_task: Optional[asyncio.Task] = None
         # The client that last sent content. Asked for the save: its doc is
@@ -75,6 +90,7 @@ class YjsRoom:
         self.clients.discard(ws)
         self.client_user_ids.pop(ws, None)
         yjs_id = self.client_yjs_ids.pop(ws, None)
+        self.awaiting_sync.pop(ws, None)
         if self.last_editor is ws:
             self.last_editor = None
         self.last_activity = time.time()
@@ -140,11 +156,23 @@ class YjsRoom:
             self._schedule_save()
 
     async def _relay_local(self, sender: Optional[WebSocket], data: bytes):
-        self.last_activity = time.time()
+        now = self.last_activity = time.time()
+
+        # sender is None for a frame from another worker; that worker tracks
+        # its own client's step 1, this one only its local clients'.
+        subtype = _sync_subtype(data)
+        if subtype == 0 and sender is not None:
+            self.awaiting_sync[sender] = now + _STEP2_WINDOW_S
+        elif subtype == 1:
+            for ws, deadline in list(self.awaiting_sync.items()):
+                if deadline < now:
+                    del self.awaiting_sync[ws]
 
         dead = []
         for client in list(self.clients):
             if client is sender:
+                continue
+            if subtype == 1 and client not in self.awaiting_sync:
                 continue
             try:
                 await client.send_bytes(data)
