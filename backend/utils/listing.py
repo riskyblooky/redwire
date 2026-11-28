@@ -70,6 +70,7 @@ def list_params(default_limit: Optional[int] = None, max_limit: int = MAX_LIST_L
             descending=None if order is None else order == "desc",
         )
 
+    _dep.is_list_params = True  # tests/test_list_contract.py finds the paged lists by this
     return _dep
 
 
