@@ -84,7 +84,7 @@ def test_dashboard_global_without_engagement_id_does_not_need_db():
 
     # No exception, no db, no engagement_id → broadcast freely.
     _run(mgr.broadcast_to_resource(
-        "dashboard", "global", {"type": "presence_update", "action": "joined"},
+        "dashboard", "global", {"type": "notification", "title": "platform-wide"},
     ))
     assert len(ws.sent) == 1
 
@@ -96,10 +96,12 @@ def test_dashboard_global_connect_succeeds_without_db():
     subscription. Pin the fix."""
     mgr = ConnectionManager()
     ws = _LiveSocket()
-    # connect() itself triggers a presence_update broadcast; if the
-    # guard regresses this raises and the test fails.
+    # connect() must not raise. dashboard:global carries no presence (see
+    # collaboration._presence_free), so nothing is sent on join; the socket
+    # is subscribed and receives the channel's later broadcasts.
     _run(mgr.connect(ws, "dashboard", "global", {"id": "u1"}))
-    # The join broadcast was delivered to the new subscriber.
+    assert ws.sent == [] and ws in mgr.active_connections["dashboard"]["global"]
+    _run(mgr.broadcast_to_resource("dashboard", "global", {"type": "notification"}))
     assert len(ws.sent) == 1
 
 
