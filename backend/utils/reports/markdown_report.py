@@ -64,9 +64,18 @@ def _escape_lt_outside_code(text: str) -> str:
 # Markdown Report Generator
 # ═══════════════════════════════════════════════════════════════════
 
+def _t(text) -> str:
+    """A plain-text value (title, name, label) on one Markdown line: "<" as
+    "&lt;" so it can't act as raw HTML in a markdown viewer, as for the body
+    fields, and newlines folded so it can't start a heading or list. These
+    used to go out verbatim: a finding titled "<img src=x onerror=…>" was
+    live HTML in the exported file, and "<svc_sql>" vanished when rendered."""
+    return ' '.join(str(text or '').replace('<', '&lt;').split())
+
+
 def _md_cell(text) -> str:
     """A value safe inside a Markdown table cell."""
-    return str(text or '').replace('\n', ' ').replace('|', '\\|')
+    return _t(text).replace('|', '\\|')
 
 
 class MarkdownReportGenerator:
@@ -102,9 +111,9 @@ class MarkdownReportGenerator:
         doc = self.doc
         parts = []
         if doc.banner:
-            parts.append(f'**{doc.banner.text}**\n')
-        parts.append(f'# {doc.title}: {doc.engagement_name}\n')
-        parts.append(f'**Client:** {doc.client}  ')
+            parts.append(f'**{_t(doc.banner.text)}**\n')
+        parts.append(f'# {_t(doc.title)}: {_t(doc.engagement_name)}\n')
+        parts.append(f'**Client:** {_t(doc.client)}  ')
         parts.append(f'**Date:** {datetime.now().strftime("%B %d, %Y")}\n')
         parts.append('---\n')
 
@@ -121,15 +130,15 @@ class MarkdownReportGenerator:
         if doc.banner:
             statement = doc.marking.distribution_statement if doc.marking else None
             if statement:
-                parts.append(f'_{statement}_\n')
-            parts.append(f'**{doc.banner.text}**\n')
+                parts.append(f'_{_t(statement)}_\n')
+            parts.append(f'**{_t(doc.banner.text)}**\n')
         return '\n'.join(parts)
 
     def _heading(self, section) -> str:
-        return f'## {self._p(section.heading_mark)}{section.title}\n\n'
+        return f'## {self._p(section.heading_mark)}{_t(section.title)}\n\n'
 
     def _fields(self, fields, level='####') -> str:
-        return ''.join(f'{level} {f.label}\n\n{_markdown_from_html(f.markdown)}\n\n' for f in fields)
+        return ''.join(f'{level} {_t(f.label)}\n\n{_markdown_from_html(f.markdown)}\n\n' for f in fields)
 
     def _render_text_section(self, section) -> str:
         md = self._heading(section)
@@ -152,20 +161,20 @@ class MarkdownReportGenerator:
         md += '\n'
 
         for f in doc.findings:
-            md += f'### {f.ref}: {self._p(f.mark)}{f.title}\n\n'
+            md += f'### {f.ref}: {self._p(f.mark)}{_t(f.title)}\n\n'
             md += f'- **Severity:** {f.severity}\n'
-            md += f'- **Affected Asset(s):** {", ".join(a.name for a in f.assets) or "N/A"}\n'
+            md += f'- **Affected Asset(s):** {", ".join(_t(a.name) for a in f.assets) or "N/A"}\n'
             if f.score['text']:
                 md += f'- **{f.score["label"]}:** {f.score["text"]}\n'
             for label, value in f.custom_fields:
-                md += f'- **{label}:** {value}\n'
+                md += f'- **{_t(label)}:** {_t(value)}\n'
             md += '\n' + self._fields(f.fields)
             ev = [e for e in f.evidence]
             if ev:
                 md += '#### Evidence\n\n'
                 for e in ev:
                     cap = e.description or e.filename
-                    md += f'- {self._p(e.mark)}{cap}' + (f' [{e.filename}]' if e.description and e.filename else '') + '\n'
+                    md += f'- {self._p(e.mark)}{_t(cap)}' + (f' [{_t(e.filename)}]' if e.description and e.filename else '') + '\n'
                 md += '\n'
             md += '---\n\n'
         return md
@@ -188,14 +197,14 @@ class MarkdownReportGenerator:
         md += '\n'
 
         for t in doc.testcases:
-            md += f'### {t.number} {self._p(t.mark)}{t.title}\n\n'
+            md += f'### {t.number} {self._p(t.mark)}{_t(t.title)}\n\n'
             md += f'- **Status:** {t.status_label}\n'
             if t.category:
-                md += f'- **Category:** {t.category}\n'
+                md += f'- **Category:** {_t(t.category)}\n'
             if t.assets:
-                md += f'- **Assets:** {", ".join(t.assets)}\n'
+                md += f'- **Assets:** {", ".join(_t(a) for a in t.assets)}\n'
             if t.findings:
-                found = ', '.join(f'{f.ref + " " if f.ref else ""}{f.title} ({f.severity.title()})' for f in t.findings)
+                found = ', '.join(f'{f.ref + " " if f.ref else ""}{_t(f.title)} ({f.severity.title()})' for f in t.findings)
                 md += f'- **Discovered Findings:** {found}\n'
             md += '\n' + self._fields(t.fields)
         return md
@@ -216,13 +225,13 @@ class MarkdownReportGenerator:
         md += '\n'
 
         for idx, ca in enumerate(doc.cleanup, 1):
-            md += f'### {idx}. {self._p(ca.mark)}{ca.title}\n\n'
-            md += f'- **Type:** {ca.artifact_type}\n'
-            md += f'- **Status:** {ca.status}\n'
+            md += f'### {idx}. {self._p(ca.mark)}{_t(ca.title)}\n\n'
+            md += f'- **Type:** {_t(ca.artifact_type)}\n'
+            md += f'- **Status:** {_t(ca.status)}\n'
             if ca.location:
-                md += f'- **Location:** {ca.location}\n'
+                md += f'- **Location:** {_t(ca.location)}\n'
             if ca.assets:
-                md += f'- **Affected Asset(s):** {", ".join(ca.assets)}\n'
+                md += f'- **Affected Asset(s):** {", ".join(_t(a) for a in ca.assets)}\n'
             if ca.finding_refs:
                 md += f'- **Findings:** {", ".join(ca.finding_refs)}\n'
             md += '\n' + self._fields(ca.fields) + '---\n\n'

@@ -229,7 +229,7 @@ def test_generate_payload_cannot_break_out_of_script_tag():
     f = _finding(title="</script><script>steal()</script>Injected")
     html = _html_gen(findings=[f]).generate()
     assert "</script><script>steal()" not in html
-    assert "<\\/script><script>steal()<\\/script>" in html
+    assert "\\u003c/script>\\u003cscript>steal()\\u003c/script>" in html
     assert _payload(html)["findings"][0]["title"] == "</script><script>steal()</script>Injected"
 
 

@@ -421,7 +421,7 @@ def build_report_document(engagement, sections, findings, testcases, cleanup_art
             src=f, id=f.id, ref=f'F{i:02d}', title=f.title or 'Untitled',
             severity=_v(f.severity).upper(), status=_v(getattr(f, 'status', None)),
             status_group=finding_status_group(getattr(f, 'status', None)),
-            score=_score_info(f), category=_title_case(getattr(f, 'category', None)),
+            score=_score_info(f), category=_v(getattr(f, 'category', None)) if getattr(f, 'category', None) else '',
             assets=[AssetRef(a.name, _title_case(getattr(a, 'asset_type', None)) or 'Asset')
                     for a in (getattr(f, 'assets', None) or [])],
             fields=_fields(f, _FINDING_FIELDS),
@@ -454,7 +454,7 @@ def build_report_document(engagement, sections, findings, testcases, cleanup_art
         t_items.append(TestcaseItem(
             src=t, id=t.id, ref=t_ref[t.id], number=num, depth=depth,
             parent_ref=t_ref.get(parent), title=t.title or 'Untitled',
-            category=_title_case(t.category), status=testcase_status(t),
+            category=_v(t.category) if t.category else '', status=testcase_status(t),
             fields=_fields(t, _TESTCASE_FIELDS),
             assets=[a.name for a in (getattr(t, 'assets', None) or [])],
             findings=[LinkedFinding(f_ref.get(x.id), x.title or 'Untitled', _v(x.severity).upper())

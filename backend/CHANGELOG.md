@@ -19,6 +19,7 @@ section becomes one release entry.
 - Users who can view all engagements now see an engagement's findings, assets and test cases (and find them in search). Those tabs used to come back empty for them unless they were also a member.
 - A review comment anchored on a phrase that appears more than once with the same surrounding text now stays on the copy it was left on, instead of moving to the first one.
 - Scan imports: Burp findings keep their reference links (they were dropped) and show lists on separate lines; Nessus hosts scanned by name keep that name instead of the IP.
+- Report exports: titles, names and other plain-text fields are now escaped in the Markdown export (an HTML tag in a finding title was live markup in the .md file), and finding and test case categories appear as typed instead of title-cased.
 
 ## [1.9.4] — 2026-11-27
 

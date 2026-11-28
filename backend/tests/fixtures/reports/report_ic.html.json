@@ -1,0 +1,284 @@
+{
+  "assets": [
+    {
+      "n": "portal.acme.test",
+      "sevs": {
+        "critical": 1,
+        "info": 1,
+        "low": 1
+      },
+      "type": "Asset"
+    },
+    {
+      "n": "dc01",
+      "sevs": {
+        "critical": 1,
+        "high": 1,
+        "medium": 1
+      },
+      "type": "Asset"
+    }
+  ],
+  "chain": [],
+  "cleanup": [
+    {
+      "asset": "dc01",
+      "finding": null,
+      "mark": "(C)",
+      "note": "Beacon dropped during lateral movement.",
+      "owner": "",
+      "status": "Pending",
+      "sys": "C:\\Windows\\Temp\\a.exe",
+      "t": "Implant on dc01",
+      "type": "File"
+    },
+    {
+      "asset": null,
+      "finding": null,
+      "mark": "(C)",
+      "note": "Created for the spray.",
+      "owner": "",
+      "status": "Cleaned",
+      "sys": "CORP\\rw_test",
+      "t": "Test account",
+      "type": "Account"
+    }
+  ],
+  "findings": [
+    {
+      "assets": [
+        "portal.acme.test",
+        "dc01"
+      ],
+      "biz": "",
+      "custom": [],
+      "cvss": 9.8,
+      "cwe": "Injection",
+      "desc": "<p>The <strong>q</strong> parameter is concatenated into SQL.</p>\n<ul>\n<li>union-based</li>\n<li>time-based</li>\n</ul>",
+      "ev": [],
+      "id": "F01",
+      "impact": "<p>Full read of the <code>users</code> table.</p>",
+      "mark": "(S)",
+      "model": "CVSS 3.1",
+      "num": true,
+      "outcome": "",
+      "refs_html": "<p>https://owasp.org/www-community/attacks/SQL_Injection</p>",
+      "remed": "<p>Use parameterised queries.</p>",
+      "sev": "critical",
+      "status": "open",
+      "steps": "<ol>\n<li>Send <code>q='</code></li>\n<li>Observe the error</li>\n</ol>",
+      "tech": "<pre><code class=\"language-sql\">SELECT * FROM items WHERE name LIKE '%{q}%'\n</code></pre>",
+      "title": "SQL injection in search",
+      "vec": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    },
+    {
+      "assets": [
+        "dc01"
+      ],
+      "biz": "",
+      "custom": [],
+      "cvss": 0,
+      "cwe": "",
+      "desc": "<p>SPN set on a user account with a weak password &amp; no AES.</p>",
+      "ev": [],
+      "id": "F02",
+      "impact": "",
+      "mark": "(C)",
+      "model": "CVSS 3.1",
+      "num": true,
+      "outcome": "",
+      "refs_html": "",
+      "remed": "<p>Rotate to a gMSA.</p>",
+      "sev": "high",
+      "status": "open",
+      "steps": "",
+      "tech": "",
+      "title": "Kerberoastable service account <svc_sql>",
+      "vec": "—"
+    },
+    {
+      "assets": [
+        "dc01"
+      ],
+      "biz": "",
+      "custom": [],
+      "cvss": 0,
+      "cwe": "",
+      "desc": "<p>Relay is possible.</p>",
+      "ev": [],
+      "id": "F03",
+      "impact": "",
+      "mark": "(C)",
+      "model": "CVSS 3.1",
+      "num": true,
+      "outcome": "",
+      "refs_html": "",
+      "remed": "",
+      "sev": "medium",
+      "status": "open",
+      "steps": "",
+      "tech": "",
+      "title": "SMB signing not required",
+      "vec": "—"
+    },
+    {
+      "assets": [
+        "portal.acme.test"
+      ],
+      "biz": "",
+      "custom": [],
+      "cvss": 0,
+      "cwe": "",
+      "desc": "<p>No <code>Strict-Transport-Security</code> header.</p>",
+      "ev": [],
+      "id": "F04",
+      "impact": "",
+      "mark": "(C)",
+      "model": "CVSS 3.1",
+      "num": true,
+      "outcome": "",
+      "refs_html": "",
+      "remed": "",
+      "sev": "low",
+      "status": "open",
+      "steps": "",
+      "tech": "",
+      "title": "Missing HSTS",
+      "vec": "—"
+    },
+    {
+      "assets": [
+        "portal.acme.test"
+      ],
+      "biz": "",
+      "custom": [],
+      "cvss": 0,
+      "cwe": "",
+      "desc": "<p>The <code>Server</code> header discloses <em>nginx 1.24.0</em>.</p>",
+      "ev": [],
+      "id": "F05",
+      "impact": "",
+      "mark": "(U)",
+      "model": "CVSS 3.1",
+      "num": true,
+      "outcome": "",
+      "refs_html": "",
+      "remed": "",
+      "sev": "info",
+      "status": "remediated",
+      "steps": "",
+      "tech": "",
+      "title": "Verbose server banner",
+      "vec": "—"
+    }
+  ],
+  "marking": {
+    "banner": "SECRET",
+    "caption": "Distribution limited to the client."
+  },
+  "meta": {
+    "client": "ACME <Corp>",
+    "engagement": "Op Nightfall",
+    "fields": [
+      [
+        "Client",
+        "ACME <Corp>",
+        null
+      ],
+      [
+        "Engagement",
+        "Op Nightfall",
+        null
+      ],
+      [
+        "Prepared by",
+        "RedWire",
+        null
+      ],
+      [
+        "Classification",
+        "SECRET",
+        "#FFC000"
+      ],
+      [
+        "Findings",
+        "5 confirmed",
+        null
+      ],
+      [
+        "Scoring",
+        "CVSS 3.1",
+        null
+      ]
+    ],
+    "ref": "",
+    "summary": "",
+    "title": "Red Team Assessment Report"
+  },
+  "narrative": {
+    "objectives_html": "",
+    "scope_html": "",
+    "sections": [
+      {
+        "html": "<p>ACME engaged us for <strong>two weeks</strong>. &lt;script&gt;alert(1)&lt;/script&gt; Key risks:</p>\n<ol>\n<li>Injection</li>\n<li>AD hygiene</li>\n</ol>",
+        "mark": "(S)",
+        "title": "Executive Summary"
+      },
+      {
+        "html": "<table>\n<thead>\n<tr>\n<th>Tool</th>\n<th>Version</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>nmap</td>\n<td>7.94</td>\n</tr>\n</tbody>\n</table>",
+        "mark": "(U)",
+        "title": "Appendix"
+      }
+    ]
+  },
+  "risk": {
+    "caption": "Overall risk posture · driven by SQL injection in search",
+    "rating": "CRITICAL",
+    "score": 9.8,
+    "subtitle": "5 findings confirmed across this engagement.",
+    "summary_html": ""
+  },
+  "testcases": [
+    {
+      "actual": "",
+      "desc": "<p>Request TGS for SPN accounts.</p>",
+      "expected": "",
+      "finds": [],
+      "id": "T1",
+      "label": "Kerberoasting",
+      "mark": "(C)",
+      "notes": "",
+      "parent": null,
+      "status": "Not Executed",
+      "steps": ""
+    },
+    {
+      "actual": "",
+      "desc": "",
+      "expected": "",
+      "finds": [],
+      "id": "T2",
+      "label": "Input validation",
+      "mark": "(C)",
+      "notes": "",
+      "parent": null,
+      "status": "Fail",
+      "steps": ""
+    },
+    {
+      "actual": "",
+      "desc": "",
+      "expected": "",
+      "finds": [
+        "F01"
+      ],
+      "id": "T3",
+      "label": "SQLi in search",
+      "mark": "(U)",
+      "notes": "",
+      "parent": "T2",
+      "status": "Pass",
+      "steps": "<p>Fuzz <code>q</code></p>"
+    }
+  ]
+}

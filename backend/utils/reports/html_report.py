@@ -267,6 +267,9 @@ class HTMLReportGenerator:
                                   'report_templates', 'interactive', 'report.template.html')
         with open(tmpl_path, 'r', encoding='utf-8') as fh:
             tmpl = fh.read()
-        # ``</`` is escaped so a field can never break out of the <script> tag.
-        payload = 'window.__REPORT__ = ' + _json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + ';'
+        # Every "<" is written as \u003c (the same string to JSON and JS), so
+        # no field can end the <script> element ("</script") or put the HTML
+        # parser into its double-escaped state ("<!--" then "<script"), where
+        # the real closing tag no longer ends the element.
+        payload = 'window.__REPORT__ = ' + _json.dumps(data, ensure_ascii=False).replace('<', '\\u003c') + ';'
         return tmpl.replace('/*__REPORT_DATA__*/', payload, 1)
