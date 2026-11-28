@@ -43,7 +43,9 @@ def _add_workflow_columns(table: str) -> None:
 
 
 def _drop_workflow_columns(table: str) -> None:
-    op.drop_constraint(f'fk_{table}_published_by_users', table, type_='foreignkey')
+    # No drop_constraint: a later revision renamed this FK (to
+    # <table>_published_by_fkey), and dropping the column drops its FK
+    # whatever it is called.
     op.drop_index(op.f(f'ix_{table}_status'), table_name=table)
     op.drop_column(table, 'review_note')
     op.drop_column(table, 'published_by')

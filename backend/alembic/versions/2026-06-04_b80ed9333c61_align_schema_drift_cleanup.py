@@ -59,8 +59,9 @@ def downgrade() -> None:
                existing_server_default=sa.text('now()'))
     op.create_index('ix_spray_results_result', 'spray_results', ['result'], unique=False)
     op.create_index('ix_spray_results_campaign', 'spray_results', ['campaign_id'], unique=False)
-    op.drop_constraint(None, 'spray_campaigns', type_='foreignkey')
-    op.drop_constraint(None, 'spray_campaigns', type_='foreignkey')
+    # upgrade() created these unnamed; Postgres named them by its default.
+    op.drop_constraint('spray_campaigns_updated_by_fkey', 'spray_campaigns', type_='foreignkey')
+    op.drop_constraint('spray_campaigns_created_by_fkey', 'spray_campaigns', type_='foreignkey')
     op.create_foreign_key('spray_campaigns_created_by_fkey', 'spray_campaigns', 'users', ['created_by'], ['id'])
     op.create_foreign_key('spray_campaigns_updated_by_fkey', 'spray_campaigns', 'users', ['updated_by'], ['id'])
     op.create_index('ix_spray_campaigns_engagement', 'spray_campaigns', ['engagement_id'], unique=False)

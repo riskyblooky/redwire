@@ -18,6 +18,15 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _drop_fk(table, column):
+    """Drop the FK on table.column, whatever it is named (this revision
+    created it unnamed, so there is no name to pass to drop_constraint)."""
+    for fk in sa.inspect(op.get_bind()).get_foreign_keys(table):
+        if fk["constrained_columns"] == [column]:
+            op.drop_constraint(fk["name"], table, type_="foreignkey")
+            return
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -116,14 +125,20 @@ def downgrade() -> None:
     op.create_index('ix_users_email', 'users', ['email'], unique=False)
     op.create_unique_constraint('users_username_key', 'users', ['username'])
     op.create_unique_constraint('users_email_key', 'users', ['email'])
-    op.drop_constraint(None, 'testcases', type_='foreignkey')
+    _drop_fk('testcases', 'engagement_id')
     op.create_foreign_key('testcases_engagement_id_fkey', 'testcases', 'engagements', ['engagement_id'], ['id'], ondelete='CASCADE')
-    op.drop_constraint(None, 'findings', type_='foreignkey')
+    _drop_fk('findings', 'engagement_id')
     op.create_foreign_key('findings_engagement_id_fkey', 'findings', 'engagements', ['engagement_id'], ['id'], ondelete='CASCADE')
-    op.drop_constraint(None, 'evidence', type_='foreignkey')
+    _drop_fk('evidence', 'finding_id')
     op.create_foreign_key('evidence_finding_id_fkey', 'evidence', 'findings', ['finding_id'], ['id'], ondelete='CASCADE')
-    op.drop_constraint(None, 'engagement_assignments', type_='foreignkey')
+    _drop_fk('engagement_assignments', 'role_id')
     op.drop_column('engagement_assignments', 'role_id')
-    op.drop_constraint(None, 'assets', type_='foreignkey')
+    _drop_fk('assets', 'engagement_id')
     op.create_foreign_key('assets_engagement_id_fkey', 'assets', 'engagements', ['engagement_id'], ['id'], ondelete='CASCADE')
     # ### end Alembic commands ###
+    # upgrade() creates these where create_all hadn't (a clean install); drop
+    # them so the initial schema's downgrade can drop the tables they point at.
+    op.execute("DROP TABLE IF EXISTS user_groups")
+    op.execute("DROP TABLE IF EXISTS engagement_assignments")
+    op.execute("DROP TABLE IF EXISTS groups")
+    op.execute("DROP TABLE IF EXISTS engagement_roles")

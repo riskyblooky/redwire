@@ -18,6 +18,15 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _drop_fk(table, column):
+    """Drop the FK on table.column, whatever it is named (this revision
+    created it unnamed, so there is no name to pass to drop_constraint)."""
+    for fk in sa.inspect(op.get_bind()).get_foreign_keys(table):
+        if fk["constrained_columns"] == [column]:
+            op.drop_constraint(fk["name"], table, type_="foreignkey")
+            return
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -60,8 +69,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(None, 'clients', type_='foreignkey')
-    op.create_foreign_key('clients_client_type_id_fkey', 'clients', 'client_types', ['client_type_id'], ['id'], ondelete='SET NULL')
+    # Tables first, then their rows back from configurable_types, then the FK
+    # (it used to be created first, against a table that didn't exist yet).
+    _drop_fk('clients', 'client_type_id')
     op.create_table('engagement_types',
     sa.Column('id', sa.VARCHAR(), autoincrement=False, nullable=False),
     sa.Column('name', sa.VARCHAR(length=100), autoincrement=False, nullable=False),
@@ -82,3 +92,20 @@ def downgrade() -> None:
     sa.PrimaryKeyConstraint('id', name='client_types_pkey'),
     sa.UniqueConstraint('name', name='client_types_name_key')
     )
+    conn = op.get_bind()
+    conn.execute(sa.text(
+        "INSERT INTO client_types (id, name, description, color, is_system, sort_order) "
+        "SELECT id, name, description, color, is_system, sort_order FROM configurable_types "
+        "WHERE category = 'client' ON CONFLICT (name) DO NOTHING"
+    ))
+    conn.execute(sa.text(
+        "INSERT INTO engagement_types (id, name, description, color, is_system, sort_order) "
+        "SELECT id, name, description, color, is_system, sort_order FROM configurable_types "
+        "WHERE category = 'engagement' ON CONFLICT (name) DO NOTHING"
+    ))
+    # Clients pointing at a type that didn't come back (a name collision) lose it.
+    conn.execute(sa.text(
+        "UPDATE clients SET client_type_id = NULL WHERE client_type_id IS NOT NULL "
+        "AND client_type_id NOT IN (SELECT id FROM client_types)"
+    ))
+    op.create_foreign_key('clients_client_type_id_fkey', 'clients', 'client_types', ['client_type_id'], ['id'], ondelete='SET NULL')

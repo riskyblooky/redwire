@@ -29,7 +29,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint('fk_finding_assets_remediated_by', 'finding_assets', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_column('finding_assets', 'remediated_by')
     op.drop_column('finding_assets', 'remediated_at')
     op.drop_column('finding_assets', 'remediated')

@@ -26,5 +26,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index('ix_users_registration_code_id')
-    op.drop_constraint('fk_users_registration_code_id', 'users', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_column('users', 'registration_code_id')

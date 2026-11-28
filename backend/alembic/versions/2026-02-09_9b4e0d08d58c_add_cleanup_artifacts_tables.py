@@ -68,3 +68,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_cleanup_artifacts_engagement_id'), table_name='cleanup_artifacts')
     op.drop_table('cleanup_artifacts')
     # ### end Alembic commands ###
+    # The enum type(s) upgrade() created with the table.
+    op.execute("DROP TYPE IF EXISTS cleanupartifacttype")
+    op.execute("DROP TYPE IF EXISTS cleanupartifactstatus")

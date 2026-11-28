@@ -27,6 +27,6 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_constraint('fk_notes_parent_id', 'notes', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_index('ix_notes_parent_id', table_name='notes')
     op.drop_column('notes', 'parent_id')

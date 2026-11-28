@@ -3,7 +3,8 @@
 Older clients, imports and the MCP server stored values like IP_ADDRESS,
 host or web_application, which the asset edit form's Type dropdown can't
 display. Map every value onto a configured asset type (case/separator-
-insensitive match, then the legacy alias table in utils/asset_types.py);
+insensitive match, then the legacy alias table, frozen below from
+utils/asset_types.py);
 values that match nothing become "Other". Writes are canonicalized from now
 on, so this only has to run once. Data-only; downgrade is a no-op.
 
@@ -20,9 +21,39 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade() -> None:
-    from utils.asset_types import canonical_name
+# Frozen copy of utils/asset_types.py as of this revision: a migration must
+# not import app code, which can change (or fail to import) after it ships.
+_ALIASES = {
+    "IP_ADDRESS": "IP Address", "IP": "IP Address", "IPADDRESS": "IP Address",
+    "IPV4": "IP Address", "IPV6": "IP Address",
+    "DOMAIN": "Domain", "DNS": "Domain", "HOSTNAME": "Domain", "FQDN": "Domain",
+    "URL": "URL", "URI": "URL",
+    "APPLICATION": "Application", "APP": "Application", "WEB_APPLICATION": "Application",
+    "WEB_APP": "Application", "WEBAPP": "Application", "API": "Application",
+    "SERVER": "Server", "HOST": "Server", "WORKSTATION": "Server",
+    "NETWORK": "Network", "SUBNET": "Network", "CIDR": "Network", "NETWORK_DEVICE": "Network",
+    "OTHER": "Other",
+}
 
+
+def _key(value):
+    return "_".join(value.strip().upper().replace("-", " ").replace("_", " ").split())
+
+
+def canonical_name(raw, configured):
+    if not raw or not raw.strip():
+        return None
+    by_key = {_key(n): n for n in configured}
+    k = _key(raw)
+    if k in by_key:
+        return by_key[k]
+    alias = _ALIASES.get(k)
+    if alias is not None:
+        return by_key.get(_key(alias))
+    return None
+
+
+def upgrade() -> None:
     bind = op.get_bind()
     names = [r[0] for r in bind.execute(sa.text(
         "SELECT name FROM configurable_types WHERE category = 'asset' ORDER BY sort_order"

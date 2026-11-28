@@ -82,16 +82,21 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('engagements') as batch_op:
-        batch_op.alter_column(
-            'engagement_type',
-            type_=sa.Enum(
-                'EXTERNAL_PENTEST', 'INTERNAL_PENTEST', 'WEB_APPLICATION',
-                'MOBILE_APPLICATION', 'SOCIAL_ENGINEERING', 'PHYSICAL_SECURITY',
-                'RED_TEAM', 'PURPLE_TEAM', 'OTHER',
-                name='engagementtype'
-            ),
-            existing_type=sa.String(100),
-            existing_nullable=False
-        )
+    labels = ('EXTERNAL_PENTEST', 'INTERNAL_PENTEST', 'WEB_APPLICATION',
+              'MOBILE_APPLICATION', 'SOCIAL_ENGINEERING', 'PHYSICAL_SECURITY',
+              'RED_TEAM', 'PURPLE_TEAM', 'OTHER')
+    # The type may have been dropped by a later revision; names the enum
+    # can't hold (configured types) become OTHER.
+    sa.Enum(*labels, name='engagementtype').create(op.get_bind(), checkfirst=True)
+    op.alter_column(
+        'engagements', 'engagement_type',
+        type_=sa.Enum(*labels, name='engagementtype', create_type=False),
+        existing_type=sa.String(100),
+        existing_nullable=False,
+        postgresql_using=(
+            "CASE WHEN engagement_type IN ('EXTERNAL_PENTEST', 'INTERNAL_PENTEST', 'WEB_APPLICATION', "
+            "'MOBILE_APPLICATION', 'SOCIAL_ENGINEERING', 'PHYSICAL_SECURITY', 'RED_TEAM', 'PURPLE_TEAM', 'OTHER') "
+            "THEN engagement_type::engagementtype ELSE 'OTHER'::engagementtype END"
+        ),
+    )
     op.drop_table('engagement_types')

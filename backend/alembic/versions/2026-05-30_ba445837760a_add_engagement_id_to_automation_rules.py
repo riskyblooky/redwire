@@ -41,6 +41,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint('fk_automation_rules_engagement_id', 'automation_rules', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_index(op.f('ix_automation_rules_engagement_id'), table_name='automation_rules')
     op.drop_column('automation_rules', 'engagement_id')

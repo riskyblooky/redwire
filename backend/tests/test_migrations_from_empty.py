@@ -7,9 +7,11 @@ existing data, a broken down_revision, or a model change nobody generated a
 migration for would all pass it. This runs the real ``migrate.py upgrade
 heads`` (core + plugin migration dirs) against a fresh throwaway database,
 then ``migrate.py check`` (alembic's model-vs-schema comparison), then
-upgrades again to prove re-running is a no-op.
+upgrades again to prove re-running is a no-op. Finally it downgrades to base
+(every downgrade must run and leave no table or enum type behind) and
+upgrades again from there.
 
-It takes ~10-60 s. Skip with SKIP_MIGRATION_TEST=1.
+It takes ~30-120 s. Skip with SKIP_MIGRATION_TEST=1.
 """
 
 from __future__ import annotations
@@ -68,6 +70,20 @@ async def test_migrations_build_the_model_schema_from_empty():
         finally:
             await conn.close()
         assert heads, "alembic_version is empty after upgrade"
+
+        down = _migrate(url, "downgrade", "base")
+        assert down.returncode == 0, f"downgrade base failed:\n{down.stdout[-4000:]}\n{down.stderr[-4000:]}"
+        conn = await asyncpg.connect(_dsn(url))
+        try:
+            left = await conn.fetch(
+                "SELECT tablename AS n FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'alembic_version' "
+                "UNION ALL SELECT typname FROM pg_type WHERE typtype = 'e' AND typnamespace = 'public'::regnamespace")
+        finally:
+            await conn.close()
+        assert not left, f"downgrade base left behind: {sorted(r['n'] for r in left)}"
+
+        reup = _migrate(url, "upgrade", "heads")
+        assert reup.returncode == 0, f"upgrade after downgrade base failed:\n{reup.stderr[-4000:]}"
     finally:
         await admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         await admin.close()

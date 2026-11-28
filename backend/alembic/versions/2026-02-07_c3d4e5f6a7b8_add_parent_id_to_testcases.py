@@ -31,5 +31,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index('ix_testcases_parent_id', table_name='testcases')
-    op.drop_constraint('fk_testcases_parent_id', 'testcases', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_column('testcases', 'parent_id')

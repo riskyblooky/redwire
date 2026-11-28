@@ -62,3 +62,5 @@ def downgrade() -> None:
     op.create_index('ix_registration_codes_code', 'registration_codes', ['code'], unique=True)
     op.drop_table('vault_items')
     # ### end Alembic commands ###
+    # The enum type(s) upgrade() created with the table.
+    op.execute("DROP TYPE IF EXISTS vaultitemtype")

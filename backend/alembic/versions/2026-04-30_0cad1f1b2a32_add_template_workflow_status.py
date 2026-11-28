@@ -49,7 +49,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint('fk_finding_templates_published_by_users', 'finding_templates', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_index(op.f('ix_finding_templates_status'), table_name='finding_templates')
     op.drop_column('finding_templates', 'review_note')
     op.drop_column('finding_templates', 'published_by')

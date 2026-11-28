@@ -38,5 +38,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index('ix_spray_results_asset_id', table_name='spray_results')
-    op.drop_constraint('fk_spray_results_asset_id', 'spray_results', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_column('spray_results', 'asset_id')

@@ -160,7 +160,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint('fk_engagements_marking_profile_id', 'engagements', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_index(op.f('ix_engagements_marking_profile_id'), table_name='engagements')
     op.drop_column('engagements', 'ceiling_classification_level')
     op.drop_column('engagements', 'default_classification_suffix')

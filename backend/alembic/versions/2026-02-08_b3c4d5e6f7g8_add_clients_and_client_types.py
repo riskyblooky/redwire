@@ -91,7 +91,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index('ix_engagements_client_id', table_name='engagements')
-    op.drop_constraint('fk_engagements_client_id', 'engagements', type_='foreignkey')
+    # The FK goes with its column below (by any name: later revisions renamed some).
     op.drop_column('engagements', 'client_id')
     op.drop_index('ix_clients_name', table_name='clients')
     op.drop_table('clients')
