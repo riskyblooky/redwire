@@ -39,6 +39,7 @@ os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
 from typing import Any, Callable, Optional
 
 import pytest
+from starlette.requests import Request  # module level: FastAPI resolves the override's string annotation here
 import pytest_asyncio
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -176,6 +177,37 @@ def _test_db_url() -> str:
     # host/credentials. rsplit keeps any '/' that appears earlier in creds.
     base, _, name = app_url.rpartition("/")
     return f"{base}/{name}_test"
+
+
+@pytest.fixture(autouse=True)
+def _app_session_tripwire(monkeypatch, request):
+    """Code that opens its own session (``AsyncSessionLocal()``: background
+    tasks, websocket handlers, plugins) bypasses the test session and lands
+    on the app's DATABASE_URL — the dev database, invisible to the test and
+    never rolled back. Every binding of the factory is swapped for one that
+    raises and fails the test, so a new path can't do that silently. A test
+    exercising such a path patches the binding itself (its setattr runs
+    after this one); ``@pytest.mark.app_sessions`` opts out."""
+    if request.node.get_closest_marker("app_sessions"):
+        yield
+        return
+    import sys
+    import traceback
+    import database
+
+    real = database.AsyncSessionLocal
+    opened: list = []
+
+    def _tripwire(*_a, **_k):
+        opened.append("".join(traceback.format_stack(limit=6)[:-1]))
+        raise RuntimeError("test opened a session on the app database (AsyncSessionLocal)")
+
+    for mod in list(sys.modules.values()):
+        if getattr(mod, "AsyncSessionLocal", None) is real:
+            monkeypatch.setattr(mod, "AsyncSessionLocal", _tripwire)
+    yield
+    if opened:
+        pytest.fail("opened AsyncSessionLocal() against the app database:\n" + opened[0], pytrace=False)
 
 
 @pytest.fixture(autouse=True)
@@ -367,10 +399,20 @@ def authenticate_as() -> Callable:
     correctly against the injected user.
     """
     import main
-    from auth.dependencies import get_current_user
+    from fastapi import HTTPException
+    from auth.dependencies import _enforce_password_change, get_current_user
 
     def _auth(user) -> None:
-        async def _override():
+        # Everything the real JWT branch does after resolving the user, so a
+        # route can't pass here and fail in production: the inactive and
+        # must-change-password refusals, and the request state other code
+        # reads (the admin-audit middleware's actor, the API-token flag).
+        async def _override(request: Request):
+            if not user.is_active:
+                raise HTTPException(status_code=403, detail="Inactive user")
+            request.state.api_token_permission = None
+            request.state.auth_user_id = user.id
+            _enforce_password_change(request, user)
             return user
 
         main.app.dependency_overrides[get_current_user] = _override

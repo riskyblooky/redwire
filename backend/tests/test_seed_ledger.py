@@ -80,15 +80,17 @@ async def test_one_failing_seeder_does_not_stop_the_rest(monkeypatch):
     async def ok():
         ran.append(1)
         return 0
+    # Every seeder but the failing one is stubbed: a real one would open
+    # AsyncSessionLocal() on the app (dev) database.
     for name in ("seed_configurable_types", "sync_template_categories_to_configurable_types",
-                 "seed_finding_templates", "seed_testcase_templates"):
+                 "seed_finding_templates", "seed_testcase_templates", "seed_system_widgets"):
         monkeypatch.setattr(seed_defaults, name, ok)
     monkeypatch.setattr(seed_defaults, "seed_tags", boom)
     monkeypatch.setattr(seed_defaults, "seed_skill_taxonomy", lambda: _pair())
     monkeypatch.setattr(seed_defaults, "seed_default_report_theme", lambda: _false())
     monkeypatch.setattr(seed_defaults, "seed_default_report_layout", lambda: _false())
     await seed_defaults.seed_all_defaults()
-    assert len(ran) == 4
+    assert len(ran) == 5
 
 
 async def _pair():

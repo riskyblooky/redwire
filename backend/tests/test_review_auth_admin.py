@@ -17,9 +17,15 @@ async def _code_count(db, user_id):
                              .where(RecoveryCode.user_id == user_id))).scalar_one()
 
 
-async def test_password_reset_drops_recovery_codes(client, db_session, make_user):
+async def test_password_reset_drops_recovery_codes(client, db_session, make_user, monkeypatch):
     """Reset clears TOTP; the old codes would come back to life on re-enable."""
+    import routers.auth as auth_router
     from models.recovery_code import RecoveryCode
+    sent = []
+
+    async def _notice(to_email, username):  # its own session would be the app DB's
+        sent.append(to_email)
+    monkeypatch.setattr(auth_router, "_dispatch_password_changed_email", _notice)
     user = await make_user()
     db_session.add(RecoveryCode(user_id=user.id, code_hash="x"))
     await db_session.flush()
@@ -29,6 +35,7 @@ async def test_password_reset_drops_recovery_codes(client, db_session, make_user
 
     assert r.status_code == 200, r.text
     assert await _code_count(db_session, user.id) == 0
+    assert sent == [user.email], "the post-reset security notice is queued"
 
 
 async def test_enabling_2fa_replaces_earlier_codes(client, db_session, make_user, monkeypatch):

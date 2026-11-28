@@ -92,6 +92,7 @@ async def test_config_write_audited_by_middleware(client, make_user, authenticat
     assert r.status_code == 200
     (ev,) = await _events(security_events_on, "config_changed")
     assert ev.details == {"method": "POST", "path": "/admin/permissions/groups", "status": 201}
+    assert ev.actor_id == admin.id, "the middleware reads the actor from request state"
 
 
 def test_audited_write_paths():
