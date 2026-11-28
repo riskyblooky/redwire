@@ -173,6 +173,14 @@ def _read_member_safely(
     accept.
     """
     buf = io.BytesIO()
+    for chunk in _iter_member_safely(zf, name, max_bytes):
+        buf.write(chunk)
+    return buf.getvalue()
+
+
+def _iter_member_safely(zf: zipfile.ZipFile, name: str, max_bytes: int = IMPORT_MAX_ARCHIVE_BYTES):
+    """The chunks of ``_read_member_safely``, with the same cap, for callers
+    that don't need the whole member in memory (the digest check)."""
     total = 0
     # 64 KiB chunks — inflater efficiency without unbounded RAM growth
     # for pathological input.
@@ -196,8 +204,7 @@ def _read_member_safely(
                         f"zip bomb."
                     ),
                 )
-            buf.write(chunk)
-    return buf.getvalue()
+            yield chunk
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -289,7 +296,12 @@ def _verify_archive_digests(zf: zipfile.ZipFile, manifest: dict) -> None:
                     f"'{name}' but the file is missing from the archive."
                 ),
             )
-        actual = _sha256_hex(_read_member_safely(zf, name))
+        # Hashed as it inflates: the import reads the member again when it
+        # needs it, rather than holding every inflated member in memory.
+        h = hashlib.sha256()
+        for chunk in _iter_member_safely(zf, name):
+            h.update(chunk)
+        actual = h.hexdigest()
         if not isinstance(expected, str) or actual != expected:
             logger.warning(
                 "Engagement import: digest mismatch on %r (expected=%s actual=%s)",
@@ -1347,9 +1359,12 @@ async def import_engagement(
     )
     zf = _open_engagement_archive(content, passphrase)
     _reject_zip_bomb(zf)
+    # Looked up for every evidence, vault and image row: namelist() builds a
+    # new list each call and `in` scans it.
+    members = frozenset(zf.namelist())
 
     # Read manifest
-    if "manifest.json" not in zf.namelist():
+    if "manifest.json" not in members:
         raise HTTPException(status_code=400, detail="Missing manifest.json in archive")
     manifest = json.loads(_read_member_safely(zf, "manifest.json"))
     if manifest.get("source") != "redwire":
@@ -1361,7 +1376,7 @@ async def import_engagement(
     _verify_archive_digests(zf, manifest)
 
     # Read data
-    if "engagement.json" not in zf.namelist():
+    if "engagement.json" not in members:
         raise HTTPException(status_code=400, detail="Missing engagement.json in archive")
     data = json.loads(_read_member_safely(zf, "engagement.json"))
 
@@ -1521,7 +1536,7 @@ async def import_engagement(
             member = f"attachments/{key}" if isinstance(key, str) else None
             if not m.get("id") or ctype not in _MD_TYPES:
                 continue
-            if member not in zf.namelist():
+            if member not in members:
                 skipped_files.append({"kind": "markdown_image", "name": m.get("original_filename")})
                 continue
             body = _read_member_safely(zf, member)
@@ -1768,7 +1783,7 @@ async def import_engagement(
             old_path = ev.get("file_path") if isinstance(ev.get("file_path"), str) else ""
             zip_path = f"attachments/{old_path}"
             # A row without its file in the archive would point at nothing.
-            if not old_path or zip_path not in zf.namelist():
+            if not old_path or zip_path not in members:
                 logger.warning("engagement-import: evidence %r has no file in the archive; skipped", ev.get("id"))
                 skipped_files.append({"kind": "evidence", "name": ev.get("original_filename")})
                 continue
@@ -1819,7 +1834,7 @@ async def import_engagement(
                     ext = (ext or "") + ".enc"
                 new_vault_path = f"vault/{uuid.uuid4()}{ext}"
                 zip_path = f"attachments/{old_path}"
-                if zip_path in zf.namelist():
+                if zip_path in members:
                     file_bytes = _read_member_safely(zf, zip_path)
                     try:
                         # GHSA-3r7j-7h5r-gxgx Issue 3 follow-up: the archive
