@@ -4,6 +4,10 @@ import { useState, useMemo, useEffect } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
 import { ColumnToggle } from '@/components/ui/column-toggle';
 import { ResultCount } from '@/components/ui/result-count';
+import { ListPagination } from '@/components/ui/list-pagination';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import {
     Table,
     TableBody,
@@ -41,7 +45,7 @@ import {
     CheckSquare,
     Link2
 } from 'lucide-react';
-import { useEngagementEvidence, useUploadEvidence, useUpdateEvidence, useDeleteEvidence, getEvidenceUrl } from '@/lib/hooks/use-evidence';
+import { useEngagementEvidencePage, useUploadEvidence, useUpdateEvidence, useDeleteEvidence, getEvidenceUrl } from '@/lib/hooks/use-evidence';
 import { getEvidenceDownloadUrl } from '@/lib/evidence-download';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -253,9 +257,31 @@ const AttachmentRow = ({ item, engagementId, router, getFileIcon, formatSize, ha
     );
 };
 
+/** URL keys of the attachments list (prefixed e_ on the engagement page). */
+function attachmentListSpec() {
+    const stored = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) : null);
+    return {
+        q: { kind: 'string' },
+        sort: { kind: 'enum', values: ['created_at', 'original_filename', 'context', 'file_size', 'created_by_username'], default: stored('redwire_sort_attachments_field') || 'created_at' },
+        dir: { kind: 'enum', values: ['asc', 'desc'], default: stored('redwire_sort_attachments_order') === 'asc' ? 'asc' : 'desc' },
+        page: { kind: 'int', default: 1, min: 1 },
+        size: { kind: 'int', default: 50, min: 1, max: 500 },
+    } satisfies ParamSpec;
+}
+
 export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
     const router = useRouter();
-    const { data: evidence = [], isLoading } = useEngagementEvidence(engagementId);
+    // View state lives in the URL (e_-prefixed: the engagement page hosts
+    // several lists); the sort default is the last one this browser used.
+    const evSpec = useMemo(() => attachmentListSpec(), []);
+    const [ep, setEp] = useListParams(evSpec, 'e_');
+    const { data: evPage, isLoading, isFetching: evFetching } = useEngagementEvidencePage(engagementId, {
+        q: ep.q || undefined, sort_by: ep.sort, sort_order: ep.dir as 'asc' | 'desc', ...toSkipLimit(ep.page, ep.size),
+    });
+    // The unfiltered count, for "N of M" and the empty state.
+    const { data: evAll } = useEngagementEvidencePage(engagementId, { skip: 0, limit: 1 });
+    const evidence = evPage?.rows ?? [];
+    const evTotal = evPage?.total ?? 0;
     const uploadEvidence = useUploadEvidence({ engagementId });
     const updateEvidence = useUpdateEvidence();
     const deleteEvidence = useDeleteEvidence();
@@ -270,28 +296,21 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
 
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [description, setDescription] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
-
-    const [sortField, setSortField] = useState<string>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('redwire_sort_attachments_field') || 'created_at';
-        }
-        return 'created_at';
-    });
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') {
-            return (localStorage.getItem('redwire_sort_attachments_order') as 'asc' | 'desc') || 'desc';
-        }
-        return 'desc';
-    });
+    const [searchTerm, setSearchTerm] = useState(ep.q);
+    const debouncedEvSearch = useDebounce(searchTerm, 300);
+    useEffect(() => { if (debouncedEvSearch !== ep.q) setEp({ q: debouncedEvSearch }); }, [debouncedEvSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearchTerm(ep.q); }, [ep.q]);
+    const sortField = ep.sort;
+    const sortOrder = ep.dir as 'asc' | 'desc';
+    const setSort = (field: string, order: 'asc' | 'desc') => {
+        setEp({ sort: field, dir: order });
+        localStorage.setItem('redwire_sort_attachments_field', field);
+        localStorage.setItem('redwire_sort_attachments_order', order);
+    };
 
     const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_attachments', ATTACHMENTS_COLUMNS);
     const col = (key: string) => visibleCols.has(key);
 
-    useEffect(() => {
-        localStorage.setItem('redwire_sort_attachments_field', sortField);
-        localStorage.setItem('redwire_sort_attachments_order', sortOrder);
-    }, [sortField, sortOrder]);
 
 
     const SortIcon = ({ field, currentField, order }: { field: string, currentField: string, order: 'asc' | 'desc' }) => {
@@ -299,37 +318,8 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
         return order === 'asc' ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
     };
 
-    const filteredEvidence = useMemo(() => {
-        const filtered = evidence.filter(item => {
-            if (!searchTerm) return true;
-            const term = searchTerm.toLowerCase();
-            return item.original_filename.toLowerCase().includes(term) ||
-                (item.description || '').toLowerCase().includes(term);
-        });
-        return [...filtered].sort((a, b) => {
-            let comparison = 0;
-            switch (sortField) {
-                case 'original_filename':
-                    comparison = a.original_filename.localeCompare(b.original_filename);
-                    break;
-                case 'context':
-                    comparison = (a.finding_id ? 1 : 0) - (b.finding_id ? 1 : 0);
-                    break;
-                case 'file_size':
-                    comparison = a.file_size - b.file_size;
-                    break;
-                case 'created_at':
-                    comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                    break;
-                case 'created_by_username':
-                    comparison = (a.created_by_username || '').localeCompare(b.created_by_username || '');
-                    break;
-                default:
-                    comparison = a.original_filename.localeCompare(b.original_filename);
-            }
-            return sortOrder === 'asc' ? comparison : -comparison;
-        });
-    }, [evidence, searchTerm, sortField, sortOrder]);
+    // Searched and sorted on the server.
+    const filteredEvidence = evidence;
 
     const handleUpload = async () => {
         if (!uploadFile) return;
@@ -403,7 +393,7 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                         <Input placeholder="Search attachments..." className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
-                    {!isLoading && <ResultCount count={filteredEvidence.length} total={evidence.length} noun="attachment" className="mr-1" />}
+                    {!isLoading && <ResultCount count={evTotal} total={evAll?.total} noun="attachment" className="mr-1" />}
                     <ColumnToggle columns={ATTACHMENTS_COLUMNS} visible={visibleCols} onToggle={toggleCol} />
                     {canCreateEvidence && (
                         <Button
@@ -425,21 +415,21 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
                 ) : evidence.length === 0 ? (
                     <div className="text-center py-12 border border-dashed border-slate-800 rounded-xl">
                         <FileIcon className="h-12 w-12 mx-auto mb-4 text-slate-600 opacity-20" />
-                        <p className="text-slate-500">No attachments found for this engagement.</p>
+                        <p className="text-slate-500">{ep.q ? 'No attachments match your search.' : 'No attachments found for this engagement.'}</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <Table>
                             <TableHeader>
                             <TableRow className="border-slate-800 hover:bg-transparent">
-                                <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => { if (sortField === 'original_filename') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); else { setSortField('original_filename'); setSortOrder('asc'); } }}>
+                                <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => setSort('original_filename', sortField === 'original_filename' && sortOrder === 'asc' ? 'desc' : 'asc')}>
                                     <div className="flex items-center">File <SortIcon field="original_filename" currentField={sortField} order={sortOrder} /></div>
                                 </TableHead>
-                                {col('context') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => { if (sortField === 'context') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); else { setSortField('context'); setSortOrder('asc'); } }}><div className="flex items-center">Context <SortIcon field="context" currentField={sortField} order={sortOrder} /></div></TableHead>}
+                                {col('context') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => setSort('context', sortField === 'context' && sortOrder === 'asc' ? 'desc' : 'asc')}><div className="flex items-center">Context <SortIcon field="context" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                 {col('linkedTo') && <TableHead className="text-slate-400"><div className="flex items-center gap-1"><Link2 className="h-3 w-3" />Linked To</div></TableHead>}
-                                {col('size') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => { if (sortField === 'file_size') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); else { setSortField('file_size'); setSortOrder('asc'); } }}><div className="flex items-center">Size <SortIcon field="file_size" currentField={sortField} order={sortOrder} /></div></TableHead>}
-                                {col('uploaded') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => { if (sortField === 'created_at') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); else { setSortField('created_at'); setSortOrder('desc'); } }}><div className="flex items-center">Uploaded <SortIcon field="created_at" currentField={sortField} order={sortOrder} /></div></TableHead>}
-                                {col('createdBy') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => { if (sortField === 'created_by_username') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); else { setSortField('created_by_username'); setSortOrder('asc'); } }}><div className="flex items-center">Created By <SortIcon field="created_by_username" currentField={sortField} order={sortOrder} /></div></TableHead>}
+                                {col('size') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => setSort('file_size', sortField === 'file_size' && sortOrder === 'asc' ? 'desc' : 'asc')}><div className="flex items-center">Size <SortIcon field="file_size" currentField={sortField} order={sortOrder} /></div></TableHead>}
+                                {col('uploaded') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => setSort('created_at', sortField === 'created_at' ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'desc')}><div className="flex items-center">Uploaded <SortIcon field="created_at" currentField={sortField} order={sortOrder} /></div></TableHead>}
+                                {col('createdBy') && <TableHead className="text-slate-400 cursor-pointer hover:text-white transition-colors" onClick={() => setSort('created_by_username', sortField === 'created_by_username' && sortOrder === 'asc' ? 'desc' : 'asc')}><div className="flex items-center">Created By <SortIcon field="created_by_username" currentField={sortField} order={sortOrder} /></div></TableHead>}
                                 {col('report') && <TableHead className="text-slate-400">Report</TableHead>}
                                 <TableHead className="text-slate-400 text-right">Actions</TableHead>
                             </TableRow>
@@ -463,6 +453,10 @@ export function AttachmentsTab({ engagementId }: AttachmentsTabProps) {
                         </Table>
                     </div>
                 )}
+                <ListPagination
+                    page={ep.page} pageSize={ep.size} total={evTotal} isFetching={evFetching}
+                    onPageChange={(n) => setEp({ page: n })} onPageSizeChange={(n) => setEp({ size: n })}
+                />
             </CardContent>
 
             <EvidenceLinkDialog

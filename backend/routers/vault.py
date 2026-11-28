@@ -101,6 +101,22 @@ def _build_metadata_response(
         ],
     )
 
+@router.get("/facets")
+async def get_vault_facets(
+    engagement_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The engagement's vault item count, in all and by type (the type
+    filter's counts), whatever the list's page and filters."""
+    await require_engagement_perm(current_user, engagement_id, Permission.VAULT_VIEW, db)
+    rows = (await db.execute(
+        select(VaultItem.item_type, func.count()).where(VaultItem.engagement_id == engagement_id)
+        .group_by(VaultItem.item_type)
+    )).all()
+    return {"total": sum(n for _, n in rows), "types": {t: n for t, n in rows}}
+
+
 @router.get("", response_model=List[VaultItemResponse])
 async def get_vault_items(
     engagement_id: str,

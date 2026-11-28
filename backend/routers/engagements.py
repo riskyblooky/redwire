@@ -1078,8 +1078,8 @@ async def get_engagement_evidence(
     or test cases), newest first; every item unless ``limit`` is given. The
     total matching is in ``X-Total-Count``. ``q`` searches file name and
     description. Sort by ``created_at``, ``original_filename``,
-    ``file_size``, ``mime_type``, ``created_by_username`` or
-    ``unresolved_thread_count``."""
+    ``file_size``, ``mime_type``, ``created_by_username``, ``context``
+    (finding-attached last) or ``unresolved_thread_count``."""
     # Authorization logic same as get_engagement
     query = select(Engagement).where(Engagement.id == engagement_id)
     result = await db.execute(query)
@@ -1137,6 +1137,8 @@ async def get_engagement_evidence(
         "mime_type": Evidence.mime_type,
         "created_by_username": func.lower(User.username),
         "unresolved_thread_count": unresolved,
+        # Attached to a finding, or not (the attachments table's Context column).
+        "context": case((Evidence.finding_id.is_not(None), 1), else_=0),
     }
     rank = listing.search_rank(page.q, [Evidence.original_filename, Evidence.description]) if page.q else None
     order = listing.order_keys(page, sortable, default="created_at", default_descending=True,

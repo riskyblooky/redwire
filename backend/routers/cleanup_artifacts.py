@@ -69,6 +69,22 @@ async def _require_artifact_edit(
 
 # ============ CRUD ============
 
+@router.get("/facets")
+async def get_cleanup_facets(
+    engagement_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The engagement's cleanup artifact count, in all and by status (the
+    tab's stat cards), whatever the list's page and filters."""
+    await require_engagement_perm(current_user, engagement_id, Permission.CLEANUP_VIEW, db)
+    rows = (await db.execute(
+        select(CleanupArtifact.status, func.count()).where(CleanupArtifact.engagement_id == engagement_id)
+        .group_by(CleanupArtifact.status)
+    )).all()
+    return {"total": sum(n for _, n in rows), "statuses": {st.value: n for st, n in rows}}
+
+
 @router.get("", response_model=List[CleanupArtifactResponse])
 async def get_cleanup_artifacts(
     engagement_id: str,

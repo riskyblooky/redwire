@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchPage } from '../fetch-page';
 import { Evidence } from '../types';
 
 // Get all evidence for an engagement
@@ -11,6 +12,27 @@ export function useEngagementEvidence(engagementId: string) {
             return data;
         },
         enabled: !!engagementId,
+    });
+}
+
+/** Query parameters of ``GET /engagements/{id}/evidence`` for one page. */
+export interface EvidencePageParams {
+    q?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+    skip: number;
+    limit: number;
+}
+
+/** One page of an engagement's evidence and the total matching. Under the
+ *  engagement's evidence key, so the evidence mutations refresh it. */
+export function useEngagementEvidencePage(engagementId: string, params: EvidencePageParams) {
+    return useQuery({
+        queryKey: ['engagements', engagementId, 'evidence', 'page', params],
+        queryFn: () => fetchPage<Evidence>(`/engagements/${engagementId}/evidence`, { ...params }),
+        enabled: !!engagementId,
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
     });
 }
 

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchPage } from '../fetch-page';
 
 export interface CleanupArtifact {
     id: string;
@@ -25,6 +26,44 @@ export interface CleanupArtifact {
     findings?: { id: string; title: string; severity: string }[];
     testcases?: { id: string; title: string }[];
     assets?: { id: string; name: string; identifier: string }[];
+}
+
+/** Query parameters of ``GET /cleanup-artifacts`` for one server page. */
+export interface CleanupPageParams {
+    engagement_id: string;
+    q?: string;
+    status?: string[];
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+    skip: number;
+    limit: number;
+}
+
+/** One page of cleanup artifacts and the total matching. Under the
+ *  engagement's cleanup key, so the cleanup mutations refresh it. */
+export function useCleanupArtifactsPage(params: CleanupPageParams) {
+    return useQuery({
+        queryKey: ['engagements', params.engagement_id, 'cleanup-artifacts', 'page', params],
+        queryFn: () => fetchPage<CleanupArtifact>('/cleanup-artifacts', { ...params }),
+        enabled: !!params.engagement_id,
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
+    });
+}
+
+/** The engagement's cleanup count, in all and by status. */
+export function useCleanupFacets(engagementId: string) {
+    return useQuery({
+        queryKey: ['engagements', engagementId, 'cleanup-artifacts', 'facets'],
+        queryFn: async () => {
+            const { data } = await api.get<{ total: number; statuses: Record<string, number> }>('/cleanup-artifacts/facets', {
+                params: { engagement_id: engagementId },
+            });
+            return data;
+        },
+        enabled: !!engagementId,
+        staleTime: 30_000,
+    });
 }
 
 export function useCleanupArtifacts(engagementId: string) {

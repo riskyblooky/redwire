@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import {
-    useCleanupArtifacts,
+    useCleanupArtifactsPage,
+    useCleanupFacets,
     useCreateCleanupArtifact,
     useUpdateCleanupArtifact,
     useDeleteCleanupArtifact,
@@ -14,16 +15,17 @@ import {
     useUnlinkCleanupFromAsset,
     CleanupArtifact,
 } from '@/lib/hooks/use-cleanup-artifacts';
-import { useFindings } from '@/lib/hooks/use-findings';
-import { useAssets } from '@/lib/hooks/use-assets';
 import { CleanupDetailModal } from './cleanup-detail-modal';
-import { useTestCases } from '@/lib/hooks/use-testcases';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ResultCount } from '@/components/ui/result-count';
+import { ListPagination } from '@/components/ui/list-pagination';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -105,8 +107,43 @@ const defaultForm = {
     classification_suffix: '' as string,
 };
 
+/** URL keys of the cleanup list (prefixed c_ on the engagement page). */
+function cleanupListSpec() {
+    const stored = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) : null);
+    return {
+        q: { kind: 'string' },
+        status: { kind: 'enum', values: ['ALL', 'PENDING', 'CLEANED', 'PARTIALLY_CLEANED', 'NOT_APPLICABLE'], default: 'ALL' },
+        sort: { kind: 'enum', values: ['title', 'artifact_type', 'status', 'created_by_username', 'created_at'], default: stored('redwire_sort_cleanup_field') || 'title' },
+        dir: { kind: 'enum', values: ['asc', 'desc'], default: stored('redwire_sort_cleanup_order') === 'desc' ? 'desc' : 'asc' },
+        page: { kind: 'int', default: 1, min: 1 },
+        size: { kind: 'int', default: 50, min: 1, max: 500 },
+    } satisfies ParamSpec;
+}
+
 export function CleanupTab({ engagementId }: CleanupTabProps) {
-    const { data: artifacts = [], isLoading, refetch } = useCleanupArtifacts(engagementId);
+    // View state lives in the URL (c_-prefixed: the engagement page hosts
+    // several lists); the sort default is the last one this browser used.
+    const cleanupSpec = useMemo(() => cleanupListSpec(), []);
+    const [cp, setCp] = useListParams(cleanupSpec, 'c_');
+    const [searchQuery, setSearchQuery] = useState(cp.q);
+    const debouncedCleanupSearch = useDebounce(searchQuery, 300);
+    useEffect(() => { if (debouncedCleanupSearch !== cp.q) setCp({ q: debouncedCleanupSearch }); }, [debouncedCleanupSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearchQuery(cp.q); }, [cp.q]);
+    const statusFilter = cp.status;
+    const setStatusFilter = (v: string) => setCp({ status: v });
+    const sortField = cp.sort;
+    const sortOrder = cp.dir as 'asc' | 'desc';
+    const { data: cleanupPage, isLoading, isFetching: cleanupFetching, refetch } = useCleanupArtifactsPage({
+        engagement_id: engagementId,
+        q: cp.q || undefined,
+        status: statusFilter === 'ALL' ? undefined : [statusFilter],
+        sort_by: sortField,
+        sort_order: sortOrder,
+        ...toSkipLimit(cp.page, cp.size),
+    });
+    const artifacts = cleanupPage?.rows ?? [];
+    const cleanupTotal = cleanupPage?.total ?? 0;
+    const { data: cleanupFacets } = useCleanupFacets(engagementId);
     const { data: noteLinks } = useEngagementNoteLinks(engagementId);
     const user = useAuthStore((s) => s.user);
 
@@ -116,9 +153,6 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
         Object.entries(noteLinks?.cleanup || {}).forEach(([cid, arr]) => { map[cid] = arr.length; });
         return map;
     }, [noteLinks]);
-    const { data: findings = [] } = useFindings({ engagement_id: engagementId });
-    const { data: testcases = [] } = useTestCases(engagementId);
-    const { data: assets = [] } = useAssets(engagementId);
 
     const createMutation = useCreateCleanupArtifact();
     const updateMutation = useUpdateCleanupArtifact();
@@ -133,8 +167,6 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
     const canCreate = usePermission(engagementId, 'cleanup_create');
     const { confirm, ConfirmDialog } = useConfirmDialog();
 
-    const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('ALL');
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [isLinkOpen, setIsLinkOpen] = useState(false);
@@ -145,66 +177,26 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
     const [form, setForm] = useState({ ...defaultForm });
     const [editId, setEditId] = useState<string | null>(null);
 
-    // Filtered list
-    const filtered = artifacts.filter(a => {
-        const matchesSearch =
-            a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            a.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            a.artifact_type.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesStatus = statusFilter === 'ALL' || a.status === statusFilter;
-        return matchesSearch && matchesStatus;
-    });
-
-    const [sortField, setSortField] = useState<string>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('redwire_sort_cleanup_field') || 'title';
-        }
-        return 'title';
-    });
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') {
-            return (localStorage.getItem('redwire_sort_cleanup_order') as 'asc' | 'desc') || 'asc';
-        }
-        return 'asc';
-    });
-
-    useEffect(() => {
-        localStorage.setItem('redwire_sort_cleanup_field', sortField);
-        localStorage.setItem('redwire_sort_cleanup_order', sortOrder);
-    }, [sortField, sortOrder]);
+    // Filtered, searched and sorted on the server.
+    const filtered = artifacts;
+    const setSort = (field: string, order: 'asc' | 'desc') => {
+        setCp({ sort: field, dir: order });
+        localStorage.setItem('redwire_sort_cleanup_field', field);
+        localStorage.setItem('redwire_sort_cleanup_order', order);
+    };
+    const setSortOrder = (order: 'asc' | 'desc') => setSort(sortField, order);
 
     const SortIcon = ({ field, currentField, order }: { field: string, currentField: string, order: 'asc' | 'desc' }) => {
         if (currentField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-50" />;
         return order === 'asc' ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
     };
 
-    const sortedArtifacts = useMemo(() => {
-        return [...filtered].sort((a, b) => {
-            let comparison = 0;
-            switch (sortField) {
-                case 'title':
-                    comparison = a.title.localeCompare(b.title);
-                    break;
-                case 'artifact_type':
-                    comparison = a.artifact_type.localeCompare(b.artifact_type);
-                    break;
-                case 'status':
-                    comparison = a.status.localeCompare(b.status);
-                    break;
-                case 'created_by_username':
-                    comparison = (a.created_by_username || '').localeCompare(b.created_by_username || '');
-                    break;
-                default:
-                    comparison = a.title.localeCompare(b.title);
-            }
-            return sortOrder === 'asc' ? comparison : -comparison;
-        });
-    }, [filtered, sortField, sortOrder]);
+    const sortedArtifacts = artifacts;
 
     // Stats
-    const totalCount = artifacts.length;
-    const pendingCount = artifacts.filter(a => a.status === 'PENDING').length;
-    const cleanedCount = artifacts.filter(a => a.status === 'CLEANED').length;
+    const totalCount = cleanupFacets?.total ?? 0;
+    const pendingCount = cleanupFacets?.statuses.PENDING ?? 0;
+    const cleanedCount = cleanupFacets?.statuses.CLEANED ?? 0;
 
     // Handlers
     const handleCreate = async () => {
@@ -377,7 +369,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                                 <SelectItem value="NOT_APPLICABLE">Not Applicable</SelectItem>
                             </SelectContent>
                         </Select>
-                        <ResultCount count={sortedArtifacts.length} total={artifacts.length} noun="artifact" />
+                        <ResultCount count={cleanupTotal} total={cleanupFacets?.total} noun="artifact" />
                     </div>
 
                     {canCreate && (
@@ -418,8 +410,8 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                 ) : filtered.length === 0 ? (
                     <div className="text-center py-20 bg-slate-900/20 border border-dashed border-slate-800 rounded-3xl">
                         <Package className="h-16 w-16 mx-auto mb-4 text-slate-700 opacity-50" />
-                        <h3 className="text-lg font-semibold text-slate-400">No cleanup artifacts</h3>
-                        <p className="text-slate-500 text-sm mt-1">Document red team artifacts that require cleanup.</p>
+                        <h3 className="text-lg font-semibold text-slate-400">{totalCount ? 'No artifacts match your search or filter' : 'No cleanup artifacts'}</h3>
+                        <p className="text-slate-500 text-sm mt-1">{totalCount ? 'Try adjusting your search or filter.' : 'Document red team artifacts that require cleanup.'}</p>
                     </div>
                 ) : (
                     <Card className="border-slate-800 bg-slate-900/40 backdrop-blur-xs overflow-hidden">
@@ -431,7 +423,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                                             className="text-left px-4 py-3 text-[10px] uppercase tracking-wider text-slate-500 font-bold cursor-pointer hover:text-white transition-colors"
                                             onClick={() => {
                                                 if (sortField === 'title') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                                                else { setSortField('title'); setSortOrder('asc'); }
+                                                else setSort('title', 'asc');
                                             }}
                                         >
                                             <div className="flex items-center">
@@ -442,7 +434,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                                             className="text-left px-4 py-3 text-[10px] uppercase tracking-wider text-slate-500 font-bold cursor-pointer hover:text-white transition-colors"
                                             onClick={() => {
                                                 if (sortField === 'artifact_type') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                                                else { setSortField('artifact_type'); setSortOrder('asc'); }
+                                                else setSort('artifact_type', 'asc');
                                             }}
                                         >
                                             <div className="flex items-center">
@@ -453,7 +445,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                                             className="text-left px-4 py-3 text-[10px] uppercase tracking-wider text-slate-500 font-bold cursor-pointer hover:text-white transition-colors"
                                             onClick={() => {
                                                 if (sortField === 'status') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                                                else { setSortField('status'); setSortOrder('asc'); }
+                                                else setSort('status', 'asc');
                                             }}
                                         >
                                             <div className="flex items-center">
@@ -466,7 +458,7 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                                             className="text-left px-4 py-3 text-[10px] uppercase tracking-wider text-slate-500 font-bold cursor-pointer hover:text-white transition-colors"
                                             onClick={() => {
                                                 if (sortField === 'created_by_username') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                                                else { setSortField('created_by_username'); setSortOrder('asc'); }
+                                                else setSort('created_by_username', 'asc');
                                             }}
                                         >
                                             <div className="flex items-center">
@@ -495,6 +487,10 @@ export function CleanupTab({ engagementId }: CleanupTabProps) {
                         </div>
                     </Card>
                 )}
+                <ListPagination
+                    page={cp.page} pageSize={cp.size} total={cleanupTotal} isFetching={cleanupFetching}
+                    onPageChange={(n) => setCp({ page: n })} onPageSizeChange={(n) => setCp({ size: n })}
+                />
 
                 {/* Cleanup reminder */}
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex gap-4">

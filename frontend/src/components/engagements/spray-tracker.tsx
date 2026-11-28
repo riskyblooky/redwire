@@ -1,5 +1,7 @@
 'use client';
 
+import { ListPagination } from '@/components/ui/list-pagination';
+import { toSkipLimit } from '@/lib/list-params';
 import { useState, useMemo, useCallback } from 'react';
 import {
     useSprayCampaigns,
@@ -60,7 +62,11 @@ const protocolColors: Record<string, string> = {
 
 
 export function SprayTracker({ engagementId }: SprayTrackerProps) {
-    const { data: campaigns = [], isLoading } = useSprayCampaigns(engagementId);
+    const [campaignPage, setCampaignPage] = useState(1);
+    const [campaignSize, setCampaignSize] = useState(25);
+    const { data: campaignData, isLoading, isFetching: campaignsFetching } = useSprayCampaigns(engagementId, toSkipLimit(campaignPage, campaignSize));
+    const campaigns = campaignData?.rows ?? [];
+    const campaignTotal = campaignData?.total ?? 0;
     const importSpray = useImportSpray();
     const commitSpray = useCommitSpray();
     const deleteSpray = useDeleteSprayCampaign();
@@ -305,6 +311,10 @@ export function SprayTracker({ engagementId }: SprayTrackerProps) {
                         ))}
                     </div>
                 )}
+                <ListPagination
+                    page={campaignPage} pageSize={campaignSize} total={campaignTotal} isFetching={campaignsFetching}
+                    onPageChange={setCampaignPage} onPageSizeChange={(n) => { setCampaignSize(n); setCampaignPage(1); }}
+                />
             </div>
 
             {/* ── Import Dialog ─────────────────────────────────────── */}

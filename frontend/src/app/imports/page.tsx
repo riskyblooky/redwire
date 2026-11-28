@@ -17,6 +17,8 @@
  */
 'use client';
 
+import { ListPagination } from '@/components/ui/list-pagination';
+import { toSkipLimit } from '@/lib/list-params';
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { UserName } from '@/components/ui/user-name';
 import { useSearchParams } from 'next/navigation';
@@ -266,19 +268,28 @@ function ScanHistoryRow({ scan }: { scan: ScanImport }) {
 }
 
 function ScanHistory({ engagementId }: { engagementId: string }) {
-    const { data: scans = [], isLoading } = useScanImports(engagementId);
-    if (isLoading || scans.length === 0) return null;
+    const [scanPage, setScanPage] = useState(1);
+    const [scanSize, setScanSize] = useState(25);
+    useEffect(() => { setScanPage(1); }, [engagementId]);
+    const { data, isLoading, isFetching } = useScanImports(engagementId, toSkipLimit(scanPage, scanSize));
+    const scans = data?.rows ?? [];
+    const total = data?.total ?? 0;
+    if (isLoading || total === 0) return null;
     return (
         <Card className="border-slate-800 bg-slate-900/50">
             <CardContent className="p-4">
                 <div className="mb-3 flex items-center gap-2">
                     <History className="h-4 w-4 text-slate-400" />
                     <h3 className="text-sm font-semibold text-white">Scan history</h3>
-                    <Badge variant="secondary" className="ml-1 h-4 border-none bg-slate-800 px-1.5 text-[10px] text-slate-400">{scans.length}</Badge>
+                    <Badge variant="secondary" className="ml-1 h-4 border-none bg-slate-800 px-1.5 text-[10px] text-slate-400">{total}</Badge>
                 </div>
                 <div className="space-y-1.5">
                     {scans.map((s) => <ScanHistoryRow key={s.id} scan={s} />)}
                 </div>
+                <ListPagination
+                    page={scanPage} pageSize={scanSize} total={total} isFetching={isFetching}
+                    onPageChange={setScanPage} onPageSizeChange={(n) => { setScanSize(n); setScanPage(1); }}
+                />
             </CardContent>
         </Card>
     );

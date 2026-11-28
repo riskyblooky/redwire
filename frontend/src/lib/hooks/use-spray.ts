@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchPage } from '../fetch-page';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -77,16 +78,14 @@ export interface SprayCampaignDetail extends SprayCampaign {
 
 // ── Hooks ───────────────────────────────────────────────────────
 
-export function useSprayCampaigns(engagementId: string) {
+/** One page of an engagement's spray campaigns (newest first) and the
+ *  total. */
+export function useSprayCampaigns(engagementId: string, page: { skip: number; limit: number }) {
     return useQuery({
-        queryKey: ['spray', 'campaigns', engagementId],
-        queryFn: async () => {
-            const { data } = await api.get<SprayCampaign[]>('/spray/campaigns', {
-                params: { engagement_id: engagementId },
-            });
-            return data;
-        },
+        queryKey: ['spray', 'campaigns', engagementId, page],
+        queryFn: () => fetchPage<SprayCampaign>('/spray/campaigns', { engagement_id: engagementId, ...page }),
         enabled: !!engagementId,
+        placeholderData: (prev) => prev,
     });
 }
 

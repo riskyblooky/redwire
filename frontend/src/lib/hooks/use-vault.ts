@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchPage } from '../fetch-page';
 
 // GHSA-fp69-w2mg-4pqp follow-up: the list / get / create / update
 // endpoints return only metadata + has_* + password_looks_like_hash —
@@ -40,6 +41,44 @@ export interface VaultItemReveal extends VaultItem {
     username?: string;
     password?: string;
     note?: string;
+}
+
+/** Query parameters of ``GET /vault`` for one server page. */
+export interface VaultPageParams {
+    engagement_id: string;
+    q?: string;
+    item_type?: string[];
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+    skip: number;
+    limit: number;
+}
+
+/** One page of vault items (metadata only) and the total matching. Under
+ *  the engagement's vault key, so the vault mutations refresh it. */
+export function useVaultItemsPage(params: VaultPageParams) {
+    return useQuery({
+        queryKey: ['engagements', params.engagement_id, 'vault', 'page', params],
+        queryFn: () => fetchPage<VaultItem>('/vault', { ...params }),
+        enabled: !!params.engagement_id,
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
+    });
+}
+
+/** The engagement's vault count, in all and by type. */
+export function useVaultFacets(engagementId: string) {
+    return useQuery({
+        queryKey: ['engagements', engagementId, 'vault', 'facets'],
+        queryFn: async () => {
+            const { data } = await api.get<{ total: number; types: Record<string, number> }>('/vault/facets', {
+                params: { engagement_id: engagementId },
+            });
+            return data;
+        },
+        enabled: !!engagementId,
+        staleTime: 30_000,
+    });
 }
 
 export function useVaultItems(engagementId: string) {

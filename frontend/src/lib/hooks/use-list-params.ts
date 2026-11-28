@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { readListParams, writeListParams, type ParamSpec, type ParamState } from '@/lib/list-params';
 
@@ -22,14 +22,21 @@ export function useListParams<S extends ParamSpec>(spec: S, prefix = '') {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const state = useMemo(() => readListParams(new URLSearchParams(query), spec, prefix), [query, prefix]);
 
+    // router.replace lands asynchronously, so two updates in one tick (a
+    // sort field then its direction) would both start from the old URL and
+    // the second would undo the first: build on the last write until the
+    // URL has caught up.
+    const pending = useRef<string | null>(null);
+    useEffect(() => { pending.current = null; }, [query]);
+
     const set = useCallback((patch: Partial<ParamState<S>>) => {
         const full: Partial<ParamState<S>> = { ...patch };
         if ('page' in spec && !('page' in patch)) (full as Record<string, unknown>).page = 1;
-        // Read the live URL, not the render's copy: two quick updates (a
-        // filter click right after typing) must not drop the first.
-        const current = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : query);
+        const base = pending.current ?? (typeof window !== 'undefined' ? window.location.search : query);
+        const current = new URLSearchParams(base);
         const next = writeListParams(current, spec, full, prefix).toString();
         if (next === current.toString()) return;
+        pending.current = next;
         router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pathname, prefix, router, query]);

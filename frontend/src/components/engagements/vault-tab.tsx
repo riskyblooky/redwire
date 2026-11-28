@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useVaultItems, useCreateVaultItem, useUpdateVaultItem, useDeleteVaultItem, revealVaultItem, downloadVaultFile, VaultItem, VaultItemReveal, useLinkVaultToFinding, useUnlinkVaultFromFinding, useLinkVaultToTestCase, useUnlinkVaultFromTestCase, useLinkVaultToAsset, useUnlinkVaultFromAsset } from '@/lib/hooks/use-vault';
+import { useVaultItemsPage, useVaultFacets, useCreateVaultItem, useUpdateVaultItem, useDeleteVaultItem, revealVaultItem, downloadVaultFile, VaultItem, VaultItemReveal, useLinkVaultToFinding, useUnlinkVaultFromFinding, useLinkVaultToTestCase, useUnlinkVaultFromTestCase, useLinkVaultToAsset, useUnlinkVaultFromAsset } from '@/lib/hooks/use-vault';
 import { ResultCount } from '@/components/ui/result-count';
+import { ListPagination } from '@/components/ui/list-pagination';
+import { useDebounce } from '@/lib/hooks/use-debounce';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
 import { useCheckPassword, useLookupHash } from '@/lib/hooks/use-wordlist';
-import { useFindings } from '@/lib/hooks/use-findings';
-import { useTestCases } from '@/lib/hooks/use-testcases';
-import { useAssets } from '@/lib/hooks/use-assets';
 import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -627,14 +628,46 @@ const VaultItemRow = ({
     );
 };
 
+/** URL keys of the vault list (prefixed v_ on the engagement page). */
+const VAULT_SPEC = {
+    q: { kind: 'string' },
+    type: { kind: 'enum', values: ['ALL', 'CREDENTIAL', 'KEY', 'FILE', 'NOTE'], default: 'ALL' },
+    sort: { kind: 'enum', values: ['date', 'name', 'type'], default: 'date' },
+    page: { kind: 'int', default: 1, min: 1 },
+    size: { kind: 'int', default: 50, min: 1, max: 500 },
+} satisfies ParamSpec;
+
+const VAULT_SORT = {
+    date: { sort_by: 'created_at', sort_order: 'desc' },
+    name: { sort_by: 'name', sort_order: 'asc' },
+    type: { sort_by: 'item_type', sort_order: 'asc' },
+} as const;
+
 export function VaultTab({ engagementId }: VaultTabProps) {
-    const { data: items = [], isLoading } = useVaultItems(engagementId);
+    // View state lives in the URL (v_-prefixed: the engagement page hosts
+    // several lists).
+    const [vp, setVp] = useListParams(VAULT_SPEC, 'v_');
+    const [searchQuery, setSearchQuery] = useState(vp.q);
+    const debouncedVaultSearch = useDebounce(searchQuery, 300);
+    useEffect(() => { if (debouncedVaultSearch !== vp.q) setVp({ q: debouncedVaultSearch }); }, [debouncedVaultSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearchQuery(vp.q); }, [vp.q]);
+    const sortBy = vp.sort as 'name' | 'date' | 'type';
+    const setSortBy = (v: 'name' | 'date' | 'type') => setVp({ sort: v });
+    const filterType = vp.type as 'ALL' | 'CREDENTIAL' | 'KEY' | 'FILE' | 'NOTE';
+    const setFilterType = (v: typeof filterType) => setVp({ type: v });
+    const { data: vaultPage, isLoading, isFetching: vaultFetching } = useVaultItemsPage({
+        engagement_id: engagementId,
+        q: vp.q || undefined,
+        item_type: filterType === 'ALL' ? undefined : [filterType],
+        ...VAULT_SORT[sortBy],
+        ...toSkipLimit(vp.page, vp.size),
+    });
+    const items = useMemo(() => vaultPage?.rows ?? [], [vaultPage]);
+    const vaultTotal = vaultPage?.total ?? 0;
+    const { data: vaultFacets } = useVaultFacets(engagementId);
     const createItem = useCreateVaultItem(engagementId);
     const updateItem = useUpdateVaultItem(engagementId);
     const deleteItem = useDeleteVaultItem(engagementId);
-    const { data: findings = [] } = useFindings({ engagement_id: engagementId });
-    const { data: testcases = [] } = useTestCases(engagementId);
-    const { data: assets = [] } = useAssets(engagementId);
     const { data: noteLinks } = useEngagementNoteLinks(engagementId);
 
     // Note count per vault item
@@ -664,8 +697,6 @@ export function VaultTab({ engagementId }: VaultTabProps) {
     };
 
     // Sort + filter state
-    const [sortBy, setSortBy] = useState<'name' | 'date' | 'type'>('date');
-    const [filterType, setFilterType] = useState<'ALL' | 'CREDENTIAL' | 'KEY' | 'FILE' | 'NOTE'>('ALL');
 
     // Link dialog state — uses the shared LinkEntityDialog
     const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
@@ -703,7 +734,6 @@ export function VaultTab({ engagementId }: VaultTabProps) {
 
 
 
-    const [searchQuery, setSearchQuery] = useState('');
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [newItem, setNewItem] = useState<{
         name: string;
@@ -925,27 +955,8 @@ export function VaultTab({ engagementId }: VaultTabProps) {
         setTimeout(() => setCopiedId(null), 2000);
     };
 
-    const processedItems = useMemo(() => {
-        // username search dropped from the client-side filter — the list
-        // response no longer carries the plaintext to match against,
-        // and revealing every item just to match a search would defeat
-        // the audit-log discipline. Name / type / description remain;
-        // those are visible-by-design metadata.
-        let result = items.filter(item => {
-            const matchesSearch =
-                item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item.item_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item.description?.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesType = filterType === 'ALL' || item.item_type === filterType;
-            return matchesSearch && matchesType;
-        });
-        result = [...result].sort((a, b) => {
-            if (sortBy === 'name') return a.name.localeCompare(b.name);
-            if (sortBy === 'type') return a.item_type.localeCompare(b.item_type);
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-        return result;
-    }, [items, searchQuery, filterType, sortBy]);
+    // Filtered, searched and sorted on the server.
+    const processedItems = items;
 
     const getItemIcon = (type: string) => {
         switch (type) {
@@ -1006,7 +1017,7 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
                         </div>
-                        <ResultCount count={processedItems.length} total={items.length} noun="item" />
+                        <ResultCount count={vaultTotal} total={vaultFacets?.total} noun="item" />
                         <div className="flex items-center gap-2">
                             {/* Sort */}
                             <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
@@ -1068,10 +1079,10 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                                 {type === 'ALL' ? 'All' : type === 'CREDENTIAL' ? 'Credentials' : type === 'KEY' ? 'Keys' : type === 'FILE' ? 'Files' : 'Notes'}
                                 {type !== 'ALL' && (
                                     <span className="ml-1.5 opacity-60">
-                                        {items.filter(i => i.item_type === type).length}
+                                        {vaultFacets?.types[type] ?? 0}
                                     </span>
                                 )}
-                                {type === 'ALL' && <span className="ml-1.5 opacity-60">{items.length}</span>}
+                                {type === 'ALL' && <span className="ml-1.5 opacity-60">{vaultFacets?.total ?? 0}</span>}
                             </button>
                         ))}
                     </div>
@@ -1295,8 +1306,8 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                 ) : processedItems.length === 0 ? (
                     <div className="text-center py-20 bg-slate-900/20 border border-dashed border-slate-800 rounded-3xl">
                         <Shield className="h-16 w-16 mx-auto mb-4 text-slate-700 opacity-50" />
-                        <h3 className="text-lg font-semibold text-slate-400">{items.length === 0 ? 'Vault is empty' : 'No items match filters'}</h3>
-                        <p className="text-slate-500 text-sm mt-1">{items.length === 0 ? 'Start storing sensitive items for the team.' : 'Try adjusting your search or filter.'}</p>
+                        <h3 className="text-lg font-semibold text-slate-400">{!vaultFacets?.total ? 'Vault is empty' : 'No items match filters'}</h3>
+                        <p className="text-slate-500 text-sm mt-1">{!vaultFacets?.total ? 'Start storing sensitive items for the team.' : 'Try adjusting your search or filter.'}</p>
                     </div>
                 ) : viewMode === 'tile' ? (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1349,6 +1360,10 @@ export function VaultTab({ engagementId }: VaultTabProps) {
                         ))}
                     </div>
                 )}
+                <ListPagination
+                    page={vp.page} pageSize={vp.size} total={vaultTotal} isFetching={vaultFetching}
+                    onPageChange={(n) => setVp({ page: n })} onPageSizeChange={(n) => setVp({ size: n })}
+                />
 
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex gap-4">
                     <AlertCircle className="h-5 w-5 text-amber-500 shrink-0" />

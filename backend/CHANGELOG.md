@@ -15,6 +15,7 @@ section becomes one release entry.
 - Managing wordlists (upload and delete) now needs the new **wordlist_manage** global permission. Admins have it and no default group does, so team leads can no longer upload or delete wordlists unless a group grants it.
 - Findings lists are paged, filtered, sorted and searched on the server, with exact and whole-word matches ranked first; the view (search, filters, sort, page and an open finding) is kept in the URL.
 - Test case lists are paged, filtered, sorted and searched on the server; the tree view pages by top-level test case, so a parent and its children stay together.
+- The vault, cleanup and attachments tabs, spray campaigns and scan history are paged; their search, sort and filters run on the server, and the vault type counts and cleanup stats count the whole engagement.
 
 ### Fixed
 - Edits made in a shared note or field while your connection was down now reach the other editors when you reconnect; before, they could stay on your screen only. Joining a busy shared document also no longer sends the whole document to every other editor.

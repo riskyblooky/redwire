@@ -8,6 +8,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
+import { fetchPage } from '../fetch-page';
 
 // ── Preview Types ───────────────────────────────────────────────
 
@@ -160,16 +161,12 @@ export function useCommitImport() {
 
 /** Past scanner imports for an engagement (most recent first), each carrying the
  *  command line + scan metadata captured at import time. */
-export function useScanImports(engagementId?: string) {
+export function useScanImports(engagementId: string | undefined, page: { skip: number; limit: number }) {
     return useQuery({
-        queryKey: ['scan-imports', engagementId],
+        queryKey: ['scan-imports', engagementId, page],
         enabled: !!engagementId,
         staleTime: 30_000,
-        queryFn: async () => {
-            const { data } = await api.get<ScanImport[]>('/imports/scans', {
-                params: { engagement_id: engagementId },
-            });
-            return data;
-        },
+        placeholderData: (prev) => prev,
+        queryFn: () => fetchPage<ScanImport>('/imports/scans', { engagement_id: engagementId, ...page }),
     });
 }
