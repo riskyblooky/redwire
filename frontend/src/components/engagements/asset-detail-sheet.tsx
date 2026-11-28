@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { DetailSheetShell, LinkedNoteRows, MetaCreator, MetaDate, MetaRow } from '@/components/engagements/detail-sheet-parts';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/select';
 import {
     Edit, Trash2, FileText, Loader2, Radar, Skull, EyeOff, CheckCircle,
-    CheckSquare, Sparkles, StickyNote, Bug, Server, Target, User, Clock,
+    CheckSquare, Sparkles, StickyNote, Server, Target, User, Clock,
     Lock, Key, Shield, Plus, X, ExternalLink, Link as LinkIcon, Globe, Copy,
 } from 'lucide-react';
 import { useAsset, useUpdateAsset, useDeleteAsset, useAddAssetPort, useDeleteAssetPort } from '@/lib/hooks/use-assets';
@@ -35,8 +36,7 @@ import {
     useLinkAssetToCleanup, useUnlinkAssetFromCleanup,
 } from '@/lib/hooks/use-entity-links';
 import { toast } from 'sonner';
-import { cn, parseUTCDate } from '@/lib/utils';
-import { UserName } from '@/components/ui/user-name';
+import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import api, { apiErrorMessage } from '@/lib/api';
 import { useEngagement } from '@/lib/hooks/use-engagements';
@@ -44,7 +44,6 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useCollaboration, useRecordUpdatedRefresh } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 import { PresenceIndicator } from '@/components/collaboration/presence-indicator';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import DiscussionSection from '@/components/discussions/discussion-section';
 import { CleanupDetailModal } from '@/components/engagements/cleanup-detail-modal';
 import { InlineTextField } from '@/components/ui/inline/inline-text-field';
@@ -88,18 +87,6 @@ interface AssetDetailSheetProps {
 export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, nonModal }: AssetDetailSheetProps) {
     const router = useRouter();
 
-    // Radix Dialog locks body scroll even with modal={false}. Continuously clear it
-    // while the non-modal panel is open using a 50ms interval to beat Radix's scheduler.
-    useEffect(() => {
-        if (!nonModal || !open) return;
-        const unlock = () => {
-            if (document.body.style.overflow) document.body.style.removeProperty('overflow');
-            if (document.body.style.paddingRight) document.body.style.removeProperty('padding-right');
-        };
-        unlock();
-        const id = setInterval(unlock, 50);
-        return () => clearInterval(id);
-    }, [nonModal, open]);
     const { data: asset, isLoading } = useAsset(assetId || '');
     const { data: findings = [] } = useFindings({ engagement_id: engagementId });
     // Titles only — not every note body.
@@ -260,22 +247,18 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
     return (
         <>
             <ConfirmDialog />
-            <Sheet open={open} onOpenChange={onOpenChange} modal={!nonModal}>
-                <SheetContent
-                    side="right"
-                    nonModal={nonModal}
-                    className="w-full sm:max-w-[40vw] bg-slate-950 border-slate-800 p-0 overflow-y-auto"
-                >
-                    {isLoading || !asset ? (
-                        <div className="flex items-center justify-center h-full">
-                            <VisuallyHidden><SheetTitle>Loading asset details</SheetTitle></VisuallyHidden>
-                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        </div>
-                    ) : (
-                        <div className="flex flex-col h-full">
-                            {/* Color accent bar */}
-                            <div className={cn("h-1.5 w-full shrink-0", assetTypeAccentColors[asset.asset_type] || 'bg-slate-500')} />
-
+            <DetailSheetShell
+                open={open}
+                onOpenChange={onOpenChange}
+                nonModal={nonModal}
+                record={asset}
+                isLoading={isLoading}
+                loadingTitle="Loading asset details"
+                spinnerClassName="text-primary"
+                accent={(asset) => assetTypeAccentColors[asset.asset_type]}
+            >
+                {(asset) => (
+                    <>
                             {/* Header */}
                             <SheetHeader className="p-5 pb-0">
                                 <div className="flex items-start justify-between gap-3 pr-8">
@@ -738,19 +721,7 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                     <>
                                         <Separator className="bg-slate-800/60" />
                                         <CollapsibleSection title={`Linked Notes (${linkedNotes.length})`} icon={StickyNote} iconColor="text-teal-400">
-                                            <div className="space-y-1.5">
-                                                {linkedNotes.map((note) => (
-                                                    <Link
-                                                        key={note.id}
-                                                        href={`/engagements/${engagementId}?tab=notes&noteId=${note.id}`}
-                                                        className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
-                                                        onClick={() => onOpenChange(false)}
-                                                    >
-                                                        <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
-                                                        <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate">{note.title}</span>
-                                                    </Link>
-                                                ))}
-                                            </div>
+                                            <LinkedNoteRows notes={linkedNotes} engagementId={engagementId} onNavigate={() => onOpenChange(false)} />
                                         </CollapsibleSection>
                                     </>
                                 )}
@@ -759,32 +730,15 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
 
                                 {/* Metadata */}
                                 <CollapsibleSection title="Metadata" icon={Clock} iconColor="text-slate-400" contentClassName="space-y-3">
-                                    <div className="flex items-center justify-between text-[10px]">
-                                        <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
-                                            <User className="h-3 w-3" /> Created By
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                            <UserAvatar
-                                                user={engagement?.assigned_users?.find((u: any) => u.id === asset.created_by)}
-                                                userId={asset.created_by}
-                                                username={asset.created_by_username || asset.created_by}
-                                                className="h-5 w-5"
-                                            />
-                                            <UserName
-                                                className="text-slate-300"
-                                                user={engagement?.assigned_users?.find((u: any) => u.id === asset.created_by)}
-                                                name={asset.created_by_full_name}
-                                                username={asset.created_by_username}
-                                                fallback={asset.created_by?.slice(0, 8)}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between text-[10px]">
-                                        <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
-                                            <Clock className="h-3 w-3" /> Added
-                                        </span>
-                                        <span className="text-slate-300">{parseUTCDate(asset.created_at).toLocaleString()}</span>
-                                    </div>
+                                    <MetaRow icon={User} label="Created By">
+                                        <MetaCreator
+                                            users={engagement?.assigned_users}
+                                            id={asset.created_by}
+                                            username={asset.created_by_username}
+                                            fullName={asset.created_by_full_name}
+                                        />
+                                    </MetaRow>
+                                    <MetaRow icon={Clock} label="Added"><MetaDate value={asset.created_at} /></MetaRow>
                                 </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
@@ -799,10 +753,9 @@ export function AssetDetailSheet({ assetId, engagementId, open, onOpenChange, no
                                     users={engagement?.assigned_users}
                                 />
                             </div>
-                        </div>
-                    )}
-                </SheetContent>
-            </Sheet>
+                    </>
+                )}
+            </DetailSheetShell>
             {asset && (
                 <LinkEntityDialog
                     open={linkDialogOpen}

@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { DetailSheetShell, LinkedNoteRows, MetaCreator, MetaDate, MetaRow } from '@/components/engagements/detail-sheet-parts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import {
-    Edit, Trash2, FileText, Loader2, Server, StickyNote, Bug,
+    Edit, Trash2, FileText, Server, StickyNote, Bug,
     Sparkles, Lock, Key, User, Clock, Radar, Terminal,
     ExternalLink, CheckCircle, XCircle, MinusCircle, Circle, X,
     Globe, Zap, Flag, ArrowUpCircle, Layout, Play, Save, Plus, Layers,
@@ -56,9 +56,7 @@ import {
     useLinkTestCaseToCleanup, useUnlinkTestCaseFromCleanup,
 } from '@/lib/hooks/use-entity-links';
 import { toast } from 'sonner';
-import { cn, parseUTCDate } from '@/lib/utils';
-import { UserName } from '@/components/ui/user-name';
-import { UserAvatar } from '@/components/ui/user-avatar';
+import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { SEVERITY_BADGE as severityBadge } from '@/lib/severity';
 
@@ -92,18 +90,6 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
     const { user } = useAuthStore();
     const queryClient = useQueryClient();
 
-    // Radix Dialog locks body scroll even with modal={false}. Continuously clear it
-    // while the non-modal panel is open using a 50ms interval to beat Radix's scheduler.
-    useEffect(() => {
-        if (!nonModal || !open) return;
-        const unlock = () => {
-            if (document.body.style.overflow) document.body.style.removeProperty('overflow');
-            if (document.body.style.paddingRight) document.body.style.removeProperty('padding-right');
-        };
-        unlock();
-        const id = setInterval(unlock, 50);
-        return () => clearInterval(id);
-    }, [nonModal, open]);
 
     const { data: testcase, isLoading, refetch } = useTestCase(testcaseId || '');
     const { data: engagement } = useEngagement(testcase?.engagement_id || '');
@@ -248,22 +234,18 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
     return (
         <>
             <ConfirmDialog />
-            <Sheet open={open} onOpenChange={onOpenChange} modal={!nonModal}>
-                <SheetContent
-                    side="right"
-                    nonModal={nonModal}
-                    className="w-full sm:max-w-[40vw] bg-slate-950 border-slate-800 p-0 overflow-y-auto"
-                >
-                    {isLoading || !testcase ? (
-                        <div className="flex items-center justify-center h-full">
-                            <VisuallyHidden><SheetTitle>Loading test case details</SheetTitle></VisuallyHidden>
-                            <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
-                        </div>
-                    ) : (
-                        <div className="flex flex-col h-full">
-                            {/* Accent bar */}
-                            <div className={cn('h-1.5 w-full shrink-0', catStyle.accent)} />
-
+            <DetailSheetShell
+                open={open}
+                onOpenChange={onOpenChange}
+                nonModal={nonModal}
+                record={testcase}
+                isLoading={isLoading}
+                loadingTitle="Loading test case details"
+                spinnerClassName="text-emerald-400"
+                accent={() => catStyle.accent}
+            >
+                {(testcase) => (
+                    <>
                             {/* Header */}
                             <SheetHeader className="p-5 pb-0">
                                 <div className="flex items-start gap-3 pr-8">
@@ -787,51 +769,22 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                 {/* Linked Notes */}
                                 {linkedNotes.length > 0 && (
                                     <>
-                                        <div className="space-y-1.5">
-                                            {linkedNotes.map((note) => (
-                                                <Link
-                                                    key={note.id}
-                                                    href={`/engagements/${engagementId}?tab=notes&noteId=${note.id}`}
-                                                    className="flex items-center gap-2 p-2 bg-slate-900/40 rounded-lg border border-slate-800/60 hover:border-teal-500/30 transition-colors group"
-                                                    onClick={() => onOpenChange(false)}
-                                                >
-                                                    <StickyNote className="h-3.5 w-3.5 text-teal-400 shrink-0" />
-                                                    <span className="text-xs font-medium text-slate-300 group-hover:text-teal-300 truncate">{note.title}</span>
-                                                </Link>
-                                            ))}
-                                        </div>
+                                        <LinkedNoteRows notes={linkedNotes} engagementId={engagementId} onNavigate={() => onOpenChange(false)} />
                                         <Separator className="bg-slate-800/60" />
                                     </>
                                 )}
 
                                 {/* Metadata */}
                                 <CollapsibleSection title="Metadata" icon={Clock} iconColor="text-slate-400" contentClassName="space-y-3">
-                                    <div className="flex items-center justify-between text-[10px]">
-                                        <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
-                                            <User className="h-3 w-3" /> Created By
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                            <UserAvatar
-                                                user={engagement?.assigned_users?.find((u: any) => u.id === testcase.created_by)}
-                                                userId={testcase.created_by}
-                                                username={testcase.created_by_username || testcase.created_by}
-                                                className="h-5 w-5"
-                                            />
-                                            <UserName
-                                                className="text-slate-300"
-                                                user={engagement?.assigned_users?.find((u: any) => u.id === testcase.created_by)}
-                                                name={testcase.created_by_full_name}
-                                                username={testcase.created_by_username}
-                                                fallback={testcase.created_by?.slice(0, 8)}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between text-[10px]">
-                                        <span className="text-slate-500 flex items-center gap-1.5 font-bold uppercase tracking-tighter">
-                                            <Clock className="h-3 w-3" /> Created
-                                        </span>
-                                        <span className="text-slate-300">{parseUTCDate(testcase.created_at).toLocaleString()}</span>
-                                    </div>
+                                    <MetaRow icon={User} label="Created By">
+                                        <MetaCreator
+                                            users={engagement?.assigned_users}
+                                            id={testcase.created_by}
+                                            username={testcase.created_by_username}
+                                            fullName={testcase.created_by_full_name}
+                                        />
+                                    </MetaRow>
+                                    <MetaRow icon={Clock} label="Created"><MetaDate value={testcase.created_at} /></MetaRow>
                                 </CollapsibleSection>
 
                                 <Separator className="bg-slate-800/60" />
@@ -847,10 +800,9 @@ export function TestCaseDetailSheet({ testcaseId, engagementId, open, onOpenChan
                                     title="Peer-review comments"
                                 />
                             </div>
-                        </div>
-                    )}
-                </SheetContent>
-            </Sheet>
+                    </>
+                )}
+            </DetailSheetShell>
             {intelDetailId && <IntelDetailDialog itemId={intelDetailId} onClose={() => setIntelDetailId(null)} />}
             <CleanupDetailModal
                 artifact={viewCleanup}
