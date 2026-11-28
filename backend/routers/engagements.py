@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
+from utils import listing
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import case, select, func, and_, or_, delete as sa_delete
@@ -1068,10 +1069,17 @@ async def delete_engagement(
 @router.get("/{engagement_id}/evidence", response_model=List[EvidenceResponse])
 async def get_engagement_evidence(
     engagement_id: str,
+    response: Response,
+    page: listing.ListParams = Depends(listing.list_params()),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all evidence associated with an engagement (direct or via findings)."""
+    """Evidence of an engagement (attached to it, or to one of its findings
+    or test cases), newest first; every item unless ``limit`` is given. The
+    total matching is in ``X-Total-Count``. ``q`` searches file name and
+    description. Sort by ``created_at``, ``original_filename``,
+    ``file_size``, ``mime_type``, ``created_by_username`` or
+    ``unresolved_thread_count``."""
     # Authorization logic same as get_engagement
     query = select(Engagement).where(Engagement.id == engagement_id)
     result = await db.execute(query)
@@ -1113,16 +1121,28 @@ async def get_engagement_evidence(
         .outerjoin(User, Evidence.created_by == User.id)
         .outerjoin(Finding, Evidence.finding_id == Finding.id)
         .outerjoin(TestCase, Evidence.testcase_id == TestCase.id)
-        .where(
-            (Evidence.engagement_id == engagement_id) | 
-            (Evidence.finding_id.in_(select(Finding.id).where(Finding.engagement_id == engagement_id))) |
-            (Evidence.testcase_id.in_(select(TestCase.id).where(TestCase.engagement_id == engagement_id)))
-        )
-        .order_by(Evidence.created_at.desc())
     )
-    
-    ev_result = await db.execute(evidence_query)
-    rows = ev_result.all()
+    filters = [
+        (Evidence.engagement_id == engagement_id) |
+        (Evidence.finding_id.in_(select(Finding.id).where(Finding.engagement_id == engagement_id))) |
+        (Evidence.testcase_id.in_(select(TestCase.id).where(TestCase.engagement_id == engagement_id)))
+    ]
+    if page.q:
+        filters.append(listing.search_clause(page.q, [Evidence.original_filename, Evidence.description]))
+    unresolved = func.coalesce(unresolved_subquery.c.count, 0)
+    sortable = {
+        "created_at": Evidence.created_at,
+        "original_filename": func.lower(Evidence.original_filename),
+        "file_size": Evidence.file_size,
+        "mime_type": Evidence.mime_type,
+        "created_by_username": func.lower(User.username),
+        "unresolved_thread_count": unresolved,
+    }
+    rank = listing.search_rank(page.q, [Evidence.original_filename, Evidence.description]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=Evidence.id, rank=rank)
+    rows = await listing.count_and_page(db, response, evidence_query.where(*filters), page,
+                                        count_from=Evidence, filters=filters, order=order)
     
     # Combine evidence with count, username, and linked item titles
     results = []

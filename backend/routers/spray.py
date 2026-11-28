@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Response
+from utils import listing
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 import logging
@@ -285,18 +286,29 @@ async def commit_spray(
 @router.get("/campaigns", response_model=List[SprayCampaignResponse])
 async def list_spray_campaigns(
     engagement_id: str,
+    response: Response,
+    page: listing.ListParams = Depends(listing.list_params()),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List spray campaigns for an engagement."""
+    """Spray campaigns of an engagement, newest first; every one unless
+    ``limit`` is given. The total is in ``X-Total-Count``. ``q`` searches
+    name, target host / hostname and domain. Sort by ``created_at``,
+    ``name`` or ``protocol``."""
     await require_engagement_perm(current_user, engagement_id, Permission.VAULT_VIEW, db)
 
-    result = await db.execute(
-        select(SprayCampaign)
-        .where(SprayCampaign.engagement_id == engagement_id)
-        .order_by(SprayCampaign.created_at.desc())
-    )
-    campaigns = result.scalars().all()
+    filters = [SprayCampaign.engagement_id == engagement_id]
+    cols = [SprayCampaign.name, SprayCampaign.target_host, SprayCampaign.target_hostname, SprayCampaign.domain]
+    if page.q:
+        filters.append(listing.search_clause(page.q, cols))
+    sortable = {"created_at": SprayCampaign.created_at, "name": func.lower(SprayCampaign.name),
+                "protocol": SprayCampaign.protocol}
+    rank = listing.search_rank(page.q, cols[:1]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=SprayCampaign.id, rank=rank)
+    rows = await listing.count_and_page(db, response, select(SprayCampaign).where(*filters), page,
+                                        count_from=SprayCampaign, filters=filters, order=order)
+    campaigns = [row[0] for row in rows]
 
     # EncryptedText already decrypted password_used at ORM-read time.
     return campaigns

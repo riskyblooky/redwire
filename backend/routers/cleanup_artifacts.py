@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List
+from sqlalchemy import func, select
+from typing import List, Optional
+from utils import listing
 from datetime import datetime
 
 from database import get_db
@@ -71,13 +72,29 @@ async def _require_artifact_edit(
 @router.get("", response_model=List[CleanupArtifactResponse])
 async def get_cleanup_artifacts(
     engagement_id: str,
+    response: Response,
+    status_filter: Optional[List[CleanupArtifactStatus]] = Query(None, alias="status"),
+    artifact_type: Optional[List[str]] = Query(None),
+    page: listing.ListParams = Depends(listing.list_params()),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all cleanup artifacts for an engagement."""
+    """Cleanup artifacts of an engagement, newest first; every one unless
+    ``limit`` is given. The total matching is in ``X-Total-Count``. ``q``
+    searches title, type, location and description. Sort by
+    ``created_at``, ``updated_at``, ``title``, ``artifact_type``,
+    ``status``, ``cleaned_at`` or ``created_by_username``."""
     await require_engagement_perm(current_user, engagement_id, Permission.CLEANUP_VIEW, db)
 
-    result = await db.execute(
+    filters = [CleanupArtifact.engagement_id == engagement_id]
+    if status_filter:
+        filters.append(CleanupArtifact.status.in_(status_filter))
+    if artifact_type:
+        filters.append(CleanupArtifact.artifact_type.in_(artifact_type))
+    if page.q:
+        filters.append(listing.search_clause(page.q, [CleanupArtifact.title, CleanupArtifact.artifact_type,
+                                                      CleanupArtifact.location, CleanupArtifact.description]))
+    query = (
         select(CleanupArtifact, User.username.label("creator_username"), User.full_name.label("creator_full_name"), User.profile_photo.label("creator_profile_photo"))
         .outerjoin(User, CleanupArtifact.created_by == User.id)
         .options(
@@ -86,12 +103,25 @@ async def get_cleanup_artifacts(
             selectinload(CleanupArtifact.assets),
             selectinload(CleanupArtifact.cleaned_by_user),
         )
-        .where(CleanupArtifact.engagement_id == engagement_id)
-        .order_by(CleanupArtifact.created_at.desc())
+        .where(*filters)
     )
+    sortable = {
+        "created_at": CleanupArtifact.created_at,
+        "updated_at": CleanupArtifact.updated_at,
+        "title": func.lower(CleanupArtifact.title),
+        "artifact_type": CleanupArtifact.artifact_type,
+        "status": CleanupArtifact.status,
+        "cleaned_at": CleanupArtifact.cleaned_at,
+        "created_by_username": func.lower(User.username),
+    }
+    rank = listing.search_rank(page.q, [CleanupArtifact.title, CleanupArtifact.location]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=CleanupArtifact.id, rank=rank)
+    rows = await listing.count_and_page(db, response, query, page, count_from=CleanupArtifact,
+                                        filters=filters, order=order)
 
     items = []
-    for artifact, creator_username, creator_full_name, creator_profile_photo in result.all():
+    for artifact, creator_username, creator_full_name, creator_profile_photo in rows:
         item_dict = CleanupArtifactResponse.model_validate(artifact).model_dump()
         item_dict["created_by_username"] = creator_username
         item_dict["created_by_full_name"] = creator_full_name

@@ -6,7 +6,8 @@ Two-step import flow:
   2. POST /imports/commit   → creates assets + findings in the target engagement
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Response
+from utils import listing
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
@@ -515,27 +516,34 @@ async def commit_import(
 @router.get("/scans", response_model=list[ScanImportResponse])
 async def list_scan_imports(
     engagement_id: str,
-    limit: int = 50,
-    offset: int = 0,
+    response: Response,
+    page: listing.ListParams = Depends(listing.list_params(default_limit=50, max_limit=200)),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List past scanner imports for an engagement (most recent first), with the
-    command line + scan metadata captured at import time."""
+    """Past scanner imports of an engagement (most recent first, 50 at a
+    time by default), with the command line + scan metadata captured at
+    import time. The total is in ``X-Total-Count``. ``q`` searches file
+    name, tool, scanner and command. Sort by ``created_at`` or
+    ``source_tool``."""
     # A read: ASSET_VIEW (read-only admins included), not the import write gate.
     if current_user.role not in (UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD) \
             and not await check_engagement_permission(current_user.id, engagement_id, Permission.ASSET_VIEW.value, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions for this engagement.")
 
-    limit = max(1, min(limit, 200))
-    rows = (await db.execute(
-        select(ScanImport, User.username, User.full_name)
-        .outerjoin(User, ScanImport.created_by == User.id)
-        .where(ScanImport.engagement_id == engagement_id)
-        .order_by(ScanImport.created_at.desc(), ScanImport.id)
-        .offset(offset)
-        .limit(limit)
-    )).all()
+    filters = [ScanImport.engagement_id == engagement_id]
+    cols = [ScanImport.filename, ScanImport.source_tool, ScanImport.scanner, ScanImport.command]
+    if page.q:
+        filters.append(listing.search_clause(page.q, cols))
+    sortable = {"created_at": ScanImport.created_at, "source_tool": ScanImport.source_tool}
+    rank = listing.search_rank(page.q, cols[:1]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=ScanImport.id, rank=rank)
+    rows = await listing.count_and_page(
+        db, response,
+        select(ScanImport, User.username, User.full_name).outerjoin(User, ScanImport.created_by == User.id)
+        .where(*filters),
+        page, count_from=ScanImport, filters=filters, order=order)
 
     out = []
     for scan, username, full_name in rows:

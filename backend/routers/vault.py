@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Response
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from typing import List, Optional
+from utils import listing
 import uuid
 import os
 import logging
@@ -103,10 +104,17 @@ def _build_metadata_response(
 @router.get("", response_model=List[VaultItemResponse])
 async def get_vault_items(
     engagement_id: str,
+    response: Response,
+    item_type: Optional[List[str]] = Query(None),
+    page: listing.ListParams = Depends(listing.list_params()),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all vault items for an engagement."""
+    """Vault items of an engagement (metadata only), newest first; every
+    one unless ``limit`` is given. The total matching is in
+    ``X-Total-Count``. ``q`` searches name, type, description and file name
+    (the encrypted fields are not searchable). Sort by ``created_at``,
+    ``updated_at``, ``name``, ``item_type`` or ``created_by_username``."""
     # Authorization Check using RBAC
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     
@@ -118,21 +126,37 @@ async def get_vault_items(
                 detail="Insufficient permissions. You need the 'vault_view' permission to view vault items."
             )
 
-    result = await db.execute(
+    filters = [VaultItem.engagement_id == engagement_id]
+    if item_type:
+        filters.append(VaultItem.item_type.in_(item_type))
+    if page.q:
+        filters.append(listing.search_clause(page.q, [VaultItem.name, VaultItem.item_type,
+                                                      VaultItem.description, VaultItem.filename]))
+    query = (
         select(VaultItem, User.username.label("creator_username"), User.profile_photo.label("creator_profile_photo"))
         .outerjoin(User, VaultItem.created_by == User.id)
-        .where(VaultItem.engagement_id == engagement_id)
+        .where(*filters)
         .options(
             selectinload(VaultItem.findings),
             selectinload(VaultItem.testcases),
             selectinload(VaultItem.assets),
         )
-        .order_by(VaultItem.created_at.desc())
     )
-
+    sortable = {
+        "created_at": VaultItem.created_at,
+        "updated_at": VaultItem.updated_at,
+        "name": func.lower(VaultItem.name),
+        "item_type": VaultItem.item_type,
+        "created_by_username": func.lower(User.username),
+    }
+    rank = listing.search_rank(page.q, [VaultItem.name]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=VaultItem.id, rank=rank)
+    rows = await listing.count_and_page(db, response, query, page, count_from=VaultItem,
+                                        filters=filters, order=order)
     return [
         _build_metadata_response(item, creator_username, creator_profile_photo)
-        for item, creator_username, creator_profile_photo in result.all()
+        for item, creator_username, creator_profile_photo in rows
     ]
 
 @router.post("", response_model=VaultItemResponse, status_code=status.HTTP_201_CREATED)

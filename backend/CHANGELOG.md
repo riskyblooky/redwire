@@ -8,6 +8,7 @@ section becomes one release entry.
 
 ### Added
 - `rotate_encryption_keys.py --verify` checks that every encrypted value and vault file opens under the current keys, without changing anything. The key-rotation guides now end with it.
+- Vault, cleanup, notes, evidence, discussion, spray and scan-import lists accept paging, search and sort parameters and report their total in X-Total-Count (no limit still returns everything).
 
 ### Changed
 - Deleting a large engagement is much faster: the database removes its findings, assets, test cases and their children in one step instead of one row at a time.

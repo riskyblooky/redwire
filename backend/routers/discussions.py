@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
+from utils import listing
 from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete as sql_delete, or_, false as sa_false
@@ -88,15 +89,19 @@ def _validate_anchor_field(resource_type: str, anchor) -> None:
 
 @router.get("/threads", response_model=List[ThreadResponse])
 async def get_threads(
+    response: Response,
     engagement_id: Optional[str] = None,
     resource_type: Optional[ResourceType] = None,
     resource_id: Optional[str] = None,
-    limit: int = Query(MAX_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
-    offset: int = Query(0, ge=0),
+    is_resolved: Optional[bool] = Query(None),
+    page: listing.ListParams = Depends(listing.list_params()),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get threads with optional filters, newest first, at most ``limit``."""
+    """Threads matching the filters, newest first; every one unless
+    ``limit`` is given. The total matching is in ``X-Total-Count``. ``q``
+    searches the title. Sort by ``created_at``, ``title``, ``is_resolved``
+    or ``comment_count``."""
     # Authorization Check - need discussion_view permission
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
     
@@ -108,32 +113,41 @@ async def get_threads(
                 detail="Insufficient permissions. You need the 'discussion_view' permission to view threads."
             )
     
-    query = select(Thread, func.count(Comment.id).label("comment_count")).outerjoin(
+    comment_count = func.count(Comment.id)
+    query = select(Thread, comment_count.label("comment_count")).outerjoin(
         Comment, Thread.id == Comment.thread_id
     ).group_by(Thread.id)
-    
+
+    filters = []
     if engagement_id:
-        query = query.where(Thread.engagement_id == engagement_id)
-    
+        filters.append(Thread.engagement_id == engagement_id)
     if resource_type:
-        query = query.where(Thread.resource_type == resource_type.value)
-    
+        filters.append(Thread.resource_type == resource_type.value)
     if resource_id:
-        query = query.where(Thread.resource_id == resource_id)
-    
+        filters.append(Thread.resource_id == resource_id)
+    if is_resolved is not None:
+        filters.append(Thread.is_resolved.is_(is_resolved))
+    if page.q:
+        filters.append(listing.search_clause(page.q, [Thread.title]))
+
     # Restrict to engagements where the caller holds discussion_view (the
     # per-engagement check above only runs when engagement_id is given)
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
         from auth.rbac import engagements_with_permission
-        query = query.where(Thread.engagement_id.in_(
+        filters.append(Thread.engagement_id.in_(
             engagements_with_permission(current_user.id, Permission.DISCUSSION_VIEW.value)
         ))
 
-    query = query.order_by(Thread.created_at.desc(), Thread.id).offset(offset).limit(limit)
-    result = await db.execute(query)
-    
+    sortable = {"created_at": Thread.created_at, "title": func.lower(Thread.title),
+                "is_resolved": Thread.is_resolved, "comment_count": comment_count}
+    rank = listing.search_rank(page.q, [Thread.title]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=Thread.id, rank=rank)
+    rows = await listing.count_and_page(db, response, query.where(*filters), page, count_from=Thread,
+                                        filters=filters, order=order)
+
     threads_with_counts = []
-    for thread, comment_count in result.all():
+    for thread, comment_count in rows:
         threads_with_counts.append(_thread_to_response(thread, comment_count or 0))
 
     return threads_with_counts
@@ -483,10 +497,13 @@ async def delete_thread(
 @router.get("/comments", response_model=List[CommentResponse])
 async def get_comments(
     thread_id: str,
+    response: Response,
+    page: listing.ListParams = Depends(listing.list_params()),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all comments for a thread."""
+    """A thread's comments, oldest first; every one unless ``limit`` is
+    given. The total is in ``X-Total-Count``. Sort by ``created_at``."""
     from sqlalchemy.orm import selectinload
 
     # Gate on DISCUSSION_VIEW for the thread's engagement (admins bypass), like get_thread.
@@ -495,13 +512,14 @@ async def get_comments(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     await require_engagement_perm(current_user, thread.engagement_id, Permission.DISCUSSION_VIEW, db)
 
-    result = await db.execute(
-        select(Comment)
-        .options(selectinload(Comment.author), selectinload(Comment.resolver))
-        .where(Comment.thread_id == thread_id)
-        .order_by(Comment.created_at.asc())
-    )
-    comments = result.scalars().all()
+    filters = [Comment.thread_id == thread_id]
+    order = listing.order_keys(page, {"created_at": Comment.created_at}, default="created_at",
+                               default_descending=False, pk=Comment.id)
+    rows = await listing.count_and_page(
+        db, response,
+        select(Comment).options(selectinload(Comment.author), selectinload(Comment.resolver)).where(*filters),
+        page, count_from=Comment, filters=filters, order=order)
+    comments = [row[0] for row in rows]
     
     # Enrich with user names
     response_comments = []

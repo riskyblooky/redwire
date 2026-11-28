@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from schemas._field_limits import MAX_LIST_LIMIT
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from models.loaders import load, options
 from typing import List, Optional
+from utils import listing
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -116,12 +116,15 @@ def _build_note_response(note, creator_username=None, creator_profile_photo=None
 @router.get("/engagements/{engagement_id}/notes", response_model=List[NoteResponse])
 async def get_notes(
     engagement_id: str,
-    limit: int = Query(MAX_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
-    offset: int = Query(0, ge=0),
+    response: Response,
+    page: listing.ListParams = Depends(listing.list_params()),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """An engagement's notes, most recently updated first, at most ``limit``."""
+    """An engagement's notes, most recently updated first; every one unless
+    ``limit`` is given. The total matching is in ``X-Total-Count``. ``q``
+    searches title and content, title matches first. Sort by
+    ``updated_at`` (default), ``created_at`` or ``title``."""
     is_admin = current_user.role in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]
 
     if not is_admin:
@@ -138,7 +141,10 @@ async def get_notes(
     CreatorUser = UserModel.__table__.alias("creator_user")
     EditorUser = UserModel.__table__.alias("editor_user")
 
-    result = await db.execute(
+    filters = [Note.engagement_id == engagement_id]
+    if page.q:
+        filters.append(listing.search_clause(page.q, [Note.title, Note.content]))
+    query = (
         select(
             Note,
             CreatorUser.c.username.label("creator_username"),
@@ -147,14 +153,17 @@ async def get_notes(
         )
         .outerjoin(CreatorUser, Note.created_by == CreatorUser.c.id)
         .outerjoin(EditorUser, Note.updated_by == EditorUser.c.id)
-        .where(Note.engagement_id == engagement_id)
-        .order_by(Note.updated_at.desc(), Note.id)
-        .offset(offset).limit(limit)
+        .where(*filters)
         .options(*options("NOTE"))
     )
+    sortable = {"updated_at": Note.updated_at, "created_at": Note.created_at, "title": func.lower(Note.title)}
+    rank = listing.search_rank(page.q, [Note.title, Note.content]) if page.q else None
+    order = listing.order_keys(page, sortable, default="updated_at", default_descending=True,
+                               pk=Note.id, rank=rank)
+    rows = await listing.count_and_page(db, response, query, page, count_from=Note, filters=filters, order=order)
 
     notes = []
-    for note, creator_username, creator_profile_photo, editor_username in result.all():
+    for note, creator_username, creator_profile_photo, editor_username in rows:
         notes.append(_build_note_response(note, creator_username, creator_profile_photo, editor_username))
 
     return notes
