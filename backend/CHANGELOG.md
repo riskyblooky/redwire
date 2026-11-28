@@ -14,6 +14,7 @@ section becomes one release entry.
 
 ### Fixed
 - Edits made in a shared note or field while your connection was down now reach the other editors when you reconnect; before, they could stay on your screen only. Joining a busy shared document also no longer sends the whole document to every other editor.
+- Every open tab no longer receives the full list of signed-in users, with photos, each time someone opens or closes a page. That list was never displayed, and the traffic grew with the square of the number of users online.
 
 ## [1.9.4] — 2026-11-27
 

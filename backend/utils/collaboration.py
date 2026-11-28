@@ -675,6 +675,14 @@ async def create_activity_log(
         _automation_tasks.add(task)
         task.add_done_callback(_automation_tasks.discard)
 
+def _presence_free(resource_type: str, resource_id: str) -> bool:
+    """Channels nobody shows presence for: ``dashboard:global`` (every signed-in
+    tab) and ``user:<id>`` (one user's own tabs). Presence there was pure cost —
+    each join, identify and leave sent the full online-user list, photos
+    included, to every subscriber — and it showed everyone who was online."""
+    return resource_type == "user" or (resource_type == "dashboard" and resource_id == "global")
+
+
 class ConnectionManager:
     def __init__(self):
         # Store active connections: resource_type -> resource_id -> list of websockets
@@ -700,6 +708,8 @@ class ConnectionManager:
         self.active_connections[resource_type][resource_id].append(websocket)
         self.connection_info[websocket] = user_info
         conn_id = self.connection_ids.setdefault(websocket, uuid.uuid4().hex)
+        if _presence_free(resource_type, resource_id):
+            return
         from utils.ws_bus import bus
         await bus.presence_add(resource_type, resource_id, conn_id, user_info)
 
@@ -734,7 +744,7 @@ class ConnectionManager:
         presence registry, which ``active_users`` is read from."""
         conn_id = self.connection_ids.get(websocket)
         info = self.connection_info.get(websocket)
-        if conn_id and info is not None:
+        if conn_id and info is not None and not _presence_free(resource_type, resource_id):
             from utils.ws_bus import bus
             await bus.presence_add(resource_type, resource_id, conn_id, info)
 
@@ -817,6 +827,8 @@ class ConnectionManager:
 
         from utils.ws_bus import bus
 
+        if message.get("type") in ("presence_update", "cursor_update") and _presence_free(resource_type, resource_id):
+            return
         if message.get("type") == "presence_update":
             # Users on this channel across every worker (Redis registry), or
             # just this worker's sockets when the registry is unavailable.

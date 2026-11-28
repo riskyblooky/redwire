@@ -83,6 +83,30 @@ async def test_broadcast_delivers_locally_and_publishes(monkeypatch):
     assert [u["id"] for u in payload["m"]["active_users"]] == ["u1", "u2"]
 
 
+async def test_no_presence_on_global_and_user_channels(monkeypatch):
+    fake = RecordingBus(presence=[{"id": "u2"}])
+    fake.added = []
+
+    async def presence_add(*a):
+        fake.added.append(a[:2])
+    fake.presence_add = presence_add
+    monkeypatch.setattr(ws_bus, "bus", fake)
+    mgr = ConnectionManager()
+    for rt, rid in (("dashboard", "global"), ("user", "u1")):
+        ws = FakeWS()
+        await mgr.connect(ws, rt, rid, {"id": "u1"})
+        await mgr.broadcast_to_resource(rt, rid, {"type": "cursor_update", "user_id": "u1"})
+        await mgr.broadcast_to_resource(rt, rid, {"type": "activity_log", "x": 1})
+        assert [json.loads(t)["type"] for t in ws.text] == ["activity_log"], rt
+    assert fake.added == [] and [p["m"]["type"] for _k, p in fake.published] == ["activity_log"] * 2
+
+    # Other channels keep presence.
+    ws = FakeWS()
+    await mgr.connect(ws, "engagement", "e1", {"id": "u1"})
+    assert fake.added == [("engagement", "e1")]
+    assert json.loads(ws.text[0])["type"] == "presence_update"
+
+
 async def test_remote_global_message_is_gated_per_recipient(monkeypatch):
     import auth.rbac as rbac
     import database
