@@ -15,7 +15,7 @@ export const ADMIN_TAB_PERMISSIONS: Record<string, string[]> = {
     types: ['manage_configurable_types'],
     authentication: [],            // LDAP/SAML/SMTP config — admin-only
     'api-tokens': [],              // admin-only
-    wordlists: [],                 // admin-only (upload/delete are role-gated)
+    wordlists: ['wordlist_manage'],
     ai: [],                        // admin-only
     skills: ['skill_create', 'skill_edit', 'skill_delete', 'skill_manage_categories'],
     widgets: ['manage_dashboard_widgets'],

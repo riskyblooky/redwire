@@ -142,6 +142,10 @@ class Permission(str, enum.Enum):
     INFRA_VAULT_VIEW = "infra_vault_view"
     INFRA_VAULT_MANAGE = "infra_vault_manage"
 
+    # Wordlists: upload / delete the shared password dataset. Lookups are open
+    # to every authenticated user; no default group holds this (admins do).
+    WORDLIST_MANAGE = "wordlist_manage"
+
     # Skills
     SKILL_VIEW = "skill_view"
     SKILL_CREATE = "skill_create"
@@ -344,6 +348,9 @@ PERMISSION_CATEGORIES = {
         Permission.INFRA_VAULT_VIEW,
         Permission.INFRA_VAULT_MANAGE,
     ],
+    "Wordlists": [
+        Permission.WORDLIST_MANAGE,
+    ],
     "Skills": [
         Permission.SKILL_VIEW,
         Permission.SKILL_CREATE,
@@ -396,6 +403,7 @@ GLOBAL_PERMISSIONS = [
     Permission.INFRA_DELETE,
     Permission.INFRA_VAULT_VIEW,
     Permission.INFRA_VAULT_MANAGE,
+    Permission.WORDLIST_MANAGE,
     Permission.SKILL_VIEW,
     Permission.SKILL_CREATE,
     Permission.SKILL_EDIT,

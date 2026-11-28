@@ -10,7 +10,9 @@ import os
 import re
 
 from database import get_db, AsyncSessionLocal
-from models.user import User, UserRole
+from models.user import User
+from models.permission import Permission
+from auth.permissions import require_global_permission
 from models.wordlist import WordlistEntry, WordlistMeta, WordlistStatus
 from auth.dependencies import get_current_user
 from utils.hash_utils import (
@@ -74,7 +76,7 @@ class WordlistStatusResponse(BaseModel):
 # already runs for every user on password change. In a self-hosted platform,
 # "authenticated" is the trust boundary. A WORDLIST_USE permission granted to
 # the Default group would be pure ceremony. Wordlist *upload/delete* (managing
-# the shared dataset) stays role-restricted below. See project_rbac_three_tier.
+# the shared dataset) needs the wordlist_manage global permission. See project_rbac_three_tier.
 
 @router.post("/check-password", response_model=CheckPasswordResponse)
 async def check_password(
@@ -207,11 +209,9 @@ async def upload_wordlist(
 ):
     """Upload a wordlist file. Processing happens in the background."""
     # Admin only
-    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can upload wordlists.",
-        )
+    # A global permission, not a role name: admins hold it; it can be
+    # granted to a group, and no default group has it.
+    await require_global_permission(Permission.WORDLIST_MANAGE, current_user, db)
 
     # Allow-list sanitiser — keep alphanumerics, dot, underscore, hyphen.
     # Strip leading dots so a filename like ".bashrc" cannot land as a
@@ -258,11 +258,9 @@ async def delete_wordlist(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a wordlist and all its entries. Rebuilds the Bloom filter."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.TEAM_LEAD]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can delete wordlists.",
-        )
+    # A global permission, not a role name: admins hold it; it can be
+    # granted to a group, and no default group has it.
+    await require_global_permission(Permission.WORDLIST_MANAGE, current_user, db)
 
     result = await db.execute(
         select(WordlistMeta).where(WordlistMeta.id == wordlist_id)

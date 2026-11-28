@@ -75,6 +75,19 @@ async def test_operators_cannot_manage_the_dataset(client, db_session, make_user
     db_session.expunge_all()
     assert (await db_session.execute(select(WordlistMeta).where(WordlistMeta.id == wordlist.id))).first()
 
+    # Team leads and read-only admins no longer manage the dataset; a group
+    # grant of wordlist_manage does.
+    for role in ("team_lead", "read_only_admin"):
+        authenticate_as(await make_user(role=role))
+        assert (await client.post("/wordlist/upload", files=files)).status_code == 403, role
+        assert (await client.delete(f"/wordlist/{wordlist.id}")).status_code == 403, role
+    from tests.test_security_center import _grant
+    granted = await make_user()
+    await _grant(db_session, granted, "wordlist_manage")
+    await db_session.commit()
+    authenticate_as(granted)
+    assert (await client.delete(f"/wordlist/{uuid.uuid4()}")).status_code == 404, "granted: passes the gate"
+
     authenticate_as(await make_user(role="admin"))
     assert (await client.delete(f"/wordlist/{uuid.uuid4()}")).status_code == 404
     assert (await client.delete(f"/wordlist/{wordlist.id}")).status_code == 200

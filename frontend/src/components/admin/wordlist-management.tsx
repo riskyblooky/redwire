@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
+import { useGlobalPermission } from '@/lib/hooks/use-permissions';
 
 export function WordlistManagement() {
     const { data: status, isLoading } = useWordlistStatus();
@@ -48,6 +49,8 @@ export function WordlistManagement() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragOver, setIsDragOver] = useState(false);
     const { confirm, ConfirmDialog } = useConfirmDialog();
+    // Upload / delete need wordlist_manage; a read-only admin sees the status only.
+    const canManage = useGlobalPermission('wordlist_manage');
 
     const handleUpload = async (file: File) => {
         try {
@@ -202,6 +205,7 @@ export function WordlistManagement() {
             </div>
 
             {/* Upload Area */}
+            {canManage && (
             <Card className="border-slate-800 bg-slate-900/50">
                 <CardHeader>
                     <CardTitle className="text-white flex items-center gap-2">
@@ -240,6 +244,7 @@ export function WordlistManagement() {
                     </div>
                 </CardContent>
             </Card>
+            )}
 
             {/* Wordlist Table */}
             {status?.wordlists && status.wordlists.length > 0 && (
@@ -289,6 +294,7 @@ export function WordlistManagement() {
                                             </span>
                                         </TableCell>
                                         <TableCell className="text-right">
+                                            {canManage && (
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
@@ -297,6 +303,7 @@ export function WordlistManagement() {
                                             >
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
+                                            )}
                                         </TableCell>
                                     </TableRow>
                                 ))}
