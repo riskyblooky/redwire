@@ -854,9 +854,13 @@ async def delete_attacker_node(
     """Delete an attacker node (cascades to edges)."""
     await require_engagement_perm(current_user, engagement_id, Permission.ENGAGEMENT_EDIT, db, action="edit the attack graph")
 
-    await db.execute(
+    deleted = await db.execute(
         sa_delete(AttackerNode).where(AttackerNode.id == attacker_id, AttackerNode.engagement_id == engagement_id)
     )
+    if not deleted.rowcount:
+        # Like the update route: nothing to delete is a 404, not an "ok"
+        # plus a graph-changed broadcast to every viewer.
+        raise HTTPException(status_code=404, detail="Attacker node not found")
     await db.commit()
 
     try:
