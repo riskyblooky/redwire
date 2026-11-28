@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header
-from schemas._field_limits import MAX_LIST_LIMIT
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Header, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models.loaders import load, options
 from typing import List, Optional
+from datetime import date, datetime
+from utils import listing
 from database import get_db
 from models.user import User
 from models.asset import Asset
@@ -591,131 +592,144 @@ async def get_port_filters(
 
     return {"ports": ports, "services": services}
 
+def _asset_list_filters(current_user: User, engagement_id, term, port, service, version, port_state,
+                       asset_type, in_scope, is_scanned, is_pwned, created_by, created_after) -> list:
+    """The WHERE clauses of the asset list (shared with its facets)."""
+    from sqlalchemy import or_, exists
+    filters = []
+    if engagement_id:
+        filters.append(Asset.engagement_id == engagement_id)
+    if term:
+        # Free text also matches any of the asset's ports' service name or
+        # version, so typing e.g. "OpenSSH 8.2" finds the asset by its port.
+        filters.append(or_(
+            listing.search_clause(term, [Asset.name, Asset.identifier, Asset.description]),
+            exists().where(AssetPort.asset_id == Asset.id,
+                           listing.search_clause(term, [AssetPort.service_name, AssetPort.version])),
+        ))
+    # Port / service / version filtering
+    # An EXISTS, not a join: joining one row per matching port multiplied
+    # the thread rows behind unresolved_count.
+    if port is not None or service or version:
+        port_conds = [AssetPort.asset_id == Asset.id,
+                      AssetPort.state == (port_state or PortState.OPEN)]
+        if port is not None:
+            port_conds.append(AssetPort.port_number == port)
+        if service:
+            port_conds.append(listing.search_clause(service, [AssetPort.service_name]))
+        if version:
+            port_conds.append(listing.search_clause(version, [AssetPort.version]))
+        filters.append(exists().where(*port_conds))
+    if asset_type:
+        filters.append(Asset.asset_type.in_(asset_type))
+    if in_scope is not None:
+        filters.append(Asset.in_scope.is_(in_scope))
+    if is_scanned is not None:
+        filters.append(Asset.is_scanned.is_(is_scanned))
+    if is_pwned is not None:
+        filters.append(Asset.is_pwned.is_(is_pwned))
+    if created_by:
+        filters.append(Asset.created_by.in_(select(User.id).where(User.username.in_(created_by))))
+    if created_after:
+        filters.append(Asset.created_at >= datetime.combine(created_after, datetime.min.time()))
+    # Restrict to engagements where the caller's role can view these
+    # (same rule as the single-item GET) for non-admins
+    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
+        from auth.rbac import engagements_with_permission
+        filters.append(Asset.engagement_id.in_(
+            engagements_with_permission(current_user.id, Permission.ASSET_VIEW.value)
+        ))
+    return filters
+
+
+@router.get("/facets")
+async def get_asset_facets(
+    engagement_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The unfiltered total in scope (for "N of M") and the users who
+    created assets there (the created-by filter's options)."""
+    from sqlalchemy import func
+    filters = _asset_list_filters(current_user, engagement_id, None, None, None, None, None,
+                                  None, None, None, None, None, None)
+    total = (await db.execute(select(func.count()).select_from(Asset).where(*filters))).scalar_one()
+    creators = (await db.execute(
+        select(User.id, User.username, User.full_name, User.profile_photo)
+        .where(User.id.in_(select(Asset.created_by).where(*filters)))
+        .order_by(func.lower(func.coalesce(User.full_name, User.username)))
+    )).all()
+    return {"total": total, "creators": [
+        {"id": c.id, "username": c.username, "full_name": c.full_name, "profile_photo": c.profile_photo}
+        for c in creators]}
+
+
 @router.get("")
 async def get_assets(
+    response: Response,
     engagement_id: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
     port: Optional[int] = Query(None, description="Filter assets that have this port number"),
-    service: Optional[str] = Query(None, description="Filter assets that have this service name"),
-    version: Optional[str] = Query(None, description="Filter assets that have a port with this version"),
+    service: Optional[str] = Query(None, max_length=200, description="Filter assets that have this service name"),
+    version: Optional[str] = Query(None, max_length=200, description="Filter assets that have a port with this version"),
     port_state: Optional[str] = Query(None, description="Port state filter (OPEN, CLOSED, FILTERED). Defaults to OPEN when port/service/version filters active"),
-    sort_by: Optional[str] = Query("created_at"),
-    sort_order: Optional[str] = Query("desc"),
-    skip: int = 0,
-    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
+    asset_type: Optional[List[str]] = Query(None),
+    in_scope: Optional[bool] = Query(None),
+    is_scanned: Optional[bool] = Query(None),
+    is_pwned: Optional[bool] = Query(None),
+    created_by: Optional[List[str]] = Query(None, description="Creator usernames; any of them."),
+    created_after: Optional[date] = Query(None),
+    page: listing.ListParams = Depends(listing.list_params(default_limit=100)),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all assets, optionally filtered by engagement"""
+    """Assets matching the filters, paged, as ``{items, total}``; the total
+    is also in ``X-Total-Count``. ``q`` (or ``search``) searches name,
+    identifier, description and port service / version, best matches
+    first. Sort by ``created_at`` (default, newest first), ``updated_at``,
+    ``name``, ``identifier``, ``asset_type``, ``unresolved_thread_count``,
+    ``created_by_username`` or ``cf:<custom field key>``."""
     from models.discussion import Thread
     from sqlalchemy import func
-    
+
+    unresolved = func.count(Thread.id).filter(Thread.is_resolved == False)  # noqa: E712
     # Join with threads to count unresolved threads
     query = select(
         Asset,
         User.username.label("creator_username"),
         User.full_name.label("creator_full_name"),
         User.profile_photo.label("creator_profile_photo"),
-        func.count(Thread.id).filter(Thread.is_resolved == False).label("unresolved_count")
+        unresolved.label("unresolved_count")
     ).outerjoin(
         Thread,
         (Thread.resource_type == "asset") & (Thread.resource_id == Asset.id)
     ).outerjoin(
         User,
         Asset.created_by == User.id
-    ).group_by(Asset.id, User.username, User.full_name, User.profile_photo)
-    
-    if engagement_id:
-        query = query.where(Asset.engagement_id == engagement_id)
-    
-    if search:
-        search_term = f"%{search}%"
-        from sqlalchemy import or_, exists
-        # Free text also matches any of the asset's ports' service name or
-        # version, so typing e.g. "OpenSSH 8.2" finds the asset by its port.
-        port_text_match = exists().where(
-            (AssetPort.asset_id == Asset.id) & or_(
-                AssetPort.service_name.ilike(search_term),
-                AssetPort.version.ilike(search_term),
-            )
-        )
-        query = query.where(
-            or_(
-                Asset.name.ilike(search_term),
-                Asset.identifier.ilike(search_term),
-                Asset.description.ilike(search_term),
-                port_text_match,
-            )
-        )
+    ).group_by(Asset.id, User.username, User.full_name, User.profile_photo).options(*options("ASSET"))
 
-    # Port / service / version filtering
-    # An EXISTS, not a join: joining one row per matching port multiplied
-    # the thread rows behind unresolved_count.
-    if port is not None or service or version:
-        from sqlalchemy import exists as _exists
-        port_conds = [AssetPort.asset_id == Asset.id,
-                      AssetPort.state == (port_state or PortState.OPEN)]
-        if port is not None:
-            port_conds.append(AssetPort.port_number == port)
-        if service:
-            port_conds.append(AssetPort.service_name.ilike(f"%{service}%"))
-        if version:
-            port_conds.append(AssetPort.version.ilike(f"%{version}%"))
-        query = query.where(_exists().where(*port_conds))
-    
-    # Restrict to engagements where the caller's role can view these
-    # (same rule as the single-item GET) for non-admins
-    if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
-        from auth.rbac import engagements_with_permission
-        query = query.where(Asset.engagement_id.in_(
-            engagements_with_permission(current_user.id, Permission.ASSET_VIEW.value)
-        ))
-    
-    # Get total count before pagination
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    filters = _asset_list_filters(current_user, engagement_id, page.q, port, service, version, port_state,
+                                  asset_type, in_scope, is_scanned, is_pwned, created_by, created_after)
+    sortable = {
+        "created_at": Asset.created_at,
+        "updated_at": Asset.updated_at,
+        "name": func.lower(Asset.name),
+        "identifier": func.lower(Asset.identifier),
+        "asset_type": Asset.asset_type,
+        "unresolved_thread_count": unresolved,
+        "created_by_username": func.lower(User.username),
+    }
+    if page.sort_by and page.sort_by.startswith("cf:"):
+        sortable[page.sort_by] = Asset.custom_fields[page.sort_by[3:]].as_string()
+    # Searching: best match first (name, then identifier), the sort within.
+    rank = listing.search_rank(page.q, [Asset.name, Asset.identifier]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=Asset.id, rank=rank)
+    rows = await listing.count_and_page(db, response, query.where(*filters), page, count_from=Asset,
+                                        filters=filters, order=order)
+    total = int(response.headers["X-Total-Count"])
 
-    # Sorting
-    sort_column = Asset.created_at
-    if sort_by == 'name':
-        sort_column = Asset.name
-    elif sort_by == 'asset_type':
-        sort_column = Asset.asset_type
-    elif sort_by == 'created_by_username':
-        sort_column = User.username
-    elif sort_by == 'unresolved_thread_count':
-        sort_column = func.count(Thread.id).filter(Thread.is_resolved == False)  # noqa: E712
-    elif sort_by and sort_by.startswith('cf:'):
-        # Sort by a custom field value (JSON text). Numeric fields sort
-        # lexically — acceptable for v1.
-        sort_column = Asset.custom_fields.op('->>')(sort_by[3:])
-
-    # When searching, sort by relevance first (best match first)
-    if search:
-        from sqlalchemy import case
-        relevance = case(
-            (Asset.name.ilike(search), 0),                    # exact name match
-            (Asset.name.ilike(f"{search}%"), 1),              # name starts with
-            (Asset.identifier.ilike(search), 2),              # exact identifier match
-            (Asset.identifier.ilike(f"{search}%"), 3),        # identifier starts with
-            else_=4                                           # contains somewhere
-        )
-        if sort_order == 'asc':
-            query = query.order_by(relevance.asc(), sort_column.asc())
-        else:
-            query = query.order_by(relevance.asc(), sort_column.desc())
-    elif sort_order == 'asc':
-        query = query.order_by(sort_column.asc())
-    else:
-        query = query.order_by(sort_column.desc())
-    query = query.order_by(Asset.id)  # stable pages: ties broken by id
-    
-    query = query.offset(skip).limit(limit).options(*options("ASSET"))
-    
-    result = await db.execute(query)
     assets_with_counts = []
-    for asset, creator_username, creator_full_name, creator_profile_photo, unresolved_count in result.all():
+    for asset, creator_username, creator_full_name, creator_profile_photo, unresolved_count in rows:
         asset_dict = AssetResponse.model_validate(asset).model_dump()
         asset_dict["unresolved_thread_count"] = unresolved_count or 0
         asset_dict["created_by_username"] = creator_username

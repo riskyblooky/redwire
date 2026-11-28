@@ -29,12 +29,15 @@ import {
     StickyNote, Bug, CheckSquare, Filter, Download, Upload,
     Target, Globe, LinkIcon, Box, Monitor, NetworkIcon, Radar,
     Skull, CheckCircle, EyeOff, Lock,
-    ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
     Settings,
 } from 'lucide-react';
-import { cn, parseDateOnly } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useAssets, useUpdateAsset, useDeleteAsset, useAssetPortFilters } from '@/lib/hooks/use-assets';
+import { useAssetsPage, useAssetFacets, useUpdateAsset, useDeleteAsset, useAssetPortFilters } from '@/lib/hooks/use-assets';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { useConfigurableTypes } from '@/lib/hooks/use-configurable-types';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { useFindings } from '@/lib/hooks/use-findings';
 import { useTestCases } from '@/lib/hooks/use-testcases';
 import { useEngagementNoteLinks } from '@/lib/hooks/use-notes';
@@ -102,7 +105,30 @@ import {
 } from '@/components/ui/select';
 
 // ── Constants ────────────────────────────────────────────────────────
-const ASSET_PAGE_SIZE = 25;
+/** "IP Address" / "ip_address" → IP_ADDRESS: stored types are the configured
+ *  display names; the label and style maps are keyed by the constant. */
+const assetTypeKey = (t: string) => (t || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+
+/** URL keys of the asset list (prefixed a_ on the engagement page). */
+function assetListSpec() {
+    const stored = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) : null);
+    return {
+        q: { kind: 'string' },
+        type: { kind: 'array' },
+        scope: { kind: 'enum', values: ['', 'in', 'out'], default: '' },
+        scanned: { kind: 'enum', values: ['', 'yes', 'no'], default: '' },
+        pwned: { kind: 'enum', values: ['', 'yes', 'no'], default: '' },
+        by: { kind: 'array' },
+        after: { kind: 'string' },
+        sort: { kind: 'string', default: stored('redwire_sort_engagement_assets_field') || 'name' },
+        dir: { kind: 'enum', values: ['asc', 'desc'], default: stored('redwire_sort_engagement_assets_order') === 'desc' ? 'desc' : 'asc' },
+        page: { kind: 'int', default: 1, min: 1 },
+        size: { kind: 'int', default: 25, min: 1, max: 500 },
+    } satisfies ParamSpec;
+}
+
+/** ?asset=<id> opens the detail sheet. */
+const SHEET_SPEC = { asset: { kind: 'string' } } satisfies ParamSpec;
 
 const assetTypeLabels: Record<string, string> = {
     IP_ADDRESS: 'IP', DOMAIN: 'Domain', URL: 'URL',
@@ -150,7 +176,7 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
     const canDelete = useCanDelete(engagementId, 'asset', asset.created_by);
     const deleteAsset = useDeleteAsset();
     const { confirm, ConfirmDialog } = useConfirmDialog();
-    const style = assetTypeStyles[asset.asset_type] || assetTypeStyles.OTHER;
+    const style = assetTypeStyles[assetTypeKey(asset.asset_type)] || assetTypeStyles.OTHER;
     const TypeIcon = style.icon;
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
@@ -258,7 +284,7 @@ const AssetRow = ({ asset, engagementId, handleToggleAssetStatus, onAddCleanup, 
                 {col('type') && <TableCell>
                     <Badge className={cn("gap-1.5 py-1 px-2.5 font-bold text-[10px] uppercase tracking-wider border", style.color)}>
                         <TypeIcon className="h-3 w-3" />
-                        {assetTypeLabels[asset.asset_type]}
+                        {assetTypeLabels[assetTypeKey(asset.asset_type)] ?? asset.asset_type}
                     </Badge>
                 </TableCell>}
                 {col('status') && <TableCell>
@@ -431,20 +457,34 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
     const canCreateAsset = usePermission(engagementId, 'asset_create');
     const updateAsset = useUpdateAsset();
 
-    // Search & filters
-    const [search, setSearch] = useState('');
-    const debouncedSearch = useDebounce(search, 500);
-    const parsedSearch = useMemo(() => parseAssetSearch(debouncedSearch), [debouncedSearch]);
+    // View state lives in the URL (a_-prefixed: the engagement page hosts
+    // several lists); the sort default is the last one this browser used.
+    const listSpec = useMemo(() => assetListSpec(), []);
+    const [p, setP] = useListParams(listSpec, 'a_');
+    const [sheet, setSheet] = useListParams(SHEET_SPEC);
+
+    // Search (with port: / service: / version: tokens) is typed: keep the
+    // keystrokes local and commit them to the URL after a pause.
+    const [search, setSearch] = useState(p.q);
+    const debouncedSearch = useDebounce(search, 400);
+    useEffect(() => { if (debouncedSearch !== p.q) setP({ q: debouncedSearch }); }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearch(p.q); }, [p.q]);
+    const parsedSearch = useMemo(() => parseAssetSearch(p.q), [p.q]);
     const { data: portFilterOptions } = useAssetPortFilters(engagementId);
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-    const [assetFilters, setAssetFilters] = useState<{
-        types: string[];
-        scope: '' | 'in' | 'out';
-        scanned: '' | 'yes' | 'no';
-        pwned: '' | 'yes' | 'no';
-        createdBy: string[];
-        dateAfter: string;
-    }>({ types: [], scope: '', scanned: '', pwned: '', createdBy: [], dateAfter: '' });
+    const assetFilters = {
+        types: p.type,
+        scope: p.scope as '' | 'in' | 'out',
+        scanned: p.scanned as '' | 'yes' | 'no',
+        pwned: p.pwned as '' | 'yes' | 'no',
+        createdBy: p.by,
+        dateAfter: p.after,
+    };
+    type AssetFilters = typeof assetFilters;
+    const setAssetFilters = (next: AssetFilters | ((prev: AssetFilters) => AssetFilters)) => {
+        const f = typeof next === 'function' ? next(assetFilters) : next;
+        setP({ type: f.types, scope: f.scope, scanned: f.scanned, pwned: f.pwned, by: f.createdBy, after: f.dateAfter });
+    };
 
     const hasAssetFilters = assetFilters.types.length > 0 || !!assetFilters.scope || !!assetFilters.scanned || !!assetFilters.pwned || assetFilters.createdBy.length > 0 || !!assetFilters.dateAfter;
 
@@ -454,33 +494,30 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
     }));
     const clearAssetFilters = () => setAssetFilters({ types: [], scope: '', scanned: '', pwned: '', createdBy: [], dateAfter: '' });
 
-    // Sort (persisted)
-    const [sortField, setSortField] = useState<string>(() => {
-        if (typeof window !== 'undefined') return localStorage.getItem('redwire_sort_engagement_assets_field') || 'name';
-        return 'name';
-    });
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') return (localStorage.getItem('redwire_sort_engagement_assets_order') as 'asc' | 'desc') || 'asc';
-        return 'asc';
-    });
-    useEffect(() => { localStorage.setItem('redwire_sort_engagement_assets_field', sortField); localStorage.setItem('redwire_sort_engagement_assets_order', sortOrder); }, [sortField, sortOrder]);
+    const sortField = p.sort;
+    const sortOrder = p.dir as 'asc' | 'desc';
+    const yesNo = (v: string) => (v === 'yes' ? true : v === 'no' ? false : undefined);
 
-    // Pagination
-    const [currentPage, setCurrentPage] = useState(1);
-    useEffect(() => { setCurrentPage(1); }, [debouncedSearch, sortField, sortOrder]);
-
-    const { data: assets = [], isLoading, total: totalAssets } = useAssets({
-        engagementId,
-        search: parsedSearch.search || undefined,
+    // Data: one server page (all filters applied there) plus the facets.
+    const { data: page, isLoading, isFetching } = useAssetsPage({
+        engagement_id: engagementId,
+        q: parsedSearch.search || undefined,
         port: parsedSearch.port,
         service: parsedSearch.service,
         version: parsedSearch.version,
-        sortBy: sortField,
-        sortOrder,
-        skip: (currentPage - 1) * ASSET_PAGE_SIZE,
-        limit: ASSET_PAGE_SIZE,
+        asset_type: p.type,
+        in_scope: p.scope === 'in' ? true : p.scope === 'out' ? false : undefined,
+        is_scanned: yesNo(p.scanned),
+        is_pwned: yesNo(p.pwned),
+        created_by: p.by,
+        created_after: p.after || undefined,
+        sort_by: sortField,
+        sort_order: sortOrder,
+        ...toSkipLimit(p.page, p.size),
     });
-    const totalPages = Math.max(1, Math.ceil(totalAssets / ASSET_PAGE_SIZE));
+    const assets = page?.rows ?? [];
+    const totalAssets = page?.total ?? 0;
+    const { data: facets } = useAssetFacets(engagementId);
 
     // Reverse-lookup maps
     const findingsParams = useMemo(() => ({ engagement_id: engagementId }), [engagementId]);
@@ -509,42 +546,18 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
     const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_assets', assetColumns);
     const col = (key: string) => visibleCols.has(key);
 
-    // Client-side asset filtering (post server-fetch)
-    const filteredAssets = useMemo(() => {
-        if (!hasAssetFilters) return assets;
-        return assets.filter((a: any) => {
-            if (assetFilters.types.length > 0 && !assetFilters.types.includes(a.asset_type)) return false;
-            if (assetFilters.scope === 'in' && !a.in_scope) return false;
-            if (assetFilters.scope === 'out' && a.in_scope) return false;
-            if (assetFilters.scanned === 'yes' && !a.is_scanned) return false;
-            if (assetFilters.scanned === 'no' && a.is_scanned) return false;
-            if (assetFilters.pwned === 'yes' && !a.is_pwned) return false;
-            if (assetFilters.pwned === 'no' && a.is_pwned) return false;
-            if (assetFilters.createdBy.length > 0 && !assetFilters.createdBy.includes(a.created_by_username)) return false;
-            if (assetFilters.dateAfter && parseUTCDate(a.created_at) < parseDateOnly(assetFilters.dateAfter)) return false;
-            return true;
-        });
-    }, [assets, assetFilters, hasAssetFilters]);
-
     // Type options (colour-coded badge + icon) + created-by options (with avatars).
-    const typeFilterOptions = Object.entries(assetTypeLabels).map(([key, label]) => ({
-        value: key, label, icon: assetTypeStyles[key]?.icon, badgeClass: assetTypeStyles[key]?.color,
-    }));
-    const createdByOptions = useMemo(() => {
-        const seen = new Map<string, any>();
-        for (const a of assets as any[]) {
-            const uname = a.created_by_username;
-            if (uname && !seen.has(uname)) {
-                seen.set(uname, {
-                    value: uname,
-                    label: a.created_by_full_name || uname,
-                    sublabel: `@${uname}`,
-                    avatar: { id: a.created_by, full_name: a.created_by_full_name, username: uname, profile_photo: a.created_by_profile_photo },
-                });
-            }
-        }
-        return [...seen.values()].sort((x, y) => x.label.localeCompare(y.label));
-    }, [assets]);
+    const { data: assetTypes = [] } = useConfigurableTypes('asset');
+    const typeFilterOptions = assetTypes.map((t: any) => {
+        const key = assetTypeKey(t.name);
+        return { value: t.name, label: t.name, icon: assetTypeStyles[key]?.icon, badgeClass: assetTypeStyles[key]?.color };
+    });
+    const createdByOptions = useMemo(() => (facets?.creators ?? []).map((c) => ({
+        value: c.username,
+        label: c.full_name || c.username,
+        sublabel: `@${c.username}`,
+        avatar: { id: c.id, full_name: c.full_name ?? undefined, username: c.username, profile_photo: c.profile_photo ?? undefined },
+    })), [facets]);
 
     // Export
     const [showExportDialog, setShowExportDialog] = useState(false);
@@ -553,7 +566,8 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
 
     // Import + detail sheet
     const [showImport, setShowImport] = useState(false);
-    const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+    // Detail sheet: ?asset=<id>, so a link or reload reopens it.
+    const selectedAssetId = sheet.asset || null;
 
     // View mode toggle: 'panel' = side sheet, 'page' = full page nav
     const [viewMode, setViewMode] = useState<'panel' | 'page'>(() => {
@@ -566,7 +580,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
         if (viewMode === 'page') {
             router.push(`/assets/${assetId}?engagementId=${engagementId}&tab=assets`);
         } else {
-            setSelectedAssetId(assetId);
+            setSheet({ asset: assetId });
         }
     };
 
@@ -575,8 +589,10 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
     };
 
     const handleSort = (field: string) => {
-        if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        else { setSortField(field); setSortOrder('asc'); }
+        const dir = sortField === field ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc';
+        setP({ sort: field, dir });
+        localStorage.setItem('redwire_sort_engagement_assets_field', field);
+        localStorage.setItem('redwire_sort_engagement_assets_order', dir);
     };
 
     return (
@@ -593,7 +609,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                         <Input placeholder="Search... (port:80, service:http, version:8.2)" className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <span className="w-20 shrink-0 flex justify-end overflow-hidden mr-1">
-                        {!isLoading && <ResultCount count={totalAssets} noun="asset" />}
+                        {!isLoading && <ResultCount count={totalAssets} total={facets?.total} noun="asset" />}
                     </span>
                     {(parsedSearch.port !== undefined || parsedSearch.service || parsedSearch.version) && (
                         <div className="flex items-center gap-1">
@@ -720,7 +736,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                 <div className="px-6 pb-2 flex flex-wrap gap-1.5">
                     {assetFilters.types.map(t => (
                         <Badge key={t} className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] gap-1 pr-1 cursor-pointer hover:bg-blue-500/20" onClick={() => toggleAssetType(t)}>
-                            {assetTypeLabels[t] ?? t}<X className="h-3 w-3" />
+                            {t}<X className="h-3 w-3" />
                         </Badge>
                     ))}
                     {assetFilters.scope && (
@@ -849,9 +865,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                 {isLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
                 ) : assets.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400"><Server className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>No assets defined</p></div>
-                ) : filteredAssets.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400"><Server className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>No assets match the current filters</p></div>
+                    <div className="text-center py-8 text-slate-400"><Server className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>{p.q || hasAssetFilters ? 'No assets match the current search or filters' : 'No assets defined'}</p></div>
                 ) : (
                     <div className="overflow-x-auto">
                         <Table>
@@ -871,7 +885,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredAssets.map((asset) => (
+                                {assets.map((asset) => (
                                     <AssetRow
                                         key={asset.id}
                                         asset={asset}
@@ -892,19 +906,10 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                     </div>
                 )}
 
-                {/* Pagination */}
-                {totalAssets > ASSET_PAGE_SIZE && (
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-800/50 mt-4">
-                        <p className="text-xs text-slate-500">Showing {((currentPage - 1) * ASSET_PAGE_SIZE) + 1}–{Math.min(currentPage * ASSET_PAGE_SIZE, totalAssets)} of {totalAssets} assets</p>
-                        <div className="flex items-center gap-1">
-                            <Button variant="outline" size="icon" className="h-7 w-7 border-slate-700 bg-slate-900/50 text-slate-400 hover:text-white disabled:opacity-30" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}><ChevronsLeft className="h-3.5 w-3.5" /></Button>
-                            <Button variant="outline" size="icon" className="h-7 w-7 border-slate-700 bg-slate-900/50 text-slate-400 hover:text-white disabled:opacity-30" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}><ChevronLeft className="h-3.5 w-3.5" /></Button>
-                            <span className="text-xs text-slate-400 px-3 font-medium">Page {currentPage} of {totalPages}</span>
-                            <Button variant="outline" size="icon" className="h-7 w-7 border-slate-700 bg-slate-900/50 text-slate-400 hover:text-white disabled:opacity-30" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}><ChevronRight className="h-3.5 w-3.5" /></Button>
-                            <Button variant="outline" size="icon" className="h-7 w-7 border-slate-700 bg-slate-900/50 text-slate-400 hover:text-white disabled:opacity-30" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}><ChevronsRight className="h-3.5 w-3.5" /></Button>
-                        </div>
-                    </div>
-                )}
+                <ListPagination
+                    page={p.page} pageSize={p.size} total={totalAssets} isFetching={isFetching}
+                    onPageChange={(n) => setP({ page: n })} onPageSizeChange={(n) => setP({ size: n })}
+                />
             </CardContent>
         </Card>
 
@@ -917,7 +922,7 @@ export function AssetsTab({ engagementId, onAddCleanup, onAddVaultItem }: Assets
                 engagementId={engagementId}
                 assetId={selectedAssetId}
                 open={!!selectedAssetId}
-                onOpenChange={(open) => !open && setSelectedAssetId(null)}
+                onOpenChange={(open) => { if (!open) setSheet({ asset: '' }); }}
                 nonModal
             />
         )}

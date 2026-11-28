@@ -11,7 +11,7 @@
  */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,12 +31,15 @@ import {
     Plus, Search, Eye, Edit, Trash2, Server, Loader2, MessageSquare,
     ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
-import { useAssets, useDeleteAsset } from '@/lib/hooks/use-assets';
+import { useAssetsPage, useDeleteAsset } from '@/lib/hooks/use-assets';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { useDebounce } from '@/lib/hooks/use-debounce';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { toast } from 'sonner';
 import { useCanEdit, useCanDelete } from '@/lib/hooks/use-permissions';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
-import { relevanceComparator } from '@/lib/search-relevance';
 import { useCollaboration } from '@/lib/hooks/use-collaboration';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -142,31 +145,41 @@ function AssetListRow({ asset, handleView, handleEdit, handleDelete, deleteAsset
     );
 }
 
+/** URL keys of the global asset list; the sort default is this browser's
+ *  last choice. */
+function assetsPageSpec() {
+    const stored = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) : null);
+    return {
+        q: { kind: 'string' },
+        sort: { kind: 'string', default: stored('redwire_sort_assets_field') || 'name' },
+        dir: { kind: 'enum', values: ['asc', 'desc'], default: stored('redwire_sort_assets_order') === 'desc' ? 'desc' : 'asc' },
+        page: { kind: 'int', default: 1, min: 1 },
+        size: { kind: 'int', default: 50, min: 1, max: 500 },
+    } satisfies ParamSpec;
+}
+
+// useSearchParams (the list's URL state) needs a Suspense boundary for the
+// production build's prerender.
 export default function AssetsPage() {
+    return <Suspense fallback={null}><AssetsList /></Suspense>;
+}
+
+function AssetsList() {
     const router = useRouter();
-    const [searchTerm, setSearchTerm] = useState('');
-    const [sortField, setSortField] = useState<SortField>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('redwire_sort_assets_field');
-            if (saved) return saved as SortField;
-        }
-        return 'name';
-    });
-    const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('redwire_sort_assets_order');
-            if (saved) return saved as SortOrder;
-        }
-        return 'asc';
-    });
+    const spec = useMemo(() => assetsPageSpec(), []);
+    const [p, setP] = useListParams(spec);
+    const [searchTerm, setSearchTerm] = useState(p.q);
+    const debouncedSearch = useDebounce(searchTerm, 300);
+    useEffect(() => { if (debouncedSearch !== p.q) setP({ q: debouncedSearch }); }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearchTerm(p.q); }, [p.q]);
+    const sortField = p.sort as SortField;
+    const sortOrder = p.dir as SortOrder;
 
-    // Save preferences to localStorage when they change
-    useEffect(() => {
-        localStorage.setItem('redwire_sort_assets_field', sortField);
-        localStorage.setItem('redwire_sort_assets_order', sortOrder);
-    }, [sortField, sortOrder]);
-
-    const { data: assets = [], isLoading, error, refetch } = useAssets();
+    const { data: page, isLoading, isFetching, error, refetch } = useAssetsPage({
+        q: p.q || undefined, sort_by: p.sort, sort_order: sortOrder, ...toSkipLimit(p.page, p.size),
+    });
+    const assets = page?.rows ?? [];
+    const total = page?.total ?? 0;
     const deleteAsset = useDeleteAsset();
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const queryClient = useQueryClient();
@@ -185,29 +198,13 @@ export default function AssetsPage() {
     });
 
     const handleSort = (field: SortField) => {
-        if (sortField === field) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortField(field);
-            setSortOrder('asc');
-        }
+        const dir = sortField === field ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc';
+        setP({ sort: field, dir });
+        localStorage.setItem('redwire_sort_assets_field', field);
+        localStorage.setItem('redwire_sort_assets_order', dir);
     };
 
-    const sortedAssets = [...assets]
-        .filter((asset) => {
-            const matchesSearch = asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                asset.identifier.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (asset.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
-            return matchesSearch;
-        })
-        .sort(relevanceComparator(
-            searchTerm,
-            [item => item.name, item => item.identifier],
-            (a, b) => {
-                const comparison = String(a[sortField]).localeCompare(String(b[sortField]));
-                return sortOrder === 'asc' ? comparison : -comparison;
-            }
-        ));
+    const sortedAssets = assets;
 
     const handleView = (id: string) => {
         router.push(`/assets/${id}`);
@@ -279,7 +276,7 @@ export default function AssetsPage() {
                 <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs shadow-xl">
                     <CardHeader>
                         <CardTitle className="text-white">
-                            All Assets {!isLoading && `(${sortedAssets.length})`}
+                            All Assets {!isLoading && `(${total})`}
                         </CardTitle>
                         <CardDescription>View and manage your target assets</CardDescription>
                     </CardHeader>
@@ -348,6 +345,11 @@ export default function AssetsPage() {
                                         )}
                                     </TableBody>
                                 </Table>
+                                <ListPagination
+                                    className="px-6"
+                                    page={p.page} pageSize={p.size} total={total} isFetching={isFetching}
+                                    onPageChange={(n) => setP({ page: n })} onPageSizeChange={(n) => setP({ size: n })}
+                                />
                             </div>
                         )}
                     </CardContent>

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { fetchAllPages } from '../fetch-all';
+import { fetchPage } from '../fetch-page';
 
 import { Asset } from '../types';
 
@@ -46,6 +47,51 @@ interface UseAssetsOptions {
 }
 
 // Fetch assets with optional filters
+/** Query parameters of ``GET /assets`` for one server page. */
+export interface AssetPageParams {
+    engagement_id?: string;
+    q?: string;
+    port?: number;
+    service?: string;
+    version?: string;
+    asset_type?: string[];
+    in_scope?: boolean;
+    is_scanned?: boolean;
+    is_pwned?: boolean;
+    created_by?: string[];
+    created_after?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+    skip: number;
+    limit: number;
+}
+
+export function useAssetsPage(params: AssetPageParams, enabled: boolean = true) {
+    return useQuery({
+        queryKey: ['assets', 'page', params],
+        queryFn: () => fetchPage<Asset>('/assets', { ...params }),
+        enabled,
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
+    });
+}
+
+export interface AssetCreator { id: string; username: string; full_name?: string | null; profile_photo?: string | null }
+
+/** The unfiltered total in scope and who created assets there. */
+export function useAssetFacets(engagementId?: string) {
+    return useQuery({
+        queryKey: ['assets', 'facets', engagementId ?? null],
+        queryFn: async () => {
+            const { data } = await api.get<{ total: number; creators: AssetCreator[] }>('/assets/facets', {
+                params: engagementId ? { engagement_id: engagementId } : {},
+            });
+            return data;
+        },
+        staleTime: 30_000,
+    });
+}
+
 export function useAssets(engagementIdOrOptions?: string | UseAssetsOptions) {
     // Support both simple string and options object for backward compatibility
     const options: UseAssetsOptions = typeof engagementIdOrOptions === 'string'

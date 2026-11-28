@@ -25,6 +25,7 @@ section becomes one release entry.
 - Report exports: titles, names and other plain-text fields are now escaped in the Markdown export (an HTML tag in a finding title was live markup in the .md file), and finding and test case categories appear as typed instead of title-cased.
 - Users who can view all engagements now find engagements and clients by name in search, not just their findings, assets and test cases.
 - Importing an Nmap scan from the Assets page now reads it the same way as the scan import: closed|filtered ports are no longer recorded as open, service versions include Nmap's extra info, and the OS match and MAC address appear in the asset description.
+- The asset filters (type, scope, scanned, pwned, created by, created after) apply to every asset, not just the page on screen, and the type filter and type badges match the configured asset types.
 
 ## [1.9.4] — 2026-11-27
 
