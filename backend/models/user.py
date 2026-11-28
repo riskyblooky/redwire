@@ -38,7 +38,8 @@ class User(Base):
     registration_code_id = Column(String, ForeignKey("registration_codes.id", ondelete="SET NULL"), nullable=True)
 
     # Two-Factor Authentication
-    totp_secret = Column(String(256), nullable=True)  # Fernet-encrypted
+    # Fernet-encrypted by hand (auth/crypto.py), so tagged for the key-rotation map.
+    totp_secret = Column(String(256), nullable=True, info={"encrypted": "totp"})
     totp_enabled = Column(Boolean, default=False, nullable=False)
     totp_verified_at = Column(DateTime, nullable=True)
     # Last TOTP time-step the user has successfully consumed. The verifier

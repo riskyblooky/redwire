@@ -37,6 +37,26 @@ def test_rotation_map_covers_every_encrypted_column():
         assert Base.metadata.tables[table].c[pk].primary_key, f"{table}.{pk} is not the primary key"
 
 
+def test_rotation_map_covers_hand_encrypted_columns():
+    """Secrets encrypted by hand rather than through EncryptedText are tagged
+    in the models (info=...) and must be in the maps too; every mapped column
+    must exist, so a rename can't silently drop one."""
+    import main  # noqa: F401
+    from database import Base
+
+    cols = [(t.name, c) for t in Base.metadata.sorted_tables for c in t.columns]
+    totp = {(t, c.name) for t, c in cols if c.info.get("encrypted") == "totp"}
+    vault_tagged = {(t, c.name) for t, c in cols if c.info.get("encrypted") == "vault"}
+    objects = {t for t, c in cols if c.info.get("encrypted_object") == "vault" and c.name == "file_path"}
+    assert ("users", "totp_secret") in totp
+    assert totp - {(t, c) for t, (_pk, cs) in rot.TOTP_DB_FIELDS.items() for c in cs} == set()
+    assert vault_tagged - {(t, c) for t, (_pk, cs) in rot.VAULT_DB_FIELDS.items() for c in cs} == set()
+    assert objects == set(rot.VAULT_FILE_TABLES), "encrypted-object tables vs VAULT_FILE_TABLES"
+    for table, (_pk, cs) in {**rot.VAULT_DB_FIELDS, **rot.TOTP_DB_FIELDS}.items():
+        for c in cs:
+            assert c in Base.metadata.tables[table].c, f"{table}.{c} is mapped but doesn't exist"
+
+
 def test_rekey_decisions():
     old, new, other = Fernet(Fernet.generate_key()), Fernet(Fernet.generate_key()), Fernet(Fernet.generate_key())
     st = rot.Stats()
@@ -94,3 +114,29 @@ async def test_wrong_old_key_aborts_before_writing(auth_rows, monkeypatch):
     rows = dict(await auth_rows.fetch("SELECT key, value FROM auth_settings WHERE key LIKE 'rot_test_%'"))
     assert Fernet(new).decrypt(rows["rot_test_a"].encode()) == b"rekeyable"
     assert rows["rot_test_b"] == stuck and Fernet(real).decrypt(stuck.encode()) == b"bind-pw"
+
+
+async def test_verify_reports_values_that_dont_open(auth_rows, monkeypatch, capsys):
+    current, other = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
+    monkeypatch.setenv("VAULT_ENCRYPTION_KEY", current)
+    monkeypatch.setenv("TOTP_ENCRYPTION_KEY", current)
+    # Only rows this test controls: the test DB may hold other encrypted data
+    # under the suite's own key, so narrow the maps to auth_settings.
+    monkeypatch.setattr(rot, "VAULT_DB_FIELDS", {"auth_settings": ("key", ("value",))})
+    monkeypatch.setattr(rot, "TOTP_DB_FIELDS", {})
+    monkeypatch.setattr(rot, "VAULT_FILE_TABLES", ())
+    await auth_rows.execute("INSERT INTO auth_settings (key, value, is_encrypted) VALUES ('rot_test_ok', $1, true)",
+                            Fernet(current).encrypt(b"pw").decode())
+
+    async def only_test_rows(conn, fields_map, new_f, old_f, dry_run, quiet=False, _orig=rot.migrate_db_fields):
+        bad = await _orig(conn, fields_map, new_f, old_f, dry_run, quiet)
+        return [b for b in bad if "rot_test_" in b]
+    monkeypatch.setattr(rot, "migrate_db_fields", only_test_rows)
+
+    assert await rot.verify() == 0
+    await auth_rows.execute("INSERT INTO auth_settings (key, value, is_encrypted) VALUES ('rot_test_bad', $1, true)",
+                            Fernet(other).encrypt(b"pw").decode())
+    assert await rot.verify() == 1
+    out = capsys.readouterr().out
+    assert "rot_test_bad" in out and "rot_test_ok" not in out.split("FAILED")[1]

@@ -33,7 +33,7 @@ class InfraVaultItem(Base, AuditMixin):
     note = Column(EncryptedText, nullable=True)
 
     # File fields (stored in MinIO)
-    file_path = Column(String(500), nullable=True)
+    file_path = Column(String(500), nullable=True, info={"encrypted_object": "vault"})  # object body is Fernet-encrypted
     filename = Column(String(255), nullable=True)
 
     description = Column(Text, nullable=True)

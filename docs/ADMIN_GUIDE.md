@@ -435,6 +435,9 @@ docker compose run --rm \
 # 5. Put the NEW keys in .env, then recreate the backend. `restart` would
 #    keep the old environment.
 docker compose up -d backend
+
+# 6. Confirm everything opens under the new keys (read only).
+docker compose exec backend python3 rotate_encryption_keys.py --verify
 ```
 
 The preview reports how many values it would re-key. If it reports any
@@ -446,6 +449,11 @@ interrupted: values already under the new key are skipped.
 
 Rotate both keys in one run, or pass the same value as old and new for the
 key you're keeping.
+
+`--verify` decrypts every encrypted value and vault file with the keys the
+backend is running with and changes nothing. It prints `OK` and exits 0, or
+lists what doesn't open and exits 1. It's also a quick check after restoring
+a backup onto a server whose `.env` you've rebuilt.
 
 ---
 

@@ -39,6 +39,13 @@ container so the keys can be passed in:
     # ... then without --dry-run, then put the new keys in .env and
     docker compose up -d backend     # `restart` would keep the old env
 
+Check without changing anything (after a rotation, a restore, or any time):
+
+    docker compose exec backend python3 rotate_encryption_keys.py --verify
+
+decrypts every listed value and file with the CURRENT keys (no OLD_* keys
+needed) and exits non-zero if any ciphertext doesn't open.
+
 Idempotent & resumable: each value is tried new-key-first (already migrated →
 skip), then old-key (re-key). A value that is not a Fernet token is legacy
 plaintext and gets encrypted. A value that IS a Fernet token but opens under
@@ -58,8 +65,10 @@ import asyncpg
 from cryptography.fernet import Fernet, InvalidToken
 
 # ── Tables/columns encrypted with the VAULT key: table → (primary key, columns).
-# Every EncryptedText column must be here (tests/test_rotate_encryption_keys.py
-# checks the models against this map).
+# Every EncryptedText column must be here, and so must every column tagged
+# info={"encrypted": ...} / info={"encrypted_object": ...} — secrets encrypted
+# by hand (tests/test_rotate_encryption_keys.py checks the models against
+# these maps, so a new encrypted column can't be silently skipped).
 VAULT_DB_FIELDS = {
     "vault_items": ("id", ("username", "password", "note")),
     "infra_vault_items": ("id", ("username", "password", "note")),
@@ -209,7 +218,12 @@ async def main():
     ap.add_argument("--allow-undecryptable", action="store_true",
                     help="write even if some ciphertext opens under neither key "
                          "(those values are left untouched)")
+    ap.add_argument("--verify", action="store_true",
+                    help="check that every encrypted value and file opens under the "
+                         "CURRENT keys; writes nothing, exits 1 on any failure")
     args = ap.parse_args()
+    if args.verify:
+        sys.exit(await verify())
 
     # OLD keys: explicit env override takes precedence (dedicated->dedicated
     # rotation), else fall back to deriving from JWT_SECRET (pg99 first-time
@@ -318,6 +332,51 @@ async def main():
 
     await conn.close()
     print("\nDone." + ("  (dry run — nothing written)" if args.dry_run else ""))
+
+
+async def verify() -> int:
+    """Decrypt everything with the current keys. 0 = all good, 1 = some
+    ciphertext doesn't open (listed). Legacy plaintext is reported, not failed."""
+    keys = {n: os.getenv(n, "").strip() for n in ("VAULT_ENCRYPTION_KEY", "TOTP_ENCRYPTION_KEY")}
+    missing = [n for n, v in keys.items() if not v]
+    if missing:
+        print(f"{', '.join(missing)} not set: nothing to verify against.")
+        return 1
+    try:
+        vault_f, totp_f = Fernet(keys["VAULT_ENCRYPTION_KEY"]), Fernet(keys["TOTP_ENCRYPTION_KEY"])
+    except Exception as e:
+        print(f"A key is not a valid Fernet key: {e}")
+        return 1
+    dsn = os.getenv("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql://")
+    bucket = os.getenv("MINIO_BUCKET", "redwire-evidence")
+    print("Verifying encrypted data against the current keys (read only)")
+    conn = await asyncpg.connect(dsn)
+    try:
+        # rekey_* with the current key as both "new" and "old": opening under
+        # it counts as already-new; a token that doesn't open is undecryptable.
+        print("\nVault-key DB fields:")
+        bad = await migrate_db_fields(conn, VAULT_DB_FIELDS, vault_f, vault_f, True)
+        print("\nTOTP-key DB fields:")
+        bad += await migrate_db_fields(conn, TOTP_DB_FIELDS, totp_f, totp_f, True)
+        print("\nVault-key MinIO files:")
+        for table in VAULT_FILE_TABLES:
+            keys_ = [r["file_path"] for r in await conn.fetch(
+                f"SELECT file_path FROM {table} WHERE file_path IS NOT NULL")]  # nosec: static table name
+            st = migrate_minio_files(keys_, vault_f, vault_f, True, bucket)
+            print(st.line(f"{table} files"))
+            bad += st.undecryptable
+    finally:
+        await conn.close()
+    print("\n(rekeyed= is always 0 here; already-new= counts values that opened.)")
+    if bad:
+        print(f"\nFAILED: {len(bad)} value(s) don't open under the current keys:")
+        for where in bad[:20]:
+            print(f"    {where}")
+        if len(bad) > 20:
+            print(f"    … and {len(bad) - 20} more")
+        return 1
+    print("\nOK: every encrypted value and file opens under the current keys.")
+    return 0
 
 
 class _Rollback(Exception):

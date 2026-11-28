@@ -4,6 +4,11 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
+## [1.9.5] — Unreleased
+
+### Added
+- `rotate_encryption_keys.py --verify` checks that every encrypted value and vault file opens under the current keys, without changing anything. The key-rotation guides now end with it.
+
 ## [1.9.4] — 2026-11-27
 
 ### Changed
