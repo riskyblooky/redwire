@@ -19,7 +19,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useColumnVisibility, ColumnDef } from '@/lib/hooks/use-column-visibility';
-import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs, compareCustomFieldValues } from '@/components/custom-fields/custom-field-list-columns';
+import { CustomFieldListHeads, CustomFieldListCells, useCustomFieldListDefs, customFieldColumnDefs } from '@/components/custom-fields/custom-field-list-columns';
 import { ColumnToggle } from '@/components/ui/column-toggle';
 import { useRouter } from 'next/navigation';
 import {
@@ -29,11 +29,11 @@ import {
     CornerDownRight, GripVertical, FolderTree, TreePine, Table2, Zap,
     Flag, Layout, Circle, ArrowUpCircle, GitBranch, Globe, Settings, Filter, X,
 } from 'lucide-react';
-import { cn, parseDateOnly } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { ResultCount } from '@/components/ui/result-count';
 import {
-    useTestCases, useDeleteTestCase, useUpdateTestCase,
+    useTestCases, useTestCasesPage, useTestCaseFacets, useDeleteTestCase, useUpdateTestCase,
     buildTestCaseTree, flattenTree, TestCaseTreeNode,
     useLinkFinding, useUnlinkFinding, useLinkAsset, useUnlinkAsset,
 } from '@/lib/hooks/use-testcases';
@@ -108,7 +108,10 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { TestCaseDetailSheet } from '@/components/engagements/testcase-detail-sheet';
 import { ChainLinksDialog } from '@/components/engagements/chain-links-section';
-import { useInfiniteScroll } from '@/lib/hooks/use-infinite-scroll';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { useDebounce } from '@/lib/hooks/use-debounce';
+import { ListPagination } from '@/components/ui/list-pagination';
 import {
     DndContext,
     closestCenter,
@@ -427,6 +430,27 @@ const TESTCASES_COLUMNS: ColumnDef[] = [
     { key: 'actions',     label: 'Actions',     required: true },
 ];
 
+/** URL keys of the test-case list (prefixed t_ on the engagement page). */
+function testcaseListSpec() {
+    const stored = (k: string) => (typeof window !== 'undefined' ? localStorage.getItem(k) : null);
+    return {
+        q: { kind: 'string' },
+        cat: { kind: 'array' },
+        tag: { kind: 'array' },
+        status: { kind: 'enum', values: ['', 'pending', 'executed'], default: '' },
+        result: { kind: 'enum', values: ['', 'passed', 'failed'], default: '' },
+        by: { kind: 'string' },
+        after: { kind: 'string' },
+        sort: { kind: 'string', default: stored('redwire_sort_engagement_testcases_field') || 'title' },
+        dir: { kind: 'enum', values: ['asc', 'desc'], default: stored('redwire_sort_engagement_testcases_order') === 'desc' ? 'desc' : 'asc' },
+        page: { kind: 'int', default: 1, min: 1 },
+        size: { kind: 'int', default: 50, min: 1, max: 500 },
+    } satisfies ParamSpec;
+}
+
+/** ?testcase=<id> opens the detail sheet. */
+const SHEET_SPEC = { testcase: { kind: 'string' } } satisfies ParamSpec;
+
 export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: TestCasesTabProps) {
     const router = useRouter();
     const canCreateTestCase = usePermission(engagementId, 'testcase_create');
@@ -436,13 +460,77 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
     const [visibleCols, toggleCol] = useColumnVisibility('redwire_col_testcases', testcaseColumns);
     const col = (key: string) => visibleCols.has(key);
 
-    // Data
-    const { data: testcases = [], isLoading } = useTestCases(engagementId);
+    // View state lives in the URL (t_-prefixed: the engagement page hosts
+    // several lists); the sort default is the last one this browser used.
+    const listSpec = useMemo(() => testcaseListSpec(), []);
+    const [p, setP] = useListParams(listSpec, 't_');
+    const [sheet, setSheet] = useListParams(SHEET_SPEC);
+
+    // Typed inputs commit to the URL after a pause.
+    const [searchText, setSearchText] = useState(p.q);
+    const [createdByText, setCreatedByText] = useState(p.by);
+    const debouncedSearch = useDebounce(searchText, 300);
+    const debouncedCreatedBy = useDebounce(createdByText, 300);
+    useEffect(() => { if (debouncedSearch !== p.q) setP({ q: debouncedSearch }); }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { if (debouncedCreatedBy !== p.by) setP({ by: debouncedCreatedBy }); }, [debouncedCreatedBy]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearchText(p.q); }, [p.q]);
+    useEffect(() => { setCreatedByText(p.by); }, [p.by]);
+    const search = searchText;
+    const setSearch = setSearchText;
+
+    const filters = {
+        categories: p.cat, tags: p.tag,
+        status: p.status as '' | 'pending' | 'executed',
+        result: p.result as '' | 'passed' | 'failed',
+        createdBy: createdByText, dateAfter: p.after,
+    };
+    type Filters = typeof filters;
+    const setFilters = (next: Filters | ((prev: Filters) => Filters)) => {
+        const f = typeof next === 'function' ? next(filters) : next;
+        if (f.createdBy !== createdByText) setCreatedByText(f.createdBy);
+        setP({ cat: f.categories, tag: f.tags, status: f.status, result: f.result, after: f.dateAfter });
+    };
+    const hasActiveFilters = filters.categories.length > 0 || filters.tags.length > 0 || !!filters.status || !!filters.result || !!filters.createdBy || !!filters.dateAfter;
+    const clearFilters = () => setFilters({ categories: [], tags: [], status: '', result: '', createdBy: '', dateAfter: '' });
+    const toggleCategory = (cat: string) => setFilters(prev => ({
+        ...prev,
+        categories: prev.categories.includes(cat) ? prev.categories.filter(c => c !== cat) : [...prev.categories, cat],
+    }));
+
+    const sortField = p.sort;
+    const sortOrder = p.dir as 'asc' | 'desc';
+    const setSort = (field: string, order: 'asc' | 'desc') => {
+        setP({ sort: field, dir: order });
+        localStorage.setItem('redwire_sort_engagement_testcases_field', field);
+        localStorage.setItem('redwire_sort_engagement_testcases_order', order);
+    };
+    // The tree shows when nothing narrows or reorders the list; a page is
+    // then top-level test cases with all their descendants.
+    const isTreeView = !p.q && !hasActiveFilters && sortField === 'title' && sortOrder === 'asc';
+
+    // Data: one server page plus the facets (unfiltered total, categories).
+    const { data: page, isLoading, isFetching } = useTestCasesPage({
+        engagement_id: engagementId,
+        q: p.q || undefined,
+        category: p.cat,
+        tag: p.tag,
+        executed: p.status ? p.status === 'executed' : undefined,
+        result: (p.result || undefined) as 'passed' | 'failed' | undefined,
+        created_by: p.by || undefined,
+        created_after: p.after || undefined,
+        tree: isTreeView || undefined,
+        sort_by: sortField,
+        sort_order: sortOrder,
+        ...toSkipLimit(p.page, p.size),
+    });
+    const testcases = useMemo(() => page?.rows ?? [], [page]);
+    const total = page?.total ?? 0;
+    const { data: facets } = useTestCaseFacets(engagementId);
     const { data: noteLinks } = useEngagementNoteLinks(engagementId);
     const notesByTestCase = noteLinks?.testcase || {};
 
-    // Detail sheet state
-    const [selectedTestcaseId, setSelectedTestcaseId] = useState<string | null>(null);
+    // Detail sheet: ?testcase=<id>, so a link or reload reopens it.
+    const selectedTestcaseId = sheet.testcase || null;
 
     // View mode toggle: 'panel' = side sheet, 'page' = full page nav
     const [viewMode, setViewMode] = useState<'panel' | 'page'>(() => {
@@ -455,49 +543,19 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
         if (viewMode === 'page') {
             router.push(`/testcases/${testcaseId}?engagementId=${engagementId}&tab=testcases`);
         } else {
-            setSelectedTestcaseId(testcaseId);
+            setSheet({ testcase: testcaseId });
         }
     };
 
-    // Search & sort (persisted)
-    const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
-    const [filters, setFilters] = useState<{
-        categories: string[];
-        tags: string[];
-        status: '' | 'pending' | 'executed';
-        result: '' | 'passed' | 'failed';
-        createdBy: string;
-        dateAfter: string;
-    }>({ categories: [], tags: [], status: '', result: '', createdBy: '', dateAfter: '' });
     const { data: allTags = [] } = useTags('testcase');
     const { data: testcaseTypes = [] } = useConfigurableTypes('testcase');
-    // Category options come from the categories actually present in the data
-    // (they're free-form and include values not in the configurable list),
-    // colour-matched to configurable types by name where available.
+    // Category options are the categories in use (free-form), colour-matched
+    // to configurable types by name where available.
     const categoryColor: Record<string, string> = {};
     testcaseTypes.forEach((t: any) => { if (t.color) categoryColor[t.name.toLowerCase()] = t.color; });
-    const categoryOptions = [...new Set(testcases.map((t: any) => t.category).filter(Boolean) as string[])]
-        .sort((a, b) => a.localeCompare(b))
+    const categoryOptions = (facets?.categories ?? [])
         .map((c) => ({ value: c, label: c, color: categoryColor[c.toLowerCase()] || null }));
-
-    const hasActiveFilters = filters.categories.length > 0 || filters.tags.length > 0 || !!filters.status || !!filters.result || !!filters.createdBy || !!filters.dateAfter;
-
-    const toggleCategory = (cat: string) => setFilters(prev => ({
-        ...prev,
-        categories: prev.categories.includes(cat) ? prev.categories.filter(c => c !== cat) : [...prev.categories, cat],
-    }));
-    const clearFilters = () => setFilters({ categories: [], tags: [], status: '', result: '', createdBy: '', dateAfter: '' });
-
-    const [sortField, setSortField] = useState<string>(() => {
-        if (typeof window !== 'undefined') return localStorage.getItem('redwire_sort_engagement_testcases_field') || 'title';
-        return 'title';
-    });
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') return (localStorage.getItem('redwire_sort_engagement_testcases_order') as 'asc' | 'desc') || 'asc';
-        return 'asc';
-    });
-    useEffect(() => { localStorage.setItem('redwire_sort_engagement_testcases_field', sortField); localStorage.setItem('redwire_sort_engagement_testcases_order', sortOrder); }, [sortField, sortOrder]);
 
     // Tree view
     const testCaseTree = useMemo(() => buildTestCaseTree(testcases), [testcases]);
@@ -516,67 +574,21 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
 
     useEffect(() => { if (!tcInitialized.current) return; localStorage.setItem(tcStorageKey, JSON.stringify([...tcExpandedIds])); }, [tcExpandedIds, tcStorageKey]);
 
-    const filteredTestCaseTree = useMemo(() => {
-        const term = search.toLowerCase();
-        function matchesNode(node: TestCaseTreeNode) {
-            const matchesText = !term || node.title.toLowerCase().includes(term) || node.category.toLowerCase().includes(term) || node.description.toLowerCase().includes(term);
-            const matchesCat = filters.categories.length === 0 || filters.categories.includes(node.category);
-            const matchesTags = filters.tags.length === 0 || ((node as any).tags || []).some((t: any) => filters.tags.includes(t.id));
-            const matchesStatus = !filters.status || (filters.status === 'executed' ? node.is_executed : !node.is_executed);
-            const matchesResult = !filters.result || (node.is_executed && (filters.result === 'passed' ? node.is_successful === true : node.is_successful === false));
-            const matchesCreatedBy = !filters.createdBy || (node.created_by_username || '').toLowerCase().includes(filters.createdBy.toLowerCase());
-            const matchesDate = !filters.dateAfter || parseUTCDate(node.created_at) >= parseDateOnly(filters.dateAfter);
-            return matchesText && matchesCat && matchesTags && matchesStatus && matchesResult && matchesCreatedBy && matchesDate;
-        }
-        if (!search && !hasActiveFilters) return testCaseTree;
-        function filterNodes(nodes: TestCaseTreeNode[]): TestCaseTreeNode[] {
-            const result: TestCaseTreeNode[] = [];
-            for (const node of nodes) { const fc = filterNodes(node.children); if (matchesNode(node) || fc.length > 0) result.push({ ...node, children: fc }); }
-            return result;
-        }
-        return filterNodes(testCaseTree);
-    }, [testCaseTree, search, filters, hasActiveFilters]);
-
     const displayTestCases = useMemo(() => {
+        // Table view: the server's order, flat.
+        if (!isTreeView) return testcases.map((tc) => ({ ...tc, children: [], depth: 0 }) as TestCaseTreeNode);
         function sortNodes(nodes: TestCaseTreeNode[]): TestCaseTreeNode[] {
-            const sorted = [...nodes].sort((a, b) => {
-                let cmp = 0;
-                switch (sortField) {
-                    case 'title': cmp = a.title.localeCompare(b.title); break;
-                    case 'category': cmp = a.category.localeCompare(b.category); break;
-                    case 'is_executed': cmp = (a.is_executed ? 1 : 0) - (b.is_executed ? 1 : 0); break;
-                    case 'result': cmp = (a.is_executed ? (a.is_successful === true ? 3 : a.is_successful === false ? 1 : 2) : 0) - (b.is_executed ? (b.is_successful === true ? 3 : b.is_successful === false ? 1 : 2) : 0); break;
-                    case 'created_at': cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
-                    case 'unresolved_thread_count': cmp = (a.unresolved_thread_count || 0) - (b.unresolved_thread_count || 0); break;
-                    case 'created_by_username': cmp = (a.created_by_username || '').localeCompare(b.created_by_username || ''); break;
-                    default:
-                        if (sortField.startsWith('cf:')) {
-                            cmp = compareCustomFieldValues((a.custom_fields as any)?.[sortField.slice(3)], (b.custom_fields as any)?.[sortField.slice(3)]);
-                        } else {
-                            cmp = a.title.localeCompare(b.title);
-                        }
-                }
-                return sortOrder === 'desc' ? -cmp : cmp;
-            });
-            return sorted.map(node => ({ ...node, children: sortNodes(node.children) }));
+            return [...nodes].sort((a, b) => a.title.localeCompare(b.title))
+                .map(node => ({ ...node, children: sortNodes(node.children) }));
         }
-        const sortedTree = sortNodes(filteredTestCaseTree);
-        // While searching or filtering, show every match: the filtered tree keeps
-        // a match's ancestors, but a collapsed ancestor used to hide it (only
-        // search expanded everything).
-        return flattenTree(sortedTree, (search || hasActiveFilters) ? new Set(testcases.map(tc => tc.id)) : tcExpandedIds);
-    }, [filteredTestCaseTree, tcExpandedIds, search, hasActiveFilters, testcases, sortField, sortOrder]);
+        return flattenTree(sortNodes(testCaseTree), tcExpandedIds);
+    }, [isTreeView, testcases, testCaseTree, tcExpandedIds]);
 
     const toggleTcExpand = (id: string) => { setTcExpandedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
     const expandAllTc = () => { setTcExpandedIds(new Set(testcases.filter(tc => testcases.some(child => child.parent_id === tc.id)).map(tc => tc.id))); };
     const collapseAllTc = () => { setTcExpandedIds(new Set()); };
 
-    const isTreeView = !search && !hasActiveFilters && sortField === 'title' && sortOrder === 'asc';
-    // Window the (already tree-flattened, collapsed-children-excluded) list.
-    // Reset on search/sort/view — NOT on expand/collapse (which also changes length).
-    const { visible: visibleTestCases, sentinelRef, hasMore } = useInfiniteScroll(displayTestCases, {
-        resetKey: `${search}|${sortField}|${sortOrder}|${isTreeView}`,
-    });
+    const visibleTestCases = displayTestCases;
 
     // DnD
     const tcDndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -608,6 +620,9 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
 
     // Move dialog
     const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
+    // The move dialog picks any test case of the engagement as the new
+    // parent, not just this page's: load them all while it's open.
+    const { data: moveCandidates = [] } = useTestCases(engagementId, isMoveDialogOpen);
     const [moveTarget, setMoveTarget] = useState<{ id: string; title: string; parent_id: string | null } | null>(null);
     const handleOpenMove = (target: { id: string; title: string; parent_id: string | null }) => { setMoveTarget(target); setIsMoveDialogOpen(true); };
     const handleMove = async (testcaseId: string, newParentId: string | null) => {
@@ -640,8 +655,8 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
     }, [runbooksList, rbImportSearch, rbImportTypeFilter]);
 
     const handleSort = (field: string) => {
-        if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        else { setSortField(field); setSortOrder('asc'); }
+        if (sortField === field) setSort(field, sortOrder === 'asc' ? 'desc' : 'asc');
+        else setSort(field, 'asc');
     };
 
     return (
@@ -664,7 +679,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
                         <Input placeholder="Search test cases..." className="pl-8 bg-slate-900/50 border-slate-700 text-xs h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <span className="w-36 shrink-0 flex justify-end overflow-hidden mr-1">
-                        {!isLoading && <ResultCount count={displayTestCases.length} total={testcases.length} noun="test case" />}
+                        {!isLoading && !isTreeView && <ResultCount count={total} total={facets?.total} noun="test case" />}
                     </span>
                     <Button
                         size="icon" variant="ghost"
@@ -681,7 +696,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
                         </>
                     )}
                     {!isTreeView && (
-                        <Button variant="outline" size="sm" onClick={() => { setSearch(''); setSortField('title'); setSortOrder('asc'); }} className="text-slate-300 border-slate-700 hover:bg-slate-800 h-9 text-xs gap-1.5">
+                        <Button variant="outline" size="sm" onClick={() => { setSearchText(''); clearFilters(); setP({ q: '', sort: 'title', dir: 'asc' }); }} className="text-slate-300 border-slate-700 hover:bg-slate-800 h-9 text-xs gap-1.5">
                             <TreePine className="h-3.5 w-3.5" />Back to Tree
                         </Button>
                     )}
@@ -823,7 +838,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
                 {isLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
                 ) : displayTestCases.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400"><CheckSquare className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>No test cases defined</p></div>
+                    <div className="text-center py-8 text-slate-400"><CheckSquare className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>{search || hasActiveFilters ? 'No test cases match your search or filters' : 'No test cases defined'}</p></div>
                 ) : (
                     <DndContext sensors={tcDndSensors} collisionDetection={closestCenter} onDragStart={handleTcDragStart} onDragEnd={handleTcDragEnd}>
                         {isTreeView && activeDragId && <RootDropZone />}
@@ -851,11 +866,10 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
                                 </TableBody>
                             </Table>
                         </SortableContext>
-                        {hasMore && (
-                            <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-4 text-xs text-slate-500">
-                                <Loader2 className="h-4 w-4 animate-spin" /> Loading more… ({visibleTestCases.length} of {displayTestCases.length})
-                            </div>
-                        )}
+                        <ListPagination
+                            page={p.page} pageSize={p.size} total={total} isFetching={isFetching}
+                            onPageChange={(n) => setP({ page: n })} onPageSizeChange={(n) => setP({ size: n })}
+                        />
                         <DragOverlay>
                             {activeDragId ? (<div className="bg-slate-800 border border-primary/50 rounded-lg px-4 py-2 shadow-xl shadow-primary/20 text-sm text-white font-medium">{testcases.find(tc => tc.id === activeDragId)?.title || 'Test Case'}</div>) : null}
                         </DragOverlay>
@@ -864,7 +878,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
             </CardContent>
         </Card>
 
-        <MoveTestCaseDialog open={isMoveDialogOpen} onOpenChange={(open) => { setIsMoveDialogOpen(open); if (!open) setMoveTarget(null); }} testcases={testcases || []} movingTestCase={moveTarget} isMoving={updateTestCase.isPending} onMove={handleMove} />
+        <MoveTestCaseDialog open={isMoveDialogOpen} onOpenChange={(open) => { setIsMoveDialogOpen(open); if (!open) setMoveTarget(null); }} testcases={moveCandidates} movingTestCase={moveTarget} isMoving={updateTestCase.isPending} onMove={handleMove} />
 
         {/* Import Runbook Dialog */}
         <Dialog open={isImportRunbookOpen} onOpenChange={(open) => { setIsImportRunbookOpen(open); if (!open) { setPreviewRunbook(null); setRbImportSearch(''); setRbImportTypeFilter(''); } }}>
@@ -997,7 +1011,7 @@ export function TestCasesTab({ engagementId, onAddVaultItem, onAddCleanup }: Tes
             testcaseId={selectedTestcaseId}
             engagementId={engagementId}
             open={!!selectedTestcaseId}
-            onOpenChange={(open) => { if (!open) setSelectedTestcaseId(null); }}
+            onOpenChange={(open) => { if (!open) setSheet({ testcase: '' }); }}
             nonModal
         />
 

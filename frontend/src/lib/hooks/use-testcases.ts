@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { fetchAllPages } from '../fetch-all';
+import { fetchPage } from '../fetch-page';
 
 export interface TestCase {
     custom_fields?: Record<string, unknown>;
@@ -135,6 +136,49 @@ export function useTestCases(engagementId?: string, enabled: boolean = true) {
             return fetchAllPages<TestCase>('/testcases', engagementId ? { engagement_id: engagementId } : {});
         },
         enabled,
+        staleTime: 30_000,
+    });
+}
+
+/** Query parameters of ``GET /testcases`` for one server page. With
+ *  ``tree`` the page is of top-level test cases plus all their descendants,
+ *  and the total counts the top-level ones. */
+export interface TestCasePageParams {
+    engagement_id?: string;
+    q?: string;
+    category?: string[];
+    tag?: string[];
+    executed?: boolean;
+    result?: 'passed' | 'failed';
+    created_by?: string;
+    created_after?: string;
+    tree?: boolean;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+    skip: number;
+    limit: number;
+}
+
+export function useTestCasesPage(params: TestCasePageParams, enabled: boolean = true) {
+    return useQuery({
+        queryKey: ['testcases', 'page', params],
+        queryFn: () => fetchPage<TestCase>('/testcases', { ...params }),
+        enabled,
+        placeholderData: (prev) => prev,
+        staleTime: 30_000,
+    });
+}
+
+/** The unfiltered total in scope and the categories in use. */
+export function useTestCaseFacets(engagementId?: string) {
+    return useQuery({
+        queryKey: ['testcases', 'facets', engagementId ?? null],
+        queryFn: async () => {
+            const { data } = await api.get<{ total: number; categories: string[] }>('/testcases/facets', {
+                params: engagementId ? { engagement_id: engagementId } : {},
+            });
+            return data;
+        },
         staleTime: 30_000,
     });
 }

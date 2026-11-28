@@ -14,7 +14,7 @@
  */
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,7 +35,11 @@ import {
     Plus, Search, Eye, Edit, Trash2, CheckSquare, Loader2, MessageSquare,
     ChevronRight, ChevronDown, CornerDownRight
 } from 'lucide-react';
-import { useTestCases, useDeleteTestCase, buildTestCaseTree, flattenTree, TestCaseTreeNode } from '@/lib/hooks/use-testcases';
+import { useTestCasesPage, useTestCaseFacets, useDeleteTestCase, buildTestCaseTree, flattenTree, TestCaseTreeNode } from '@/lib/hooks/use-testcases';
+import { useListParams } from '@/lib/hooks/use-list-params';
+import { toSkipLimit, type ParamSpec } from '@/lib/list-params';
+import { useDebounce } from '@/lib/hooks/use-debounce';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { useEngagements } from '@/lib/hooks/use-engagements';
 import { toast } from 'sonner';
 import { useConfirmDialog, getErrorMessage } from '@/components/ui/confirm-dialog';
@@ -66,13 +70,37 @@ const categoryColors: Record<string, string> = {
     OTHER: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
 };
 
+const PAGE_SPEC = {
+    q: { kind: 'string' },
+    page: { kind: 'int', default: 1, min: 1 },
+    size: { kind: 'int', default: 50, min: 1, max: 500 },
+} satisfies ParamSpec;
+
+// useSearchParams (the list's URL state) needs a Suspense boundary for the
+// production build's prerender.
 export default function TestCasesPage() {
+    return <Suspense fallback={null}><TestCasesList /></Suspense>;
+}
+
+function TestCasesList() {
     const router = useRouter();
-    const [searchTerm, setSearchTerm] = useState('');
+    const [p, setP] = useListParams(PAGE_SPEC);
+    const [searchTerm, setSearchTerm] = useState(p.q);
+    const debouncedSearch = useDebounce(searchTerm, 300);
+    useEffect(() => { if (debouncedSearch !== p.q) setP({ q: debouncedSearch }); }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setSearchTerm(p.q); }, [p.q]);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const tcInitialized = useRef(false);
 
-    const { data: testcases = [], isLoading, error, refetch } = useTestCases();
+    // Not searching: a page of top-level test cases with their descendants
+    // (the tree). Searching: a flat page of matches, best first.
+    const { data: page, isLoading, isFetching, error, refetch } = useTestCasesPage({
+        q: p.q || undefined, tree: !p.q || undefined, sort_by: 'title', sort_order: 'asc',
+        ...toSkipLimit(p.page, p.size),
+    });
+    const testcases = useMemo(() => page?.rows ?? [], [page]);
+    const total = page?.total ?? 0;
+    const { data: facets } = useTestCaseFacets();
     const deleteTestCase = useDeleteTestCase();
     const { confirm, ConfirmDialog } = useConfirmDialog();
     const queryClient = useQueryClient();
@@ -123,39 +151,11 @@ export default function TestCasesPage() {
         localStorage.setItem('redwire_tc_expanded', JSON.stringify([...expandedIds]));
     }, [expandedIds]);
 
-    // Filter tree (show matching nodes + ancestors)
-    const filteredTree = useMemo(() => {
-        if (!searchTerm) return tree;
-
-        const term = searchTerm.toLowerCase();
-
-        function matchesSearch(node: TestCaseTreeNode): boolean {
-            return node.title.toLowerCase().includes(term) ||
-                node.description.toLowerCase().includes(term) ||
-                node.category.toLowerCase().includes(term);
-        }
-
-        function filterNodes(nodes: TestCaseTreeNode[]): TestCaseTreeNode[] {
-            const result: TestCaseTreeNode[] = [];
-            for (const node of nodes) {
-                const filteredChildren = filterNodes(node.children);
-                if (matchesSearch(node) || filteredChildren.length > 0) {
-                    result.push({
-                        ...node,
-                        children: filteredChildren,
-                    });
-                }
-            }
-            return result;
-        }
-
-        return filterNodes(tree);
-    }, [tree, searchTerm]);
-
     // Flatten for rendering
     const displayRows = useMemo(() => {
-        return flattenTree(filteredTree, searchTerm ? new Set(testcases.map(tc => tc.id)) : expandedIds);
-    }, [filteredTree, expandedIds, searchTerm, testcases]);
+        if (p.q) return testcases.map((tc) => ({ ...tc, children: [], depth: 0 }) as TestCaseTreeNode);
+        return flattenTree(tree, expandedIds);
+    }, [tree, expandedIds, p.q, testcases]);
 
     const toggleExpand = (id: string) => {
         setExpandedIds(prev => {
@@ -250,7 +250,7 @@ export default function TestCasesPage() {
                                     className="pl-10 bg-slate-800/50 border-slate-700 text-white focus:ring-primary focus:border-primary"
                                 />
                             </div>
-                            <ResultCount count={displayRows.length} total={testcases.length} noun="test case" className="self-center" />
+                            {p.q && <ResultCount count={total} total={facets?.total} noun="test case" className="self-center" />}
                             <Button variant="outline" size="sm" onClick={expandAll} className="text-slate-300 border-slate-700 hover:bg-slate-800">
                                 Expand All
                             </Button>
@@ -265,7 +265,7 @@ export default function TestCasesPage() {
                 <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xs shadow-xl overflow-hidden">
                     <CardHeader>
                         <CardTitle className="text-white">
-                            All Test Cases {!isLoading && `(${testcases.length})`}
+                            All Test Cases {facets && `(${facets.total})`}
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="px-0 pt-0">
@@ -416,6 +416,11 @@ export default function TestCasesPage() {
                                         )}
                                     </TableBody>
                                 </Table>
+                                <ListPagination
+                                    className="px-6"
+                                    page={p.page} pageSize={p.size} total={total} isFetching={isFetching}
+                                    onPageChange={(n) => setP({ page: n })} onPageSizeChange={(n) => setP({ size: n })}
+                                />
                             </div>
                         )}
                     </CardContent>

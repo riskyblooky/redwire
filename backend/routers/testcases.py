@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Form, Header
-from schemas._field_limits import MAX_LIST_LIMIT
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from models.loaders import load, options
-from typing import List, Optional
+from typing import List, Literal, Optional
+from datetime import date, datetime
+from utils import listing
 import logging
 from database import get_db
 from models.user import User
@@ -26,39 +27,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/testcases", tags=["testcases"])
 
-@router.get("", response_model=List[TestCaseResponse])
-async def get_testcases(
-    response: Response,
-    engagement_id: Optional[str] = Query(None),
-    skip: int = 0,
-    limit: int = Query(100, ge=1, le=MAX_LIST_LIMIT),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get all test cases, optionally filtered by engagement. The total
-    matching (same filters, ignoring paging) is in ``X-Total-Count``."""
-    from models.discussion import Thread
-    from sqlalchemy import func
-    
-    # Join with threads to count unresolved threads
-    query = select(
-        TestCase,
-        User.username.label("creator_username"),
-        User.full_name.label("creator_full_name"),
-        User.profile_photo.label("creator_profile_photo"),
-        func.count(Thread.id).filter(Thread.is_resolved == False).label("unresolved_count")
-    ).outerjoin(
-        Thread,
-        (Thread.resource_type == "testcase") & (Thread.resource_id == TestCase.id)
-    ).outerjoin(
-        User,
-        TestCase.created_by == User.id
-    ).group_by(TestCase.id, User.username, User.full_name, User.profile_photo)
-    
+def _testcase_list_filters(current_user: User, engagement_id, category, tag, executed, result,
+                           created_by, created_after, term) -> list:
+    """The WHERE clauses of the test-case list (shared with its facets)."""
+    from sqlalchemy import or_
+    from models.associations import TestCaseTag
     filters = []
     if engagement_id:
         filters.append(TestCase.engagement_id == engagement_id)
-
+    if category:
+        filters.append(TestCase.category.in_(category))
+    if tag:
+        filters.append(TestCase.id.in_(select(TestCaseTag.testcase_id).where(TestCaseTag.tag_id.in_(tag))))
+    if executed is not None:
+        filters.append(TestCase.is_executed.is_(executed))
+    if result:
+        filters.append(TestCase.is_executed.is_(True))
+        filters.append(TestCase.is_successful.is_(result == "passed"))
+    if created_by:
+        filters.append(TestCase.created_by.in_(
+            select(User.id).where(User.username.ilike(f"%{listing._like_escape(created_by)}%", escape="\\"))))
+    if created_after:
+        filters.append(TestCase.created_at >= datetime.combine(created_after, datetime.min.time()))
+    if term:
+        filters.append(listing.search_clause(term, [TestCase.title, TestCase.category, TestCase.description]))
     # Restrict to engagements where the caller's role can view these
     # (same rule as the single-item GET) for non-admins
     if current_user.role not in [UserRole.ADMIN, UserRole.READ_ONLY_ADMIN, UserRole.TEAM_LEAD]:
@@ -66,14 +58,94 @@ async def get_testcases(
         filters.append(TestCase.engagement_id.in_(
             engagements_with_permission(current_user.id, Permission.TESTCASE_VIEW.value)
         ))
-    query = query.where(*filters)
-    total = (await db.execute(select(func.count()).select_from(TestCase).where(*filters))).scalar_one()
-    response.headers["X-Total-Count"] = str(total)
+    return filters
 
-    query = query.offset(skip).limit(limit).order_by(TestCase.created_at.desc(), TestCase.id).options(*options("TESTCASE"))
-    
-    result = await db.execute(query)
-    rows = result.all()
+
+@router.get("", response_model=List[TestCaseResponse])
+async def get_testcases(
+    response: Response,
+    engagement_id: Optional[str] = Query(None),
+    category: Optional[List[str]] = Query(None),
+    tag: Optional[List[str]] = Query(None, description="Tag ids; any of them."),
+    executed: Optional[bool] = Query(None),
+    result: Optional[Literal["passed", "failed"]] = Query(None, description="Executed, and passed / failed."),
+    created_by: Optional[str] = Query(None, max_length=100, description="Creator username contains."),
+    created_after: Optional[date] = Query(None),
+    tree: bool = Query(False, description=(
+        "Page over top-level test cases; each page also carries every descendant "
+        "of its roots, which X-Total-Count (roots) doesn't count.")),
+    page: listing.ListParams = Depends(listing.list_params(default_limit=100)),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Test cases matching the filters, paged; the total matching is in
+    ``X-Total-Count``. ``q`` searches title, category and description, best
+    matches first. Sort by ``created_at`` (default, newest first),
+    ``updated_at``, ``title``, ``category``, ``is_executed``, ``result``,
+    ``unresolved_thread_count``, ``created_by_username`` or
+    ``cf:<custom field key>``."""
+    from models.discussion import Thread
+    from sqlalchemy import func, case, exists
+    from sqlalchemy.orm import aliased
+
+    unresolved = func.count(Thread.id).filter(Thread.is_resolved == False)
+    # Join with threads to count unresolved threads
+    query = select(
+        TestCase,
+        User.username.label("creator_username"),
+        User.full_name.label("creator_full_name"),
+        User.profile_photo.label("creator_profile_photo"),
+        unresolved.label("unresolved_count")
+    ).outerjoin(
+        Thread,
+        (Thread.resource_type == "testcase") & (Thread.resource_id == TestCase.id)
+    ).outerjoin(
+        User,
+        TestCase.created_by == User.id
+    ).group_by(TestCase.id, User.username, User.full_name, User.profile_photo).options(*options("TESTCASE"))
+
+    filters = _testcase_list_filters(current_user, engagement_id, category, tag, executed, result,
+                                     created_by, created_after, page.q)
+    if tree:
+        # A root: no parent, or one outside this engagement (shown at the top).
+        parent = aliased(TestCase)
+        filters.append(~exists().where(parent.id == TestCase.parent_id,
+                                       parent.engagement_id == TestCase.engagement_id))
+
+    sortable = {
+        "created_at": TestCase.created_at,
+        "updated_at": TestCase.updated_at,
+        "title": func.lower(TestCase.title),
+        "category": func.lower(TestCase.category),
+        "is_executed": TestCase.is_executed,
+        # Not run < failed < run without a result < passed, as in the table.
+        "result": case((TestCase.is_executed.is_not(True), 0), (TestCase.is_successful.is_(False), 1),
+                       (TestCase.is_successful.is_(True), 3), else_=2),
+        "unresolved_thread_count": unresolved,
+        "created_by_username": func.lower(User.username),
+    }
+    if page.sort_by and page.sort_by.startswith("cf:"):
+        sortable[page.sort_by] = TestCase.custom_fields[page.sort_by[3:]].as_string()
+    rank = listing.search_rank(page.q, [TestCase.title, TestCase.description]) if page.q else None
+    order = listing.order_keys(page, sortable, default="created_at", default_descending=True,
+                               pk=TestCase.id, rank=rank)
+    rows = await listing.count_and_page(db, response, query.where(*filters), page, count_from=TestCase,
+                                        filters=filters, order=order)
+
+    if tree and rows:
+        # Every descendant of this page's roots (UNION, not UNION ALL: it
+        # stops on a parent cycle instead of looping).
+        root_ids = [row[0].id for row in rows]
+        sub = select(TestCase.id, TestCase.engagement_id).where(TestCase.parent_id.in_(root_ids)).cte(recursive=True)
+        child = aliased(TestCase)
+        sub = sub.union(select(child.id, child.engagement_id).where(
+            child.parent_id == sub.c.id, child.engagement_id == sub.c.engagement_id))
+        scope = [f for f in _testcase_list_filters(current_user, engagement_id, None, None, None, None,
+                                                   None, None, None)]
+        rows = rows + (await db.execute(
+            query.where(TestCase.id.in_(select(sub.c.id)), TestCase.id.not_in(root_ids), *scope)
+            .order_by(func.lower(TestCase.title), TestCase.id)
+        )).all()
 
     # Batch-load port_ids from TestCaseAsset join table for all test cases
     testcase_ids = [row[0].id for row in rows]
@@ -105,6 +177,24 @@ async def get_testcases(
         testcases_with_counts.append(TestCaseResponse(**testcase_dict))
 
     return testcases_with_counts
+
+@router.get("/facets")
+async def get_testcase_facets(
+    engagement_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The unfiltered total in scope (for "N of M") and the categories in
+    use (filter options) of a paged test-case list."""
+    from sqlalchemy import func
+    filters = _testcase_list_filters(current_user, engagement_id, None, None, None, None, None, None, None)
+    total = (await db.execute(select(func.count()).select_from(TestCase).where(*filters))).scalar_one()
+    categories = (await db.execute(
+        select(TestCase.category).where(*filters, TestCase.category.is_not(None), TestCase.category != "")
+        .distinct().order_by(TestCase.category)
+    )).scalars().all()
+    return {"total": total, "categories": categories}
+
 
 @router.get("/{testcase_id}", response_model=TestCaseResponse)
 async def get_testcase(

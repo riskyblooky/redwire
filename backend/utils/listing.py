@@ -122,7 +122,12 @@ def order_keys(params: ListParams, sortable: Mapping[str, ColumnElement], *,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"sort_by must be one of: {', '.join(sorted(sortable))}",
         )
-    descending = default_descending if params.descending is None else params.descending
+    # No sort_order: the default sort keeps its own direction (newest first);
+    # any other sort_by is ascending.
+    if params.descending is not None:
+        descending = params.descending
+    else:
+        descending = default_descending if name == default else False
     col = sortable[name]
     keys = [rank] if rank is not None else []
     keys.append(col.desc().nulls_last() if descending else col.asc().nulls_last())
