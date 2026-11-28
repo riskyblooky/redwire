@@ -1,0 +1,103 @@
+{
+  "assets": [
+    {
+      "asset_type": "URL",
+      "description": "Imported from Burp Suite scan\nURL: https://portal.corp.example",
+      "identifier": "10.20.0.5",
+      "name": "portal.corp.example",
+      "ports": []
+    },
+    {
+      "asset_type": "URL",
+      "description": "Imported from Burp Suite scan\nURL: http://legacy.corp.example:8080",
+      "identifier": "10.20.0.9",
+      "name": "legacy.corp.example",
+      "ports": [
+        {
+          "port_number": 8080,
+          "protocol": "TCP",
+          "service_name": null,
+          "state": "OPEN",
+          "version": null
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "affected_asset_indices": [
+        0
+      ],
+      "category": "Web Application",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "The **q** parameter appears to be vulnerable to SQL injection attacks. The payload **'** was submitted and a database error message was returned.\n\n**Background**: SQL injection vulnerabilities arise when user-controllable data is incorporated into database SQL queries in an unsafe manner.\n\n**Location**: /api/search [q parameter]\n\n**URL**: `https://portal.corp.example/api/search`\n\n**Confidence**: Firm",
+      "impact": "SQL injection vulnerabilities arise when user-controllable data is incorporated into database SQL queries in an unsafe manner.",
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": "The **q** parameter appears to be vulnerable to SQL injection attacks. The payload **'** was submitted and a database error message was returned.",
+          "location": "/api/search [q parameter]"
+        },
+        {
+          "asset_index": 0,
+          "detail": "The **id** parameter appears to be vulnerable.",
+          "location": "/api/users [id parameter]"
+        }
+      ],
+      "mitigations": "The most effective way to prevent SQL injection attacks is to use **parameterized queries**.",
+      "references": "- [SQL injection](https://portswigger.net/web-security/sql-injection)\n- [CWE-89: Improper Neutralization of Special Elements used in an SQL Command](https://cwe.mitre.org/data/definitions/89.html)",
+      "severity": "HIGH",
+      "title": "SQL injection"
+    },
+    {
+      "affected_asset_indices": [
+        1
+      ],
+      "category": "Web Application",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "**Background**: The application fails to prevent users from connecting to it over unencrypted connections.\n\n**Location**: /\n\n**URL**: `http://legacy.corp.example:8080/`\n\n**Confidence**: Certain",
+      "impact": "The application fails to prevent users from connecting to it over unencrypted connections.",
+      "instances": [
+        {
+          "asset_index": 1,
+          "detail": null,
+          "location": "/"
+        }
+      ],
+      "mitigations": "Add the `Strict-Transport-Security` header.",
+      "references": null,
+      "severity": "LOW",
+      "title": "Strict transport security not enforced"
+    },
+    {
+      "affected_asset_indices": [
+        0
+      ],
+      "category": "Web Application",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "The following email address was disclosed in the response:\n- security@corp.example\n\n**Location**: /contact\n\n**URL**: `https://portal.corp.example/contact`\n\n**Confidence**: Certain",
+      "impact": null,
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": "The following email address was disclosed in the response:\n- security@corp.example",
+          "location": "/contact"
+        }
+      ],
+      "mitigations": null,
+      "references": null,
+      "severity": "INFO",
+      "title": "Email addresses disclosed"
+    }
+  ],
+  "raw_metadata": {
+    "total_hosts": 2,
+    "total_issues": 4,
+    "unique_issue_types": 3
+  },
+  "source_tool": "burp",
+  "warnings": []
+}

@@ -1,0 +1,42 @@
+{
+  "assets": [
+    {
+      "asset_type": "IP Address",
+      "description": "Imported from NetExec (nxc)\n\ndomain:corp.example · name:DC01\n\n- SMB 445: Windows Server 2019 Build 17763 x64",
+      "identifier": "10.20.0.2",
+      "name": "DC01",
+      "ports": [
+        {
+          "port_number": 445,
+          "protocol": "TCP",
+          "service_name": "smb",
+          "state": "OPEN",
+          "version": "Windows Server 2019 Build 17763 x64"
+        }
+      ]
+    },
+    {
+      "asset_type": "IP Address",
+      "description": "Imported from NetExec (nxc)\n\n- SSH 22: SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5",
+      "identifier": "10.20.0.5",
+      "name": "10.20.0.5",
+      "ports": [
+        {
+          "port_number": 22,
+          "protocol": "TCP",
+          "service_name": "ssh",
+          "state": "OPEN",
+          "version": "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "raw_metadata": {
+    "total_hosts": 2
+  },
+  "source_tool": "nxc",
+  "warnings": [
+    "Skipped 6 credential result line(s) — import nxc credential output through the Spray import instead."
+  ]
+}

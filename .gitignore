@@ -115,3 +115,6 @@ scripts/seed_test_data.sql
 scripts/sync_templates.sh
 # Backups written by scripts/backup.sh / deploy_server.sh (contain secrets)
 backups/
+
+# Scanner-output fixtures (nxc --log files) are test data, not logs.
+!backend/tests/fixtures/**/*.log

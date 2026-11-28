@@ -144,7 +144,7 @@ def parse(content: bytes) -> ParsedImportData:
         severity = _SEVERITY_MAP.get(severity_raw, "INFO")
 
         # Description
-        desc = info.get("description", "")
+        desc = str(info.get("description") or "").strip()
         matcher_name = item.get("matcher-name", "")
         matched_at = item.get("matched-at", "")
         extracted_results = item.get("extracted-results", []) or []

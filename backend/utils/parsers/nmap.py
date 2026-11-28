@@ -4,7 +4,8 @@ utils/parsers/nmap.py — Nmap XML Output Parser (unified parser wrapper)
 Reuses the existing Nmap parsing logic from the asset router but returns
 the standardised ParsedImportData format. This parser only produces
 assets + ports (no findings, since Nmap is a port scanner, not a vuln
-scanner). Extracts OS detection and script output as asset descriptions.
+scanner). Hostname, the best OS match and the MAC address go into the
+asset description; script output is not imported.
 """
 
 import defusedxml.ElementTree as ET

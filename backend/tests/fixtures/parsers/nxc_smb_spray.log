@@ -1,0 +1,9 @@
+SMB         10.20.0.2       445    DC01             [*] Windows Server 2019 Build 17763 x64 (name:DC01) (domain:corp.example) (signing:True) (SMBv1:False)
+SMB         10.20.0.2       445    DC01             [-] corp.example\alice:Autumn2026! STATUS_LOGON_FAILURE
+SMB         10.20.0.2       445    DC01             [+] corp.example\bob:Autumn2026!
+SMB         10.20.0.2       445    DC01             [-] corp.example\carol:Autumn2026! STATUS_ACCOUNT_LOCKED_OUT
+SMB         10.20.0.2       445    DC01             [-] corp.example\dave:Autumn2026! STATUS_ACCOUNT_DISABLED
+SMB         10.20.0.2       445    DC01             [+] corp.example\svc_backup:Autumn2026! (Pwn3d!)
+2026-11-28 12:59:01 | ssh.py:60 - INFO - SSH         10.20.0.5       22     10.20.0.5        [*] SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5
+2026-11-28 12:59:02 | ssh.py:60 - INFO - SSH         10.20.0.5       22     10.20.0.5        [+] deploy:Autumn2026! (Pwn3d!) Linux - Shell access!
+garbage line that is not nxc output

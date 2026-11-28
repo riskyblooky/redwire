@@ -1,0 +1,190 @@
+{
+  "assets": [
+    {
+      "asset_type": "IP Address",
+      "description": "Imported from Nessus scan\nHostname: dc01.corp.example\nOS: Microsoft Windows Server 2019 Standard",
+      "identifier": "10.20.0.2",
+      "name": "dc01.corp.example",
+      "ports": [
+        {
+          "port_number": 445,
+          "protocol": "TCP",
+          "service_name": "cifs",
+          "state": "OPEN",
+          "version": null
+        },
+        {
+          "port_number": 53,
+          "protocol": "UDP",
+          "service_name": "dns",
+          "state": "OPEN",
+          "version": null
+        }
+      ]
+    },
+    {
+      "asset_type": "IP Address",
+      "description": "Imported from Nessus scan\nHostname: web01\nOS: Linux Kernel 6.8 on Ubuntu 24.04",
+      "identifier": "10.20.0.5",
+      "name": "web01",
+      "ports": [
+        {
+          "port_number": 22,
+          "protocol": "TCP",
+          "service_name": "ssh",
+          "state": "OPEN",
+          "version": null
+        },
+        {
+          "port_number": 443,
+          "protocol": "TCP",
+          "service_name": "www",
+          "state": "OPEN",
+          "version": null
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "affected_asset_indices": [
+        0
+      ],
+      "category": "Settings",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "**Synopsis**: This plugin displays information about the Nessus scan.\n\nThis plugin displays, for each tested host, information about the scan itself.",
+      "impact": "This plugin displays information about the Nessus scan.",
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": "Nessus version : 10.8.3\nScan type : Normal",
+          "location": null
+        }
+      ],
+      "mitigations": null,
+      "references": null,
+      "severity": "INFO",
+      "title": "Nessus Scan Information"
+    },
+    {
+      "affected_asset_indices": [
+        0
+      ],
+      "category": "Service detection",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "**Synopsis**: A DNS server is listening on the remote host.\n\nThe remote service is a Domain Name System (DNS) server.",
+      "impact": "A DNS server is listening on the remote host.",
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": null,
+          "location": "53/udp (dns)"
+        }
+      ],
+      "mitigations": "Disable this service if it is not needed.",
+      "references": null,
+      "severity": "INFO",
+      "title": "DNS Server Detection"
+    },
+    {
+      "affected_asset_indices": [
+        0,
+        1
+      ],
+      "category": "Misc.",
+      "cvss_score": 5.3,
+      "cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "description": "**Synopsis**: Signing is not required on the remote SMB server.\n\nSigning is not required on the remote SMB server. An unauthenticated, remote attacker can exploit this to conduct man-in-the-middle attacks against the SMB server.",
+      "impact": "Signing is not required on the remote SMB server.",
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": null,
+          "location": "445/tcp (cifs)"
+        },
+        {
+          "asset_index": 1,
+          "detail": null,
+          "location": "443/tcp (www)"
+        }
+      ],
+      "mitigations": "Enforce message signing in the host's configuration.",
+      "references": "http://www.nessus.org/u?df39b8b3\nhttps://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/overview-server-message-block-signing",
+      "severity": "MEDIUM",
+      "title": "SMB Signing not required"
+    },
+    {
+      "affected_asset_indices": [
+        0
+      ],
+      "category": "Windows",
+      "cvss_score": 8.1,
+      "cvss_vector": "CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "description": "**Synopsis**: The remote Windows host is affected by multiple vulnerabilities.\n\nThe remote Windows host is affected by multiple remote code execution vulnerabilities in SMBv1.",
+      "impact": "The remote Windows host is affected by multiple vulnerabilities.",
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": "Sent: 00000000ff534d42\nReceived: 00000000ff534d42 ... STATUS_INSUFF_SERVER_RESOURCES",
+          "location": "445/tcp (cifs)"
+        }
+      ],
+      "mitigations": "Apply the applicable security update.",
+      "references": "CVE-2017-0143\nCVE-2017-0144",
+      "severity": "CRITICAL",
+      "title": "MS17-010: Security Update for Microsoft Windows SMB Server (ETERNALBLUE)"
+    },
+    {
+      "affected_asset_indices": [
+        1
+      ],
+      "category": "Web Servers",
+      "cvss_score": 2.6,
+      "cvss_vector": "CVSS2#AV:N/AC:H/Au:N/C:P/I:N/A:N",
+      "description": "**Synopsis**: The remote web server is not enforcing HSTS.\n\nThe remote web server is not enforcing HSTS.",
+      "impact": "The remote web server is not enforcing HSTS.",
+      "instances": [
+        {
+          "asset_index": 1,
+          "detail": "HTTP/1.1 200 OK\nServer: nginx/1.24.0",
+          "location": "443/tcp (www)"
+        }
+      ],
+      "mitigations": "Configure the remote web server to use HSTS.",
+      "references": null,
+      "severity": "LOW",
+      "title": "HSTS Missing From HTTPS Server (RFC 6797)"
+    },
+    {
+      "affected_asset_indices": [
+        1
+      ],
+      "category": "General",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "Numeric severity only.",
+      "impact": null,
+      "instances": [
+        {
+          "asset_index": 1,
+          "detail": null,
+          "location": "99999/tcp (www)"
+        }
+      ],
+      "mitigations": null,
+      "references": null,
+      "severity": "HIGH",
+      "title": "Bogus port item"
+    }
+  ],
+  "raw_metadata": {
+    "policy_name": "Basic Network Scan",
+    "report_name": "Internal - Nov",
+    "total_hosts": 2,
+    "total_plugins": 6
+  },
+  "source_tool": "nessus",
+  "warnings": []
+}

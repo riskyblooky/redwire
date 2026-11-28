@@ -38,8 +38,14 @@ def _strip_html(text: str) -> str:
     # Convert <br> and <p> to newlines
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</?p\s*/?>", "\n", text, flags=re.IGNORECASE)
-    # Convert <li> to bullet points
-    text = re.sub(r"<li\s*>", "- ", text, flags=re.IGNORECASE)
+    # Convert <li> to bullet points, each on its own line (it used to be
+    # glued to the text before the list: "response:- a@b").
+    text = re.sub(r"<li\s*>", "\n- ", text, flags=re.IGNORECASE)
+    text = re.sub(r"</(ul|ol)\s*>", "\n", text, flags=re.IGNORECASE)
+    # Links become Markdown links; only http(s) targets, a scanner-supplied
+    # javascript: URL stays plain text.
+    text = re.sub(r"""<a\s[^>]*href\s*=\s*["'](https?://[^"']+)["'][^>]*>(.*?)</a>""", r"[\2](\1)", text,
+                  flags=re.IGNORECASE | re.DOTALL)
     # Convert <b>/<strong> to bold
     text = re.sub(r"<(b|strong)>(.*?)</\1>", r"**\2**", text, flags=re.IGNORECASE | re.DOTALL)
     # Convert <code> to backticks
@@ -47,6 +53,7 @@ def _strip_html(text: str) -> str:
     # Strip remaining HTML tags
     text = re.sub(r"<[^>]+>", "", text)
     # Collapse multiple blank lines
+    text = re.sub(r"[ \t]*\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
@@ -186,17 +193,19 @@ def parse(content: bytes) -> ParsedImportData:
             mitigation_parts.append(remediation_bg)
         mitigations = "\n\n".join(mitigation_parts) if mitigation_parts else None
 
-        # References
+        # References and vulnerability classifications. Burp exports both as
+        # an HTML list of links in one element; only the classifications'
+        # link text used to survive, and <references> was looked for as
+        # <reference><url> children, which Burp doesn't write, so it was lost.
         refs = []
         for ref_elem in issue.findall(".//reference"):
             ref_url = _get_text(ref_elem.find("url"))
             if ref_url:
                 refs.append(ref_url)
-
-        # Vulnerability classifications
-        vuln_classifications = _get_text(issue.find("vulnerabilityClassifications"))
-        if vuln_classifications:
-            refs.append(vuln_classifications)
+        for tag in ("references", "vulnerabilityClassifications"):
+            text = _get_text(issue.find(tag))
+            if text:
+                refs.append(text)
 
         # Dedup by issue type (merge affected hosts)
         dedup_key = issue_name

@@ -1,0 +1,134 @@
+{
+  "assets": [
+    {
+      "asset_type": "URL",
+      "description": "Imported from Nuclei scan",
+      "identifier": "files.corp.example",
+      "name": "files.corp.example",
+      "ports": []
+    },
+    {
+      "asset_type": "URL",
+      "description": "Imported from Nuclei scan",
+      "identifier": "10.20.0.12",
+      "name": "10.20.0.12",
+      "ports": [
+        {
+          "port_number": 8080,
+          "protocol": "TCP",
+          "service_name": null,
+          "state": "OPEN",
+          "version": null
+        }
+      ]
+    },
+    {
+      "asset_type": "Domain",
+      "description": "Imported from Nuclei scan",
+      "identifier": "corp.example",
+      "name": "corp.example",
+      "ports": []
+    }
+  ],
+  "findings": [
+    {
+      "affected_asset_indices": [
+        0,
+        1
+      ],
+      "category": "cve",
+      "cvss_score": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "description": "A path traversal attack in Apache HTTP Server 2.4.49 maps URLs to files outside the expected document root.\n\n**Matched at**: `https://files.corp.example/cgi-bin/.%2e/.%2e/.%2e/etc/passwd`\n\n**Extracted**:\n- `root:x:0:0:root:/root:/bin/bash`",
+      "impact": null,
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": "root:x:0:0:root:/root:/bin/bash",
+          "location": "https://files.corp.example/cgi-bin/.%2e/.%2e/.%2e/etc/passwd"
+        },
+        {
+          "asset_index": 1,
+          "detail": null,
+          "location": "http://10.20.0.12:8080/cgi-bin/.%2e/.%2e/etc/passwd"
+        }
+      ],
+      "mitigations": "Upgrade to Apache HTTP Server 2.4.51 or later.",
+      "references": "https://httpd.apache.org/security/vulnerabilities_24.html\nhttps://nvd.nist.gov/vuln/detail/CVE-2021-41773",
+      "severity": "CRITICAL",
+      "title": "Apache 2.4.49 - Path Traversal and Remote Code Execution"
+    },
+    {
+      "affected_asset_indices": [
+        0
+      ],
+      "category": "ssl",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "**Matched at**: `files.corp.example:443`\n\n**Extracted**:\n- `files.corp.example`\n- `www.files.corp.example`",
+      "impact": null,
+      "instances": [
+        {
+          "asset_index": 0,
+          "detail": "files.corp.example\nwww.files.corp.example",
+          "location": "files.corp.example:443"
+        }
+      ],
+      "mitigations": null,
+      "references": null,
+      "severity": "INFO",
+      "title": "SSL DNS Names"
+    },
+    {
+      "affected_asset_indices": [
+        1
+      ],
+      "category": "ssl",
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "**Matched at**: `10.20.0.12:8443`\n\n**Matcher**: `tls-1.1`",
+      "impact": null,
+      "instances": [
+        {
+          "asset_index": 1,
+          "detail": null,
+          "location": "10.20.0.12:8443"
+        }
+      ],
+      "mitigations": null,
+      "references": "https://www.acunetix.com/vulnerabilities/web/tls-ssl-weak-cipher-suites/",
+      "severity": "LOW",
+      "title": "Weak Cipher Suites Detection"
+    },
+    {
+      "affected_asset_indices": [
+        2
+      ],
+      "category": null,
+      "cvss_score": null,
+      "cvss_vector": null,
+      "description": "**Matched at**: `corp.example`",
+      "impact": null,
+      "instances": [
+        {
+          "asset_index": 2,
+          "detail": null,
+          "location": "corp.example"
+        }
+      ],
+      "mitigations": null,
+      "references": null,
+      "severity": "INFO",
+      "title": "CAA Record"
+    }
+  ],
+  "raw_metadata": {
+    "total_hosts": 3,
+    "total_results": 5,
+    "unique_templates": 4
+  },
+  "source_tool": "nuclei",
+  "warnings": [
+    "Skipped invalid JSON on line 5"
+  ]
+}

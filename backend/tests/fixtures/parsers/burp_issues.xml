@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<!DOCTYPE issues [
+<!ELEMENT issues (issue*)>
+<!ATTLIST issues burpVersion CDATA "">
+<!ATTLIST issues exportTime CDATA "">
+<!ELEMENT issue (serialNumber, type, name, host, path, location, severity, confidence, issueBackground?, remediationBackground?, references?, vulnerabilityClassifications?, issueDetail?, issueDetailItems?, remediationDetail?, requestresponse*, collaboratorEvent*, infiniteCollaboratorEvent*, staticAnalysis*, dynamicAnalysis*)>
+<!ELEMENT serialNumber (#PCDATA)>
+<!ELEMENT type (#PCDATA)>
+<!ELEMENT name (#PCDATA)>
+<!ELEMENT host (#PCDATA)>
+<!ATTLIST host ip CDATA "">
+<!ELEMENT path (#PCDATA)>
+<!ELEMENT location (#PCDATA)>
+<!ELEMENT severity (#PCDATA)>
+<!ELEMENT confidence (#PCDATA)>
+<!ELEMENT issueBackground (#PCDATA)>
+<!ELEMENT remediationBackground (#PCDATA)>
+<!ELEMENT references (#PCDATA)>
+<!ELEMENT vulnerabilityClassifications (#PCDATA)>
+<!ELEMENT issueDetail (#PCDATA)>
+<!ELEMENT remediationDetail (#PCDATA)>
+<!ELEMENT requestresponse (request?, response?, responseRedirected?)>
+<!ELEMENT request (#PCDATA)>
+<!ATTLIST request method CDATA "" base64 (true|false) "false">
+<!ELEMENT response (#PCDATA)>
+<!ATTLIST response base64 (true|false) "false">
+]>
+<issues burpVersion="2025.10.3" exportTime="Sat Nov 28 12:30:00 UTC 2026">
+  <issue>
+    <serialNumber>5410377338516592640</serialNumber>
+    <type>1049088</type>
+    <name>SQL injection</name>
+    <host ip="10.20.0.5">https://portal.corp.example</host>
+    <path><![CDATA[/api/search]]></path>
+    <location><![CDATA[/api/search [q parameter]]]></location>
+    <severity>High</severity>
+    <confidence>Firm</confidence>
+    <issueBackground><![CDATA[<p>SQL injection vulnerabilities arise when user-controllable data is incorporated into database SQL queries in an unsafe manner.</p>]]></issueBackground>
+    <remediationBackground><![CDATA[<p>The most effective way to prevent SQL injection attacks is to use <b>parameterized queries</b>.</p>]]></remediationBackground>
+    <references><![CDATA[<ul><li><a href="https://portswigger.net/web-security/sql-injection">SQL injection</a></li></ul>]]></references>
+    <vulnerabilityClassifications><![CDATA[<ul><li><a href="https://cwe.mitre.org/data/definitions/89.html">CWE-89: Improper Neutralization of Special Elements used in an SQL Command</a></li></ul>]]></vulnerabilityClassifications>
+    <issueDetail><![CDATA[The <b>q</b> parameter appears to be vulnerable to SQL injection attacks. The payload <b>'</b> was submitted and a database error message was returned.]]></issueDetail>
+    <requestresponse>
+      <request method="GET" base64="true"><![CDATA[R0VUIC9hcGkvc2VhcmNoP3E9JyBIVFRQLzEuMQ0KSG9zdDogcG9ydGFsLmNvcnAuZXhhbXBsZQ0KDQo=]]></request>
+      <response base64="true"><![CDATA[SFRUUC8xLjEgNTAwIEludGVybmFsIFNlcnZlciBFcnJvcg0KDQo=]]></response>
+    </requestresponse>
+  </issue>
+  <issue>
+    <serialNumber>5410377338516592641</serialNumber>
+    <type>1049088</type>
+    <name>SQL injection</name>
+    <host ip="10.20.0.5">https://portal.corp.example</host>
+    <path><![CDATA[/api/users]]></path>
+    <location><![CDATA[/api/users [id parameter]]]></location>
+    <severity>High</severity>
+    <confidence>Certain</confidence>
+    <issueDetail><![CDATA[The <b>id</b> parameter appears to be vulnerable.]]></issueDetail>
+  </issue>
+  <issue>
+    <serialNumber>5410377338516592700</serialNumber>
+    <type>5245344</type>
+    <name>Strict transport security not enforced</name>
+    <host ip="10.20.0.9">http://legacy.corp.example:8080</host>
+    <path><![CDATA[/]]></path>
+    <location><![CDATA[/]]></location>
+    <severity>Low</severity>
+    <confidence>Certain</confidence>
+    <issueBackground><![CDATA[<p>The application fails to prevent users from connecting to it over unencrypted connections.</p>]]></issueBackground>
+    <remediationDetail><![CDATA[Add the <code>Strict-Transport-Security</code> header.]]></remediationDetail>
+  </issue>
+  <issue>
+    <serialNumber>5410377338516592800</serialNumber>
+    <type>8389632</type>
+    <name>Email addresses disclosed</name>
+    <host ip="10.20.0.5">https://portal.corp.example</host>
+    <path><![CDATA[/contact]]></path>
+    <location><![CDATA[/contact]]></location>
+    <severity>Information</severity>
+    <confidence>Certain</confidence>
+    <issueDetail><![CDATA[The following email address was disclosed in the response:<ul><li>security@corp.example</li></ul>]]></issueDetail>
+  </issue>
+</issues>

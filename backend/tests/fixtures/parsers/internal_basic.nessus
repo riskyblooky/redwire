@@ -1,0 +1,78 @@
+<?xml version="1.0" ?>
+<NessusClientData_v2>
+<Policy><policyName>Basic Network Scan</policyName>
+<Preferences><ServerPreferences><preference><name>TARGET</name><value>10.20.0.2,10.20.0.5</value></preference></ServerPreferences></Preferences>
+</Policy>
+<Report name="Internal - Nov" xmlns:cm="http://www.nessus.org/cm">
+<ReportHost name="10.20.0.2"><HostProperties>
+<tag name="HOST_END">Sat Nov 28 11:14:02 2026</tag>
+<tag name="operating-system">Microsoft Windows Server 2019 Standard</tag>
+<tag name="host-ip">10.20.0.2</tag>
+<tag name="host-fqdn">dc01.corp.example</tag>
+<tag name="netbios-name">DC01</tag>
+<tag name="HOST_START">Sat Nov 28 10:58:40 2026</tag>
+</HostProperties>
+<ReportItem port="0" svc_name="general" protocol="tcp" severity="0" pluginID="19506" pluginName="Nessus Scan Information" pluginFamily="Settings">
+<description>This plugin displays, for each tested host, information about the scan itself.</description>
+<plugin_output>Nessus version : 10.8.3
+Scan type : Normal</plugin_output>
+<risk_factor>None</risk_factor>
+<solution>n/a</solution>
+<synopsis>This plugin displays information about the Nessus scan.</synopsis>
+</ReportItem>
+<ReportItem port="445" svc_name="cifs" protocol="tcp" severity="0" pluginID="0" pluginName="" pluginFamily=""/>
+<ReportItem port="53" svc_name="dns" protocol="udp" severity="0" pluginID="11002" pluginName="DNS Server Detection" pluginFamily="Service detection">
+<description>The remote service is a Domain Name System (DNS) server.</description>
+<risk_factor>None</risk_factor>
+<solution>Disable this service if it is not needed.</solution>
+<synopsis>A DNS server is listening on the remote host.</synopsis>
+</ReportItem>
+<ReportItem port="445" svc_name="cifs" protocol="tcp" severity="2" pluginID="57608" pluginName="SMB Signing not required" pluginFamily="Misc.">
+<cvss3_base_score>5.3</cvss3_base_score>
+<cvss3_vector>CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N</cvss3_vector>
+<cvss_base_score>5.0</cvss_base_score>
+<cvss_vector>CVSS2#AV:N/AC:L/Au:N/C:N/I:P/A:N</cvss_vector>
+<description>Signing is not required on the remote SMB server. An unauthenticated, remote attacker can exploit this to conduct man-in-the-middle attacks against the SMB server.</description>
+<risk_factor>Medium</risk_factor>
+<see_also>http://www.nessus.org/u?df39b8b3
+https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/overview-server-message-block-signing</see_also>
+<solution>Enforce message signing in the host's configuration.</solution>
+<synopsis>Signing is not required on the remote SMB server.</synopsis>
+</ReportItem>
+<ReportItem port="445" svc_name="cifs" protocol="tcp" severity="4" pluginID="97833" pluginName="MS17-010: Security Update for Microsoft Windows SMB Server (ETERNALBLUE)" pluginFamily="Windows">
+<cve>CVE-2017-0143</cve>
+<cve>CVE-2017-0144</cve>
+<cvss3_base_score>8.1</cvss3_base_score>
+<cvss3_vector>CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H</cvss3_vector>
+<cvss_base_score>9.3</cvss_base_score>
+<description>The remote Windows host is affected by multiple remote code execution vulnerabilities in SMBv1.</description>
+<plugin_output>Sent: 00000000ff534d42
+Received: 00000000ff534d42 ... STATUS_INSUFF_SERVER_RESOURCES</plugin_output>
+<risk_factor>Critical</risk_factor>
+<solution>Apply the applicable security update.</solution>
+<synopsis>The remote Windows host is affected by multiple vulnerabilities.</synopsis>
+</ReportItem>
+</ReportHost>
+<ReportHost name="web01"><HostProperties>
+<tag name="host-ip">10.20.0.5</tag>
+<tag name="operating-system">Linux Kernel 6.8 on Ubuntu 24.04</tag>
+</HostProperties>
+<ReportItem port="22" svc_name="ssh" protocol="tcp" severity="0" pluginID="0" pluginName="" pluginFamily=""/>
+<ReportItem port="443" svc_name="www" protocol="tcp" severity="2" pluginID="57608" pluginName="SMB Signing not required" pluginFamily="Misc.">
+<risk_factor>Medium</risk_factor>
+</ReportItem>
+<ReportItem port="443" svc_name="www" protocol="tcp" severity="1" pluginID="142960" pluginName="HSTS Missing From HTTPS Server (RFC 6797)" pluginFamily="Web Servers">
+<cvss_base_score>2.6</cvss_base_score>
+<cvss_vector>CVSS2#AV:N/AC:H/Au:N/C:P/I:N/A:N</cvss_vector>
+<description>The remote web server is not enforcing HSTS.</description>
+<plugin_output>HTTP/1.1 200 OK
+Server: nginx/1.24.0</plugin_output>
+<solution>Configure the remote web server to use HSTS.</solution>
+<synopsis>The remote web server is not enforcing HSTS.</synopsis>
+</ReportItem>
+<ReportItem port="99999" svc_name="www" protocol="tcp" severity="3" pluginID="200001" pluginName="Bogus port item" pluginFamily="General">
+<description>Numeric severity only.</description>
+</ReportItem>
+</ReportHost>
+</Report>
+</NessusClientData_v2>

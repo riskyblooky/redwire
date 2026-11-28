@@ -1,0 +1,110 @@
+[
+  {
+    "asset_type": "IP Address",
+    "description": "Imported from NMAP scan (dc01.corp.example)",
+    "identifier": "10.20.0.2",
+    "name": "dc01.corp.example",
+    "ports": [
+      {
+        "port_number": 53,
+        "protocol": "TCP",
+        "service_name": "domain",
+        "state": "OPEN",
+        "version": "Simple DNS Plus"
+      },
+      {
+        "port_number": 88,
+        "protocol": "TCP",
+        "service_name": "kerberos-sec",
+        "state": "OPEN",
+        "version": "Microsoft Windows Kerberos"
+      },
+      {
+        "port_number": 389,
+        "protocol": "TCP",
+        "service_name": "ldap",
+        "state": "OPEN",
+        "version": "Microsoft Windows Active Directory LDAP"
+      },
+      {
+        "port_number": 445,
+        "protocol": "TCP",
+        "service_name": "microsoft-ds",
+        "state": "OPEN",
+        "version": null
+      },
+      {
+        "port_number": 3389,
+        "protocol": "TCP",
+        "service_name": "ms-wbt-server",
+        "state": "FILTERED",
+        "version": null
+      },
+      {
+        "port_number": 53,
+        "protocol": "UDP",
+        "service_name": "domain",
+        "state": "OPEN",
+        "version": "Simple DNS Plus"
+      },
+      {
+        "port_number": 123,
+        "protocol": "UDP",
+        "service_name": "ntp",
+        "state": "OPEN",
+        "version": null
+      },
+      {
+        "port_number": 137,
+        "protocol": "UDP",
+        "service_name": "netbios-ns",
+        "state": "OPEN",
+        "version": null
+      }
+    ]
+  },
+  {
+    "asset_type": "IP Address",
+    "description": "Imported from NMAP scan",
+    "identifier": "10.20.0.5",
+    "name": "10.20.0.5",
+    "ports": [
+      {
+        "port_number": 22,
+        "protocol": "TCP",
+        "service_name": "ssh",
+        "state": "OPEN",
+        "version": "OpenSSH 9.6p1 Ubuntu 3ubuntu13.5"
+      },
+      {
+        "port_number": 443,
+        "protocol": "TCP",
+        "service_name": "http",
+        "state": "OPEN",
+        "version": "nginx 1.24.0"
+      },
+      {
+        "port_number": 8080,
+        "protocol": "TCP",
+        "service_name": "http-proxy",
+        "state": "CLOSED",
+        "version": null
+      }
+    ]
+  },
+  {
+    "asset_type": "IP Address",
+    "description": "Imported from NMAP scan",
+    "identifier": "fd00:20::7",
+    "name": "fd00:20::7",
+    "ports": [
+      {
+        "port_number": 80,
+        "protocol": "TCP",
+        "service_name": "http",
+        "state": "OPEN",
+        "version": null
+      }
+    ]
+  }
+]

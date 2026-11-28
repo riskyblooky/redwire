@@ -91,6 +91,10 @@ def parse(content: bytes) -> ParsedImportData:
         # Create or find asset
         identifier = ip_address
         if identifier not in asset_index:
+            # A host scanned by name has that name as ReportHost@name (and
+            # often no host-fqdn tag); it used to be dropped for the IP.
+            if not hostname and host_name != ip_address:
+                hostname = host_name
             display_name = hostname or ip_address
             desc_parts = [f"Imported from Nessus scan"]
             if hostname and hostname != ip_address:

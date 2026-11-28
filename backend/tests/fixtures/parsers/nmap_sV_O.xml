@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.94 scan initiated Sat Nov 28 10:02:11 2026 as: nmap -sS -sU -sV -O -oX scan.xml 10.20.0.0/29 -->
+<nmaprun scanner="nmap" args="nmap -sS -sU -sV -O -oX scan.xml 10.20.0.0/29" start="1795860131" startstr="Sat Nov 28 10:02:11 2026" version="7.94" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1000" services="1,3-4,6-7"/>
+<scaninfo type="udp" protocol="udp" numservices="1000" services="2-3,7,9"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<host starttime="1795860131" endtime="1795860190"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.20.0.2" addrtype="ipv4"/>
+<address addr="00:50:56:A1:2B:3C" addrtype="mac" vendor="VMware"/>
+<hostnames>
+<hostname name="dc01.corp.example" type="PTR"/>
+<hostname name="dc01" type="user"/>
+</hostnames>
+<ports><extraports state="closed" count="985">
+<extrareasons reason="reset" count="985" proto="tcp" ports="1,3-4"/>
+</extraports>
+<port protocol="tcp" portid="53"><state state="open" reason="syn-ack" reason_ttl="128"/><service name="domain" product="Simple DNS Plus" ostype="Windows" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="88"><state state="open" reason="syn-ack" reason_ttl="128"/><service name="kerberos-sec" product="Microsoft Windows Kerberos" extrainfo="server time: 2026-11-28 10:02:30Z" ostype="Windows" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="389"><state state="open" reason="syn-ack" reason_ttl="128"/><service name="ldap" product="Microsoft Windows Active Directory LDAP" extrainfo="Domain: corp.example0., Site: Default-First-Site-Name" ostype="Windows" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="445"><state state="open" reason="syn-ack" reason_ttl="128"/><service name="microsoft-ds" method="table" conf="3"/></port>
+<port protocol="tcp" portid="3389"><state state="filtered" reason="no-response" reason_ttl="0"/><service name="ms-wbt-server" method="table" conf="3"/></port>
+<port protocol="udp" portid="53"><state state="open" reason="udp-response" reason_ttl="128"/><service name="domain" product="Simple DNS Plus" method="probed" conf="10"/></port>
+<port protocol="udp" portid="123"><state state="open|filtered" reason="no-response" reason_ttl="0"/><service name="ntp" method="table" conf="3"/></port>
+<port protocol="udp" portid="137"><state state="closed|filtered" reason="port-unreach" reason_ttl="128"/><service name="netbios-ns" method="table" conf="3"/></port>
+</ports>
+<os><portused state="open" proto="tcp" portid="53"/>
+<osmatch name="Microsoft Windows Server 2019" accuracy="96" line="81340">
+<osclass type="general purpose" vendor="Microsoft" osfamily="Windows" osgen="2019" accuracy="96"><cpe>cpe:/o:microsoft:windows_server_2019</cpe></osclass>
+</osmatch>
+<osmatch name="Microsoft Windows 10 1709 - 1909" accuracy="93" line="80223"/>
+</os>
+<uptime seconds="864000" lastboot="Wed Nov 18 10:02:11 2026"/>
+<times srtt="412" rttvar="92" to="100000"/>
+</host>
+<host starttime="1795860131" endtime="1795860160"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.20.0.5" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<ports><extraports state="closed" count="997"/>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssh" product="OpenSSH" version="9.6p1 Ubuntu 3ubuntu13.5" extrainfo="Ubuntu Linux; protocol 2.0" ostype="Linux" method="probed" conf="10"><cpe>cpe:/a:openbsd:openssh:9.6p1</cpe></service></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" product="nginx" version="1.24.0" tunnel="ssl" method="probed" conf="10"/><script id="http-title" output="Login &#45; Portal"><elem key="title">Login - Portal</elem></script></port>
+<port protocol="tcp" portid="8080"><state state="closed" reason="reset" reason_ttl="64"/><service name="http-proxy" method="table" conf="3"/></port>
+</ports>
+</host>
+<host starttime="1795860131" endtime="1795860135"><status state="down" reason="no-response" reason_ttl="0"/>
+<address addr="10.20.0.6" addrtype="ipv4"/>
+</host>
+<host><status state="up" reason="echo-reply" reason_ttl="64"/>
+<address addr="fd00:20::7" addrtype="ipv6"/>
+<hostnames><hostname name="fd00:20::7" type="user"/></hostnames>
+<ports><port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http"/></port>
+<port protocol="tcp" portid="0"><state state="open" reason="syn-ack" reason_ttl="64"/></port>
+</ports>
+</host>
+<runstats><finished time="1795860190" timestr="Sat Nov 28 10:03:10 2026" summary="Nmap done at Sat Nov 28 10:03:10 2026; 8 IP addresses (3 hosts up) scanned in 59.12 seconds" elapsed="59.12" exit="success"/><hosts up="3" down="5" total="8"/>
+</runstats>
+</nmaprun>

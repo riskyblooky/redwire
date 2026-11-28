@@ -1,0 +1,77 @@
+{
+  "command_line": null,
+  "command_target": null,
+  "domain": "corp.example",
+  "failed": 2,
+  "host_count": 2,
+  "locked_out": 1,
+  "password_used": "Autumn2026!",
+  "protocol": "SMB",
+  "results": [
+    {
+      "domain": "corp.example",
+      "is_admin": false,
+      "password": "Autumn2026!",
+      "result": "failed",
+      "status_code": "STATUS_LOGON_FAILURE",
+      "target_host": "10.20.0.2",
+      "target_port": 445,
+      "username": "alice"
+    },
+    {
+      "domain": "corp.example",
+      "is_admin": false,
+      "password": "Autumn2026!",
+      "result": "success",
+      "status_code": null,
+      "target_host": "10.20.0.2",
+      "target_port": 445,
+      "username": "bob"
+    },
+    {
+      "domain": "corp.example",
+      "is_admin": false,
+      "password": "Autumn2026!",
+      "result": "locked",
+      "status_code": "STATUS_ACCOUNT_LOCKED_OUT",
+      "target_host": "10.20.0.2",
+      "target_port": 445,
+      "username": "carol"
+    },
+    {
+      "domain": "corp.example",
+      "is_admin": false,
+      "password": "Autumn2026!",
+      "result": "disabled",
+      "status_code": "STATUS_ACCOUNT_DISABLED",
+      "target_host": "10.20.0.2",
+      "target_port": 445,
+      "username": "dave"
+    },
+    {
+      "domain": "corp.example",
+      "is_admin": true,
+      "password": "Autumn2026!",
+      "result": "success_admin",
+      "status_code": null,
+      "target_host": "10.20.0.2",
+      "target_port": 445,
+      "username": "svc_backup"
+    },
+    {
+      "domain": null,
+      "is_admin": true,
+      "password": "Autumn2026!",
+      "result": "success_admin",
+      "status_code": null,
+      "target_host": "10.20.0.5",
+      "target_port": 22,
+      "username": "deploy"
+    }
+  ],
+  "successful": 3,
+  "target_host": null,
+  "target_hostname": "DC01",
+  "target_port": 445,
+  "total_attempts": 6
+}
