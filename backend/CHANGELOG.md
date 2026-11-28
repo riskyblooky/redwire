@@ -4,7 +4,7 @@ All notable user-facing changes to RedWire. This file is the source for the
 in-app **What's New** modal and the `/changelog` page — each `## [version] — date`
 section becomes one release entry.
 
-## [1.9.4] — Unreleased
+## [1.9.4] — 2026-11-27
 
 ### Changed
 - The frontend runs on Node.js 24 LTS (was 22); rebuild the frontend image when upgrading.
