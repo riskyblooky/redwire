@@ -676,6 +676,7 @@ async def global_search(
     ast = parse_query(q)
     text_terms = _extract_text_terms(ast) if ast else []
     accessible_ids = await _get_accessible_engagement_ids(current_user, db)
+    viewable_engagements = engagements_with_permission(current_user.id, Permission.ENGAGEMENT_VIEW.value)
 
     def scope_to_engagements(query, engagement_col, permission: Permission):
         # Membership isn't enough: each category needs the same view
@@ -703,7 +704,10 @@ async def global_search(
         if clause is not None:
             eng_q = eng_q.where(clause)
         if accessible_ids is not None:
-            eng_q = eng_q.where(Engagement.id.in_(accessible_ids))
+            # The engagements the caller may open (role grant or view-all);
+            # assignment alone missed view-all users, who could open any
+            # engagement but not find one by name.
+            eng_q = eng_q.where(Engagement.id.in_(viewable_engagements))
         if sort == "relevance":
             eng_q = eng_q.order_by(Engagement.updated_at.desc())
         else:
@@ -862,11 +866,11 @@ async def global_search(
         if clause is not None:
             client_q = client_q.where(clause)
         # GHSA-h52c-fq68-j82x: confine non-admins to clients reachable through
-        # the engagements they're assigned to.
+        # the engagements they may view (role grant or the view-all tier).
         if accessible_ids is not None:
             client_q = client_q.where(
                 Client.id.in_(
-                    select(Engagement.client_id).where(Engagement.id.in_(accessible_ids))
+                    select(Engagement.client_id).where(Engagement.id.in_(viewable_engagements))
                 )
             )
         client_q = client_q.order_by(Client.name).limit(fetch)
