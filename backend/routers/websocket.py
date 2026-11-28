@@ -1,6 +1,8 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from typing import Optional, Tuple
 import asyncio
+import contextlib
+import importlib
 import json
 import time as _time
 import logging
@@ -11,10 +13,9 @@ from auth.rbac import check_engagement_permission
 from models.permission import Permission
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-
-logger = logging.getLogger(__name__)
 from models.user import User, UserRole
-import logging
+# Looked up as database.AsyncSessionLocal at call time (tests patch it).
+import database as _database
 
 logger = logging.getLogger(__name__)
 
@@ -176,14 +177,85 @@ async def _engagement_view_allowed(user_row: User, engagement_id: str, db: Async
     return await check_engagement_permission(user_row.id, engagement_id, Permission.ENGAGEMENT_VIEW.value, db)
 
 
+@contextlib.asynccontextmanager
+async def _accepted_and_authenticated(websocket: WebSocket):
+    """Accept, open the setup-only DB session and read the first-frame auth.
+    Yields ``(db, authed)``: ``authed`` is ``(user_row, role)``, or None
+    once ``_auth_via_first_frame`` has closed the socket. The session closes
+    when the block ends, before the endpoint's receive loop — an injected
+    get_db session lived as long as the socket, pinning a pooled connection
+    per open tab (pool: 10 + 20 overflow per worker)."""
+    await websocket.accept()
+    async with _database.AsyncSessionLocal() as db:
+        yield db, await _auth_via_first_frame(websocket, db)
+
+
+async def _live_user(db: AsyncSession, user_id: str) -> Optional[User]:
+    """The user as they are now, or None once they may no longer hold an
+    open socket (gone, deactivated, or a forced password change pending)."""
+    live = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if live is None or not live.is_active or live.must_change_password:
+        return None
+    return live
+
+
+# Resource types the presence socket resolves to a row: the model, and
+# whether the row *is* the engagement (else its engagement_id is the owner).
+# "report" is a virtual resource on its engagement.
+_PRESENCE_MODELS = {
+    "engagement": ("models.engagement", "Engagement", True),
+    "report": ("models.engagement", "Engagement", True),
+    "finding": ("models.finding", "Finding", False),
+    "asset": ("models.asset", "Asset", False),
+    "testcase": ("models.testcase", "TestCase", False),
+    "evidence": ("models.evidence", "Evidence", False),
+    "note": ("models.note", "Note", False),
+}
+
+
+async def _resolve_presence_resource(resource_type: str, resource_id: str,
+                                     db: AsyncSession) -> tuple[bool, Optional[str]]:
+    """``(exists, owning engagement_id)`` for a presence-socket resource.
+    ``dashboard`` is a virtual global resource (broadcast-only) and ``user``
+    a user's own notification channel; neither is engagement-scoped."""
+    if resource_type == "dashboard":
+        return resource_id == "global", None
+    if resource_type == "user":
+        found = (await db.execute(select(User.id).where(User.id == resource_id))).first()
+        return found is not None, None
+    spec = _PRESENCE_MODELS.get(resource_type)
+    if spec is None:
+        return False, None
+    module, name, is_engagement = spec
+    model = getattr(importlib.import_module(module), name)
+    obj = (await db.execute(select(model).where(model.id == resource_id))).scalar_one_or_none()
+    if obj is None:
+        return False, None
+    return True, (obj.id if is_engagement else getattr(obj, "engagement_id", None))
+
+
+def _content_saved_replier(websocket: WebSocket, save):
+    """``on_save`` for a Y.js room: persist with ``save(content)`` (-> bool)
+    and acknowledge with ``content_saved`` — the shared editor shows
+    Saving… / Saved / Not saved from it."""
+    async def _on_save(content: str):
+        if not isinstance(content, str):
+            return
+        ok = await save(content)
+        try:
+            await websocket.send_text(json.dumps({"type": "content_saved", "ok": ok}))
+        except Exception:
+            pass
+    return _on_save
+
+
 async def _presence_still_allowed(user_id: str, engagement_id: Optional[str]) -> bool:
     """Whether an open presence socket's user may still have it: active, no
     forced password change pending, and (engagement-scoped) still able to
     view the engagement. Uses a fresh session, like the live-edit recheck."""
-    import database as _database
     async with _database.AsyncSessionLocal() as rdb:
-        live = (await rdb.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-        if live is None or not live.is_active or live.must_change_password:
+        live = await _live_user(rdb, user_id)
+        if live is None:
             return False
         if engagement_id is None:
             return True
@@ -227,79 +299,18 @@ async def websocket_endpoint(
     Client must send {"type": "auth", "token": "<access-jwt>"} within
     ``_AUTH_FRAME_TIMEOUT_S`` of the accept().
     """
-    await websocket.accept()
-
-    # Setup-only DB session, closed before the receive loop. An injected
-    # get_db session lived as long as the socket, pinning a pooled connection
-    # per open tab (pool: 10 + 20 overflow per worker).
-    import database as _database
-    async with _database.AsyncSessionLocal() as db:
+    async with _accepted_and_authenticated(websocket) as (db, authed):
         # 1. Authenticate via first-frame
-        authed = await _auth_via_first_frame(websocket, db)
         if authed is None:
             return  # helper already closed the socket
         user_row, role = authed
         user_id = user_row.id
 
-        # 2. Resolve resource and capture its owning engagement_id (where applicable).
-        from models.engagement import Engagement
-        from models.finding import Finding
-
-        resource_exists = False
-        engagement_id: Optional[str] = None
+        # 2. Resolve the resource and its owning engagement (where applicable).
         try:
-            from models.asset import Asset
-            from models.testcase import TestCase
-            from models.evidence import Evidence
-
-            if resource_type == "engagement":
-                result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
-                obj = result.scalar_one_or_none()
-                resource_exists = obj is not None
-                engagement_id = obj.id if obj else None
-            elif resource_type == "finding":
-                result = await db.execute(select(Finding).where(Finding.id == resource_id))
-                obj = result.scalar_one_or_none()
-                resource_exists = obj is not None
-                engagement_id = getattr(obj, "engagement_id", None) if obj else None
-            elif resource_type == "asset":
-                result = await db.execute(select(Asset).where(Asset.id == resource_id))
-                obj = result.scalar_one_or_none()
-                resource_exists = obj is not None
-                engagement_id = getattr(obj, "engagement_id", None) if obj else None
-            elif resource_type == "testcase":
-                result = await db.execute(select(TestCase).where(TestCase.id == resource_id))
-                obj = result.scalar_one_or_none()
-                resource_exists = obj is not None
-                engagement_id = getattr(obj, "engagement_id", None) if obj else None
-            elif resource_type == "evidence":
-                result = await db.execute(select(Evidence).where(Evidence.id == resource_id))
-                obj = result.scalar_one_or_none()
-                resource_exists = obj is not None
-                engagement_id = getattr(obj, "engagement_id", None) if obj else None
-            elif resource_type == "note":
-                from models.note import Note
-                result = await db.execute(select(Note).where(Note.id == resource_id))
-                obj = result.scalar_one_or_none()
-                resource_exists = obj is not None
-                engagement_id = getattr(obj, "engagement_id", None) if obj else None
-            elif resource_type == "report":
-                # Reports are virtual resources linked to engagement
-                result = await db.execute(select(Engagement).where(Engagement.id == resource_id))
-                obj = result.scalar_one_or_none()
-                resource_exists = obj is not None
-                engagement_id = obj.id if obj else None
-            elif resource_type == "dashboard":
-                # Dashboard is a virtual global resource — broadcast-only.
-                resource_exists = resource_id == "global"
-            elif resource_type == "user":
-                # User-level notification channel
-                result = await db.execute(select(User).where(User.id == resource_id))
-                resource_exists = result.scalar_one_or_none() is not None
-            else:
-                resource_exists = False
+            resource_exists, engagement_id = await _resolve_presence_resource(resource_type, resource_id, db)
         except Exception as e:
-            print(f"WS Resource validation error: {e}")
+            logger.warning("presence WS %s/%s: resource lookup failed: %s", resource_type, resource_id, e)
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
 
@@ -423,12 +434,9 @@ _access_inflight: dict[tuple[str, str], "asyncio.Future"] = {}
 
 
 async def _run_access_check(user_id: str, recheck) -> Optional[bool]:
-    from database import AsyncSessionLocal
-    async with AsyncSessionLocal() as rdb:
-        live_user = (await rdb.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-        if live_user is None or not live_user.is_active or live_user.must_change_password:
-            return None
-        return await recheck(rdb, live_user)
+    async with _database.AsyncSessionLocal() as rdb:
+        live_user = await _live_user(rdb, user_id)
+        return None if live_user is None else await recheck(rdb, live_user)
 
 
 async def _shared_access_check(cache_key: tuple[str, str], user_id: str, recheck, fresh: bool) -> Optional[bool]:
@@ -477,13 +485,8 @@ async def yjs_websocket_endpoint(
     """
     from utils.yjs_server import save_note_content
 
-    await websocket.accept()
-
-    # Setup-only DB session (see websocket_endpoint).
-    import database as _database
-    async with _database.AsyncSessionLocal() as db:
+    async with _accepted_and_authenticated(websocket) as (db, authed):
         # 1. Authenticate via first-frame
-        authed = await _auth_via_first_frame(websocket, db)
         if authed is None:
             return  # helper already closed the socket
         user_row, role = authed
@@ -515,16 +518,7 @@ async def yjs_websocket_endpoint(
             return
 
     # 3. Join the Y.js room and relay until the client leaves.
-    async def _save(content: str):
-        if not isinstance(content, str):
-            return
-        ok = await save_note_content(note_id, content, user_id)
-        # Same acknowledgement as the field socket: the shared editor shows
-        # Saving… / Saved / Not saved from it.
-        try:
-            await websocket.send_text(json.dumps({"type": "content_saved", "ok": ok}))
-        except Exception:
-            pass
+    _save = _content_saved_replier(websocket, lambda content: save_note_content(note_id, content, user_id))
 
     async def _recheck(rdb: AsyncSession, live_user: User) -> Optional[bool]:
         live_note = (await rdb.execute(select(Note).where(Note.id == note_id))).scalar_one_or_none()
@@ -581,13 +575,8 @@ async def yjs_field_websocket_endpoint(
     utils/collab_fields.py for the field allow-list and permission mapping.
     """
     from utils.collab_fields import resolve_collab_target, room_key, save_collab_field
-    import json as _json_mod
 
-    await websocket.accept()
-    # Setup-only DB session (see websocket_endpoint).
-    import database as _database
-    async with _database.AsyncSessionLocal() as db:
-        authed = await _auth_via_first_frame(websocket, db)
+    async with _accepted_and_authenticated(websocket) as (db, authed):
         if authed is None:
             return
         user_row, _role = authed
@@ -597,14 +586,8 @@ async def yjs_field_websocket_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-    async def _save(content: str):
-        if not isinstance(content, str):
-            return
-        ok = await save_collab_field(resource_type, resource_id, field, content, user_row.id)
-        try:
-            await websocket.send_text(_json_mod.dumps({"type": "content_saved", "ok": ok}))
-        except Exception:
-            pass
+    _save = _content_saved_replier(
+        websocket, lambda content: save_collab_field(resource_type, resource_id, field, content, user_row.id))
 
     async def _recheck(rdb: AsyncSession, live_user: User) -> Optional[bool]:
         live = await resolve_collab_target(resource_type, resource_id, field, live_user, rdb)
